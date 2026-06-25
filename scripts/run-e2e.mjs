@@ -1,5 +1,3 @@
-/* global console, process */
-
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
