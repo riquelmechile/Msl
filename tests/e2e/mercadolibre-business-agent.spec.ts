@@ -6,19 +6,27 @@ test.describe("MercadoLibre business agent MVP", () => {
   });
 
   test("answers business advice in Spanish", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: "Chat de negocio" })).toBeVisible();
+    const chatCard = page.locator("article").filter({
+      has: page.getByRole("heading", { name: "Chat de negocio" }),
+    });
+
+    await expect(chatCard.getByRole("heading", { name: "Chat de negocio" })).toBeVisible();
     await expect(
-      page.getByText("Recomendación preparada con la información disponible."),
+      chatCard.getByText("Recomendación preparada con la información disponible.").first(),
     ).toBeVisible();
     await expect(
-      page.getByText("proteger margen mínimo antes de competir por precio"),
+      chatCard.getByText("proteger margen mínimo antes de competir por precio").first(),
     ).toBeVisible();
   });
 
   test("asks the seller to reconnect before protected access", async ({ page }) => {
     await page.getByRole("button", { name: "Ver datos protegidos" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(
+    await expect(
+      page.getByRole("alert").filter({
+        hasText: "Vuelve a conectar MercadoLibre para ver datos protegidos.",
+      }),
+    ).toContainText(
       "Vuelve a conectar MercadoLibre para ver datos protegidos.",
     );
   });
