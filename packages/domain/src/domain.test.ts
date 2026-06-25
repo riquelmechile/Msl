@@ -5,10 +5,13 @@ import {
   createPreparedAction,
   evaluateFreshness,
   evaluateSpecializationReadiness,
+  isReadSnapshotFresh,
+  isReadSnapshotReliable,
   requiresApproval,
   riskLevelForAction,
   type ApprovalRecord,
   type PreparedAction,
+  type ReadSnapshot,
   type WriteActionKind,
 } from "./index.js";
 
@@ -168,6 +171,71 @@ describe("freshness by business risk", () => {
     });
 
     expect(freshness).toMatchObject({ risk: "low", status: "fresh" });
+  });
+});
+
+describe("read snapshots", () => {
+  it("represents fresh complete metadata as reliable", () => {
+    const snapshot: ReadSnapshot<{ id: string }> = {
+      sellerId: "seller-1",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: [{ id: "MLC123" }],
+      completeness: "complete",
+      freshness: evaluateFreshness({
+        source: "mercadolibre-api",
+        signalKind: "listing",
+        capturedAt: new Date("2026-06-25T12:00:00.000Z"),
+        now: new Date("2026-06-25T12:05:00.000Z"),
+      }),
+      confidence: "high",
+    };
+
+    expect(snapshot.freshness.status).toBe("fresh");
+    expect(isReadSnapshotFresh(snapshot)).toBe(true);
+    expect(isReadSnapshotReliable(snapshot)).toBe(true);
+  });
+
+  it("exposes stale metadata instead of treating old reads as fresh", () => {
+    const snapshot: ReadSnapshot<{ id: string }> = {
+      sellerId: "seller-1",
+      kind: "message",
+      source: "local-cache",
+      data: [{ id: "message-1" }],
+      completeness: "complete",
+      freshness: evaluateFreshness({
+        source: "local-cache",
+        signalKind: "message",
+        capturedAt: new Date("2026-06-25T12:00:00.000Z"),
+        now: new Date("2026-06-25T12:06:00.000Z"),
+      }),
+      confidence: "medium",
+    };
+
+    expect(snapshot.freshness.status).toBe("stale");
+    expect(isReadSnapshotFresh(snapshot)).toBe(false);
+    expect(isReadSnapshotReliable(snapshot)).toBe(false);
+  });
+
+  it("keeps partial low-confidence evidence visible", () => {
+    const snapshot: ReadSnapshot<{ score: number | null }> = {
+      sellerId: "seller-1",
+      kind: "reputation",
+      source: "mercadolibre-api",
+      data: { score: null },
+      completeness: "partial",
+      freshness: evaluateFreshness({
+        source: "mercadolibre-api",
+        signalKind: "reputation",
+        capturedAt: new Date("2026-06-25T12:00:00.000Z"),
+        now: new Date("2026-06-25T12:01:00.000Z"),
+      }),
+      confidence: "low",
+    };
+
+    expect(snapshot.completeness).toBe("partial");
+    expect(snapshot.confidence).toBe("low");
+    expect(isReadSnapshotReliable(snapshot)).toBe(false);
   });
 });
 
