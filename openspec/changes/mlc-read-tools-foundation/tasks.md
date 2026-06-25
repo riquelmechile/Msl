@@ -34,10 +34,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: MercadoLibre Read Normalization
 
-- [ ] 2.1 Extend `packages/mercadolibre/src/index.ts` with listing/order/message/reputation summary result types and normalized read methods.
-- [ ] 2.2 Normalize conservative transport payloads in `packages/mercadolibre/src/index.ts`, marking missing evidence as partial or low confidence.
-- [ ] 2.3 Preserve revoked/expired and seller-mismatch short-circuit behavior before transport in `packages/mercadolibre/src/index.ts`.
-- [ ] 2.4 Add `packages/mercadolibre/src/mercadolibre.test.ts` cases for normalized snapshots, partial evidence, revoked access, and seller mismatch.
+- [x] 2.1 Extend `packages/mercadolibre/src/index.ts` with listing/order/message/reputation summary result types and normalized read methods.
+- [x] 2.2 Normalize conservative transport payloads in `packages/mercadolibre/src/index.ts`, marking missing evidence as partial or low confidence.
+- [x] 2.3 Preserve revoked/expired and seller-mismatch short-circuit behavior before transport in `packages/mercadolibre/src/index.ts`.
+- [x] 2.4 Add `packages/mercadolibre/src/mercadolibre.test.ts` cases for normalized snapshots, partial evidence, revoked access, and seller mismatch.
 
 ## Phase 3: Tool Integration
 
