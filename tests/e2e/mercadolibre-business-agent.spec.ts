@@ -26,9 +26,7 @@ test.describe("MercadoLibre business agent MVP", () => {
       page.getByRole("alert").filter({
         hasText: "Vuelve a conectar MercadoLibre para ver datos protegidos.",
       }),
-    ).toContainText(
-      "Vuelve a conectar MercadoLibre para ver datos protegidos.",
-    );
+    ).toContainText("Vuelve a conectar MercadoLibre para ver datos protegidos.");
   });
 
   test("shows connected MLC account state", async ({ page }) => {
