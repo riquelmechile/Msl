@@ -97,22 +97,22 @@ export function createMlcReadTools(input: { client: MlcApiClient }): MlcReadTool
     listings: createMlcReadTool({
       name: "read-mercadolibre-listings",
       description: "Reads authorized MercadoLibre listing snapshots for the connected seller.",
-      read: input.client.getListings,
+      read: (sellerId) => input.client.getListings(sellerId),
     }),
     orders: createMlcReadTool({
       name: "read-mercadolibre-orders",
       description: "Reads authorized MercadoLibre order snapshots for the connected seller.",
-      read: input.client.getOrders,
+      read: (sellerId) => input.client.getOrders(sellerId),
     }),
     messages: createMlcReadTool({
       name: "read-mercadolibre-messages",
       description: "Reads authorized MercadoLibre message snapshots for the connected seller.",
-      read: input.client.getMessages,
+      read: (sellerId) => input.client.getMessages(sellerId),
     }),
     reputation: createMlcReadTool({
       name: "read-mercadolibre-reputation",
       description: "Reads authorized MercadoLibre reputation snapshots for the connected seller.",
-      read: input.client.getReputation,
+      read: (sellerId) => input.client.getReputation(sellerId),
     }),
   };
 }
