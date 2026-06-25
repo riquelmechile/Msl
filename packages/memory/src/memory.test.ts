@@ -1,12 +1,33 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateFreshness } from "@msl/domain";
+import { evaluateFreshness, type ReadSnapshot } from "@msl/domain";
 
 import {
+  decideReadSnapshotFreshness,
   decideSelectiveSync,
   type PgvectorMemoryStore,
   type PostgresRepositoryBoundary,
 } from "./index.js";
+
+function listingSnapshot(
+  overrides: Partial<ReadSnapshot<{ id: string }>> = {},
+): ReadSnapshot<{ id: string }> {
+  return {
+    sellerId: "seller-1",
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: [{ id: "MLC123" }],
+    completeness: "complete",
+    freshness: evaluateFreshness({
+      source: "mercadolibre-api",
+      signalKind: "listing",
+      capturedAt: new Date("2026-06-25T12:00:00.000Z"),
+      now: new Date("2026-06-25T12:05:00.000Z"),
+    }),
+    confidence: "high",
+    ...overrides,
+  };
+}
 
 describe("PostgreSQL and pgvector memory boundaries", () => {
   it("keeps repository contracts local-first by default", async () => {
@@ -72,6 +93,41 @@ describe("selective sync policy", () => {
       storage: "local-only",
       reason: "critical-stale-refresh",
       refreshMode: "webhook-or-risk-scheduled",
+    });
+  });
+});
+
+describe("read snapshot freshness decisions", () => {
+  it("allows fresh complete snapshots with usable confidence", () => {
+    expect(decideReadSnapshotFreshness(listingSnapshot())).toEqual({
+      status: "fresh-enough",
+      reason: "fresh-complete-confidence",
+      refreshRequired: false,
+    });
+  });
+
+  it("requires refresh for stale snapshots", () => {
+    const staleSnapshot = listingSnapshot({
+      freshness: evaluateFreshness({
+        source: "mercadolibre-api",
+        signalKind: "listing",
+        capturedAt: new Date("2026-06-25T12:00:00.000Z"),
+        now: new Date("2026-06-25T13:01:00.000Z"),
+      }),
+    });
+
+    expect(decideReadSnapshotFreshness(staleSnapshot)).toEqual({
+      status: "refresh-required",
+      reason: "stale",
+      refreshRequired: true,
+    });
+  });
+
+  it("requires refresh for partial snapshots before claiming confidence", () => {
+    expect(decideReadSnapshotFreshness(listingSnapshot({ completeness: "partial" }))).toEqual({
+      status: "refresh-required",
+      reason: "partial",
+      refreshRequired: true,
     });
   });
 });

@@ -1,4 +1,4 @@
-import type { BusinessSignalKind, CacheFreshness, SellerId } from "@msl/domain";
+import type { BusinessSignalKind, CacheFreshness, ReadSnapshot, SellerId } from "@msl/domain";
 
 export type LocalDataResidency = "local-only" | "selective-remote-sync";
 
@@ -48,6 +48,46 @@ export type SelectiveSyncDecision = {
   reason: "fresh-local" | "critical-stale-refresh" | "explicit-remote-sync-needed";
   refreshMode: "none" | "webhook-or-risk-scheduled";
 };
+
+export type ReadSnapshotFreshnessDecision = {
+  status: "fresh-enough" | "refresh-required";
+  reason: "fresh-complete-confidence" | "stale" | "partial" | "low-confidence";
+  refreshRequired: boolean;
+};
+
+export function decideReadSnapshotFreshness(
+  snapshot: ReadSnapshot<unknown>,
+): ReadSnapshotFreshnessDecision {
+  if (snapshot.freshness.status === "stale") {
+    return {
+      status: "refresh-required",
+      reason: "stale",
+      refreshRequired: true,
+    };
+  }
+
+  if (snapshot.completeness === "partial") {
+    return {
+      status: "refresh-required",
+      reason: "partial",
+      refreshRequired: true,
+    };
+  }
+
+  if (snapshot.confidence === "low") {
+    return {
+      status: "refresh-required",
+      reason: "low-confidence",
+      refreshRequired: true,
+    };
+  }
+
+  return {
+    status: "fresh-enough",
+    reason: "fresh-complete-confidence",
+    refreshRequired: false,
+  };
+}
 
 export function decideSelectiveSync(input: {
   freshness: CacheFreshness;
