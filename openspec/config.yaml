@@ -1,0 +1,73 @@
+schema: spec-driven
+project: msl
+
+artifact_store:
+  mode: openspec
+
+context: |
+  Tech stack: TypeScript npm workspace with Next.js web app, package modules, Vitest, Playwright, ESLint, Prettier, and TypeScript project builds.
+  Architecture: Monorepo with apps/web for Spanish demo UI and packages for domain, MercadoLibre access state, memory/cache boundaries, tools/approvals, agent orchestration, and workers.
+  Testing: Vitest unit/integration tests, Playwright E2E specs guarded for unsupported local platforms, TypeScript typecheck, ESLint, Prettier, and build commands.
+  Style: Professional English for code/docs/SDD artifacts; neutral/professional Spanish for product/user-facing MVP copy.
+
+strict_tdd: false
+
+testing:
+  detected_at: 2026-06-25
+  strict_tdd: false
+  strict_tdd_reason: Strict TDD was not enabled during SDD init; behavior-first tests are used for implementation work units.
+  test_runner:
+    available: true
+    framework: Vitest
+    command: npm test
+  layers:
+    unit:
+      available: true
+      tool: Vitest
+    integration:
+      available: true
+      tool: Vitest
+    e2e:
+      available: true
+      tool: Playwright via scripts/run-e2e.mjs
+  coverage:
+    available: false
+    command: null
+  quality:
+    linter:
+      available: true
+      command: npm run lint
+    type_checker:
+      available: true
+      command: npm run typecheck
+    formatter:
+      available: true
+      command: npm run format:check
+
+rules:
+  proposal:
+    - State the user-facing problem, scope, out-of-scope items, and rollback plan for risky changes.
+  specs:
+    - Use RFC 2119 keywords for requirements.
+    - Use Given/When/Then scenarios for observable behavior.
+  design:
+    - Document architecture decisions with rationale and tradeoffs.
+    - Include diagrams or flow descriptions when behavior crosses boundaries.
+  tasks:
+    - Group tasks by phase and keep each task reviewable in one focused session.
+    - Keep generated implementation work within the configured review budget when possible.
+  apply:
+    tdd: false
+    test_command: "npm test"
+    guidelines:
+      - Follow existing code patterns once the stack is established.
+  verify:
+    test_command: "npm test && npm run test:e2e"
+    build_command: "npm run build"
+    coverage_threshold: 0
+    guidelines:
+      - Report that Playwright is intentionally skipped by scripts/run-e2e.mjs on unsupported platforms such as Android/Termux.
+      - On supported platforms, E2E specs in tests/e2e must execute and failures must propagate.
+  archive:
+    - Preserve archived change folders as an audit trail.
+    - Warn before merging destructive or removing deltas.
