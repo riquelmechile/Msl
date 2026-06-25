@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import type { CacheFreshness, ReadSnapshot } from "@msl/domain";
+
 import {
   createMlcApiClient,
   evaluateOAuthAccess,
+  type MlcListingSummary,
+  type MlcReadSnapshotFreshness,
   type MercadoLibreApiTransport,
   type OAuthTokenState,
 } from "./index.js";
@@ -86,8 +90,18 @@ describe("direct MLC API client boundary", () => {
       request: (request) => Promise.resolve(payloads[request.path]),
     };
     const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+    const listings = await client.getListings("seller-1");
+    const orders = await client.getOrders("seller-1");
+    const messages = await client.getMessages("seller-1");
+    const reputation = await client.getReputation("seller-1");
+    const domainListingSnapshot: ReadSnapshot<MlcListingSummary> = listings;
+    const domainFreshness: CacheFreshness = listings.freshness;
+    const mlcFreshness: MlcReadSnapshotFreshness = listings.freshness;
 
-    await expect(client.getListings("seller-1")).resolves.toMatchObject({
+    expect(domainListingSnapshot.source).toBe("mercadolibre-api");
+    expect(domainFreshness.source).toBe("mercadolibre-api");
+    expect(mlcFreshness.signalKind).toBe("listing");
+    expect(listings).toMatchObject({
       sellerId: "seller-1",
       kind: "listing",
       source: "mercadolibre-api",
@@ -101,23 +115,27 @@ describe("direct MLC API client boundary", () => {
       },
       confidence: "high",
     });
-    await expect(client.getOrders("seller-1")).resolves.toMatchObject({
+    expect(listings.freshness.maxAgeMs).toBe(60 * 60 * 1000);
+    expect(orders).toMatchObject({
       kind: "order",
       data: [{ id: "1001", status: "paid", totalAmount: 12000, buyerId: "501" }],
       completeness: "complete",
       confidence: "high",
+      freshness: { risk: "critical", maxAgeMs: 5 * 60 * 1000 },
     });
-    await expect(client.getMessages("seller-1")).resolves.toMatchObject({
+    expect(messages).toMatchObject({
       kind: "message",
       data: [{ id: "message-1", subject: "Question", fromUserId: "501" }],
       completeness: "complete",
       confidence: "high",
+      freshness: { risk: "critical", maxAgeMs: 5 * 60 * 1000 },
     });
-    await expect(client.getReputation("seller-1")).resolves.toMatchObject({
+    expect(reputation).toMatchObject({
       kind: "reputation",
       data: { level: "5_green", completedTransactions: 95, positiveRating: 0.98 },
       completeness: "complete",
       confidence: "high",
+      freshness: { risk: "critical", maxAgeMs: 5 * 60 * 1000 },
     });
   });
 

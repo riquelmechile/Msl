@@ -1,28 +1,23 @@
+import { evaluateFreshness, type CacheFreshness, type ReadSnapshot } from "@msl/domain";
+
 export type OAuthAccessStatus = "connected" | "revoked" | "expired";
 
-export type MlcReadSnapshotKind = "listing" | "order" | "message" | "reputation";
+export type MlcReadSnapshotKind = ReadSnapshot<unknown>["kind"];
 
-export type MlcReadSnapshotCompleteness = "complete" | "partial";
+export type MlcReadSnapshotCompleteness = ReadSnapshot<unknown>["completeness"];
 
-export type MlcReadSnapshotConfidence = "low" | "medium" | "high";
+export type MlcReadSnapshotConfidence = ReadSnapshot<unknown>["confidence"];
 
-export type MlcReadSnapshotFreshness = {
+export type MlcReadSnapshotFreshness = CacheFreshness & {
   source: "mercadolibre-api";
   signalKind: MlcReadSnapshotKind;
   risk: "medium" | "critical";
-  capturedAt: Date;
-  maxAgeMs: number;
-  status: "fresh" | "stale";
 };
 
-export type MlcReadSnapshot<TData> = {
-  sellerId: string;
+export type MlcReadSnapshot<TData> = ReadSnapshot<TData> & {
   kind: MlcReadSnapshotKind;
   source: "mercadolibre-api";
-  data: ReadonlyArray<TData> | TData;
-  completeness: MlcReadSnapshotCompleteness;
   freshness: MlcReadSnapshotFreshness;
-  confidence: MlcReadSnapshotConfidence;
 };
 
 export type MlcListingSummary = {
@@ -123,20 +118,13 @@ export type MlcApiClient = {
   getReputation(sellerId: string): Promise<MlcReputationSnapshot>;
 };
 
-const mediumMaxAgeMs = 60 * 60 * 1000;
-const criticalMaxAgeMs = 5 * 60 * 1000;
-
 function createFreshness(kind: MlcReadSnapshotKind, now: Date): MlcReadSnapshotFreshness {
-  const risk = kind === "listing" ? "medium" : "critical";
-
-  return {
+  return evaluateFreshness({
     source: "mercadolibre-api",
     signalKind: kind,
-    risk,
     capturedAt: now,
-    maxAgeMs: risk === "critical" ? criticalMaxAgeMs : mediumMaxAgeMs,
-    status: "fresh",
-  };
+    now,
+  }) as MlcReadSnapshotFreshness;
 }
 
 function asRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
