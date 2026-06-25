@@ -17,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@msl/domain": "file:../domain"
+    "@msl/domain": "file:../domain",
+    "@msl/mercadolibre": "file:../mercadolibre"
   }
 }

@@ -10,6 +10,14 @@ import {
   type RiskLevel,
   type SellerId,
 } from "@msl/domain";
+import type {
+  MlcApiClient,
+  MlcListingSummary,
+  MlcMessageSummary,
+  MlcOrderSummary,
+  MlcReadSnapshot,
+  MlcReputationSummary,
+} from "@msl/mercadolibre";
 
 export type ToolSource =
   | "local-cache"
@@ -44,6 +52,29 @@ export type OfficialMercadoLibreDocsAdapter = {
   ): Promise<BusinessToolResponse<{ topic: string; content: string }>>;
 };
 
+export type ReadToolBlocked =
+  | { status: "blocked"; reason: "reconnect-required"; message: string }
+  | { status: "blocked"; reason: "seller-access-mismatch"; message: string };
+
+export type MlcReadTools = {
+  listings: CustomBusinessTool<
+    { sellerId: SellerId },
+    MlcReadSnapshot<MlcListingSummary> | ReadToolBlocked
+  >;
+  orders: CustomBusinessTool<
+    { sellerId: SellerId },
+    MlcReadSnapshot<MlcOrderSummary> | ReadToolBlocked
+  >;
+  messages: CustomBusinessTool<
+    { sellerId: SellerId },
+    MlcReadSnapshot<MlcMessageSummary> | ReadToolBlocked
+  >;
+  reputation: CustomBusinessTool<
+    { sellerId: SellerId },
+    MlcReadSnapshot<MlcReputationSummary> | ReadToolBlocked
+  >;
+};
+
 export function createOfficialMercadoLibreDocsAdapter(input: {
   lookupDocumentation(topic: string): Promise<string>;
 }): OfficialMercadoLibreDocsAdapter {
@@ -59,6 +90,95 @@ export function createOfficialMercadoLibreDocsAdapter(input: {
       },
     }),
   };
+}
+
+export function createMlcReadTools(input: { client: MlcApiClient }): MlcReadTools {
+  return {
+    listings: createMlcReadTool({
+      name: "read-mercadolibre-listings",
+      description: "Reads authorized MercadoLibre listing snapshots for the connected seller.",
+      read: (sellerId) => input.client.getListings(sellerId),
+    }),
+    orders: createMlcReadTool({
+      name: "read-mercadolibre-orders",
+      description: "Reads authorized MercadoLibre order snapshots for the connected seller.",
+      read: (sellerId) => input.client.getOrders(sellerId),
+    }),
+    messages: createMlcReadTool({
+      name: "read-mercadolibre-messages",
+      description: "Reads authorized MercadoLibre message snapshots for the connected seller.",
+      read: (sellerId) => input.client.getMessages(sellerId),
+    }),
+    reputation: createMlcReadTool({
+      name: "read-mercadolibre-reputation",
+      description: "Reads authorized MercadoLibre reputation snapshots for the connected seller.",
+      read: (sellerId) => input.client.getReputation(sellerId),
+    }),
+  };
+}
+
+function createMlcReadTool<TData>(input: {
+  name: string;
+  description: string;
+  read(sellerId: SellerId): Promise<MlcReadSnapshot<TData>>;
+}): CustomBusinessTool<{ sellerId: SellerId }, MlcReadSnapshot<TData> | ReadToolBlocked> {
+  return {
+    name: input.name,
+    description: input.description,
+    execute: async (request) => {
+      try {
+        const snapshot = await input.read(request.sellerId);
+
+        return {
+          data: snapshot,
+          metadata: {
+            source: "mercadolibre-api",
+            freshness: snapshot.freshness,
+            confidence: snapshot.confidence,
+            requiresApproval: false,
+          },
+        };
+      } catch (error) {
+        const blocked = toReadToolBlocked(error);
+
+        if (blocked === undefined) {
+          throw error;
+        }
+
+        return {
+          data: blocked,
+          metadata: {
+            source: "mercadolibre-api",
+            freshness: null,
+            confidence: "low",
+            requiresApproval: false,
+          },
+        };
+      }
+    },
+  };
+}
+
+function toReadToolBlocked(error: unknown): ReadToolBlocked | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  const candidate = error as { reason?: unknown; message?: unknown };
+  const message =
+    typeof candidate.message === "string" && candidate.message.length > 0
+      ? candidate.message
+      : "MercadoLibre read is blocked.";
+
+  if (candidate.reason === "reconnect-required") {
+    return { status: "blocked", reason: "reconnect-required", message };
+  }
+
+  if (candidate.reason === "seller-access-mismatch") {
+    return { status: "blocked", reason: "seller-access-mismatch", message };
+  }
+
+  return undefined;
 }
 
 export type PreparedWriteKind =

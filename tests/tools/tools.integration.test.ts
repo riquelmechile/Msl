@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   approvePreparedAction,
   createInMemoryApprovalQueueRepository,
+  createMlcReadTools,
   createOfficialMercadoLibreDocsAdapter,
   createPreparedActionTool,
   executePreparedAction,
@@ -12,6 +13,11 @@ import {
   type PrepareWriteInput,
   type PreparedWriteKind,
 } from "../../packages/tools/src/index.js";
+import type {
+  MlcApiClient,
+  MlcListingSummary,
+  MlcReadSnapshot,
+} from "../../packages/mercadolibre/src/index.js";
 
 const now = new Date("2026-06-25T12:00:00.000Z");
 const clock: Clock = { now: () => now };
@@ -49,6 +55,81 @@ describe("official MercadoLibre MCP boundary", () => {
       },
     });
     expect("execute" in adapter).toBe(false);
+  });
+});
+
+describe("custom MercadoLibre read tools", () => {
+  it("returns authorized read snapshots with metadata and no approval creation", async () => {
+    const repository = createInMemoryApprovalQueueRepository();
+    const tools = createMlcReadTools({ client: snapshotClient() });
+
+    const response = await tools.listings.execute({ sellerId: "seller-1" });
+
+    expect(response).toMatchObject({
+      data: {
+        sellerId: "seller-1",
+        kind: "listing",
+        source: "mercadolibre-api",
+        completeness: "complete",
+        confidence: "high",
+        freshness: {
+          source: "mercadolibre-api",
+          signalKind: "listing",
+          status: "fresh",
+        },
+      },
+      metadata: {
+        source: "mercadolibre-api",
+        confidence: "high",
+        requiresApproval: false,
+      },
+    });
+    expect(response.metadata.freshness).toEqual(response.data.freshness);
+    await expect(repository.findAction("action-read-listings")).resolves.toBeNull();
+  });
+
+  it("keeps official MercadoLibre MCP documentation-only during read execution", async () => {
+    let documentationLookups = 0;
+    const docs = createOfficialMercadoLibreDocsAdapter({
+      lookupDocumentation: (topic) => {
+        documentationLookups += 1;
+        return Promise.resolve(`Documentation for ${topic}`);
+      },
+    });
+    const client = snapshotClient();
+    const tools = createMlcReadTools({ client });
+
+    const response = await tools.reputation.execute({ sellerId: "seller-1" });
+
+    expect(response.data).toMatchObject({ kind: "reputation", source: "mercadolibre-api" });
+    expect(documentationLookups).toBe(0);
+    expect("execute" in docs).toBe(false);
+  });
+
+  it("converts reconnect and seller mismatch failures into blocked read responses without seller data", async () => {
+    const reconnectTools = createMlcReadTools({
+      client: throwingReadClient("reconnect-required", "Reconnect MercadoLibre access."),
+    });
+    const mismatchTools = createMlcReadTools({
+      client: throwingReadClient("seller-access-mismatch", "Connected seller does not match."),
+    });
+
+    await expect(reconnectTools.orders.execute({ sellerId: "seller-1" })).resolves.toMatchObject({
+      data: {
+        status: "blocked",
+        reason: "reconnect-required",
+        message: "Reconnect MercadoLibre access.",
+      },
+      metadata: { freshness: null, confidence: "low", requiresApproval: false },
+    });
+    await expect(mismatchTools.messages.execute({ sellerId: "seller-2" })).resolves.toMatchObject({
+      data: {
+        status: "blocked",
+        reason: "seller-access-mismatch",
+        message: "Connected seller does not match.",
+      },
+      metadata: { freshness: null, confidence: "low", requiresApproval: false },
+    });
   });
 });
 
@@ -225,5 +306,61 @@ function countingExecutor(): DirectWriteExecutor & { readonly calls: number } {
 function throwingExecutor(message: string): DirectWriteExecutor {
   return {
     execute: () => Promise.reject(new Error(message)),
+  };
+}
+
+function listingSnapshot(): MlcReadSnapshot<MlcListingSummary> {
+  return {
+    sellerId: "seller-1",
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: [
+      {
+        id: "MLC123",
+        title: "Listing title",
+        status: "active",
+        availableQuantity: 3,
+        price: 100,
+        currencyId: "CLP",
+      },
+    ],
+    completeness: "complete",
+    freshness: {
+      source: "mercadolibre-api",
+      signalKind: "listing",
+      risk: "medium",
+      capturedAt: now,
+      maxAgeMs: 60 * 60 * 1000,
+      status: "fresh",
+    },
+    confidence: "high",
+  };
+}
+
+function snapshotClient(): MlcApiClient {
+  const listing = listingSnapshot();
+
+  return {
+    getListings: () => Promise.resolve(listing),
+    getOrders: () =>
+      Promise.resolve({ ...listing, kind: "order", data: [{ id: "order-1", status: "paid" }] }),
+    getMessages: () =>
+      Promise.resolve({ ...listing, kind: "message", data: [{ id: "message-1", status: "read" }] }),
+    getReputation: () =>
+      Promise.resolve({ ...listing, kind: "reputation", data: { level: "green" } }),
+  };
+}
+
+function throwingReadClient(
+  reason: "reconnect-required" | "seller-access-mismatch",
+  message: string,
+): MlcApiClient {
+  const read = () => Promise.reject(Object.assign(new Error(message), { reason }));
+
+  return {
+    getListings: read,
+    getOrders: read,
+    getMessages: read,
+    getReputation: read,
   };
 }

@@ -41,13 +41,13 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Tool Integration
 
-- [ ] 3.1 Add `@msl/mercadolibre` to `packages/tools/package.json` dependencies.
-- [ ] 3.2 Add `ReadToolBlocked` and `MlcReadTools` exports to `packages/tools/src/index.ts`.
-- [ ] 3.3 Add `createMlcReadTools` in `packages/tools/src/index.ts` for listings, orders, messages, and reputation with `requiresApproval: false`.
-- [ ] 3.4 Convert MLC reconnect and seller-mismatch errors in `packages/tools/src/index.ts` into blocked read responses with no seller business data.
+- [x] 3.1 Add `@msl/mercadolibre` to `packages/tools/package.json` dependencies.
+- [x] 3.2 Add `ReadToolBlocked` and `MlcReadTools` exports to `packages/tools/src/index.ts`.
+- [x] 3.3 Add `createMlcReadTools` in `packages/tools/src/index.ts` for listings, orders, messages, and reputation with `requiresApproval: false`.
+- [x] 3.4 Convert MLC reconnect and seller-mismatch errors in `packages/tools/src/index.ts` into blocked read responses with no seller business data.
 
 ## Phase 4: Verification
 
-- [ ] 4.1 Extend `tests/tools/tools.integration.test.ts` for authorized read snapshots with source, freshness, confidence, and no approval creation.
-- [ ] 4.2 Extend `tests/tools/tools.integration.test.ts` to prove official MercadoLibre MCP remains documentation-only during read execution.
-- [ ] 4.3 Run `npm test` and fix failures within the relevant package/test files only.
+- [x] 4.1 Extend `tests/tools/tools.integration.test.ts` for authorized read snapshots with source, freshness, confidence, and no approval creation.
+- [x] 4.2 Extend `tests/tools/tools.integration.test.ts` to prove official MercadoLibre MCP remains documentation-only during read execution.
+- [x] 4.3 Run `npm test` and fix failures within the relevant package/test files only.
