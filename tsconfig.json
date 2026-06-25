@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/domain" },
+    { "path": "./packages/mercadolibre" },
+    { "path": "./packages/memory" },
+    { "path": "./packages/workers" },
+    { "path": "./packages/tools" },
+    { "path": "./packages/agent" }
+  ]
+}
