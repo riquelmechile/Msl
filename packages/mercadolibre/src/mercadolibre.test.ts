@@ -67,9 +67,7 @@ describe("direct MLC API client boundary", () => {
         ],
       },
       "/orders/search": {
-        results: [
-          { id: 1001, status: "paid", total_amount: 12000, buyer: { id: 501 } },
-        ],
+        results: [{ id: 1001, status: "paid", total_amount: 12000, buyer: { id: 501 } }],
       },
       "/messages/search": {
         messages: [
@@ -95,7 +93,12 @@ describe("direct MLC API client boundary", () => {
       source: "mercadolibre-api",
       data: [{ id: "MLC-1", title: "Listing one", status: "active" }],
       completeness: "complete",
-      freshness: { source: "mercadolibre-api", signalKind: "listing", risk: "medium", status: "fresh" },
+      freshness: {
+        source: "mercadolibre-api",
+        signalKind: "listing",
+        risk: "medium",
+        status: "fresh",
+      },
       confidence: "high",
     });
     await expect(client.getOrders("seller-1")).resolves.toMatchObject({

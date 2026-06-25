@@ -6,7 +6,14 @@ export type MlcReadSnapshotCompleteness = "complete" | "partial";
 
 export type MlcReadSnapshotConfidence = "low" | "medium" | "high";
 
-export type MlcReadSnapshotFreshness = { source: "mercadolibre-api"; signalKind: MlcReadSnapshotKind; risk: "medium" | "critical"; capturedAt: Date; maxAgeMs: number; status: "fresh" | "stale" };
+export type MlcReadSnapshotFreshness = {
+  source: "mercadolibre-api";
+  signalKind: MlcReadSnapshotKind;
+  risk: "medium" | "critical";
+  capturedAt: Date;
+  maxAgeMs: number;
+  status: "fresh" | "stale";
+};
 
 export type MlcReadSnapshot<TData> = {
   sellerId: string;
@@ -18,13 +25,43 @@ export type MlcReadSnapshot<TData> = {
   confidence: MlcReadSnapshotConfidence;
 };
 
-export type MlcListingSummary = { id: string; title?: string; status?: string; availableQuantity?: number; price?: number; currencyId?: string; permalink?: string };
+export type MlcListingSummary = {
+  id: string;
+  title?: string;
+  status?: string;
+  availableQuantity?: number;
+  price?: number;
+  currencyId?: string;
+  permalink?: string;
+};
 
-export type MlcOrderSummary = { id: string; status?: string; totalAmount?: number; currencyId?: string; createdAt?: string; buyerId?: string };
+export type MlcOrderSummary = {
+  id: string;
+  status?: string;
+  totalAmount?: number;
+  currencyId?: string;
+  createdAt?: string;
+  buyerId?: string;
+};
 
-export type MlcMessageSummary = { id: string; subject?: string; status?: string; createdAt?: string; fromUserId?: string };
+export type MlcMessageSummary = {
+  id: string;
+  subject?: string;
+  status?: string;
+  createdAt?: string;
+  fromUserId?: string;
+};
 
-export type MlcReputationSummary = { level?: string; powerSellerStatus?: string; completedTransactions?: number; canceledTransactions?: number; totalTransactions?: number; positiveRating?: number; neutralRating?: number; negativeRating?: number };
+export type MlcReputationSummary = {
+  level?: string;
+  powerSellerStatus?: string;
+  completedTransactions?: number;
+  canceledTransactions?: number;
+  totalTransactions?: number;
+  positiveRating?: number;
+  neutralRating?: number;
+  negativeRating?: number;
+};
 
 export type MlcListingsSnapshot = MlcReadSnapshot<MlcListingSummary>;
 export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary>;
@@ -122,13 +159,20 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function pushOptional<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
+function pushOptional<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  value: T[K] | undefined,
+): void {
   if (value !== undefined) {
     target[key] = value;
   }
 }
 
-function snapshotConfidence(completeness: MlcReadSnapshotCompleteness, count: number): MlcReadSnapshotConfidence {
+function snapshotConfidence(
+  completeness: MlcReadSnapshotCompleteness,
+  count: number,
+): MlcReadSnapshotConfidence {
   if (completeness === "partial") {
     return "low";
   }
@@ -136,7 +180,11 @@ function snapshotConfidence(completeness: MlcReadSnapshotCompleteness, count: nu
   return count > 0 ? "high" : "medium";
 }
 
-function normalizeListings(input: { sellerId: string; payload: unknown; now: Date }): MlcListingsSnapshot {
+function normalizeListings(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcListingsSnapshot {
   const root = asRecord(input.payload);
   const results = asArray(root?.results ?? root?.items);
   let complete = root !== undefined && Array.isArray(root.results ?? root.items);
@@ -182,21 +230,29 @@ function normalizeListings(input: { sellerId: string; payload: unknown; now: Dat
   };
 }
 
-function normalizeOrders(input: { sellerId: string; payload: unknown; now: Date }): MlcOrdersSnapshot {
+function normalizeOrders(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcOrdersSnapshot {
   const root = asRecord(input.payload);
   const results = asArray(root?.results ?? root?.orders);
   let complete = root !== undefined && Array.isArray(root.results ?? root.orders);
 
   const data = results.flatMap((item): MlcOrderSummary[] => {
     const record = asRecord(item);
-    const id = stringValue(record?.id) ?? (numberValue(record?.id) !== undefined ? String(record?.id) : undefined);
+    const id =
+      stringValue(record?.id) ??
+      (numberValue(record?.id) !== undefined ? String(record?.id) : undefined);
     if (record === undefined || id === undefined) {
       complete = false;
       return [];
     }
 
     const buyer = asRecord(record.buyer);
-    const buyerId = stringValue(buyer?.id) ?? (numberValue(buyer?.id) !== undefined ? String(buyer?.id) : undefined);
+    const buyerId =
+      stringValue(buyer?.id) ??
+      (numberValue(buyer?.id) !== undefined ? String(buyer?.id) : undefined);
     const summary: MlcOrderSummary = { id };
     pushOptional(summary, "status", stringValue(record.status));
     pushOptional(summary, "totalAmount", numberValue(record.total_amount));
@@ -224,7 +280,11 @@ function normalizeOrders(input: { sellerId: string; payload: unknown; now: Date 
   };
 }
 
-function normalizeMessages(input: { sellerId: string; payload: unknown; now: Date }): MlcMessagesSnapshot {
+function normalizeMessages(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcMessagesSnapshot {
   const root = asRecord(input.payload);
   const results = asArray(root?.results ?? root?.messages);
   let complete = root !== undefined && Array.isArray(root.results ?? root.messages);
@@ -269,7 +329,11 @@ function normalizeMessages(input: { sellerId: string; payload: unknown; now: Dat
   };
 }
 
-function normalizeReputation(input: { sellerId: string; payload: unknown; now: Date }): MlcReputationSnapshot {
+function normalizeReputation(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcReputationSnapshot {
   const root = asRecord(input.payload);
   const reputation = asRecord(root?.seller_reputation);
   const transactions = asRecord(reputation?.transactions);
@@ -286,7 +350,10 @@ function normalizeReputation(input: { sellerId: string; payload: unknown; now: D
   pushOptional(data, "negativeRating", numberValue(ratings?.negative));
 
   const completeness =
-    root !== undefined && reputation !== undefined && transactions !== undefined && data.level !== undefined
+    root !== undefined &&
+    reputation !== undefined &&
+    transactions !== undefined &&
+    data.level !== undefined
       ? "complete"
       : "partial";
 
