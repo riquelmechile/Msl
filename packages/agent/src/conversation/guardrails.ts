@@ -1,6 +1,6 @@
 import { riskLevelForAction } from "@msl/domain";
 
-import type { AgentProposal, Strategy } from "./types.js";
+import type { AgentProposal, DecoyProposal, Strategy } from "./types.js";
 
 /** Result of a guardrail check. */
 export type GuardResult = {
@@ -216,6 +216,76 @@ export function strategyValidator(
         }
       }
     }
+  }
+
+  return { passed: true };
+}
+
+// ---------------------------------------------------------------------------
+// Honey-pot validator
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates a {@link DecoyProposal} against active CEO probe strategies.
+ *
+ * Default-deny posture — blocks ALL honey-pot operations unless:
+ * 1. At least one active CEO strategy has `ruleType: "probe"`, AND
+ * 2. The proposal's description aligns with the probe strategy's scope
+ *    (value or category mentioned in the strategy).
+ *
+ * Non-probe strategies are skipped.  When no probe strategy is active,
+ * the validator returns a Spanish explanation telling the seller to define
+ * one with "probá [categoría]" or "monitoreá [competidor]".
+ *
+ * @param proposal — The decoy proposal to validate.
+ * @param strategies — The seller's currently active CEO strategies.
+ * @returns A {@link GuardResult}; `passed: true` only when both conditions are met.
+ */
+export function honeyPotValidator(
+  proposal: DecoyProposal,
+  strategies: Strategy[],
+): GuardResult {
+  if (!strategies || strategies.length === 0) {
+    return {
+      passed: false,
+      reason:
+        "No tenés estrategias de contrainteligencia activas. " +
+        "Definí una con 'probá [categoría]' o 'monitoreá [competidor]'.",
+    };
+  }
+
+  // Filter to active probe strategies only.
+  const probeStrategies = strategies.filter(
+    (s) => s.ruleType === "probe" && s.status === "active",
+  );
+
+  if (probeStrategies.length === 0) {
+    return {
+      passed: false,
+      reason:
+        "No tenés estrategias de contrainteligencia activas. " +
+        "Definí una con 'probá [categoría]' o 'monitoreá [competidor]'.",
+    };
+  }
+
+  // Check if the proposal's description matches any probe strategy's scope.
+  const proposalText = proposal.description.toLowerCase();
+  const scopeMatch = probeStrategies.some((s) => {
+    const value = s.parsedRule.value.toLowerCase();
+    return proposalText.includes(value);
+  });
+
+  if (!scopeMatch) {
+    const scopes = probeStrategies
+      .map((s) => `"${s.parsedRule.value}"`)
+      .join(", ");
+    return {
+      passed: false,
+      reason:
+        `La propuesta no coincide con el alcance de tus estrategias ` +
+        `de contrainteligencia activas (${scopes}). ` +
+        `Ajustá el objetivo del decoy o definí una nueva estrategia.`,
+    };
   }
 
   return { passed: true };
