@@ -43,14 +43,25 @@ Secrets belong in local env files or deployment secret stores, never in Git.
 cp .env.example .env.local
 ```
 
-Then paste your real API keys/passwords into `.env.local`. If `.env.local` already exists, edit it directly instead of replacing it. Keep `.env.example` committed with blank placeholder values only.
+Then paste your real API keys/passwords into `.env.local`. If `.env.local` already exists, edit it directly instead of replacing it. Keep `.env.example` committed with blank placeholder values only. For CI or hosted deploys, store the same values as GitHub Secrets or platform secrets; do not add secret values to workflow YAML.
 
 Naming matters here: **MSL** is the project/app name; **ML** means MercadoLibre; **MLC** is the MercadoLibre Chile site code, not an account identity. The business flow is dual-account — Plasticov MercadoLibre account (source) → Maustian MercadoLibre account (target). MercadoLibre app credentials identify the developer application; seller accounts are connected through OAuth and stored per account, not committed as raw tokens.
 
 - Never prefix private keys with `NEXT_PUBLIC_`; Next.js exposes those values to the browser bundle.
-- Use GitHub Secrets for CI/deploy values instead of committing env files.
-- `/api/chat`, MCP auth, token encryption, and sync/write account roles fail closed unless the required env vars are set or an explicit local/demo escape hatch is enabled (`MSL_ALLOW_UNAUTHENTICATED_LOCAL=true`, `MSL_ALLOW_INSECURE_DEV_SECRETS=true`).
+- Never paste raw MercadoLibre seller access or refresh tokens into docs, Git, examples, issues, or chat logs. Seller tokens are obtained through OAuth and stored per account.
+- `/api/chat`, MCP auth, token encryption, and sync/write account roles fail closed unless the required env vars are set or an explicit local/demo/test escape hatch is enabled (`MSL_ALLOW_UNAUTHENTICATED_LOCAL=true`, `MSL_ALLOW_INSECURE_DEV_SECRETS=true`).
+- Set `MSL_ENCRYPTION_KEY` before storing real OAuth tokens. Changing it can make existing encrypted local tokens unreadable; missing keys are only acceptable in explicit local/demo/test mode.
 - If a real secret is accidentally committed or pushed, rotate/revoke it immediately and remove it from history before trusting the repository again.
+
+## Production boundary today
+
+| Area               | Current state                                                                                             | Do not assume yet                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Web chat           | `/api/chat` is demo-backed with in-memory stores and `mockClient: true`.                                  | Durable production chat auth, persistence, or real DeepSeek wiring. |
+| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.     | Manual raw token setup or account role guessing.                    |
+| Product sync       | Sync direction is Plasticov source → Maustian target on `MLC`; reverse/arbitrary seller IDs are rejected. | General-purpose bidirectional sync.                                 |
+| MCP tools          | MCP exposes a stubbed compatible surface for clients.                                                     | Production business-operation execution through MCP.                |
+| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                              | Secrets in CI; use GitHub Secrets/platform secrets.                 |
 
 ## Architecture
 

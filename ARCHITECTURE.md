@@ -49,6 +49,16 @@
 
 > **Rule:** Packages only depend outward on `@msl/domain`. No package depends on `@msl/agent` except `apps/web`, `@msl/bot`, and `@msl/mcp`.
 
+## Current production boundaries
+
+| Boundary          | Current implementation                                                                                                   | Safety rule                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `/api/chat`       | Demo-only Next.js route with in-memory stores and `mockClient: true`.                                                    | Do not treat it as production chat persistence, production auth, or real LLM wiring.                |
+| Auth defaults     | Web chat auth, MCP auth, token encryption, and account role config fail closed.                                          | Local/demo/test bypasses must be explicit through env flags.                                        |
+| OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`. | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth. |
+| Dual-account sync | Product sync is Plasticov source → Maustian target, both on MercadoLibre Chile (`MLC`).                                  | Reverse or arbitrary source/target seller IDs are rejected.                                         |
+| MCP               | Stdio server exposes a six-tool stubbed compatible surface.                                                              | Not production business-operation wiring yet.                                                       |
+
 ## Data flow: a conversation turn
 
 ```
@@ -237,7 +247,7 @@ SQLite-backed graph engine using recursive Common Table Expressions (CTEs) for s
 
 ### `@msl/mercadolibre` — ML API client
 
-Multi-account OAuth manager with token persistence and expiration tracking. `MlClient` exposes read operations (items, orders, questions, categories, user info) and write operations (publish, update). Includes a product sync engine (`syncEngine.ts`) that diffs Plasticov listings against Maustian and applies CEO strategies (margin, stock, category, pricing). Real HTTP transport with exponential backoff. Stub mode for development without real tokens.
+Multi-account OAuth manager with encrypted token persistence and expiration tracking. Token storage validates the returned MercadoLibre `user_id` against the configured Plasticov source or Maustian target role before saving. `MlClient` exposes read operations (items, orders, questions, categories, user info) and write operations (publish, update). Includes a product sync engine (`syncEngine.ts`) that diffs Plasticov listings against Maustian and applies CEO strategies (margin, stock, category, pricing). Real HTTP transport with exponential backoff. Stub mode is for explicit local/test development without real tokens.
 
 ### `@msl/agent` — Conversational agent
 

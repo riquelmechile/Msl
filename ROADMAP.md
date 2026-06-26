@@ -6,6 +6,17 @@ A conversational AI agent for the Plasticov and Maustian MercadoLibre Chile sell
 
 **Business:** Zero-stock arbitrage + physical inventory in Recoleta, Chile. 1,247 products, ~4,627 orders historical, $120M CLP/year. Dual-account flow: Plasticov MercadoLibre account is the source/manufacturer; Maustian MercadoLibre account is the target/seller. MLC is the site code, not either account identity.
 
+## Current readiness boundary
+
+| Area              | Status                                                                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Safe setup        | Use `.env.local` for local secrets and GitHub Secrets/platform secrets for CI/deploy. Never use `NEXT_PUBLIC_` for private values and never paste raw seller tokens into docs or Git. |
+| Auth/security     | `/api/chat`, MCP auth, encryption, and sync account-role checks fail closed unless an explicit local/demo/test opt-in is set.                                                         |
+| Dual-account sync | Plasticov source → Maustian target on `MLC`; reverse or arbitrary seller IDs are rejected.                                                                                            |
+| Web chat          | Demo-backed; production chat persistence, auth integration, and real LLM wiring remain future work.                                                                                   |
+| MCP               | Stubbed compatible tool surface; production business-operation wiring remains future work.                                                                                            |
+| CI                | Format, typecheck, lint, Vitest, build, and Playwright E2E gates run in CI.                                                                                                           |
+
 ## Architecture
 
 ```
@@ -84,15 +95,15 @@ Phase 0         Phase 1         Phase 2         Phase 3         Phases 4-7
 
 ## Technology decisions
 
-| Decision        | Choice                   | Rationale                                         |
-| --------------- | ------------------------ | ------------------------------------------------- |
-| LLM             | DeepSeek v4 Flash/Pro    | 1M window, ~98% cache discount, OpenAI-compatible |
-| Memory          | SQLite + recursive CTEs  | Zero external services, ~400 lines TS, persistent |
-| Integration     | `openai` npm + `baseURL` | Zero new SDK, trivially swappable                 |
-| Agent framework | None (custom agentLoop)  | No LangChain, no Mastra — direct API control      |
-| Hosting         | Node.js 22 in-process    | No external DB servers needed for Cortex          |
-| Protocol        | MCP for tool exposure    | Stubbed stdio server; production tool wiring TBD  |
-| Testing         | Vitest + Playwright      | 648 tests, platform-guarded E2E runner            |
+| Decision        | Choice                   | Rationale                                               |
+| --------------- | ------------------------ | ------------------------------------------------------- |
+| LLM             | DeepSeek v4 Flash/Pro    | 1M window, ~98% cache discount, OpenAI-compatible       |
+| Memory          | SQLite + recursive CTEs  | Zero external services, ~400 lines TS, persistent       |
+| Integration     | `openai` npm + `baseURL` | Zero new SDK, trivially swappable                       |
+| Agent framework | None (custom agentLoop)  | No LangChain, no Mastra — direct API control            |
+| Hosting         | Node.js 22 in-process    | No external DB servers needed for Cortex                |
+| Protocol        | MCP for tool exposure    | Stubbed stdio server; production tool wiring TBD        |
+| Testing         | Vitest + Playwright      | Unit/integration tests plus platform-guarded E2E runner |
 
 ## What the old El Sindicato projects taught us
 

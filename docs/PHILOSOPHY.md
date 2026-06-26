@@ -13,7 +13,7 @@ The agent was designed to match a specific cognitive profile — one that the or
 | **Pattern recognition** | Probe detection, strategy intent parsing, anomaly detection in competitor behavior — all use pattern matching before LLM calls |
 | **Systemizing**         | Every business domain is modeled as typed data, not free-text; every action has structured exact changes                       |
 | **Calibrated distrust** | The agent never trusts its own output — `selfVerify()` runs 6 checks on every proposal before the user sees it                 |
-| **Detail focus**        | 648 tests, typed audit trails, exact changes (not "adjust price" but `{field: "price", from: 15000, to: 13500}`)               |
+| **Detail focus**        | Typed audit trails, CI gates, and exact changes (not "adjust price" but `{field: "price", from: 15000, to: 13500}`)            |
 | **Routine adherence**   | The agent loop always follows the same 10-step sequence; no branching, no exceptions                                           |
 
 ---
@@ -162,7 +162,7 @@ The El Sindicato ecosystem was a collection of MercadoLibre automation projects 
 
 **Why it failed:** 44 tools and 6 plugins were built before a single end-to-end flow worked. Testing was impossible because no two components agreed on contract format. Every new feature broke existing integrations.
 
-**MSL's answer:** Phase 0 is ONLY the domain layer and safety gates. No LLM, no memory, no tools. Just types and approval state machines. 624 tests verify the foundation before any capability is added. Each phase adds exactly what's needed and nothing more.
+**MSL's answer:** Phase 0 is ONLY the domain layer and safety gates. No LLM, no memory, no tools. Just types and approval state machines with automated verification before any capability is added. Each phase adds exactly what's needed and nothing more.
 
 ---
 
