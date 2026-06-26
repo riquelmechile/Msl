@@ -38,11 +38,7 @@ const ACTOR_PROMPTS: Record<ActorType, string> = {
   competidor: COMPETIDOR_PROMPT,
 };
 
-const VALID_ACTORS: readonly ActorType[] = [
-  "comprador",
-  "proveedor",
-  "competidor",
-] as const;
+const VALID_ACTORS: readonly ActorType[] = ["comprador", "proveedor", "competidor"] as const;
 
 const VALID_ACTORS_MSG = VALID_ACTORS.join(", ");
 
@@ -51,7 +47,7 @@ const VALID_ACTORS_MSG = VALID_ACTORS.join(", ");
 type MockResponse = {
   recommendation: string;
   rationale: string;
-}
+};
 
 /**
  * Builds a keyword-matched mock response for a given actor type and query.
@@ -60,10 +56,7 @@ type MockResponse = {
  * The mock provides realistic-sounding Spanish responses that vary by query
  * keywords so tests can verify different-queries-produce-different-responses.
  */
-function buildMockResponse(
-  actorType: ActorType,
-  query: string,
-): MockResponse {
+function buildMockResponse(actorType: ActorType, query: string): MockResponse {
   const lower = query.toLowerCase();
 
   switch (actorType) {
@@ -103,8 +96,7 @@ function buildMockResponse(
           "fotos reales del producto, y las opiniones de otros " +
           "compradores antes de decidir.",
         rationale:
-          `Evaluación basada en la consulta: "${query}". ` +
-          "Análisis general del comprador.",
+          `Evaluación basada en la consulta: "${query}". ` + "Análisis general del comprador.",
       };
 
     // ── Proveedor ─────────────────────────────────────────────
@@ -141,8 +133,7 @@ function buildMockResponse(
           "ajustar márgenes y condiciones para clientes que compran " +
           "regularmente.",
         rationale:
-          `Evaluación basada en la consulta: "${query}". ` +
-          "Análisis general del proveedor.",
+          `Evaluación basada en la consulta: "${query}". ` + "Análisis general del proveedor.",
       };
 
     // ── Competidor ────────────────────────────────────────────
@@ -183,8 +174,7 @@ function buildMockResponse(
           "participación de mercado y mi visibilidad en los " +
           "resultados de búsqueda.",
         rationale:
-          `Evaluación basada en la consulta: "${query}". ` +
-          "Análisis general del competidor.",
+          `Evaluación basada en la consulta: "${query}". ` + "Análisis general del competidor.",
       };
 
     // Should never reach here — caller validates actorType.
@@ -205,7 +195,7 @@ function generateSimulationId(): string {
 type CounterintelResponse = {
   recommendation: string;
   rationale: string;
-}
+};
 
 /**
  * Builds a keyword-matched mock counterintelligence response for the
@@ -290,8 +280,7 @@ export function getActorPrompt(actorType: ActorType): string {
   const prompt = ACTOR_PROMPTS[actorType];
   if (!prompt) {
     throw new Error(
-      `Tipo de actor "${actorType}" no válido. ` +
-        `Tipos válidos: ${VALID_ACTORS_MSG}.`,
+      `Tipo de actor "${actorType}" no válido. ` + `Tipos válidos: ${VALID_ACTORS_MSG}.`,
     );
   }
   return prompt;
@@ -321,8 +310,7 @@ export async function simulateActor(
   // Validate actorType
   if (!(VALID_ACTORS as readonly string[]).includes(actorType)) {
     throw new Error(
-      `Tipo de actor "${actorType}" no válido. ` +
-        `Tipos válidos: ${VALID_ACTORS_MSG}.`,
+      `Tipo de actor "${actorType}" no válido. ` + `Tipos válidos: ${VALID_ACTORS_MSG}.`,
     );
   }
 
@@ -331,10 +319,7 @@ export async function simulateActor(
     throw new Error("El parámetro 'query' no puede estar vacío.");
   }
 
-  const { recommendation, rationale } = buildMockResponse(
-    actorType,
-    query.trim(),
-  );
+  const { recommendation, rationale } = buildMockResponse(actorType, query.trim());
 
   const result: SimulationResult = {
     actorType,
@@ -365,14 +350,10 @@ export async function simulateActor(
  *          confidence (0.8), and a unique simulationId.
  * @throws If actorType is not "competidor" or query is empty.
  */
-export function simulateCounterintelligence(
-  actorType: ActorType,
-  query: string,
-): SimulationResult {
+export function simulateCounterintelligence(actorType: ActorType, query: string): SimulationResult {
   if (actorType !== "competidor") {
     throw new Error(
-      `Contrainteligencia solo disponible para "competidor". ` +
-        `Tipo recibido: "${actorType}".`,
+      `Contrainteligencia solo disponible para "competidor". ` + `Tipo recibido: "${actorType}".`,
     );
   }
 
@@ -380,9 +361,7 @@ export function simulateCounterintelligence(
     throw new Error("El parámetro 'query' no puede estar vacío.");
   }
 
-  const { recommendation, rationale } = buildCounterintelResponse(
-    query.trim(),
-  );
+  const { recommendation, rationale } = buildCounterintelResponse(query.trim());
 
   return {
     actorType,

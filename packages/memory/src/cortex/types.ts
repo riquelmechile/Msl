@@ -80,7 +80,7 @@ export type SimulationResult = {
   confidence: number;
   rationale: string;
   simulationId: string;
-}
+};
 
 /** Cortex graph node tagged as an actor persona profile. */
 export type ActorProfileNode = GraphNode & {
@@ -103,4 +103,4 @@ export type ProbeRecord = {
     competitorReaction?: string;
     learnedAt: string;
   };
-}
+};

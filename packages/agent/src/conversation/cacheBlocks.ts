@@ -134,10 +134,7 @@ ${categoryLines}
  * Returns an empty string when the graph has no matching nodes or when
  * the query yields no seed candidates.
  */
-export function injectCortexContext(
-  query: string,
-  engine: GraphEngine,
-): string {
+export function injectCortexContext(query: string, engine: GraphEngine): string {
   // Seed nodes: find nodes whose labels match query terms.
   // The GraphEngine exposes its database; we query by label substring match.
   const terms = query
@@ -180,14 +177,9 @@ function formatTraversalContext(result: TraversalResult): string {
 
   if (result.activatedNodes.length > 0) {
     const nodes = result.activatedNodes
-      .map(
-        (n) =>
-          `  - ${n.label} (activación: ${n.activation.toFixed(3)})`,
-      )
+      .map((n) => `  - ${n.label} (activación: ${n.activation.toFixed(3)})`)
       .join("\n");
-    parts.push(
-      `### Nodos activados (${result.activatedNodes.length}):\n${nodes}`,
-    );
+    parts.push(`### Nodos activados (${result.activatedNodes.length}):\n${nodes}`);
   }
 
   if (result.traversedEdges.length > 0) {
@@ -197,21 +189,14 @@ function formatTraversalContext(result: TraversalResult): string {
           `  - edge_${e.source}_${e.target}: peso=${e.weight.toFixed(3)}, co-ocurrencias=${e.co_occurrence_count}`,
       )
       .join("\n");
-    parts.push(
-      `### Conexiones recorridas (${result.traversedEdges.length}):\n${edges}`,
-    );
+    parts.push(`### Conexiones recorridas (${result.traversedEdges.length}):\n${edges}`);
   }
 
   if (result.lessons.length > 0) {
     const lessons = result.lessons
-      .map(
-        (l, i) =>
-          `  - Lección ${i + 1}: ${l.lesson} (${l.source_node}→${l.target_node})`,
-      )
+      .map((l, i) => `  - Lección ${i + 1}: ${l.lesson} (${l.source_node}→${l.target_node})`)
       .join("\n");
-    parts.push(
-      `### Lecciones aprendidas (${result.lessons.length}):\n${lessons}`,
-    );
+    parts.push(`### Lecciones aprendidas (${result.lessons.length}):\n${lessons}`);
   }
 
   if (parts.length === 0) {
@@ -254,9 +239,7 @@ export function assembleMessages(
   }
 
   // Latest user message with Block C injected.
-  const userContent = blockC
-    ? `${userMessage}\n\n${blockC}`
-    : userMessage;
+  const userContent = blockC ? `${userMessage}\n\n${blockC}` : userMessage;
   messages.push({ role: "user", content: userContent });
 
   return messages;

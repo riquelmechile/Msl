@@ -9,11 +9,7 @@ import {
   createProposeHoneyPotTool,
 } from "../../src/conversation/tools.js";
 import type { ToolDefinition } from "../../src/conversation/tools.js";
-import type {
-  DecoyProposal,
-  ProbeAlert,
-  Strategy,
-} from "../../src/conversation/types.js";
+import type { DecoyProposal, ProbeAlert, Strategy } from "../../src/conversation/types.js";
 import type { GuardResult } from "../../src/conversation/guardrails.js";
 import { simulateActor } from "../../src/conversation/actorSimulator.js";
 
@@ -68,7 +64,7 @@ describe("createGetBusinessContextTool", () => {
     // TraversalResult.context is a flat Record<string, unknown>.
     expect(result).toHaveProperty("activated_nodes");
     expect(result).toHaveProperty("node_count");
-    expect((result).node_count).toBeGreaterThan(0);
+    expect(result.node_count).toBeGreaterThan(0);
   });
 });
 
@@ -224,11 +220,7 @@ describe("createSimulateActorTool", () => {
     const actorTypeSchema = props.actorType as Record<string, unknown>;
 
     expect(actorTypeSchema.type).toBe("string");
-    expect(actorTypeSchema.enum).toEqual([
-      "comprador",
-      "proveedor",
-      "competidor",
-    ]);
+    expect(actorTypeSchema.enum).toEqual(["comprador", "proveedor", "competidor"]);
   });
 
   it("calls simulator and returns SimulationResult", async () => {
@@ -242,9 +234,7 @@ describe("createSimulateActorTool", () => {
     expect(result).toHaveProperty("confidence", 0.85);
     expect(result).toHaveProperty("simulationId");
     expect(result).toHaveProperty("rationale");
-    expect((result).simulationId).toMatch(
-      /^sim-/,
-    );
+    expect(result.simulationId).toMatch(/^sim-/);
   });
 
   it("returns error for invalid actorType", async () => {
@@ -254,9 +244,7 @@ describe("createSimulateActorTool", () => {
     });
 
     expect(result).toHaveProperty("error");
-    expect((result).error).toMatch(
-      /no válido/i,
-    );
+    expect(result.error).toMatch(/no válido/i);
   });
 
   it("returns error for empty query", async () => {
@@ -266,9 +254,7 @@ describe("createSimulateActorTool", () => {
     });
 
     expect(result).toHaveProperty("error");
-    expect((result).error).toMatch(
-      /obligatorio|vacío/i,
-    );
+    expect(result.error).toMatch(/obligatorio|vacío/i);
   });
 
   it("returns error for missing query", async () => {
@@ -277,9 +263,7 @@ describe("createSimulateActorTool", () => {
     });
 
     expect(result).toHaveProperty("error");
-    expect((result).error).toMatch(
-      /obligatorio|vacío/i,
-    );
+    expect(result.error).toMatch(/obligatorio|vacío/i);
   });
 
   it("returns proveedor SimulationResult for valid call", async () => {
@@ -291,9 +275,7 @@ describe("createSimulateActorTool", () => {
     expect(result).toHaveProperty("actorType", "proveedor");
     expect(result).toHaveProperty("recommendation");
     expect(result).toHaveProperty("confidence", 0.85);
-    expect((result).recommendation).toMatch(
-      /proveedor/i,
-    );
+    expect(result.recommendation).toMatch(/proveedor/i);
   });
 
   it("returns competidor SimulationResult for valid call", async () => {
@@ -305,9 +287,7 @@ describe("createSimulateActorTool", () => {
     expect(result).toHaveProperty("actorType", "competidor");
     expect(result).toHaveProperty("recommendation");
     expect(result).toHaveProperty("confidence", 0.85);
-    expect((result).recommendation).toMatch(
-      /competidor/i,
-    );
+    expect(result.recommendation).toMatch(/competidor/i);
   });
 });
 
@@ -316,7 +296,10 @@ describe("createSimulateActorTool", () => {
 describe("createDetectProbesTool", () => {
   function makeDetector(
     alerts: ProbeAlert[] = [],
-  ): (questions?: Array<{ text: string; from: string; date: string }>, views?: Array<{ count: number; date: string }>) => ProbeAlert[] {
+  ): (
+    questions?: Array<{ text: string; from: string; date: string }>,
+    views?: Array<{ count: number; date: string }>,
+  ) => ProbeAlert[] {
     return () => alerts;
   }
 
@@ -438,11 +421,16 @@ describe("createProposeHoneyPotTool", () => {
     };
   }
 
-  function makePassingValidator(): (proposal: DecoyProposal, strategies: Strategy[]) => GuardResult {
+  function makePassingValidator(): (
+    proposal: DecoyProposal,
+    strategies: Strategy[],
+  ) => GuardResult {
     return () => ({ passed: true });
   }
 
-  function makeBlockingValidator(reason: string): (proposal: DecoyProposal, strategies: Strategy[]) => GuardResult {
+  function makeBlockingValidator(
+    reason: string,
+  ): (proposal: DecoyProposal, strategies: Strategy[]) => GuardResult {
     return () => ({ passed: false, reason });
   }
 
@@ -545,7 +533,9 @@ describe("createProposeHoneyPotTool", () => {
       () => makeProposal(),
       makePassingValidator(),
       () => [makeProbeStrategy()],
-      (proposal) => { captured = proposal; },
+      (proposal) => {
+        captured = proposal;
+      },
     );
     void tool.execute({ strategyId: 1 });
     expect(captured).not.toBeNull();
@@ -558,7 +548,9 @@ describe("createProposeHoneyPotTool", () => {
       () => makeProposal(),
       makeBlockingValidator("Bloqueado."),
       () => [makeProbeStrategy()],
-      (proposal) => { captured = proposal; },
+      (proposal) => {
+        captured = proposal;
+      },
     );
     void tool.execute({ strategyId: 1 });
     expect(captured).toBeNull();
@@ -566,10 +558,14 @@ describe("createProposeHoneyPotTool", () => {
 
   it("skips archived strategies", () => {
     const archived = makeProbeStrategy({ status: "archived", id: 1 });
-    const active = makeProbeStrategy({ status: "active", id: 2, parsedRule: {
-      ...makeProbeStrategy().parsedRule,
-      value: "ropa",
-    } });
+    const active = makeProbeStrategy({
+      status: "active",
+      id: 2,
+      parsedRule: {
+        ...makeProbeStrategy().parsedRule,
+        value: "ropa",
+      },
+    });
     const tool = createProposeHoneyPotTool(
       () => makeProposal(),
       makePassingValidator(),

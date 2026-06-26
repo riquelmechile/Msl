@@ -24,11 +24,7 @@ function resolveDecoyType(strategy: Strategy): DecoyProposal["type"] {
   }
 
   // Verbs that suggest deploying a decoy listing
-  if (
-    op === "probá" ||
-    op === "sondeá" ||
-    op === "investigá"
-  ) {
+  if (op === "probá" || op === "sondeá" || op === "investigá") {
     return "category_entry";
   }
 
@@ -111,8 +107,7 @@ function buildDescription(
 
   if (competitorActor) {
     return (
-      `${base} Basado en el análisis del actor competidor: ` +
-      `"${competitorActor.recommendation}"`
+      `${base} Basado en el análisis del actor competidor: ` + `"${competitorActor.recommendation}"`
     );
   }
 

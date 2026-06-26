@@ -40,9 +40,7 @@ export function createSessionStore(db: Database.Database) {
     SELECT state_json, last_active_at FROM sessions WHERE id = ?
   `);
 
-  const deleteStmt = db.prepare(
-    `DELETE FROM sessions WHERE id = ?`,
-  );
+  const deleteStmt = db.prepare(`DELETE FROM sessions WHERE id = ?`);
 
   const listActiveStmt = db.prepare(`
     SELECT id, last_active_at
@@ -84,19 +82,19 @@ export function createSessionStore(db: Database.Database) {
     try {
       const raw = JSON.parse(row.state_json) as Record<string, unknown>;
       const state: ConversationState = {
-        messages: (Array.isArray(raw.messages)
-          ? raw.messages.map((m) => ({
-              role: (m as ConversationMessage).role,
-              content: (m as ConversationMessage).content,
-              timestamp: new Date((m as ConversationMessage).timestamp),
+        messages: Array.isArray(raw.messages)
+          ? raw.messages.map((m: ConversationMessage) => ({
+              role: m.role,
+              content: m.content,
+              timestamp: new Date(m.timestamp),
             }))
-          : []) as ConversationMessage[],
-        contextWindowLimit: (typeof raw.contextWindowLimit === "number"
-          ? raw.contextWindowLimit
-          : 50) as number,
-        sessionMetadata: (typeof raw.sessionMetadata === "object" && raw.sessionMetadata !== null
-          ? (raw.sessionMetadata as ConversationState["sessionMetadata"])
-          : { sellerId: "", startedAt: new Date(), lastActivityAt: new Date() }),
+          : [],
+        contextWindowLimit:
+          typeof raw.contextWindowLimit === "number" ? raw.contextWindowLimit : 50,
+        sessionMetadata:
+          typeof raw.sessionMetadata === "object" && raw.sessionMetadata !== null
+            ? (raw.sessionMetadata as ConversationState["sessionMetadata"])
+            : { sellerId: "", startedAt: new Date(), lastActivityAt: new Date() },
       };
       return state;
     } catch {
@@ -114,9 +112,7 @@ export function createSessionStore(db: Database.Database) {
    *
    * @param limit Maximum number of sessions to return (default 50).
    */
-  function listActive(
-    limit = 50,
-  ): Array<{ id: string; lastActive: string }> {
+  function listActive(limit = 50): Array<{ id: string; lastActive: string }> {
     const rows = listActiveStmt.all(limit) as Array<{
       id: string;
       last_active_at: string;

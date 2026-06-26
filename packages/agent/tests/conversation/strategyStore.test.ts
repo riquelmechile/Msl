@@ -86,7 +86,11 @@ describe("strategyStore", () => {
   });
 
   it("excludes superseded strategies from active list", () => {
-    const old = store.insertStrategy("margen 30%", marginRule({ value: "30%", originalText: "margen 30%" }), 1.0);
+    const old = store.insertStrategy(
+      "margen 30%",
+      marginRule({ value: "30%", originalText: "margen 30%" }),
+      1.0,
+    );
     const newer = store.insertStrategy("margen 50%", marginRule(), 1.0);
     store.supersedeStrategy(old.id, newer.id);
 
@@ -176,7 +180,11 @@ describe("strategyStore", () => {
   // ── Supersede ────────────────────────────────────────────────
 
   it("supersedeStrategy marks old strategy and records replaced_by", () => {
-    const old = store.insertStrategy("margen 30%", marginRule({ value: "30%", originalText: "margen 30%" }), 1.0);
+    const old = store.insertStrategy(
+      "margen 30%",
+      marginRule({ value: "30%", originalText: "margen 30%" }),
+      1.0,
+    );
     const newer = store.insertStrategy("margen 50%", marginRule(), 1.0);
 
     store.supersedeStrategy(old.id, newer.id);

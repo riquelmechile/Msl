@@ -32,7 +32,7 @@ export type KpiSnapshot = {
   responseAccuracy: number;
   /** ISO timestamp of when the snapshot was created. */
   timestamp: string;
-}
+};
 
 /** Recorded when the autonomy level drops due to KPI breaches. */
 export type DegradationEvent = {
@@ -46,7 +46,7 @@ export type DegradationEvent = {
   kpiSnapshot: KpiSnapshot;
   /** ISO timestamp of when the degradation was recorded. */
   timestamp: string;
-}
+};
 
 // ── Conversation Core ───────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ export type ParsedRule = {
   priority: number;
   /** The exact CEO text that produced this rule. */
   originalText: string;
-}
+};
 
 /** A persisted strategy with lifecycle tracking. */
 export type Strategy = {
@@ -158,7 +158,7 @@ export type Strategy = {
   status: "active" | "archived" | "superseded";
   createdAt: string;
   updatedAt: string;
-}
+};
 
 /** Result of parsing CEO strategy text. */
 export type ParseResult = {
@@ -168,7 +168,7 @@ export type ParseResult = {
   unparsed: string[];
   /** Aggregate confidence across all extracted rules (0.0-1.0). */
   confidence: number;
-}
+};
 
 // ── Actor Models / Shadow Actors ──────────────────────────────────
 
@@ -182,7 +182,7 @@ export type SimulationResult = {
   confidence: number;
   rationale: string;
   simulationId: string;
-}
+};
 
 /** Persisted actor simulation row. */
 export type ActorSimulationRecord = {
@@ -192,7 +192,7 @@ export type ActorSimulationRecord = {
   /** JSON-serialized SimulationResult. */
   result: string;
   created_at: string;
-}
+};
 
 // ── Honey-Pot Probing ──────────────────────────────────────────────
 

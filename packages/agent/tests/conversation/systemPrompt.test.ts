@@ -122,7 +122,11 @@ describe("buildSystemPrompt — CEO strategies injection", () => {
   it("formats multiple strategies correctly", () => {
     const strategies: Strategy[] = [
       makeStrategy({ id: 1, ruleType: "margin", ruleText: "margen mínimo 50% en electrónica" }),
-      makeStrategy({ id: 2, ruleType: "stock", ruleText: "priorizo +10 stock en productos estrella" }),
+      makeStrategy({
+        id: 2,
+        ruleType: "stock",
+        ruleText: "priorizo +10 stock en productos estrella",
+      }),
       makeStrategy({ id: 3, ruleType: "category", ruleText: "no competir en juguetes" }),
     ];
     const prompt = buildSystemPrompt(sellerName, strategies);
@@ -181,7 +185,7 @@ describe("buildSystemPrompt — autonomy level injection", () => {
     const prompt = buildSystemPrompt(sellerName, undefined, undefined, AutonomyLevel.BAJO_RIESGO);
 
     expect(prompt).toContain("## Nivel de Autonomía Actual: BAJO_RIESGO (3)");
-    expect(prompt).toContain("acciones de bajo riesgo sin \"dale\"");
+    expect(prompt).toContain('acciones de bajo riesgo sin "dale"');
   });
 
   it("includes FULL level with correct description", () => {
@@ -215,12 +219,7 @@ describe("buildSystemPrompt — autonomy level injection", () => {
     const strategies: Strategy[] = [
       makeStrategy({ ruleType: "stock", ruleText: "priorizo stock" }),
     ];
-    const prompt = buildSystemPrompt(
-      sellerName,
-      strategies,
-      true,
-      AutonomyLevel.FULL,
-    );
+    const prompt = buildSystemPrompt(sellerName, strategies, true, AutonomyLevel.FULL);
 
     expect(prompt).toContain("FULL (5)");
     expect(prompt).toContain("Estrategias del CEO");

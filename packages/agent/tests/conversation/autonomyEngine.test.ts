@@ -11,14 +11,16 @@ import { AutonomyLevel } from "../../src/conversation/types.js";
  * Create a KPI snapshot with default healthy values.
  * Override any field to simulate specific scenarios.
  */
-function kpiSnapshot(overrides: Partial<{
-  level: AutonomyLevel;
-  marginCompliance: number;
-  successRate: number;
-  safetyViolations: number;
-  responseAccuracy: number;
-  timestamp: string;
-}> = {}): import("../../src/conversation/types.js").KpiSnapshot {
+function kpiSnapshot(
+  overrides: Partial<{
+    level: AutonomyLevel;
+    marginCompliance: number;
+    successRate: number;
+    safetyViolations: number;
+    responseAccuracy: number;
+    timestamp: string;
+  }> = {},
+): import("../../src/conversation/types.js").KpiSnapshot {
   return {
     level: overrides.level ?? AutonomyLevel.SUGIERE,
     marginCompliance: overrides.marginCompliance ?? 1,
@@ -32,13 +34,19 @@ function kpiSnapshot(overrides: Partial<{
 /** Return a normalised datetime string N hours in the past from `now`. */
 function hoursAgo(now: Date, hours: number): string {
   const d = new Date(now.getTime() - hours * 60 * 60 * 1000);
-  return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
+  return d
+    .toISOString()
+    .replace("T", " ")
+    .replace(/\.\d{3}Z$/, "");
 }
 
 /** Return a normalised datetime string N days in the past from `now`. */
 function daysAgo(now: Date, days: number): string {
   const d = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
+  return d
+    .toISOString()
+    .replace("T", " ")
+    .replace(/\.\d{3}Z$/, "");
 }
 
 // ── Setup ────────────────────────────────────────────────────────────
@@ -81,9 +89,11 @@ describe("autonomyEngine", () => {
 
     expect(engine.getCurrentLevel()).toBe(AutonomyLevel.CONSULTA);
 
-    const rows = db
-      .prepare("SELECT * FROM degradation_events ORDER BY id")
-      .all() as { from_level: number; to_level: number; reason: string }[];
+    const rows = db.prepare("SELECT * FROM degradation_events ORDER BY id").all() as {
+      from_level: number;
+      to_level: number;
+      reason: string;
+    }[];
     expect(rows).toHaveLength(1);
     expect(rows[0]!.from_level).toBe(AutonomyLevel.SUGIERE);
     expect(rows[0]!.to_level).toBe(AutonomyLevel.CONSULTA);
@@ -92,9 +102,9 @@ describe("autonomyEngine", () => {
 
   it("setLevel updates the autonomy_state singleton row", () => {
     engine.setLevel(AutonomyLevel.PREPARA, "reason");
-    const row = db
-      .prepare("SELECT current_level FROM autonomy_state WHERE id = 1")
-      .get() as { current_level: number };
+    const row = db.prepare("SELECT current_level FROM autonomy_state WHERE id = 1").get() as {
+      current_level: number;
+    };
     expect(row.current_level).toBe(AutonomyLevel.PREPARA);
   });
 
@@ -149,9 +159,9 @@ describe("autonomyEngine", () => {
     expect(engine.getCurrentLevel()).toBe(AutonomyLevel.CONSULTA);
 
     // Verify degradation event persisted.
-    const degRows = db
-      .prepare("SELECT COUNT(*) as count FROM degradation_events")
-      .get() as { count: number };
+    const degRows = db.prepare("SELECT COUNT(*) as count FROM degradation_events").get() as {
+      count: number;
+    };
     // setLevel created 1 + evaluateDegradation creates 1 = 2 total
     expect(degRows.count).toBe(2);
   });
@@ -408,7 +418,9 @@ describe("autonomyEngine", () => {
     engine.evaluateDegradation(now);
 
     const rows = db
-      .prepare("SELECT from_level, to_level, reason FROM degradation_events WHERE from_level != to_level")
+      .prepare(
+        "SELECT from_level, to_level, reason FROM degradation_events WHERE from_level != to_level",
+      )
       .all() as { from_level: number; to_level: number; reason: string }[];
     // Should have at least the degradation row (from_level 3 → to_level 0)
     const degradationRow = rows.find((r) => r.to_level === 0);

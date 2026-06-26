@@ -85,11 +85,7 @@ describe("strategy integration — parse → store → inject → validate", () 
 
     // 2. Store
     const rule = parsed.rules[0]!;
-    const strategy = store.insertStrategy(
-      "no competir en juguetes",
-      rule,
-      parsed.confidence,
-    );
+    const strategy = store.insertStrategy("no competir en juguetes", rule, parsed.confidence);
     expect(strategy.status).toBe("active");
 
     // 3. Get active strategies

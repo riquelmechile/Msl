@@ -48,9 +48,12 @@ describe("createDatabase", () => {
     expect(row!.name).toBe("probe_results");
 
     // Verify column structure
-    const columns = db
-      .prepare("PRAGMA table_info('probe_results')")
-      .all() as Array<{ name: string; type: string; notnull: number; dflt_value: string | null }>;
+    const columns = db.prepare("PRAGMA table_info('probe_results')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+    }>;
     const colNames = columns.map((c) => c.name);
     expect(colNames).toContain("id");
     expect(colNames).toContain("proposal_id");
@@ -91,9 +94,9 @@ describe("migrate", () => {
     expect(result.applied).toBeGreaterThanOrEqual(1);
 
     // The version 1 row should exist
-    const row = db
-      .prepare("SELECT version FROM schema_version WHERE version = 1")
-      .get() as { version: number } | undefined;
+    const row = db.prepare("SELECT version FROM schema_version WHERE version = 1").get() as
+      | { version: number }
+      | undefined;
     expect(row).toBeDefined();
     expect(row!.version).toBe(1);
 
@@ -154,9 +157,7 @@ describe("GraphEngine", () => {
         confidence: 0.8,
       });
 
-      expect(node.metadata).toBe(
-        JSON.stringify({ category: "pricing", confidence: 0.8 }),
-      );
+      expect(node.metadata).toBe(JSON.stringify({ category: "pricing", confidence: 0.8 }));
     });
 
     it("returns increasing ids for sequential inserts", () => {
@@ -237,9 +238,7 @@ describe("GraphEngine", () => {
 
       engine.createEdge(source.id, target.id);
 
-      expect(() => engine.createEdge(source.id, target.id)).toThrow(
-        DuplicateEdgeError,
-      );
+      expect(() => engine.createEdge(source.id, target.id)).toThrow(DuplicateEdgeError);
     });
 
     it("throws NodeNotFoundError when source node does not exist", () => {
@@ -319,9 +318,7 @@ describe("GraphEngine", () => {
       const a = engine.createNode("A");
       const b = engine.createNode("B");
 
-      expect(() => engine.reinforceEdge(a.id, b.id)).toThrow(
-        /no edge found between source/,
-      );
+      expect(() => engine.reinforceEdge(a.id, b.id)).toThrow(/no edge found between source/);
     });
   });
 
@@ -365,9 +362,7 @@ describe("GraphEngine", () => {
       const a = engine.createNode("A");
       const b = engine.createNode("B");
 
-      expect(() => engine.penalizeEdge(a.id, b.id)).toThrow(
-        /no edge found between source/,
-      );
+      expect(() => engine.penalizeEdge(a.id, b.id)).toThrow(/no edge found between source/);
     });
   });
 
@@ -543,20 +538,38 @@ describe("GraphEngine", () => {
 
   describe("cosineSimilarity", () => {
     it("returns 1.0 for identical vectors", () => {
-      const a = new Map([[1, 0.5], [2, 0.3]]);
-      const b = new Map([[1, 0.5], [2, 0.3]]);
+      const a = new Map([
+        [1, 0.5],
+        [2, 0.3],
+      ]);
+      const b = new Map([
+        [1, 0.5],
+        [2, 0.3],
+      ]);
       expect(cosineSimilarity(a, b)).toBeCloseTo(1.0, 5);
     });
 
     it("returns 0.0 for orthogonal vectors", () => {
-      const a = new Map([[1, 1.0], [2, 0.0]]);
-      const b = new Map([[1, 0.0], [2, 1.0]]);
+      const a = new Map([
+        [1, 1.0],
+        [2, 0.0],
+      ]);
+      const b = new Map([
+        [1, 0.0],
+        [2, 1.0],
+      ]);
       expect(cosineSimilarity(a, b)).toBeCloseTo(0.0, 5);
     });
 
     it("returns 0.0 when one vector is all zeros", () => {
-      const a = new Map([[1, 0.0], [2, 0.0]]);
-      const b = new Map([[1, 0.5], [2, 0.3]]);
+      const a = new Map([
+        [1, 0.0],
+        [2, 0.0],
+      ]);
+      const b = new Map([
+        [1, 0.5],
+        [2, 0.3],
+      ]);
       expect(cosineSimilarity(a, b)).toBe(0.0);
     });
 
@@ -573,8 +586,14 @@ describe("GraphEngine", () => {
 
     it("handles overlapping keys with non-zero similarity", () => {
       // a = [0.6, 0.8], b = [0.3, 0.4] → same direction, different magnitude → 1.0
-      const a = new Map([[1, 0.6], [2, 0.8]]);
-      const b = new Map([[1, 0.3], [2, 0.4]]);
+      const a = new Map([
+        [1, 0.6],
+        [2, 0.8],
+      ]);
+      const b = new Map([
+        [1, 0.3],
+        [2, 0.4],
+      ]);
       expect(cosineSimilarity(a, b)).toBeCloseTo(1.0, 5);
     });
   });
@@ -592,9 +611,7 @@ describe("GraphEngine", () => {
 
       // Set weights: 0.04 (below), 0.05 (at threshold), 0.06 (above)
       db.prepare("UPDATE edges SET weight = 0.04 WHERE id = ?").run(weakEdge.id);
-      db.prepare("UPDATE edges SET weight = 0.05 WHERE id = ?").run(
-        thresholdEdge.id,
-      );
+      db.prepare("UPDATE edges SET weight = 0.05 WHERE id = ?").run(thresholdEdge.id);
       db.prepare("UPDATE edges SET weight = 0.06 WHERE id = ?").run(strongEdge.id);
 
       const result = engine.prune();
@@ -614,14 +631,12 @@ describe("GraphEngine", () => {
       expect(engine.getEdge(strongEdge.id)!.weight).toBe(0.06);
 
       // Darwinian lesson was created for the weak edge
-      const lessons = db
-        .prepare("SELECT * FROM darwinian_lessons")
-        .all() as Array<{
-          source_node: number;
-          target_node: number;
-          lesson: string;
-          reason: string;
-        }>;
+      const lessons = db.prepare("SELECT * FROM darwinian_lessons").all() as Array<{
+        source_node: number;
+        target_node: number;
+        lesson: string;
+        reason: string;
+      }>;
       expect(lessons).toHaveLength(1);
       expect(lessons[0]!.source_node).toBe(a.id);
       expect(lessons[0]!.target_node).toBe(b.id);
@@ -658,9 +673,10 @@ describe("GraphEngine", () => {
       const b = engine.createNode("B");
 
       const edge = engine.createEdge(a.id, b.id);
-      db.prepare(
-        "UPDATE edges SET weight = 0.02, distilled_lesson = ? WHERE id = ?",
-      ).run("custom distilled insight", edge.id);
+      db.prepare("UPDATE edges SET weight = 0.02, distilled_lesson = ? WHERE id = ?").run(
+        "custom distilled insight",
+        edge.id,
+      );
 
       engine.prune();
 
@@ -698,9 +714,9 @@ describe("GraphEngine", () => {
 
     it("enforces max_nodes cap — archives oldest inactive nodes above threshold", () => {
       // Create more nodes than the low cap to trigger archival.
-      const nodes = Array.from({ length: 15 }, (_, i) =>
-        engine.createNode(`inactive_${i}`),
-      );
+      for (let i = 0; i < 15; i++) {
+        engine.createNode(`inactive_${i}`);
+      }
       // All nodes have activation=0 and no edges — they are candidates.
       // Set a tiny cap so the engine must archive some.
       const result = engine.prune({ maxNodes: 10 });
@@ -709,16 +725,17 @@ describe("GraphEngine", () => {
       expect(result.archivedCount).toBe(0); // no edge pruning
 
       // Verify at most maxNodes remain
-      const remaining = (
-        db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number }
-      ).cnt;
+      const remaining = (db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number })
+        .cnt;
       expect(remaining).toBeLessThanOrEqual(10);
 
       // Lessons should exist for the archived nodes
       const lessonCount = (
-        db.prepare(
-          "SELECT COUNT(*) as cnt FROM darwinian_lessons WHERE reason = 'node_cap_exceeded'",
-        ).get() as { cnt: number }
+        db
+          .prepare(
+            "SELECT COUNT(*) as cnt FROM darwinian_lessons WHERE reason = 'node_cap_exceeded'",
+          )
+          .get() as { cnt: number }
       ).cnt;
       expect(lessonCount).toBeGreaterThanOrEqual(1);
     });
@@ -759,7 +776,10 @@ describe("GraphEngine", () => {
 
     it("detects convergence when similarity exceeds threshold", () => {
       // Same snapshot twice should yield cosine similarity 1.0 > 0.95
-      const snapshot = new Map([[1, 0.5], [2, 0.3]]);
+      const snapshot = new Map([
+        [1, 0.5],
+        [2, 0.3],
+      ]);
 
       // First call — stores snapshot
       engine.detectConvergence(snapshot);
@@ -775,11 +795,17 @@ describe("GraphEngine", () => {
 
     it("returns not-converged when similarity is below threshold", () => {
       // First snapshot
-      const first = new Map([[1, 1.0], [2, 0.0]]);
+      const first = new Map([
+        [1, 1.0],
+        [2, 0.0],
+      ]);
       engine.detectConvergence(first);
 
       // Second snapshot — orthogonal
-      const second = new Map([[1, 0.0], [2, 1.0]]);
+      const second = new Map([
+        [1, 0.0],
+        [2, 1.0],
+      ]);
       const result = engine.detectConvergence(second);
 
       expect(result.converged).toBe(false);
@@ -801,7 +827,10 @@ describe("GraphEngine", () => {
     });
 
     it("handles zero-activation vectors without error", () => {
-      const zero = new Map([[1, 0.0], [2, 0.0]]);
+      const zero = new Map([
+        [1, 0.0],
+        [2, 0.0],
+      ]);
 
       // First call with zeros — stored, returns first-iteration
       const first = engine.detectConvergence(zero);
@@ -858,9 +887,10 @@ describe("GraphEngine", () => {
       engine.createEdge(b.id, c.id);
 
       // Simulate co-occurrence
-      db.prepare(
-        "UPDATE edges SET co_occurrence_count = 3 WHERE source = ? AND target = ?",
-      ).run(a.id, b.id);
+      db.prepare("UPDATE edges SET co_occurrence_count = 3 WHERE source = ? AND target = ?").run(
+        a.id,
+        b.id,
+      );
 
       const result = engine.traverse();
 
@@ -922,9 +952,7 @@ describe("GraphEngine", () => {
       expect(result.activatedNodes.length).toBeGreaterThan(0);
 
       // Edges should have co-occurrence counts updated by spreading
-      const abEdge = result.traversedEdges.find(
-        (e) => e.source === a.id && e.target === b.id,
-      );
+      const abEdge = result.traversedEdges.find((e) => e.source === a.id && e.target === b.id);
       expect(abEdge).toBeDefined();
       expect(abEdge!.co_occurrence_count).toBeGreaterThan(0);
 

@@ -1,9 +1,6 @@
 export { createDatabase, migrate } from "./database.js";
 export { cosineSimilarity, GraphEngine } from "./engine.js";
-export {
-  DuplicateEdgeError,
-  NodeNotFoundError,
-} from "./types.js";
+export { DuplicateEdgeError, NodeNotFoundError } from "./types.js";
 export type {
   ActivationSnapshot,
   ActorProfileNode,

@@ -26,7 +26,12 @@ export type {
 export { AutonomyLevel } from "./conversation/types.js";
 export type { KpiSnapshot, DegradationEvent } from "./conversation/types.js";
 
-export type { ConverseResult, AgentLoopConfig, LlmClient, StrategyStore } from "./conversation/agentLoop.js";
+export type {
+  ConverseResult,
+  AgentLoopConfig,
+  LlmClient,
+  StrategyStore,
+} from "./conversation/agentLoop.js";
 export { createAgentLoop } from "./conversation/agentLoop.js";
 export { buildSystemPrompt } from "./conversation/systemPrompt.js";
 
@@ -51,10 +56,7 @@ export {
 } from "./conversation/guardrails.js";
 
 export { selfVerify } from "./conversation/selfVerify.js";
-export type {
-  VerificationResult,
-  VerificationCheck,
-} from "./conversation/selfVerify.js";
+export type { VerificationResult, VerificationCheck } from "./conversation/selfVerify.js";
 
 export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
 export { createStrategyStore } from "./conversation/strategyStore.js";
@@ -67,10 +69,20 @@ export type { AutonomyEngine } from "./conversation/autonomyEngine.js";
 
 // ── Tools (function-calling) ────────────────────────────────────────
 export type { ToolDefinition } from "./conversation/tools.js";
-export { createGetBusinessContextTool, createPrepareActionTool, createSimulateActorTool, createDetectProbesTool, createProposeHoneyPotTool } from "./conversation/tools.js";
+export {
+  createGetBusinessContextTool,
+  createPrepareActionTool,
+  createSimulateActorTool,
+  createDetectProbesTool,
+  createProposeHoneyPotTool,
+} from "./conversation/tools.js";
 
 // ── Sync tools ──────────────────────────────────────────────────────
-export { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from "./conversation/syncTools.js";
+export {
+  createSyncProductTool,
+  createSyncAllTool,
+  createCheckAccountTool,
+} from "./conversation/syncTools.js";
 
 // ── Actor simulation ────────────────────────────────────────────────
 export {

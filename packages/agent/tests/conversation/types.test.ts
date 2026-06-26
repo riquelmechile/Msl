@@ -131,9 +131,7 @@ describe("ProbeAlert", () => {
 
     expect(alert.pattern).toBe("question_spike");
     expect(alert.confidence).toBe(0.85);
-    expect(alert.description).toBe(
-      "Múltiples preguntas sobre precios en un lapso de 60s.",
-    );
+    expect(alert.description).toBe("Múltiples preguntas sobre precios en un lapso de 60s.");
   });
 
   it("supports optional competitorId and recommendedAction", () => {

@@ -11,7 +11,10 @@ import type {
 } from "./types.js";
 import type { GuardResult } from "./guardrails.js";
 import { simulateActor as defaultSimulateActor } from "./actorSimulator.js";
-import { analyzeQuestions as defaultAnalyzeQuestions, detectViewAnomalies as defaultDetectViewAnomalies } from "./probeDetector.js";
+import {
+  analyzeQuestions as defaultAnalyzeQuestions,
+  detectViewAnomalies as defaultDetectViewAnomalies,
+} from "./probeDetector.js";
 import { proposeDecoy as defaultProposeDecoy } from "./honeyPotProposer.js";
 
 /** Function signature for the actor simulator (injected for testability). */
@@ -24,7 +27,9 @@ export type ToolDefinition = {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  execute: (args: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  execute: (
+    args: Record<string, unknown>,
+  ) => Record<string, unknown> | Promise<Record<string, unknown>>;
 };
 
 /**
@@ -37,9 +42,7 @@ export type ToolDefinition = {
  * @param engine — an initialized Cortex GraphEngine instance.
  * @returns a tool definition compatible with OpenAI function calling.
  */
-export function createGetBusinessContextTool(
-  engine: GraphEngine,
-): ToolDefinition {
+export function createGetBusinessContextTool(engine: GraphEngine): ToolDefinition {
   return {
     name: "get_business_context",
     description:
@@ -81,9 +84,7 @@ export function createGetBusinessContextTool(
       const matchers = terms.map((t) => `%${t}%`);
 
       const seedRows = engine.db
-        .prepare(
-          `SELECT id, label FROM nodes WHERE ${placeholders} LIMIT 20`,
-        )
+        .prepare(`SELECT id, label FROM nodes WHERE ${placeholders} LIMIT 20`)
         .all(...matchers) as Array<{ id: number; label: string }>;
 
       if (seedRows.length === 0) {
@@ -154,8 +155,7 @@ export function createPrepareActionTool(): ToolDefinition {
         },
         targetId: {
           type: "string",
-          description:
-            "Identificador de la entidad objetivo (listingId, orderId, etc.).",
+          description: "Identificador de la entidad objetivo (listingId, orderId, etc.).",
         },
         field: {
           type: "string",
@@ -169,8 +169,7 @@ export function createPrepareActionTool(): ToolDefinition {
         },
         rationale: {
           type: "string",
-          description:
-            "Justificación de por qué esta acción es necesaria. Requerido siempre.",
+          description: "Justificación de por qué esta acción es necesaria. Requerido siempre.",
         },
         summary: {
           type: "string",
@@ -224,9 +223,7 @@ export function createPrepareActionTool(): ToolDefinition {
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h expiry
         },
         naturalSummary: (args.summary as string) ?? "",
-        riskLevel: riskLevelForAction(
-          kind as AgentProposal["action"]["kind"],
-        ),
+        riskLevel: riskLevelForAction(kind as AgentProposal["action"]["kind"]),
       };
 
       return proposal;
@@ -237,11 +234,7 @@ export function createPrepareActionTool(): ToolDefinition {
 // ── simulate_actor Tool ─────────────────────────────────────────────
 
 /** Valid actor type values for validation at the tool boundary. */
-const VALID_ACTOR_TYPES: readonly string[] = [
-  "comprador",
-  "proveedor",
-  "competidor",
-];
+const VALID_ACTOR_TYPES: readonly string[] = ["comprador", "proveedor", "competidor"];
 
 /**
  * Creates the `simulate_actor` tool.
@@ -269,8 +262,7 @@ export function createSimulateActorTool(
         actorType: {
           type: "string",
           enum: [...VALID_ACTOR_TYPES],
-          description:
-            "Tipo de actor a simular: comprador, proveedor o competidor.",
+          description: "Tipo de actor a simular: comprador, proveedor o competidor.",
         },
         query: {
           type: "string",
@@ -282,9 +274,7 @@ export function createSimulateActorTool(
       },
       required: ["actorType", "query"],
     },
-    execute: async (
-      args: Record<string, unknown>,
-    ): Promise<Record<string, unknown>> => {
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
       const actorType = args.actorType as string;
       const query = (args.query as string) ?? "";
 
@@ -300,15 +290,11 @@ export function createSimulateActorTool(
       // Validate query is non-empty after trimming.
       if (!query.trim()) {
         return {
-          error:
-            "El parámetro 'query' es obligatorio y no puede estar vacío.",
+          error: "El parámetro 'query' es obligatorio y no puede estar vacío.",
         };
       }
 
-      const result: SimulationResult = await simulator(
-        actorType as ActorType,
-        query,
-      );
+      const result: SimulationResult = await simulator(actorType as ActorType, query);
 
       return result;
     },
@@ -357,10 +343,7 @@ function makeDetectProbes(
  * @returns a tool definition compatible with OpenAI function calling.
  */
 export function createDetectProbesTool(
-  detector: DetectProbesFn = makeDetectProbes(
-    defaultAnalyzeQuestions,
-    defaultDetectViewAnomalies,
-  ),
+  detector: DetectProbesFn = makeDetectProbes(defaultAnalyzeQuestions, defaultDetectViewAnomalies),
 ): ToolDefinition {
   return {
     name: "detect_probes",
@@ -410,8 +393,7 @@ export function createDetectProbesTool(
 
       if (!questions && !views) {
         return {
-          error:
-            "Se requiere al menos 'questions' o 'views' para detectar patrones.",
+          error: "Se requiere al menos 'questions' o 'views' para detectar patrones.",
         };
       }
 
@@ -425,10 +407,7 @@ export function createDetectProbesTool(
 
 /** Function signatures for the honey-pot proposer and validator (injected). */
 type ProposeDecoyFn = typeof defaultProposeDecoy;
-type HoneyPotValidatorFn = (
-  proposal: DecoyProposal,
-  strategies: Strategy[],
-) => GuardResult;
+type HoneyPotValidatorFn = (proposal: DecoyProposal, strategies: Strategy[]) => GuardResult;
 
 /**
  * Creates the `propose_honey_pot` tool.
@@ -475,9 +454,7 @@ export function createProposeHoneyPotTool(
       }
 
       const strategies = getStrategies();
-      const strategy = strategies.find(
-        (s) => s.id === strategyId && s.status === "active",
-      );
+      const strategy = strategies.find((s) => s.id === strategyId && s.status === "active");
 
       if (!strategy) {
         return {

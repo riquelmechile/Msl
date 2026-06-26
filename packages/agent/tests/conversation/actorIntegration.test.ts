@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createAgentLoop } from "../../src/conversation/agentLoop.js";
-import {
-  createSimulateActorTool,
-} from "../../src/conversation/tools.js";
-import type {
-  ConversationState,
-  SimulationResult,
-} from "../../src/conversation/types.js";
+import { createSimulateActorTool } from "../../src/conversation/tools.js";
+import type { ConversationState, SimulationResult } from "../../src/conversation/types.js";
 
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
   return {
@@ -94,10 +89,7 @@ describe("actorIntegration — agent loop with simulate_actor", () => {
       tools: [simulateActorTool],
     });
     const state = makeState();
-    const result = await agent.converse(
-      "Quiero revisar el precio del listing 42",
-      state,
-    );
+    const result = await agent.converse("Quiero revisar el precio del listing 42", state);
 
     // Should get the normal margin analysis, not actor simulation.
     expect(result.response).toMatch(/margen/i);
@@ -120,8 +112,7 @@ describe("actorIntegration — CEO strategy guardrail after actor simulation", (
       messages: [
         {
           role: "user",
-          content:
-            "¿El competidor aceptaría que suba el precio del listing MLC-42?",
+          content: "¿El competidor aceptaría que suba el precio del listing MLC-42?",
           timestamp: new Date("2026-06-26T10:00:00Z"),
         },
         {

@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  analyzeQuestions,
-  detectViewAnomalies,
-} from "../../src/conversation/probeDetector.js";
+import { analyzeQuestions, detectViewAnomalies } from "../../src/conversation/probeDetector.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function makeQuestion(
-  text: string,
-  overrides: Partial<{ from: string; date: string }> = {},
-) {
+function makeQuestion(text: string, overrides: Partial<{ from: string; date: string }> = {}) {
   return {
     text,
     from: overrides.from ?? "usuario-X",
@@ -26,9 +20,7 @@ describe("analyzeQuestions", () => {
   });
 
   it("returns no alert for a single normal question", () => {
-    const alerts = analyzeQuestions([
-      makeQuestion("¿Cómo están mis ventas hoy?"),
-    ]);
+    const alerts = analyzeQuestions([makeQuestion("¿Cómo están mis ventas hoy?")]);
     expect(alerts).toHaveLength(0);
   });
 
@@ -76,9 +68,7 @@ describe("analyzeQuestions", () => {
   });
 
   it("does NOT trigger price_reaction for a single pricing question", () => {
-    const alerts = analyzeQuestions([
-      makeQuestion("¿Cuál es el precio?", { from: "tienda-W" }),
-    ]);
+    const alerts = analyzeQuestions([makeQuestion("¿Cuál es el precio?", { from: "tienda-W" })]);
 
     const price = alerts.find((a) => a.pattern === "price_reaction");
     expect(price).toBeUndefined();
@@ -166,9 +156,7 @@ describe("analyzeQuestions", () => {
 describe("detectViewAnomalies", () => {
   it("returns empty array for less than 2 data points", () => {
     expect(detectViewAnomalies([])).toEqual([]);
-    expect(detectViewAnomalies([{ count: 10, date: "2026-06-26" }])).toEqual(
-      [],
-    );
+    expect(detectViewAnomalies([{ count: 10, date: "2026-06-26" }])).toEqual([]);
   });
 
   it("returns no alert when today's views are below 2x average", () => {

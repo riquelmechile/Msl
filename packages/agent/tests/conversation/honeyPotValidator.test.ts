@@ -52,7 +52,7 @@ function makeProposal(overrides: Partial<DecoyProposal> = {}): DecoyProposal {
     id: "decoy-001",
     type: "category_entry",
     description:
-      "Simulación de entrada a la categoría \"electrónica\" para medir la respuesta de competidores activos.",
+      'Simulación de entrada a la categoría "electrónica" para medir la respuesta de competidores activos.',
     riskLevel: "medium",
     tosCompliant: true,
     tosWarning:
@@ -92,8 +92,7 @@ describe("honeyPotValidator", () => {
   it("passes when active probe strategy scope matches proposal description", () => {
     const strategy = makeProbeStrategy();
     const proposal = makeProposal({
-      description:
-        "Listing señuelo en \"electrónica\" para observar reacciones.",
+      description: 'Listing señuelo en "electrónica" para observar reacciones.',
     });
 
     const result = honeyPotValidator(proposal, [strategy]);
@@ -109,8 +108,7 @@ describe("honeyPotValidator", () => {
       },
     });
     const proposal = makeProposal({
-      description:
-        "Listing señuelo en \"ropa\" para atraer competidores.",
+      description: 'Listing señuelo en "ropa" para atraer competidores.',
     });
 
     const result = honeyPotValidator(proposal, [strategy]);
@@ -135,8 +133,7 @@ describe("honeyPotValidator", () => {
       },
     });
     const proposal = makeProposal({
-      description:
-        "Decoy en categoría \"electrónica\" para medir competencia.",
+      description: 'Decoy en categoría "electrónica" para medir competencia.',
     });
 
     const result = honeyPotValidator(proposal, [strategy1, strategy2]);
@@ -151,7 +148,7 @@ describe("honeyPotValidator", () => {
       },
     });
     const proposal = makeProposal({
-      description: "Decoy en \"electrónica\".",
+      description: 'Decoy en "electrónica".',
     });
 
     const result = honeyPotValidator(proposal, [strategy]);
@@ -185,7 +182,7 @@ describe("honeyPotValidator", () => {
       },
     });
     const proposal = makeProposal({
-      description: "Decoy en \"electrónica\" para TiendaY.",
+      description: 'Decoy en "electrónica" para TiendaY.',
     });
 
     const result = honeyPotValidator(proposal, [strategy]);

@@ -148,10 +148,7 @@ export function actionSafetyValidator(proposal: AgentProposal): GuardResult {
  * Violations produce a Spanish explanation so the seller understands why the
  * proposal was blocked.
  */
-export function strategyValidator(
-  proposal: AgentProposal,
-  strategies: Strategy[],
-): GuardResult {
+export function strategyValidator(proposal: AgentProposal, strategies: Strategy[]): GuardResult {
   if (!strategies || strategies.length === 0) {
     return { passed: true };
   }
@@ -187,10 +184,7 @@ export function strategyValidator(
     // ── Category exclusion validation ────────────────────────────
     if (rule.ruleType === "category" && rule.operator === "evitar") {
       const excludedCategory = rule.value.toLowerCase();
-      if (
-        excludedCategory &&
-        proposalText.includes(excludedCategory)
-      ) {
+      if (excludedCategory && proposalText.includes(excludedCategory)) {
         return {
           passed: false,
           reason: `La propuesta contradice la estrategia del CEO: ${strategy.ruleText}`,
@@ -204,10 +198,7 @@ export function strategyValidator(
       if (!isNaN(cap)) {
         // If the proposal raises the price above the cap, block it.
         const priceUp = proposal.action.exactChange.some(
-          (ch) =>
-            ch.field === "price" &&
-            typeof ch.to === "number" &&
-            ch.to > cap,
+          (ch) => ch.field === "price" && typeof ch.to === "number" && ch.to > cap,
         );
         if (priceUp) {
           return {
@@ -239,10 +230,7 @@ export function strategyValidator(
  * @param engine  The autonomy engine providing the current level.
  * @returns A {@link GuardResult} — always `passed: true`.
  */
-export function autonomyGate(
-  action: { riskLevel: string },
-  engine: AutonomyEngine,
-): GuardResult {
+export function autonomyGate(action: { riskLevel: string }, engine: AutonomyEngine): GuardResult {
   if (engine.canAutoApprove(action.riskLevel)) {
     return { passed: true };
   }
@@ -275,10 +263,7 @@ export function autonomyGate(
  * @param strategies — The seller's currently active CEO strategies.
  * @returns A {@link GuardResult}; `passed: true` only when both conditions are met.
  */
-export function honeyPotValidator(
-  proposal: DecoyProposal,
-  strategies: Strategy[],
-): GuardResult {
+export function honeyPotValidator(proposal: DecoyProposal, strategies: Strategy[]): GuardResult {
   if (!strategies || strategies.length === 0) {
     return {
       passed: false,
@@ -289,9 +274,7 @@ export function honeyPotValidator(
   }
 
   // Filter to active probe strategies only.
-  const probeStrategies = strategies.filter(
-    (s) => s.ruleType === "probe" && s.status === "active",
-  );
+  const probeStrategies = strategies.filter((s) => s.ruleType === "probe" && s.status === "active");
 
   if (probeStrategies.length === 0) {
     return {
@@ -310,9 +293,7 @@ export function honeyPotValidator(
   });
 
   if (!scopeMatch) {
-    const scopes = probeStrategies
-      .map((s) => `"${s.parsedRule.value}"`)
-      .join(", ");
+    const scopes = probeStrategies.map((s) => `"${s.parsedRule.value}"`).join(", ");
     return {
       passed: false,
       reason:

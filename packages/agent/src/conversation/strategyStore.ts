@@ -34,7 +34,7 @@ type StrategyRow = {
   replaced_by: number | null;
   created_at: string;
   updated_at: string;
-}
+};
 
 /** Map a database row to the public {@link Strategy} interface. */
 function rowToStrategy(row: StrategyRow): Strategy {

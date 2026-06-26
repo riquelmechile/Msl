@@ -144,8 +144,16 @@ describe("backupDatabase", () => {
   it("creates a valid backup copy of a file-based database", async () => {
     const sourcePath = "/tmp/msl-backup-source.db";
     // Clean up from previous runs
-    try { unlinkSync(sourcePath); } catch { /* ok */ }
-    try { unlinkSync(backupPath); } catch { /* ok */ }
+    try {
+      unlinkSync(sourcePath);
+    } catch {
+      /* ok */
+    }
+    try {
+      unlinkSync(backupPath);
+    } catch {
+      /* ok */
+    }
 
     // Create a file-based source DB with some data.
     const sourceDb = new Database(sourcePath);
@@ -163,7 +171,10 @@ describe("backupDatabase", () => {
     // Open the backup and verify data integrity
     const backup = new Database(backupPath);
     try {
-      const rows = backup.prepare("SELECT * FROM test").all() as Array<{ id: number; value: string }>;
+      const rows = backup.prepare("SELECT * FROM test").all() as Array<{
+        id: number;
+        value: string;
+      }>;
       expect(rows).toHaveLength(2);
       expect(rows[0]!.value).toBe("hello");
       expect(rows[1]!.value).toBe("world");
@@ -172,7 +183,15 @@ describe("backupDatabase", () => {
     }
 
     // Cleanup
-    try { unlinkSync(sourcePath); } catch { /* ok */ }
-    try { unlinkSync(backupPath); } catch { /* ok */ }
+    try {
+      unlinkSync(sourcePath);
+    } catch {
+      /* ok */
+    }
+    try {
+      unlinkSync(backupPath);
+    } catch {
+      /* ok */
+    }
   });
 });

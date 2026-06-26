@@ -39,9 +39,9 @@ export async function backupDatabase(
   // Count pages in the backup
   const backupFile = new Database(destPath);
   try {
-    const rows = backupFile
-      .prepare("SELECT page_count FROM pragma_page_count")
-      .all() as Array<{ page_count: number }>;
+    const rows = backupFile.prepare("SELECT page_count FROM pragma_page_count").all() as Array<{
+      page_count: number;
+    }>;
     return rows[0]?.page_count ?? 0;
   } finally {
     backupFile.close();
