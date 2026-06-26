@@ -4,8 +4,13 @@ import type { CacheFreshness, ReadSnapshot } from "@msl/domain";
 
 import {
   createMlcApiClient,
+  createMlClient,
+  createOAuthManager,
+  createTokenStore,
   evaluateOAuthAccess,
   type MlcListingSummary,
+  type MlcMessageSummary,
+  type MlcOrderSummary,
   type MlcReadSnapshotFreshness,
   type MercadoLibreApiTransport,
   type OAuthTokenState,
@@ -204,5 +209,352 @@ describe("direct MLC API client boundary", () => {
       connectedSellerId: "seller-1",
     });
     expect(calls).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Token Store tests
+// ---------------------------------------------------------------------------
+
+describe("Token Store", () => {
+  const sampleTokens = {
+    access_token: "APP_USR-abc123",
+    refresh_token: "TG-refresh-xyz789",
+    expires_in: 21600,
+    user_id: "123456",
+    nickname: "TESTSELLER",
+    account_level: "premium" as const,
+  };
+
+  it("encrypts tokens at rest and decrypts on retrieval", () => {
+    const store = createTokenStore();
+    store.saveToken("seller-plasticov", sampleTokens);
+
+    const stored = store.getToken("seller-plasticov");
+    expect(stored).toBeDefined();
+    expect(stored!.access_token).toBe("APP_USR-abc123");
+    expect(stored!.refresh_token).toBe("TG-refresh-xyz789");
+    expect(stored!.user_id).toBe("123456");
+    expect(stored!.nickname).toBe("TESTSELLER");
+    expect(stored!.account_level).toBe("premium");
+    expect(stored!.expires_at).toBeDefined();
+    expect(new Date(stored!.expires_at).getTime()).toBeGreaterThan(Date.now());
+
+    store.close();
+  });
+
+  it("returns undefined for unknown seller", () => {
+    const store = createTokenStore();
+    expect(store.getToken("nonexistent")).toBeUndefined();
+    store.close();
+  });
+
+  it("deletes stored tokens", () => {
+    const store = createTokenStore();
+    store.saveToken("seller-x", sampleTokens);
+    expect(store.getToken("seller-x")).toBeDefined();
+
+    store.deleteToken("seller-x");
+    expect(store.getToken("seller-x")).toBeUndefined();
+    store.close();
+  });
+
+  it("stores tokens for multiple sellers independently", () => {
+    const store = createTokenStore();
+    store.saveToken("seller-a", {
+      ...sampleTokens,
+      access_token: "token-a",
+      nickname: "SellerA",
+    });
+    store.saveToken("seller-b", {
+      ...sampleTokens,
+      access_token: "token-b",
+      nickname: "SellerB",
+    });
+
+    const a = store.getToken("seller-a");
+    const b = store.getToken("seller-b");
+
+    expect(a!.access_token).toBe("token-a");
+    expect(a!.nickname).toBe("SellerA");
+    expect(b!.access_token).toBe("token-b");
+    expect(b!.nickname).toBe("SellerB");
+    store.close();
+  });
+
+  it("updates existing token on re-save", () => {
+    const store = createTokenStore();
+    store.saveToken("seller-1", sampleTokens);
+
+    store.saveToken("seller-1", {
+      ...sampleTokens,
+      access_token: "NEW-TOKEN",
+    });
+
+    const stored = store.getToken("seller-1");
+    expect(stored!.access_token).toBe("NEW-TOKEN");
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OAuth Manager tests
+// ---------------------------------------------------------------------------
+
+describe("OAuth Manager", () => {
+  const stubConfig = {
+    clientId: "",
+    clientSecret: "",
+    redirectUri: "https://example.com/callback",
+  };
+
+  const realConfig = {
+    clientId: "REAL-CLIENT-ID",
+    clientSecret: "REAL-SECRET",
+    redirectUri: "https://example.com/callback",
+  };
+
+  it("detects stub mode when credentials are empty", () => {
+    const manager = createOAuthManager(stubConfig);
+    expect(manager.isStubMode()).toBe(true);
+    manager.close();
+  });
+
+  it("detects real mode when credentials are provided", () => {
+    const manager = createOAuthManager(realConfig);
+    expect(manager.isStubMode()).toBe(false);
+    manager.close();
+  });
+
+  it("builds authorization URL with state parameter", () => {
+    const manager = createOAuthManager(stubConfig);
+    const url = manager.getAuthorizationUrl("seller-1", "csrf-state-123");
+    expect(url).toContain("auth.mercadolibre");
+    expect(url).toContain("response_type=code");
+    expect(url).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fcallback");
+    expect(url).toContain("state=csrf-state-123");
+    manager.close();
+  });
+
+  it("exchanges code for mock tokens in stub mode", async () => {
+    const manager = createOAuthManager(stubConfig);
+    const tokens = await manager.exchangeCodeForToken("seller-plasticov", "mock-code");
+
+    expect(tokens.access_token).toContain("mock-access-seller-plasticov");
+    expect(tokens.refresh_token).toContain("mock-refresh-seller-plasticov");
+    expect(tokens.expires_in).toBe(21600);
+    expect(tokens.account_level).toBe("classic");
+
+    // Verify tokens were stored
+    const stored = manager.getStoredToken("seller-plasticov");
+    expect(stored).toBeDefined();
+    expect(stored!.access_token).toBe(tokens.access_token);
+    manager.close();
+  });
+
+  it("reports token as not expired when recently stored", async () => {
+    const manager = createOAuthManager(stubConfig);
+    await manager.exchangeCodeForToken("seller-1", "code");
+    expect(manager.isTokenExpired("seller-1")).toBe(false);
+    manager.close();
+  });
+
+  it("reports token as expired for unknown seller", () => {
+    const manager = createOAuthManager(stubConfig);
+    expect(manager.isTokenExpired("unknown")).toBe(true);
+    manager.close();
+  });
+
+  it("refreshes access token in stub mode", async () => {
+    const manager = createOAuthManager(stubConfig);
+    await manager.exchangeCodeForToken("seller-refresh", "code");
+    const firstStored = manager.getStoredToken("seller-refresh");
+
+    const newTokens = await manager.refreshAccessToken("seller-refresh");
+    expect(newTokens.access_token).not.toBe(firstStored!.access_token);
+
+    const updatedStored = manager.getStoredToken("seller-refresh");
+    expect(updatedStored!.access_token).toBe(newTokens.access_token);
+    manager.close();
+  });
+
+  it("ensureValidToken returns access token when not expired", async () => {
+    const manager = createOAuthManager(stubConfig);
+    await manager.exchangeCodeForToken("seller-valid", "code");
+    const token = await manager.ensureValidToken("seller-valid");
+    expect(token).toBeDefined();
+    expect(token.length).toBeGreaterThan(0);
+    manager.close();
+  });
+
+  it("throws on refresh for unknown seller", async () => {
+    const manager = createOAuthManager(stubConfig);
+    await expect(manager.refreshAccessToken("unknown")).rejects.toThrow(
+      "No stored token",
+    );
+    manager.close();
+  });
+
+  it("throws on ensureValidToken for unknown seller", async () => {
+    const manager = createOAuthManager(stubConfig);
+    await expect(manager.ensureValidToken("unknown")).rejects.toThrow(
+      "No stored token",
+    );
+    manager.close();
+  });
+
+  it("deletes stored tokens", async () => {
+    const manager = createOAuthManager(stubConfig);
+    await manager.exchangeCodeForToken("seller-del", "code");
+    expect(manager.getStoredToken("seller-del")).toBeDefined();
+
+    manager.deleteToken("seller-del");
+    expect(manager.getStoredToken("seller-del")).toBeUndefined();
+    manager.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MlClient tests (stub mode)
+// ---------------------------------------------------------------------------
+
+describe("MlClient (stub mode)", () => {
+  const now = new Date("2026-06-26T12:00:00.000Z");
+
+  async function setupClient(sellerId = "seller-1") {
+    const oauthManager = createOAuthManager({
+      clientId: "",
+      clientSecret: "",
+      redirectUri: "https://example.com/callback",
+    });
+    await oauthManager.exchangeCodeForToken(sellerId, "test-code");
+    const client = createMlClient({ oauthManager, now });
+    return { client, oauthManager, sellerId };
+  }
+
+  it("getItems returns listing snapshots in stub mode", async () => {
+    const { client } = await setupClient();
+    const listings = await client.getItems("seller-1");
+
+    expect(listings.kind).toBe("listing");
+    expect(listings.source).toBe("mercadolibre-api");
+    expect(Array.isArray(listings.data)).toBe(true);
+    const data = listings.data as ReadonlyArray<MlcListingSummary>;
+    expect(data.length).toBeGreaterThanOrEqual(2);
+    expect(data[0]!).toMatchObject({
+      id: "MLC1001",
+      title: "Producto de prueba",
+    });
+  });
+
+  it("getItem returns a single item in stub mode", async () => {
+    const { client } = await setupClient();
+    const item = await client.getItem("seller-1", "MLC1001");
+
+    expect(item.id).toBe("MLC1001");
+    expect(item.title).toBe("Producto de prueba");
+    expect(item.price).toBe(15000);
+    expect(item.status).toBe("active");
+  });
+
+  it("getOrders returns order snapshots in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const orders = await client.getOrders("seller-1");
+
+    expect(orders.kind).toBe("order");
+    expect(Array.isArray(orders.data)).toBe(true);
+    const data = orders.data as ReadonlyArray<MlcOrderSummary>;
+    expect(data.length).toBeGreaterThan(0);
+    expect(data[0]!).toMatchObject({ id: "ORDER-1", status: "paid" });
+  });
+
+  it("getQuestions returns question snapshots in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const questions = await client.getQuestions("seller-1");
+
+    expect(questions.kind).toBe("message");
+    expect(Array.isArray(questions.data)).toBe(true);
+    const data = questions.data as ReadonlyArray<MlcMessageSummary>;
+    expect(data.length).toBeGreaterThan(0);
+    expect(data[0]!.id).toBe("Q-1");
+  });
+
+  it("publishItem returns write snapshot in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const result = await client.publishItem("seller-1", {
+      title: "Nuevo producto",
+      category_id: "MLC1000",
+      price: 9900,
+      available_quantity: 10,
+      pictures: ["https://example.com/img.jpg"],
+      description: "Descripción de prueba",
+      attributes: [{ id: "BRAND", value_name: "Marca X" }],
+    });
+
+    expect(result.id).toBeDefined();
+    expect(result.permalink).toContain("mercadolibre");
+    expect(result.status).toBe("active");
+    expect(result.capturedAt).toBeDefined();
+  });
+
+  it("updateItem returns write snapshot in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const result = await client.updateItem("seller-1", "MLC1001", {
+      price: 20000,
+      available_quantity: 5,
+    });
+
+    expect(result.id).toBeDefined();
+    expect(result.permalink).toContain("mercadolibre");
+    expect(result.status).toBe("active");
+  });
+
+  it("getCategories returns category tree in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const categories = await client.getCategories("seller-1");
+
+    expect(categories.sellerId).toBe("seller-1");
+    expect(categories.data.length).toBeGreaterThanOrEqual(2);
+    expect(categories.data[0]).toMatchObject({ id: "MLC1000", name: "Electrónica" });
+    expect(categories.data[1]).toMatchObject({ id: "MLC2000", name: "Ropa y Accesorios" });
+  });
+
+  it("getUserInfo returns user info in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const user = await client.getUserInfo("seller-1");
+
+    expect(user.sellerId).toBe("seller-1");
+    expect(user.data.nickname).toBe("TESTSELLER");
+    expect(user.data.points).toBe(100);
+    expect(user.data.level).toBe("Novato");
+    expect(user.data.status).toBe("active");
+  });
+
+  it("resolves token per call for multi-account access", async () => {
+    const oauthManager = createOAuthManager({
+      clientId: "",
+      clientSecret: "",
+      redirectUri: "https://example.com/callback",
+    });
+    await oauthManager.exchangeCodeForToken("plasticov", "code-p");
+    await oauthManager.exchangeCodeForToken("maustian", "code-m");
+
+    const client = createMlClient({ oauthManager, now });
+
+    // Both accounts should work independently
+    const plasticovListings = await client.getItems("plasticov");
+    const maustianListings = await client.getItems("maustian");
+
+    expect(plasticovListings.sellerId).toBe("plasticov");
+    expect(maustianListings.sellerId).toBe("maustian");
+
+    oauthManager.close();
+  });
+
+  it("throws on API call for unknown seller", async () => {
+    const { client } = await setupClient();
+    await expect(client.getItems("unknown-seller")).rejects.toThrow(
+      "No stored token",
+    );
   });
 });

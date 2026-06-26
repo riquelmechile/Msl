@@ -1,0 +1,189 @@
+import type { OAuthTokens, StoredToken } from "../types.js";
+import { createTokenStore, type TokenStore } from "./tokenStore.js";
+
+export type OAuthManagerConfig = {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  dbPath?: string;
+};
+
+export type OAuthManager = {
+  getAuthorizationUrl(sellerId: string, state: string): string;
+  exchangeCodeForToken(sellerId: string, code: string): Promise<OAuthTokens>;
+  refreshAccessToken(sellerId: string): Promise<OAuthTokens>;
+  isTokenExpired(sellerId: string): boolean;
+  ensureValidToken(sellerId: string): Promise<string>;
+  getStoredToken(sellerId: string): StoredToken | undefined;
+  deleteToken(sellerId: string): void;
+  isStubMode(): boolean;
+  close(): void;
+};
+
+const ML_OAUTH_AUTH_URL = "https://auth.mercadolibre.com.ar/authorization";
+const ML_OAUTH_TOKEN_URL = "https://api.mercadolibre.com/oauth/token";
+
+function isStubCredentials(config: OAuthManagerConfig): boolean {
+  return (
+    !config.clientId ||
+    !config.clientSecret ||
+    config.clientId === "stub" ||
+    config.clientId.startsWith("TEST-")
+  );
+}
+
+function mockTokens(sellerId: string): OAuthTokens {
+  return {
+    access_token: `mock-access-${sellerId}-${Date.now()}`,
+    refresh_token: `mock-refresh-${sellerId}-${Date.now()}`,
+    expires_in: 21600,
+    user_id: `mock-user-${sellerId}`,
+    nickname: `seller_${sellerId}`,
+    account_level: "classic",
+  };
+}
+
+export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
+  const store: TokenStore = createTokenStore(config.dbPath ?? ":memory:");
+  const stub = isStubCredentials(config);
+
+  function getAuthorizationUrl(sellerId: string, state: string): string {
+    if (stub) {
+      return `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${config.clientId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&state=${encodeURIComponent(state)}&mock_seller=${encodeURIComponent(sellerId)}`;
+    }
+
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: config.clientId,
+      redirect_uri: config.redirectUri,
+      state,
+    });
+
+    return `${ML_OAUTH_AUTH_URL}?${params.toString()}`;
+  }
+
+  async function exchangeCodeForToken(
+    sellerId: string,
+    code: string,
+  ): Promise<OAuthTokens> {
+    if (stub) {
+      const tokens = mockTokens(sellerId);
+      store.saveToken(sellerId, tokens);
+      return tokens;
+    }
+
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      code,
+      redirect_uri: config.redirectUri,
+    });
+
+    const response = await fetch(ML_OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `OAuth code exchange failed: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    const tokens: OAuthTokens = {
+      access_token: data.access_token as string,
+      refresh_token: data.refresh_token as string,
+      expires_in: (data.expires_in as number) ?? 21600,
+      user_id: (data.user_id as string) ?? "",
+      nickname: (data.nickname as string) ?? sellerId,
+      account_level: (data.account_level as OAuthTokens["account_level"]) ??
+        "classic",
+    };
+
+    store.saveToken(sellerId, tokens);
+    return tokens;
+  }
+
+  async function refreshAccessToken(sellerId: string): Promise<OAuthTokens> {
+    const stored = store.getToken(sellerId);
+    if (!stored) {
+      throw new Error(`No stored token for seller ${sellerId}`);
+    }
+
+    if (stub) {
+      const tokens = mockTokens(sellerId);
+      store.saveToken(sellerId, tokens);
+      return tokens;
+    }
+
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      refresh_token: stored.refresh_token,
+    });
+
+    const response = await fetch(ML_OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `OAuth token refresh failed: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    const tokens: OAuthTokens = {
+      access_token: data.access_token as string,
+      refresh_token: (data.refresh_token as string) ?? stored.refresh_token,
+      expires_in: (data.expires_in as number) ?? 21600,
+      user_id: stored.user_id,
+      nickname: stored.nickname,
+      account_level: stored.account_level as OAuthTokens["account_level"],
+    };
+
+    store.saveToken(sellerId, tokens);
+    return tokens;
+  }
+
+  function isTokenExpired(sellerId: string): boolean {
+    const stored = store.getToken(sellerId);
+    if (!stored) return true;
+
+    const expiresAt = new Date(stored.expires_at);
+    // Consider expired 60 seconds before actual expiration to allow buffer
+    return expiresAt.getTime() - 60_000 <= Date.now();
+  }
+
+  async function ensureValidToken(sellerId: string): Promise<string> {
+    const stored = store.getToken(sellerId);
+    if (!stored) {
+      throw new Error(`No stored token for seller ${sellerId}`);
+    }
+
+    if (!isTokenExpired(sellerId)) {
+      return stored.access_token;
+    }
+
+    const tokens = await refreshAccessToken(sellerId);
+    return tokens.access_token;
+  }
+
+  return {
+    getAuthorizationUrl,
+    exchangeCodeForToken,
+    refreshAccessToken,
+    isTokenExpired,
+    ensureValidToken,
+    getStoredToken: (sellerId: string) => store.getToken(sellerId),
+    deleteToken: (sellerId: string) => store.deleteToken(sellerId),
+    isStubMode: () => stub,
+    close: () => store.close(),
+  };
+}
