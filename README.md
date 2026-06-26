@@ -1,6 +1,8 @@
-# MSL — MercadoLibre Business Agent MVP
+# MSL — Plasticov/Maustian AI Agent
 
-Deterministic TypeScript MVP for a Spanish-facing MercadoLibre Chile (`MLC`) seller assistant. The current implementation is intentionally safe: it demonstrates chat advice, OAuth connection state, daily insights, approval-gated writes, audit visibility, and creative preview approval without real MercadoLibre credentials, real OAuth calls, LLM provider calls, generated media, or autonomous publication.
+Conversational AI agent for Plasticov and Maustian MercadoLibre Chile operations. Natural language interface (no commands), DeepSeek LLM with context caching, Cortex neural graph memory (SQLite + Hebbian learning), and invisible safety gates.
+
+**Current phase:** `main` is the deterministic MVP shell (hexagonal domain, approval gates, stubbed ML API). The project is being reoriented toward the architecture documented in [ROADMAP.md](./ROADMAP.md) and [Issue #14](https://github.com/riquelmechile/Msl/issues/14).
 
 ## Quick path
 
