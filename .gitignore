@@ -1,5 +1,14 @@
 .atl/
 node_modules/
+
+# Local environment files. Keep real API keys and passwords out of Git.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
 .next/
 **/.next/
 dist/
