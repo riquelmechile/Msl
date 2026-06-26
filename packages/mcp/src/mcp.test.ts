@@ -133,4 +133,52 @@ describe("MCP Server", () => {
     expect(MockStdioTransport).toHaveBeenCalled();
     expect(mockMcpServer.connect).toHaveBeenCalled();
   });
+
+  it("MCP auth rejects tool calls without a valid API key when MSL_MCP_API_KEY is set", async () => {
+    // Set the API key env var to enable authentication.
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+
+    // Re-create server with the env var set.
+    createMcpServer();
+
+    const cb = registeredTools.get("list_strategies");
+    expect(cb).toBeDefined();
+
+    // Call WITHOUT the msl_api_key — should be rejected.
+    const resultNoKey = (await cb!({})) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    expect(resultNoKey.isError).toBe(true);
+    const parsedNoKey = JSON.parse(resultNoKey.content[0]!.text) as Record<
+      string,
+      unknown
+    >;
+    expect(parsedNoKey.error).toContain("Unauthorized");
+
+    // Call WITH the wrong key — should be rejected.
+    const resultWrongKey = (await cb!({ msl_api_key: "wrong" })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    expect(resultWrongKey.isError).toBe(true);
+    const parsedWrongKey = JSON.parse(resultWrongKey.content[0]!.text) as Record<
+      string,
+      unknown
+    >;
+    expect(parsedWrongKey.error).toContain("Unauthorized");
+
+    // Call WITH the correct key — should succeed.
+    const resultOk = (await cb!({ msl_api_key: "secret-key-42" })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    expect(resultOk.isError).toBeFalsy();
+    const parsedOk = JSON.parse(resultOk.content[0]!.text) as Record<
+      string,
+      unknown
+    >;
+
+    vi.unstubAllEnvs();
+  });
 });

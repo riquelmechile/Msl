@@ -3,6 +3,8 @@ import type { BusinessSignalKind, CacheFreshness, ReadSnapshot, SellerId } from 
 // Re-export Cortex graph engine for agent conversation context.
 export {
   createGraphEngine,
+  createDatabase,
+  migrate,
   cosineSimilarity,
   GraphEngine,
 } from "./cortex/index.js";
@@ -17,6 +19,10 @@ export type {
   SpreadingOptions,
   TraversalResult,
 } from "./cortex/index.js";
+
+// Re-export shared connection pool and backup utilities.
+export { getSharedDb, closeSharedDb } from "./connectionPool.js";
+export { backupDatabase } from "./backup.js";
 
 export type LocalDataResidency = "local-only" | "selective-remote-sync";
 

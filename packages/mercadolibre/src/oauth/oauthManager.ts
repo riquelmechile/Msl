@@ -170,17 +170,19 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
   }
 
   async function ensureValidToken(sellerId: string): Promise<string> {
-    const stored = store.getToken(sellerId);
-    if (!stored) {
-      throw new Error(`No stored token for seller ${sellerId}`);
-    }
+    return store.withLock(sellerId, async () => {
+      const stored = store.getToken(sellerId);
+      if (!stored) {
+        throw new Error(`No stored token for seller ${sellerId}`);
+      }
 
-    if (!isTokenExpired(sellerId)) {
-      return stored.access_token;
-    }
+      if (!isTokenExpired(sellerId)) {
+        return stored.access_token;
+      }
 
-    const tokens = await refreshAccessToken(sellerId);
-    return tokens.access_token;
+      const tokens = await refreshAccessToken(sellerId);
+      return tokens.access_token;
+    });
   }
 
   return {

@@ -3,6 +3,23 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 /**
+ * Validates the MCP API key against the {@link MSL_MCP_API_KEY}
+ * environment variable.  Returns `true` when the environment variable
+ * is not set (development mode) or when the key matches.
+ */
+function validateApiKey(apiKey: string | undefined): boolean {
+  const expected = process.env.MSL_MCP_API_KEY;
+  if (!expected) {
+    // Development mode — no key configured, allow all.
+    console.warn(
+      "⚠️  MSL_MCP_API_KEY not set — MCP server is running without authentication.",
+    );
+    return true;
+  }
+  return apiKey === expected;
+}
+
+/**
  * Creates an MCP server that exposes all MSL agent tools via the
  * Model Context Protocol. Compatible with any MCP client (Claude Desktop,
  * Cursor, VS Code, etc.).
@@ -23,19 +40,33 @@ export function createMcpServer(config: McpServerConfig = {}) {
       inputSchema: {
         actorType: z.enum(["comprador", "proveedor", "competidor"]),
         query: z.string().optional(),
+        msl_api_key: z.string().optional(),
       },
     },
-    ({ actorType }) => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            result: "simulado",
-            actor: actorType ?? "desconocido",
-          }),
-        },
-      ],
-    }),
+    ({ actorType, msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              result: "simulado",
+              actor: actorType ?? "desconocido",
+            }),
+          },
+        ],
+      };
+    },
   );
 
   // ── detect_probes ─────────────────────────────────────────────────
@@ -47,16 +78,30 @@ export function createMcpServer(config: McpServerConfig = {}) {
       inputSchema: {
         questions: z.array(z.unknown()).optional(),
         views: z.array(z.unknown()).optional(),
+        msl_api_key: z.string().optional(),
       },
     },
-    () => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ status: "ok", tool: "detect_probes" }),
-        },
-      ],
-    }),
+    ({ msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ status: "ok", tool: "detect_probes" }),
+          },
+        ],
+      };
+    },
   );
 
   // ── sync_product ──────────────────────────────────────────────────
@@ -69,16 +114,30 @@ export function createMcpServer(config: McpServerConfig = {}) {
         sourceSellerId: z.string(),
         targetSellerId: z.string(),
         itemId: z.string(),
+        msl_api_key: z.string().optional(),
       },
     },
-    () => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ status: "ok", tool: "sync_product" }),
-        },
-      ],
-    }),
+    ({ msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ status: "ok", tool: "sync_product" }),
+          },
+        ],
+      };
+    },
   );
 
   // ── check_account ─────────────────────────────────────────────────
@@ -88,20 +147,34 @@ export function createMcpServer(config: McpServerConfig = {}) {
       description: "Verifica nivel y reputación de cuenta MercadoLibre",
       inputSchema: {
         sellerId: z.string(),
+        msl_api_key: z.string().optional(),
       },
     },
-    ({ sellerId }) => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            sellerId,
-            level: "platinum",
-            status: "active",
-          }),
-        },
-      ],
-    }),
+    ({ sellerId, msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              sellerId,
+              level: "platinum",
+              status: "active",
+            }),
+          },
+        ],
+      };
+    },
   );
 
   // ── list_strategies ───────────────────────────────────────────────
@@ -109,16 +182,31 @@ export function createMcpServer(config: McpServerConfig = {}) {
     "list_strategies",
     {
       description: "Lista estrategias activas del CEO",
-      inputSchema: {},
+      inputSchema: {
+        msl_api_key: z.string().optional(),
+      },
     },
-    () => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ strategies: [], count: 0 }),
-        },
-      ],
-    }),
+    ({ msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ strategies: [], count: 0 }),
+          },
+        ],
+      };
+    },
   );
 
   // ── consult_cortex ────────────────────────────────────────────────
@@ -128,16 +216,30 @@ export function createMcpServer(config: McpServerConfig = {}) {
       description: "Consulta la memoria neuronal para contexto de negocio",
       inputSchema: {
         query: z.string(),
+        msl_api_key: z.string().optional(),
       },
     },
-    () => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ status: "ok", tool: "consult_cortex" }),
-        },
-      ],
-    }),
+    ({ msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ status: "ok", tool: "consult_cortex" }),
+          },
+        ],
+      };
+    },
   );
 
   return server;

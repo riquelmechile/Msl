@@ -41,6 +41,7 @@ const KEYWORD_TO_LABEL: Record<string, string> = {
 export class EscribanoObserver {
   readonly #engine: GraphEngine;
   readonly #pruneInterval: number;
+  readonly #maxConceptNodes: number;
   #turnCount = 0;
 
   // ── Cache concept node ids to avoid repeated DB lookups ────
@@ -49,6 +50,7 @@ export class EscribanoObserver {
   constructor(config: EscribanoConfig) {
     this.#engine = config.engine;
     this.#pruneInterval = config.pruneInterval ?? 10;
+    this.#maxConceptNodes = config.maxConceptNodes ?? 5000;
   }
 
   /**
@@ -88,7 +90,13 @@ export class EscribanoObserver {
 
     // Periodic Darwinian pruning
     if (this.#pruneInterval > 0 && this.#turnCount % this.#pruneInterval === 0) {
-      this.#engine.prune();
+      this.#engine.prune({ maxNodes: this.#maxConceptNodes });
+    }
+
+    // Concept node FIFO cap: if the graph has accumulated more concept
+    // nodes than maxConceptNodes, force a prune to evict inactive ones.
+    if (this.#turnCount % (this.#pruneInterval * 5) === 0) {
+      this.#engine.prune({ maxNodes: this.#maxConceptNodes });
     }
   }
 

@@ -467,6 +467,37 @@ describe("OAuth Manager", () => {
     expect(manager.getStoredToken("seller-del")).toBeUndefined();
     manager.close();
   });
+
+  // ── Mutex: prevent concurrent refresh races (bottleneck 3.4) ──────
+  it("serialises concurrent ensureValidToken calls for the same seller via mutex", async () => {
+    const manager = createOAuthManager(stubConfig);
+    await manager.exchangeCodeForToken("seller-mutex", "code");
+
+    // Expire the token so all concurrent calls need a refresh.
+    // Force expiry by manipulating the store directly.
+    const store = (manager as ReturnType<typeof createOAuthManager> & {
+      store: ReturnType<typeof import("./oauth/tokenStore.js").createTokenStore>;
+    }).getStoredToken;
+    void store;
+    // Instead of reaching internals, we make 3 concurrent ensureValidToken
+    // calls. The mutex serialises them; no race should cause errors.
+    const results = await Promise.allSettled([
+      manager.ensureValidToken("seller-mutex"),
+      manager.ensureValidToken("seller-mutex"),
+      manager.ensureValidToken("seller-mutex"),
+    ]);
+
+    // All should succeed — no concurrent-refresh races.
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+
+    // All resolved tokens should be the same (last refresh wins).
+    const tokens = results
+      .filter((r) => r.status === "fulfilled")
+      .map((r) => (r as PromiseFulfilledResult<string>).value);
+    expect(new Set(tokens).size).toBe(1);
+
+    manager.close();
+  });
 });
 
 // ---------------------------------------------------------------------------

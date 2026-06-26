@@ -13,6 +13,24 @@ import { proposeDecoy } from "./honeyPotProposer.js";
 import { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from "./syncTools.js";
 import { createMetrics, type MetricsCollector } from "./observability.js";
 
+// ── Token budget (bottleneck 2.4) ──────────────────────────────────────
+
+/** Coarse token estimator: character count / 4.
+ *  DeepSeek tokens average ~4 characters per token for Spanish text. */
+export function estimateTokens(
+  messages: Array<{ role: string; content: string }>,
+): number {
+  let total = 0;
+  for (const msg of messages) {
+    total += Math.ceil(msg.content.length / 4);
+  }
+  return total;
+}
+
+/** Maximum tokens before truncation kicks in (800K tokens).
+ *  DeepSeek claims 1M context; we leave headroom for the response. */
+const MAX_TOKEN_BUDGET = 800_000;
+
 // ── Strategy Store Interface ─────────────────────────────────────────
 
 /**
@@ -1194,7 +1212,8 @@ function resolveTurnOutcome(
 
 /**
  * Builds the LLM messages array from the system prompt, conversation history,
- * and current user message.
+ * and current user message.  Enforces a token budget to prevent exceeding
+ * the context window.
  */
 function buildMessages(
   systemPrompt: string,
@@ -1216,7 +1235,46 @@ function buildMessages(
   // Current user message.
   const userMsg = { role: "user" as const, content: userMessage };
 
-  return [...systemMsg, ...historyMsgs, userMsg];
+  const allMessages = [...systemMsg, ...historyMsgs, userMsg];
+
+  // ── Token-budget enforcement ──────────────────────────────────────
+  const tokenCount = estimateTokens(allMessages);
+  if (tokenCount > MAX_TOKEN_BUDGET) {
+    console.warn(
+      `⚠️  Token budget exceeded: ${tokenCount} > ${MAX_TOKEN_BUDGET}. ` +
+      `Truncating oldest messages.`,
+    );
+    // Keep system + user, evict oldest history messages first.
+    const systemTokens = estimateTokens(systemMsg);
+    const userTokenCount = estimateTokens([userMsg]);
+    const headerBudget = systemTokens + userTokenCount;
+    const remainingBudget = MAX_TOKEN_BUDGET - headerBudget;
+
+    if (remainingBudget <= 0) {
+      // System prompt + user message alone exceed budget — still send them
+      // because we can't drop the current request.
+      console.warn(
+        `⚠️  Cannot fit system+user within token budget (${headerBudget} > ${MAX_TOKEN_BUDGET}). ` +
+        `Sending anyway — response may be truncated.`,
+      );
+      return [...systemMsg, userMsg];
+    }
+
+    // Keep newest history messages that fit within remaining budget.
+    const keptHistory: Array<{ role: string; content: string }> = [];
+    let usedBudget = 0;
+    for (let i = historyMsgs.length - 1; i >= 0; i--) {
+      const msg = historyMsgs[i]!;
+      const tokens = estimateTokens([msg]);
+      if (usedBudget + tokens > remainingBudget) break;
+      keptHistory.unshift(msg);
+      usedBudget += tokens;
+    }
+
+    return [...systemMsg, ...keptHistory, userMsg];
+  }
+
+  return allMessages;
 }
 
 /**

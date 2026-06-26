@@ -246,9 +246,17 @@ export class GraphEngine {
    * Strict less-than: edges at exactly 0.05 survive.
    * Idempotent: re-running on an already-pruned graph is a no-op.
    *
+   * When `maxNodes` is set and the node count exceeds it, the oldest
+   * inactive nodes (activation=0, no edges) are archived and removed.
+   * Nodes with active edges or activation > 0 are preserved regardless
+   * of age.
+   *
+   * @param options.maxNodes — maximum nodes before archival kicks in (default 10000).
    * @returns the number of edges pruned.
    */
-  prune(): { archivedCount: number } {
+  prune(options?: { maxNodes?: number }): { archivedCount: number } {
+    const maxNodes = options?.maxNodes ?? 10000;
+
     const count = this.db.transaction(() => {
       // Distill lessons from edges about to be pruned
       this.db
@@ -269,6 +277,45 @@ export class GraphEngine {
       const info = this.db
         .prepare("DELETE FROM edges WHERE weight < 0.05")
         .run();
+
+      // ── Node cap: archive oldest inactive nodes when above maxNodes ──
+      const nodeCount = (
+        this.db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number }
+      ).cnt;
+
+      if (nodeCount > maxNodes) {
+        // Archive nodes with activation=0 that have no incident edges
+        // (both as source or target), keeping the newest ones.
+        const toArchive = nodeCount - maxNodes;
+        this.db
+          .prepare(
+            `INSERT INTO darwinian_lessons (source_node, target_node, lesson, archived_at, reason)
+             SELECT n.id, 0,
+                    'archived inactive node: ' || n.label,
+                    datetime('now'), 'node_cap_exceeded'
+             FROM nodes n
+             WHERE n.activation = 0
+               AND n.id NOT IN (SELECT DISTINCT source FROM edges)
+               AND n.id NOT IN (SELECT DISTINCT target FROM edges)
+             ORDER BY n.id ASC
+             LIMIT ?`,
+          )
+          .run(toArchive);
+
+        this.db
+          .prepare(
+            `DELETE FROM nodes
+             WHERE id IN (
+               SELECT id FROM nodes
+               WHERE activation = 0
+                 AND id NOT IN (SELECT DISTINCT source FROM edges)
+                 AND id NOT IN (SELECT DISTINCT target FROM edges)
+               ORDER BY id ASC
+               LIMIT ?
+             )`,
+          )
+          .run(toArchive);
+      }
 
       return info.changes;
     })();

@@ -73,6 +73,8 @@ export type TokenStore = {
   saveToken(sellerId: string, tokens: OAuthTokens): void;
   getToken(sellerId: string): StoredToken | undefined;
   deleteToken(sellerId: string): void;
+  /** Execute fn while holding a per-seller lock to prevent concurrent refresh races. */
+  withLock<T>(sellerId: string, fn: () => Promise<T>): Promise<T>;
   close(): void;
 };
 
@@ -80,6 +82,11 @@ export function createTokenStore(dbPath = ":memory:"): TokenStore {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.exec(TOKEN_STORE_TABLE);
+
+  // ── Per-seller promise-based mutex ──────────────────────────────
+  // Prevents concurrent token refresh for the same seller by
+  // serialising refresh calls through a per-seller lock promise chain.
+  const locks = new Map<string, Promise<unknown>>();
 
   const insertStmt = db.prepare(`
     INSERT OR REPLACE INTO oauth_tokens
@@ -132,7 +139,24 @@ export function createTokenStore(dbPath = ":memory:"): TokenStore {
       deleteStmt.run(sellerId);
     },
 
+    async withLock<T>(sellerId: string, fn: () => Promise<T>): Promise<T> {
+      // Chain this call onto the previous lock promise for this seller.
+      // Each subsequent caller waits for the previous one to finish,
+      // effectively serialising concurrent access to the same seller.
+      const prev = locks.get(sellerId) ?? Promise.resolve();
+      let release: () => void;
+      const next = new Promise<void>((resolve) => { release = resolve; });
+      locks.set(sellerId, prev.then(() => next));
+      try {
+        await prev;
+        return await fn();
+      } finally {
+        release!();
+      }
+    },
+
     close(): void {
+      locks.clear();
       db.close();
     },
   };

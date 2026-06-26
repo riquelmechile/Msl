@@ -109,6 +109,16 @@ export function createAutonomyEngine(
     VALUES (@level, @marginCompliance, @successRate, @safetyViolations, @responseAccuracy, @timestamp)
   `);
 
+  /** Limit kpi_history to the most recent 1000 rows (FIFO eviction). */
+  const trimKpiHistoryStmt = db.prepare(`
+    DELETE FROM kpi_history
+    WHERE id IN (
+      SELECT id FROM kpi_history
+      ORDER BY id ASC
+      LIMIT MAX(0, (SELECT COUNT(*) FROM kpi_history) - 1000)
+    )
+  `);
+
   const insertDegradationStmt = db.prepare(`
     INSERT INTO degradation_events
       (from_level, to_level, reason, kpi_snapshot, timestamp)
@@ -179,6 +189,8 @@ export function createAutonomyEngine(
       responseAccuracy: kpi.responseAccuracy,
       timestamp: normalizeTs(kpi.timestamp),
     });
+    // Enforce FIFO cap: keep last 1000 records.
+    trimKpiHistoryStmt.run();
   };
 
   // ── Evaluation helpers ────────────────────────────────────────

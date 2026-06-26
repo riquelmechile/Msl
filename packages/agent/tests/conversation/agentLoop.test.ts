@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 
-import { createAgentLoop, createDeepSeekClient } from "../../src/conversation/agentLoop.js";
+import { createAgentLoop, createDeepSeekClient, estimateTokens } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
 import type { ConversationState, Strategy, StreamingChunk } from "../../src/conversation/types.js";
@@ -632,5 +632,48 @@ describe("honey-pot tools — agent loop integration", () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
 
     engine.db.close();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Token estimator (bottleneck 2.4)
+// ─────────────────────────────────────────────────────────────────────
+describe("estimateTokens", () => {
+  it("estimates ~1 token per 4 characters for empty input", () => {
+    expect(estimateTokens([])).toBe(0);
+  });
+
+  it("estimates tokens with ceil rounding", () => {
+    // Short message, 4 chars → 1 token
+    expect(estimateTokens([{ role: "user", content: "hola" }])).toBe(1);
+    // 5 chars → ceil(5/4) = 2 tokens
+    expect(estimateTokens([{ role: "user", content: "hola!" }])).toBe(2);
+  });
+
+  it("sums across multiple messages", () => {
+    const msgs = [
+      { role: "system", content: "You are a helpful assistant. Respond in Spanish." },
+      { role: "user", content: "¿Cuál es mi margen promedio?" },
+      { role: "assistant", content: "Tu margen promedio es 32.4%." },
+    ];
+    const tokens = estimateTokens(msgs);
+    const expected = msgs.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+    expect(tokens).toBe(expected);
+  });
+
+  it("estimates in a reasonable ballpark for realistic Spanish text", () => {
+    // ~400 characters → ~100 tokens. DeepSeek averages ~4 chars/token for Spanish.
+    const longMsg = {
+      role: "assistant",
+      content:
+        "Analicé tus márgenes actuales. El margen promedio de la tienda es 32.4%. " +
+        "En la categoría Hogar y Muebles, los márgenes están entre 28% y 38%. " +
+        "Veo 89 listings con precio por encima del promedio de categoría que podrían " +
+        "estar perdiendo visibilidad. ¿Querés que te prepare una propuesta?",
+    };
+    const tokens = estimateTokens([longMsg]);
+    // ~350 chars → ~88 tokens. Accept ±30% tolerance.
+    expect(tokens).toBeGreaterThan(60);
+    expect(tokens).toBeLessThan(120);
   });
 });

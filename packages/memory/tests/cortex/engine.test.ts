@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createDatabase } from "../../src/cortex/database.js";
+import { createDatabase, migrate } from "../../src/cortex/database.js";
 import { cosineSimilarity, GraphEngine } from "../../src/cortex/engine.js";
 import { DuplicateEdgeError, NodeNotFoundError, type ProbeRecord } from "../../src/cortex/types.js";
 
@@ -57,6 +57,75 @@ describe("createDatabase", () => {
     expect(colNames).toContain("probe_type");
     expect(colNames).toContain("outcome");
     expect(colNames).toContain("created_at");
+  });
+
+  it("schema_version table exists after creation", () => {
+    const db = createDatabase(":memory:");
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
+      .get() as { name: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.name).toBe("schema_version");
+  });
+});
+
+describe("migrate", () => {
+  it("applies baseline migration version 1", () => {
+    const db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    db.pragma("foreign_keys = ON");
+
+    // Run the schema + migrations
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        applied_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT NOT NULL
+      );
+    `);
+
+    const result = migrate(db);
+    expect(result.applied).toBeGreaterThanOrEqual(1);
+
+    // The version 1 row should exist
+    const row = db
+      .prepare("SELECT version FROM schema_version WHERE version = 1")
+      .get() as { version: number } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.version).toBe(1);
+
+    db.close();
+  });
+
+  it("is idempotent — re-running returns skipped for applied versions", () => {
+    const db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    db.pragma("foreign_keys = ON");
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        applied_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT NOT NULL
+      );
+    `);
+
+    // First run
+    const first = migrate(db);
+    expect(first.applied).toBeGreaterThanOrEqual(1);
+
+    // Second run — idempotent
+    const second = migrate(db);
+    // Already-applied versions are skipped; no new versions are applied.
+    expect(second.applied).toBe(0);
+
+    db.close();
   });
 });
 
@@ -625,6 +694,55 @@ describe("GraphEngine", () => {
         }
       ).cnt;
       expect(lessonCount).toBe(2);
+    });
+
+    it("enforces max_nodes cap — archives oldest inactive nodes above threshold", () => {
+      // Create more nodes than the low cap to trigger archival.
+      const nodes = Array.from({ length: 15 }, (_, i) =>
+        engine.createNode(`inactive_${i}`),
+      );
+      // All nodes have activation=0 and no edges — they are candidates.
+      // Set a tiny cap so the engine must archive some.
+      const result = engine.prune({ maxNodes: 10 });
+      // No edges to prune (all weights are 0.5), but nodes above cap
+      // should be archived as lessons.
+      expect(result.archivedCount).toBe(0); // no edge pruning
+
+      // Verify at most maxNodes remain
+      const remaining = (
+        db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number }
+      ).cnt;
+      expect(remaining).toBeLessThanOrEqual(10);
+
+      // Lessons should exist for the archived nodes
+      const lessonCount = (
+        db.prepare(
+          "SELECT COUNT(*) as cnt FROM darwinian_lessons WHERE reason = 'node_cap_exceeded'",
+        ).get() as { cnt: number }
+      ).cnt;
+      expect(lessonCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it("does not archive nodes above max_nodes if they have edges or activation", () => {
+      // Create two nodes with an edge between them — they should survive.
+      const a = engine.createNode("active-A");
+      const b = engine.createNode("active-B");
+      engine.createEdge(a.id, b.id);
+      // Also create a node with activation > 0.
+      const c = engine.createNode("active-C");
+      db.prepare("UPDATE nodes SET activation = 0.5 WHERE id = ?").run(c.id);
+
+      // Create 12 inactive nodes to trigger cap at 10
+      for (let i = 0; i < 12; i++) {
+        engine.createNode(`pad_${i}`);
+      }
+
+      engine.prune({ maxNodes: 10 });
+
+      // Active nodes (with edges or activation) should still exist
+      expect(engine.getNode(a.id)).not.toBeNull();
+      expect(engine.getNode(b.id)).not.toBeNull();
+      expect(engine.getNode(c.id)).not.toBeNull();
     });
   });
 

@@ -233,6 +233,8 @@ export type EscribanoConfig = {
   engine: import("@msl/memory").GraphEngine;
   /** Trigger Darwinian pruning every N turns (default 10, 0 to disable). */
   pruneInterval?: number;
+  /** Maximum concept nodes before FIFO cleanup (default 5000). */
+  maxConceptNodes?: number;
 };
 
 /** Outcome of a conversation turn from the observer's perspective. */

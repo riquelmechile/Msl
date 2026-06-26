@@ -4,41 +4,108 @@ import type { TraversalResult } from "@msl/memory";
 import type { ConversationMessage } from "./types.js";
 
 /**
+ * Interface for the daily business data source (Block B).
+ *
+ * Implementations provide real MercadoLibre API data for daily aggregates.
+ * The default implementation returns hardcoded placeholder data — wire a
+ * real ML-backed implementation in production.
+ */
+export type DailyDataSource = {
+  /** Category-level stats: name → { activeProducts, monthlySales, marginAvg }. */
+  getCategoryStats(): Array<{
+    name: string;
+    activeProducts: number;
+    monthlySales?: number;
+    marginAvg?: number;
+  }>;
+  /** Monthly sales volume in CLP. */
+  getMonthlyVolume(): number;
+  /** Reputation summary: level, rating, open claims, claim rate. */
+  getReputation(): {
+    level: string;
+    rating: number;
+    openClaims: number;
+    mediationClaims: number;
+    pendingResponse: number;
+    resolvedThisMonth: number;
+    claimRate: number;
+    avgResponseTimeHours: number;
+  };
+};
+
+/**
+ * Default hardcoded DailyDataSource implementation.
+ * Returns realistic placeholder data for Plasticov / Maustian (MLC).
+ */
+const defaultDataSource: DailyDataSource = {
+  getCategoryStats: () => [
+    { name: "Hogar y Muebles", activeProducts: 423, monthlySales: 4_200_000, marginAvg: 35.2 },
+    { name: "Jardín y Aire Libre", activeProducts: 312, monthlySales: 2_800_000, marginAvg: 28.5 },
+    { name: "Herramientas", activeProducts: 198, monthlySales: 1_500_000, marginAvg: 41.0 },
+    { name: "Industrias y Oficinas", activeProducts: 187, monthlySales: 980_000, marginAvg: 25.8 },
+    { name: "Otras", activeProducts: 127, monthlySales: 340_000, marginAvg: 31.5 },
+  ],
+  getMonthlyVolume: () => 9_820_000,
+  getReputation: () => ({
+    level: "Platinum",
+    rating: 4.8,
+    openClaims: 3,
+    mediationClaims: 1,
+    pendingResponse: 2,
+    resolvedThisMonth: 14,
+    claimRate: 0.4,
+    avgResponseTimeHours: 4.2,
+  }),
+};
+
+/**
  * Builds Block B: daily business aggregates with 24-hour TTL.
  *
- * ~15K token budget — stubbed with realistic MercadoLibre placeholder data
- * until a read-snapshot API provides live aggregates.
+ * Accepts an optional {@link DailyDataSource} implementation.
+ * When omitted, falls back to hardcoded placeholder data.
+ *
+ * ~15K token budget — keeps the prefix cache valid across conversations.
  *
  * TTL: 24 hours. Must be refreshed daily to keep the prefix cache valid.
  * DeepSeek prefix cache anchors at token 0; keeping Block A+B identical
  * across all conversations for the same seller achieves >90% cache hit rate.
  */
-export function buildDailyAggregates(): string {
+export function buildDailyAggregates(source?: DailyDataSource): string {
+  const ds = source ?? defaultDataSource;
+  const categories = ds.getCategoryStats();
+  const monthlyVolume = ds.getMonthlyVolume();
+  const rep = ds.getReputation();
+
+  const categoryLines = categories
+    .map(
+      (c) =>
+        `- ${c.name}: ${c.activeProducts} productos activos` +
+        (c.monthlySales ? `, ventas mensuales ~$${c.monthlySales.toLocaleString("es-CL")}` : "") +
+        (c.marginAvg ? `, margen prom. ${c.marginAvg}%` : ""),
+    )
+    .join("\n");
+
   return `## Contexto diario — Plasticov / Maustian (24h, refrescado automáticamente)
 
 ### Métricas del día
 - Fecha: ${todaySpanish()}
 - Ventas del día: $340.500 CLP (12 órdenes)
-- Ventas del mes: $9.820.000 CLP
+- Ventas del mes: $${monthlyVolume.toLocaleString("es-CL")} CLP
 - Margen promedio: 32.4%
 - Productos vendidos hoy: 18 unidades
 - Visitas a listings: 1.247
 - Tasa de conversión: 2.1%
 
 ### Categorías activas
-- Hogar y Muebles: 423 productos activos
-- Jardín y Aire Libre: 312 productos activos
-- Herramientas: 198 productos activos
-- Industrias y Oficinas: 187 productos activos
-- Otras: 127 productos activos
+${categoryLines}
 
 ### Reputación
-- Nivel de MercadoLíder: Platinum
-- Calificación promedio: 4.8 / 5.0
-- Reclamos abiertos: 3 (1 mediación, 2 en espera de respuesta)
-- Reclamos resueltos este mes: 14
-- Tasa de reclamos: 0.4% (debajo del promedio de categoría 1.2%)
-- Tiempo promedio de respuesta: 4.2 horas
+- Nivel de MercadoLíder: ${rep.level}
+- Calificación promedio: ${rep.rating} / 5.0
+- Reclamos abiertos: ${rep.openClaims} (${rep.mediationClaims} mediación, ${rep.pendingResponse} en espera de respuesta)
+- Reclamos resueltos este mes: ${rep.resolvedThisMonth}
+- Tasa de reclamos: ${rep.claimRate}% (debajo del promedio de categoría 1.2%)
+- Tiempo promedio de respuesta: ${rep.avgResponseTimeHours} horas
 
 ### Inventario crítico (stock bajo)
 - Artículos con stock ≤ 3 unidades: 47
