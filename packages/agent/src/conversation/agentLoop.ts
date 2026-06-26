@@ -1,6 +1,7 @@
 import OpenAI from "openai";
-import type { AgentProposal, ConversationMessage, ConversationState, StreamingChunk } from "./types.js";
-import { spanishValidator, harmfulContentFilter } from "./guardrails.js";
+import type { AgentProposal, ConversationMessage, ConversationState, Strategy, StreamingChunk } from "./types.js";
+import { spanishValidator, harmfulContentFilter, strategyValidator } from "./guardrails.js";
+import { parseStrategy } from "./strategyParser.js";
 
 /**
  * The result of a single turn of the agent conversation loop.
@@ -18,12 +19,17 @@ export type ConverseResult = {
  * Configuration for the agent loop factory.
  */
 export type AgentLoopConfig = {
-  /** The system prompt (Block A) to use for identity and hard rules. */
+  /** The base system prompt (Block A) for identity and hard rules. */
   systemPrompt: string;
   /** When true, uses an internal mock LLM client instead of a real API. */
   mockClient?: boolean;
   /** The model name to use (default: "deepseek-v4-flash"). */
   model?: string;
+  /**
+   * Active CEO strategies to inject into the system prompt and validate
+   * against proposals. Pass empty array or omit for no strategies.
+   */
+  strategies?: Strategy[];
 };
 
 /**
@@ -67,6 +73,31 @@ export function createAgentLoop(config: AgentLoopConfig) {
       ? createMockClient()
       : createNoopClient();
 
+  // ── Strategy state (mutable closure) ──────────────────────────────
+  let activeStrategies = config.strategies ?? [];
+
+  /**
+   * Build the effective system prompt by injecting active strategies
+   * when present.
+   *
+   * The base `config.systemPrompt` is used as-is when no strategies
+   * are active. When strategies exist, a `## Estrategias del CEO`
+   * section is appended so the LLM sees them on every turn.
+   */
+  function getSystemPrompt(): string {
+    if (activeStrategies.length === 0) {
+      return config.systemPrompt;
+    }
+    const strategyLines = activeStrategies.map(
+      (s) => `- [${s.ruleType}] ${s.ruleText}`,
+    );
+    return `${config.systemPrompt}
+
+## Estrategias del CEO
+Las siguientes son estrategias definidas por el dueño. DEBÉS seguirlas en cada recomendación:
+${strategyLines.join("\n")}`;
+  }
+
   return {
     /**
      * Process a single user message through the agent conversation loop
@@ -91,8 +122,8 @@ export function createAgentLoop(config: AgentLoopConfig) {
         return blockAndRespond(state, userMessage, harmfulCheck.reason);
       }
 
-      // --- Build messages array ---
-      const llmMessages = buildMessages(config.systemPrompt, state, userMessage);
+      // --- Build messages array with strategy-aware system prompt ---
+      const llmMessages = buildMessages(getSystemPrompt(), state, userMessage);
 
       // --- Send to LLM ---
       const llmResponse = await client.chat(llmMessages);
@@ -118,6 +149,14 @@ export function createAgentLoop(config: AgentLoopConfig) {
         const pendingProposal = extractPendingProposal(state.messages);
         if (pendingProposal) {
           proposal = pendingProposal;
+        }
+      }
+
+      // --- Strategy guardrail ---
+      if (proposal) {
+        const strategyCheck = strategyValidator(proposal, activeStrategies);
+        if (!strategyCheck.passed) {
+          return blockAndRespond(state, userMessage, strategyCheck.reason);
         }
       }
 
@@ -154,13 +193,40 @@ export function createAgentLoop(config: AgentLoopConfig) {
         return;
       }
 
-      // --- Build messages array ---
-      const llmMessages = buildMessages(config.systemPrompt, state, userMessage);
+      // --- Build messages array with strategy-aware system prompt ---
+      const llmMessages = buildMessages(getSystemPrompt(), state, userMessage);
 
       // --- Stream from LLM ---
       for await (const chunk of client.stream(llmMessages)) {
         yield chunk;
       }
+    },
+
+    /**
+     * Parse raw CEO text and add the resulting strategies to the active list.
+     *
+     * Uses the hybrid parser (regex fast-path) to extract structured rules
+     * from natural Spanish, then appends them to the mutable strategy list
+     * so they are available on the next turn.
+     *
+     * @param text — Raw CEO directive text in Spanish.
+     * @returns The parsed result showing extracted rules and unparsed fragments.
+     */
+    updateStrategy(text: string) {
+      const parsed = parseStrategy(text);
+      // Convert ParsedRules to Strategy objects with synthetic ids.
+      const newStrategies: Strategy[] = parsed.rules.map((rule, i) => ({
+        id: -(i + 1), // negative ids to distinguish from persisted strategies
+        ruleType: rule.ruleType,
+        ruleText: rule.originalText,
+        parsedRule: rule,
+        confidence: parsed.confidence,
+        status: "active" as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+      activeStrategies = [...activeStrategies, ...newStrategies];
+      return parsed;
     },
   };
 }

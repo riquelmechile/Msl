@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { actionSafetyValidator, harmfulContentFilter, spanishValidator } from "../../src/conversation/guardrails.js";
-import type { AgentProposal } from "../../src/conversation/types.js";
+import { actionSafetyValidator, harmfulContentFilter, spanishValidator, strategyValidator } from "../../src/conversation/guardrails.js";
+import type { AgentProposal, Strategy } from "../../src/conversation/types.js";
 
 // ---------------------------------------------------------------------------
 // spanishValidator
@@ -139,5 +139,229 @@ describe("actionSafetyValidator", () => {
     expect(result.reason).toMatch(/riesgo/i);
     expect(result.reason).toContain("low");
     expect(result.reason).toContain("high");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// strategyValidator
+// ---------------------------------------------------------------------------
+
+function makeStrategy(overrides: Partial<Strategy> = {}): Strategy {
+  return {
+    id: 1,
+    ruleType: "margin",
+    ruleText: "margen mínimo 50% en electrónica",
+    parsedRule: {
+      ruleType: "margin",
+      target: "margen",
+      operator: ">=",
+      value: "50%",
+      priority: 5,
+      originalText: "margen mínimo 50% en electrónica",
+    },
+    confidence: 1.0,
+    status: "active",
+    createdAt: "2026-06-26T10:00:00Z",
+    updatedAt: "2026-06-26T10:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("strategyValidator", () => {
+  it("passes when strategies array is empty", () => {
+    const proposal = makeProposal();
+    const result = strategyValidator(proposal, []);
+    expect(result.passed).toBe(true);
+  });
+
+  it("passes for a compliant proposal (price up, not margin strategy)", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({ ruleType: "stock", ruleText: "priorizar +10 stock" }),
+    ];
+    const proposal = makeProposal({
+      action: {
+        ...makeProposal().action,
+        exactChange: [{ field: "price", from: 10000, to: 12000 }],
+      },
+    });
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(true);
+  });
+
+  it("blocks a price-lowering proposal against a margin strategy", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({
+        ruleType: "margin",
+        ruleText: "margen mínimo 50% en electrónica",
+        parsedRule: {
+          ...makeStrategy().parsedRule,
+          ruleType: "margin",
+          operator: ">=",
+          value: "50%",
+        },
+      }),
+    ];
+    const proposal = makeProposal({
+      action: {
+        ...makeProposal().action,
+        exactChange: [{ field: "price", from: 15000, to: 13500 }],
+      },
+    });
+
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toMatch(/contradice la estrategia del CEO/i);
+    expect(result.reason).toContain("margen mínimo 50% en electrónica");
+  });
+
+  it("blocks a proposal that mentions an excluded category", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({
+        ruleType: "category",
+        ruleText: "no competir en juguetes",
+        parsedRule: {
+          ruleType: "category",
+          target: "categoría",
+          operator: "evitar",
+          value: "juguetes",
+          priority: 5,
+          originalText: "no competir en juguetes",
+        },
+      }),
+    ];
+    const proposal = makeProposal({
+      naturalSummary: "¿Crear listing de juguetes?",
+      action: {
+        ...makeProposal().action,
+        rationale: "La categoría de juguetes tiene alta demanda",
+      },
+    });
+
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toMatch(/contradice la estrategia del CEO/i);
+    expect(result.reason).toContain("no competir en juguetes");
+  });
+
+  it("passes when proposal does not mention the excluded category", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({
+        ruleType: "category",
+        ruleText: "no competir en juguetes",
+        parsedRule: {
+          ruleType: "category",
+          target: "categoría",
+          operator: "evitar",
+          value: "juguetes",
+          priority: 5,
+          originalText: "no competir en juguetes",
+        },
+      }),
+    ];
+    const proposal = makeProposal({
+      naturalSummary: "¿Ajustar precio de electrónica?",
+      action: {
+        ...makeProposal().action,
+        rationale: "Electrónica tiene buen margen",
+      },
+    });
+
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(true);
+  });
+
+  it("passes for a price-stable proposal even with margin strategy", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({
+        ruleType: "margin",
+        ruleText: "margen mínimo 50%",
+        parsedRule: {
+          ...makeStrategy().parsedRule,
+          ruleType: "margin",
+          operator: ">=",
+          value: "50%",
+        },
+      }),
+    ];
+    // Price is going up, not down — so it shouldn't trigger the margin guard.
+    const proposal = makeProposal({
+      action: {
+        ...makeProposal().action,
+        exactChange: [{ field: "price", from: 10000, to: 11000 }],
+      },
+    });
+
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(true);
+  });
+
+  it("passes when no active strategies exist (undefined)", () => {
+    const strategies: Strategy[] = [];
+    const proposal = makeProposal({
+      action: {
+        ...makeProposal().action,
+        exactChange: [{ field: "price", from: 15000, to: 5000 }],
+      },
+    });
+
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(true);
+  });
+
+  it("blocks price above pricing cap", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({
+        ruleType: "pricing",
+        ruleText: "precio máximo $20000",
+        parsedRule: {
+          ruleType: "pricing",
+          target: "precio",
+          operator: "<=",
+          value: "20000",
+          priority: 5,
+          originalText: "precio máximo 20000",
+        },
+      }),
+    ];
+    const proposal = makeProposal({
+      action: {
+        ...makeProposal().action,
+        exactChange: [{ field: "price", from: 15000, to: 25000 }],
+      },
+    });
+
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain("precio máximo $20000");
+  });
+
+  it("produces Spanish rejection messages", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({
+        ruleType: "margin",
+        ruleText: "margen mínimo 50% en electrónica",
+        parsedRule: {
+          ...makeStrategy().parsedRule,
+          ruleType: "margin",
+          operator: ">=",
+          value: "50%",
+        },
+      }),
+    ];
+    const proposal = makeProposal({
+      action: {
+        ...makeProposal().action,
+        exactChange: [{ field: "price", from: 15000, to: 10000 }],
+      },
+    });
+
+    const result = strategyValidator(proposal, strategies);
+    expect(result.passed).toBe(false);
+    // Spanish rejection
+    expect(result.reason).toMatch(/contradice/i);
+    expect(result.reason).toMatch(/estrategia/i);
+    expect(result.reason).toMatch(/CEO/i);
+    // Should not contain English
+    expect(result.reason).not.toMatch(/\bv[io]lates\b/i);
   });
 });

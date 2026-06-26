@@ -25,9 +25,11 @@ export {
   spanishValidator,
   harmfulContentFilter,
   actionSafetyValidator,
+  strategyValidator,
 } from "./conversation/guardrails.js";
 
 export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
+export { createStrategyStore } from "./conversation/strategyStore.js";
 
 export type AgentTopic =
   | "margin"

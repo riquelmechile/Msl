@@ -1,3 +1,5 @@
+import type { Strategy } from "./types.js";
+
 /**
  * Builds Block A of the 3-block prefix-anchored cache strategy.
  *
@@ -6,10 +8,14 @@
  * the same seller.
  *
  * @param sellerName Display name of the current seller.
+ * @param strategies Optional CEO strategies to inject into the system prompt.
+ *                   When provided and non-empty, appends a `## Estrategias del CEO`
+ *                   section after the hard rules. When empty or undefined, the
+ *                   section is omitted entirely.
  * @returns The complete system prompt as a single Spanish string.
  */
-export function buildSystemPrompt(sellerName: string): string {
-  return `Eres un asistente de negocio con IA para ${sellerName}, que administra la tienda Plasticov/Maustian en MercadoLibre Chile.
+export function buildSystemPrompt(sellerName: string, strategies?: Strategy[]): string {
+  const base = `Eres un asistente de negocio con IA para ${sellerName}, que administra la tienda Plasticov/Maustian en MercadoLibre Chile.
 
 ## Identidad del negocio
 - Nombre de la tienda: Plasticov / Maustian
@@ -36,4 +42,18 @@ Sos un asistente comercial de IA que ayuda al vendedor a tomar decisiones inform
 6. **Aprendizaje continuo**: Aprendé de las correcciones del vendedor. Si te corrige, incorporá ese aprendizaje para futuras interacciones.
 
 7. **Propuestas concretas**: Proponé acciones concretas y específicas, nunca des respuestas genéricas ni ambiguas. Cada propuesta debe incluir qué acción realizar, sobre qué listing o producto, y el impacto esperado.`;
+
+  // Inject CEO strategies when provided.
+  if (strategies && strategies.length > 0) {
+    const strategyLines = strategies.map(
+      (s) => `- [${s.ruleType}] ${s.ruleText}`,
+    );
+    return `${base}
+
+## Estrategias del CEO
+Las siguientes son estrategias definidas por el dueño. DEBÉS seguirlas en cada recomendación:
+${strategyLines.join("\n")}`;
+  }
+
+  return base;
 }

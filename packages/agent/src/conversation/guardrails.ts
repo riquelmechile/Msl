@@ -1,6 +1,6 @@
 import { riskLevelForAction } from "@msl/domain";
 
-import type { AgentProposal } from "./types.js";
+import type { AgentProposal, Strategy } from "./types.js";
 
 /** Result of a guardrail check. */
 export type GuardResult = {
@@ -125,6 +125,97 @@ export function actionSafetyValidator(proposal: AgentProposal): GuardResult {
       passed: false,
       reason: "La acción propuesta no incluye justificación (rationale).",
     };
+  }
+
+  return { passed: true };
+}
+
+// ---------------------------------------------------------------------------
+// Strategy validator
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates an AgentProposal against active CEO strategies.
+ *
+ * Simple keyword-based matching:
+ * - **Margin strategies**: if the proposal lowers the price, it may violate a
+ *   minimum-margin rule.
+ * - **Category-exclusion strategies**: if the proposal text or rationale mentions
+ *   a category the CEO marked as "evitar", the proposal is blocked.
+ * - **Empty / no strategies**: always passes.
+ *
+ * Violations produce a Spanish explanation so the seller understands why the
+ * proposal was blocked.
+ */
+export function strategyValidator(
+  proposal: AgentProposal,
+  strategies: Strategy[],
+): GuardResult {
+  if (!strategies || strategies.length === 0) {
+    return { passed: true };
+  }
+
+  // Collect the full proposal text for keyword matching.
+  const proposalText =
+    `${proposal.naturalSummary} ${proposal.action.rationale ?? ""}`.toLowerCase();
+
+  // Inspect price changes.
+  const priceDown = proposal.action.exactChange.some(
+    (ch) =>
+      ch.field === "price" &&
+      typeof ch.from === "number" &&
+      typeof ch.to === "number" &&
+      ch.to < ch.from,
+  );
+
+  for (const strategy of strategies) {
+    const rule = strategy.parsedRule;
+
+    // ── Margin validation ────────────────────────────────────────
+    if (rule.ruleType === "margin" && priceDown) {
+      // Extract the target percentage from the strategy value.
+      const targetPct = parseFloat(rule.value);
+      if (!isNaN(targetPct)) {
+        return {
+          passed: false,
+          reason: `La propuesta contradice la estrategia del CEO: ${strategy.ruleText}`,
+        };
+      }
+    }
+
+    // ── Category exclusion validation ────────────────────────────
+    if (rule.ruleType === "category" && rule.operator === "evitar") {
+      const excludedCategory = rule.value.toLowerCase();
+      if (
+        excludedCategory &&
+        proposalText.includes(excludedCategory)
+      ) {
+        return {
+          passed: false,
+          reason: `La propuesta contradice la estrategia del CEO: ${strategy.ruleText}`,
+        };
+      }
+    }
+
+    // ── Pricing cap validation ───────────────────────────────────
+    if (rule.ruleType === "pricing" && rule.operator === "<=") {
+      const cap = parseFloat(rule.value);
+      if (!isNaN(cap)) {
+        // If the proposal raises the price above the cap, block it.
+        const priceUp = proposal.action.exactChange.some(
+          (ch) =>
+            ch.field === "price" &&
+            typeof ch.to === "number" &&
+            ch.to > cap,
+        );
+        if (priceUp) {
+          return {
+            passed: false,
+            reason: `La propuesta contradice la estrategia del CEO: ${strategy.ruleText}`,
+          };
+        }
+      }
+    }
   }
 
   return { passed: true };
