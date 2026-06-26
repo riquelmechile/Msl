@@ -1,5 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
-import Database from "better-sqlite3";
+import { describe, expect, it } from "vitest";
 
 import type {
   ProductSyncEngine,
@@ -58,6 +57,7 @@ function createStubSyncEngine(): ProductSyncEngine & {
     _syncProductCalls,
     _syncAllCalls,
 
+    // eslint-disable-next-line @typescript-eslint/require-await
     async syncProduct(
       sourceSellerId: string,
       targetSellerId: string,
@@ -74,6 +74,7 @@ function createStubSyncEngine(): ProductSyncEngine & {
       };
     },
 
+    // eslint-disable-next-line @typescript-eslint/require-await
     async syncAll(
       sourceSellerId: string,
       targetSellerId: string,
@@ -121,6 +122,7 @@ function createStubMlClient(): MlClient {
   };
 
   return {
+    // eslint-disable-next-line @typescript-eslint/require-await
     getItems: async () => ({
       sellerId: "test",
       kind: "listing",
@@ -130,6 +132,7 @@ function createStubMlClient(): MlClient {
       freshness: {} as never,
       confidence: "high",
     }),
+    // eslint-disable-next-line @typescript-eslint/require-await
     getItem: async () =>
       ({
         id: "MLC1001",
@@ -142,6 +145,7 @@ function createStubMlClient(): MlClient {
         pictures: [],
         attributes: [],
       }) satisfies MlItem,
+    // eslint-disable-next-line @typescript-eslint/require-await
     getOrders: async () => ({
       sellerId: "test",
       kind: "order",
@@ -151,6 +155,7 @@ function createStubMlClient(): MlClient {
       freshness: {} as never,
       confidence: "high",
     }),
+    // eslint-disable-next-line @typescript-eslint/require-await
     getQuestions: async () => ({
       sellerId: "test",
       kind: "message",
@@ -160,6 +165,7 @@ function createStubMlClient(): MlClient {
       freshness: {} as never,
       confidence: "high",
     }),
+    // eslint-disable-next-line @typescript-eslint/require-await
     publishItem: async () =>
       ({
         id: "MLC-NEW-1",
@@ -167,6 +173,7 @@ function createStubMlClient(): MlClient {
         status: "active",
         capturedAt: "2026-06-26T10:00:00Z",
       }) satisfies MlWriteSnapshot,
+    // eslint-disable-next-line @typescript-eslint/require-await
     updateItem: async () =>
       ({
         id: "MLC1001",
@@ -174,11 +181,13 @@ function createStubMlClient(): MlClient {
         status: "active",
         capturedAt: "2026-06-26T10:00:00Z",
       }) satisfies MlWriteSnapshot,
+    // eslint-disable-next-line @typescript-eslint/require-await
     getCategories: async () => ({
       sellerId: "test",
       data: [],
       capturedAt: "2026-06-26T10:00:00Z",
     }),
+    // eslint-disable-next-line @typescript-eslint/require-await
     getUserInfo: async () =>
       ({
         sellerId: "test",
@@ -344,11 +353,12 @@ describe("createCheckAccountTool — unit", () => {
   it("returns error when getUserInfo throws", async () => {
     const brokenClient: MlClient = {
       ...createStubMlClient(),
+      // eslint-disable-next-line @typescript-eslint/require-await
       getUserInfo: async () => {
         throw new Error("Network failure");
       },
     };
-    const tool = createCheckAccountTool(brokenClient as MlClient);
+    const tool = createCheckAccountTool(brokenClient);
 
     const result = await tool.execute({ sellerId: "plasticov" });
 
@@ -405,7 +415,7 @@ describe("sync tools — agent loop integration", () => {
   it("blocks sync when no CEO strategies are active", async () => {
     const engine = createStubSyncEngine();
     const cortex = createGraphEngine(":memory:");
-    const agent = createAgentLoop({
+    createAgentLoop({
       systemPrompt:
         "Eres Plasticov, asistente comercial. Respondé en español. " +
         "Cuando el vendedor pida sincronizar, usá la herramienta sync_product.",

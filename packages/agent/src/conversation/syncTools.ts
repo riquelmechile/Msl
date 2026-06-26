@@ -27,7 +27,7 @@ function coerceStrategies(raw: unknown): SyncStrategy[] {
   return raw.filter(
     (s): s is SyncStrategy =>
       typeof s === "object" && s !== null && typeof (s as Record<string, unknown>).type === "string",
-  ) as SyncStrategy[];
+  );
 }
 
 /**
@@ -130,7 +130,7 @@ export function createSyncProductTool(
         storeSyncOutcome(cortex, result, sourceSellerId, targetSellerId);
       }
 
-      return result as unknown as Record<string, unknown>;
+      return result;
     },
   };
 }
@@ -237,7 +237,7 @@ export function createSyncAllTool(
         }
       }
 
-      return report as unknown as Record<string, unknown>;
+      return report;
     },
   };
 }
@@ -286,7 +286,7 @@ export function createCheckAccountTool(
 
       try {
         const snapshot: MlUserSnapshot = await mlClient.getUserInfo(sellerId);
-        return snapshot.data as unknown as Record<string, unknown>;
+        return snapshot.data;
       } catch (err) {
         return {
           error:

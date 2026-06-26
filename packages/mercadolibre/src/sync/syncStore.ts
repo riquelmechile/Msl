@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { MlItem, NewItem, MlWriteSnapshot } from "../types.js";
+import type { MlItem, MlWriteSnapshot } from "../types.js";
 import { isOutOfSync as diffOutOfSync } from "./diffEngine.js";
 
 // ---------------------------------------------------------------------------

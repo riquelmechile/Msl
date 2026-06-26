@@ -4,7 +4,6 @@ import {
   analyzeQuestions,
   detectViewAnomalies,
 } from "../../src/conversation/probeDetector.js";
-import type { ProbeAlert } from "../../src/conversation/types.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 

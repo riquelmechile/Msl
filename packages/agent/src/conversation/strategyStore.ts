@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS ceo_strategies (
  * Raw row shape returned by SQLite queries.
  * Column names use snake_case; the public Strategy interface uses camelCase.
  */
-interface StrategyRow {
+type StrategyRow = {
   id: number;
   rule_type: string;
   rule_text: string;

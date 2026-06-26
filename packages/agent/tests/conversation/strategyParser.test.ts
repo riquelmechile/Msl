@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { classifyRuleType, parseStrategy } from "../../src/conversation/strategyParser.js";
-import type { ParsedRule, RuleType } from "../../src/conversation/types.js";
+import type { ParsedRule } from "../../src/conversation/types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -324,7 +324,7 @@ describe("parseStrategy — edge cases", () => {
 
 describe("classifyRuleType", () => {
   it("returns existing ruleType when already set", () => {
-    expect(classifyRuleType({ ruleType: "margin" } as Partial<ParsedRule>)).toBe(
+    expect(classifyRuleType({ ruleType: "margin" })).toBe(
       "margin",
     );
   });

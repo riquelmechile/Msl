@@ -22,7 +22,7 @@ function makeState(overrides: Partial<ConversationState> = {}): ConversationStat
   };
 }
 
-interface KpiRow {
+type KpiRow = {
   level: number;
   margin_compliance: number;
   success_rate: number;
@@ -31,7 +31,7 @@ interface KpiRow {
   timestamp: string;
 }
 
-interface DegradationRow {
+type DegradationRow = {
   id: number;
   from_level: number;
   to_level: number;
@@ -418,7 +418,7 @@ describe("autonomy engine — system prompt integration", () => {
 
     // Just verifying the agent can be created and used.
     expect(agent).toBeDefined();
-    expect(agent.converse).toBeInstanceOf(Function);
+    expect(typeof agent.converse).toBe("function");
   });
 
   it("includes autonomy info in agent loop's internal system prompt", async () => {

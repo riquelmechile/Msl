@@ -19,7 +19,7 @@ export enum AutonomyLevel {
 }
 
 /** Snapshot of KPI values recorded after an action execution. */
-export interface KpiSnapshot {
+export type KpiSnapshot = {
   /** Autonomy level at the moment the KPI was recorded. */
   level: AutonomyLevel;
   /** 0-1 — whether the price respected the CEO margin strategy. */
@@ -35,7 +35,7 @@ export interface KpiSnapshot {
 }
 
 /** Recorded when the autonomy level drops due to KPI breaches. */
-export interface DegradationEvent {
+export type DegradationEvent = {
   /** Level before the degradation. */
   from: AutonomyLevel;
   /** Level after the degradation. */
@@ -128,7 +128,7 @@ export type RuleType =
   | "probe";
 
 /** A single structured rule extracted from CEO natural-language text. */
-export interface ParsedRule {
+export type ParsedRule = {
   /** Which business domain the rule governs. */
   ruleType: RuleType;
   /** Semantic target label, e.g. "margen", "stock", "categoría". */
@@ -146,7 +146,7 @@ export interface ParsedRule {
 }
 
 /** A persisted strategy with lifecycle tracking. */
-export interface Strategy {
+export type Strategy = {
   id: number;
   ruleType: RuleType;
   /** Raw CEO directive text. */
@@ -161,7 +161,7 @@ export interface Strategy {
 }
 
 /** Result of parsing CEO strategy text. */
-export interface ParseResult {
+export type ParseResult = {
   /** Successfully extracted rules. */
   rules: ParsedRule[];
   /** Text fragments that could not be parsed into rules. */
@@ -176,7 +176,7 @@ export interface ParseResult {
 export type ActorType = "comprador" | "proveedor" | "competidor";
 
 /** Structured result from an actor simulation. */
-export interface SimulationResult {
+export type SimulationResult = {
   actorType: ActorType;
   recommendation: string;
   confidence: number;
@@ -185,7 +185,7 @@ export interface SimulationResult {
 }
 
 /** Persisted actor simulation row. */
-export interface ActorSimulationRecord {
+export type ActorSimulationRecord = {
   id: number;
   actorType: ActorType;
   query: string;

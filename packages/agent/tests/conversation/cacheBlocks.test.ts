@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { GraphEngine, createGraphEngine } from "@msl/memory";
 

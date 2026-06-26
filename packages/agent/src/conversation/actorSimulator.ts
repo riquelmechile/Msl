@@ -48,7 +48,7 @@ const VALID_ACTORS_MSG = VALID_ACTORS.join(", ");
 
 // ── Mock Response Builder ───────────────────────────────────────────
 
-interface MockResponse {
+type MockResponse = {
   recommendation: string;
   rationale: string;
 }
@@ -202,7 +202,7 @@ function generateSimulationId(): string {
 
 // ── Counterintelligence ──────────────────────────────────────────────
 
-interface CounterintelResponse {
+type CounterintelResponse = {
   recommendation: string;
   rationale: string;
 }
@@ -312,6 +312,7 @@ export function getActorPrompt(actorType: ActorType): string {
  *          confidence (0.85), and a unique simulationId.
  * @throws If actorType is invalid or query is empty.
  */
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function simulateActor(
   actorType: ActorType,
   query: string,

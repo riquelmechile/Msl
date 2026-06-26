@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { createAgentLoop, createDeepSeekClient } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
-import type { ConversationState, DecoyProposal, Strategy, StreamingChunk } from "../../src/conversation/types.js";
+import type { ConversationState, Strategy, StreamingChunk } from "../../src/conversation/types.js";
 import { createGraphEngine } from "@msl/memory";
 
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {

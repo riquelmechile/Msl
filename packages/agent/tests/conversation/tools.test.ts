@@ -1,5 +1,4 @@
-import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { GraphEngine, createGraphEngine } from "@msl/memory";
 
 import {
@@ -37,7 +36,7 @@ describe("createGetBusinessContextTool", () => {
   });
 
   it("has valid parameters schema with required 'query'", () => {
-    const params = tool.parameters as Record<string, unknown>;
+    const params = tool.parameters;
     expect(params.type).toBe("object");
     const props = params.properties as Record<string, unknown>;
     expect(props).toHaveProperty("query");
@@ -69,7 +68,7 @@ describe("createGetBusinessContextTool", () => {
     // TraversalResult.context is a flat Record<string, unknown>.
     expect(result).toHaveProperty("activated_nodes");
     expect(result).toHaveProperty("node_count");
-    expect((result as Record<string, unknown>).node_count).toBeGreaterThan(0);
+    expect((result).node_count).toBeGreaterThan(0);
   });
 });
 
@@ -87,7 +86,7 @@ describe("createPrepareActionTool", () => {
   });
 
   it("has valid parameters schema with required fields", () => {
-    const params = tool.parameters as Record<string, unknown>;
+    const params = tool.parameters;
     expect(params.type).toBe("object");
 
     const props = params.properties as Record<string, unknown>;
@@ -207,7 +206,7 @@ describe("createSimulateActorTool", () => {
   });
 
   it("has valid parameters schema with required fields", () => {
-    const params = tool.parameters as Record<string, unknown>;
+    const params = tool.parameters;
     expect(params.type).toBe("object");
 
     const props = params.properties as Record<string, unknown>;
@@ -220,7 +219,7 @@ describe("createSimulateActorTool", () => {
   });
 
   it("has actorType enum with valid values", () => {
-    const params = tool.parameters as Record<string, unknown>;
+    const params = tool.parameters;
     const props = params.properties as Record<string, unknown>;
     const actorTypeSchema = props.actorType as Record<string, unknown>;
 
@@ -243,7 +242,7 @@ describe("createSimulateActorTool", () => {
     expect(result).toHaveProperty("confidence", 0.85);
     expect(result).toHaveProperty("simulationId");
     expect(result).toHaveProperty("rationale");
-    expect((result as Record<string, unknown>).simulationId).toMatch(
+    expect((result).simulationId).toMatch(
       /^sim-/,
     );
   });
@@ -255,7 +254,7 @@ describe("createSimulateActorTool", () => {
     });
 
     expect(result).toHaveProperty("error");
-    expect((result as Record<string, unknown>).error).toMatch(
+    expect((result).error).toMatch(
       /no válido/i,
     );
   });
@@ -267,7 +266,7 @@ describe("createSimulateActorTool", () => {
     });
 
     expect(result).toHaveProperty("error");
-    expect((result as Record<string, unknown>).error).toMatch(
+    expect((result).error).toMatch(
       /obligatorio|vacío/i,
     );
   });
@@ -278,7 +277,7 @@ describe("createSimulateActorTool", () => {
     });
 
     expect(result).toHaveProperty("error");
-    expect((result as Record<string, unknown>).error).toMatch(
+    expect((result).error).toMatch(
       /obligatorio|vacío/i,
     );
   });
@@ -292,7 +291,7 @@ describe("createSimulateActorTool", () => {
     expect(result).toHaveProperty("actorType", "proveedor");
     expect(result).toHaveProperty("recommendation");
     expect(result).toHaveProperty("confidence", 0.85);
-    expect((result as Record<string, unknown>).recommendation).toMatch(
+    expect((result).recommendation).toMatch(
       /proveedor/i,
     );
   });
@@ -306,7 +305,7 @@ describe("createSimulateActorTool", () => {
     expect(result).toHaveProperty("actorType", "competidor");
     expect(result).toHaveProperty("recommendation");
     expect(result).toHaveProperty("confidence", 0.85);
-    expect((result as Record<string, unknown>).recommendation).toMatch(
+    expect((result).recommendation).toMatch(
       /competidor/i,
     );
   });
@@ -329,7 +328,7 @@ describe("createDetectProbesTool", () => {
 
   it("has valid parameters schema with optional questions and views", () => {
     const tool = createDetectProbesTool(makeDetector());
-    const params = tool.parameters as Record<string, unknown>;
+    const params = tool.parameters;
     expect(params.type).toBe("object");
     const props = params.properties as Record<string, unknown>;
     expect(props).toHaveProperty("questions");
@@ -463,7 +462,7 @@ describe("createProposeHoneyPotTool", () => {
       makePassingValidator(),
       () => [makeProbeStrategy()],
     );
-    const params = tool.parameters as Record<string, unknown>;
+    const params = tool.parameters;
     expect(params.type).toBe("object");
     const required = params.required as string[];
     expect(required).toContain("strategyId");
@@ -548,7 +547,7 @@ describe("createProposeHoneyPotTool", () => {
       () => [makeProbeStrategy()],
       (proposal) => { captured = proposal; },
     );
-    tool.execute({ strategyId: 1 });
+    void tool.execute({ strategyId: 1 });
     expect(captured).not.toBeNull();
     expect(captured!.id).toBe("decoy-001");
   });
@@ -561,7 +560,7 @@ describe("createProposeHoneyPotTool", () => {
       () => [makeProbeStrategy()],
       (proposal) => { captured = proposal; },
     );
-    tool.execute({ strategyId: 1 });
+    void tool.execute({ strategyId: 1 });
     expect(captured).toBeNull();
   });
 

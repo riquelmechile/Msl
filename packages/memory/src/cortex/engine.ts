@@ -174,7 +174,7 @@ export class GraphEngine {
 
     const placeholders = nodeIds.map(() => "?").join(", ");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const rows = this.db
       .prepare(
         `WITH RECURSIVE spread(src, tgt, nid, label, act, depth) AS (

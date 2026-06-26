@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { proposeDecoy } from "../../src/conversation/honeyPotProposer.js";
 import type {
-  DecoyProposal,
   SimulationResult,
   Strategy,
 } from "../../src/conversation/types.js";

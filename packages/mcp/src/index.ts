@@ -25,7 +25,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
         query: z.string().optional(),
       },
     },
-    async ({ actorType }) => ({
+    ({ actorType }) => ({
       content: [
         {
           type: "text" as const,
@@ -49,7 +49,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
         views: z.array(z.unknown()).optional(),
       },
     },
-    async () => ({
+    () => ({
       content: [
         {
           type: "text" as const,
@@ -71,7 +71,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
         itemId: z.string(),
       },
     },
-    async () => ({
+    () => ({
       content: [
         {
           type: "text" as const,
@@ -90,7 +90,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
         sellerId: z.string(),
       },
     },
-    async ({ sellerId }) => ({
+    ({ sellerId }) => ({
       content: [
         {
           type: "text" as const,
@@ -111,7 +111,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
       description: "Lista estrategias activas del CEO",
       inputSchema: {},
     },
-    async () => ({
+    () => ({
       content: [
         {
           type: "text" as const,
@@ -130,7 +130,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
         query: z.string(),
       },
     },
-    async () => ({
+    () => ({
       content: [
         {
           type: "text" as const,

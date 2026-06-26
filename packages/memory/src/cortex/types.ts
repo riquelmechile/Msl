@@ -74,7 +74,7 @@ export class NodeNotFoundError extends Error {
 
 export type ActorType = "comprador" | "proveedor" | "competidor";
 
-export interface SimulationResult {
+export type SimulationResult = {
   actorType: ActorType;
   recommendation: string;
   confidence: number;
@@ -94,7 +94,7 @@ export type ActorProfileNode = GraphNode & {
 // ── Honey-Pot Probing ─────────────────────────────────────────────
 
 /** Minimal probe record passed to GraphEngine.storeProbeResult. */
-export interface ProbeRecord {
+export type ProbeRecord = {
   proposalId: string;
   probeType: string;
   description: string;

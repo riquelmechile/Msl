@@ -310,7 +310,7 @@ export function createSimulateActorTool(
         query,
       );
 
-      return result as unknown as Record<string, unknown>;
+      return result;
     },
   };
 }
@@ -505,7 +505,7 @@ export function createProposeHoneyPotTool(
       // Notify the caller (agent loop) that a validated proposal was generated.
       onProposed?.(proposal);
 
-      return proposal as unknown as Record<string, unknown>;
+      return proposal;
     },
   };
 }

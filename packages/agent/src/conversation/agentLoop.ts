@@ -21,7 +21,7 @@ import { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from
  * Matches the subset of {@link createStrategyStore} methods needed for
  * list/update/archive operations from natural conversation.
  */
-export interface StrategyStore {
+export type StrategyStore = {
   listActive(): Strategy[];
   insertStrategy(ruleText: string, parsedRule: ParsedRule, confidence: number): Strategy;
   archiveStrategy(id: number): void;
@@ -981,7 +981,7 @@ function mockChat(
         const parsed = JSON.parse(m.content) as Record<string, unknown>;
         return (
           "alerts" in parsed ||
-          (typeof parsed.id === "string" && (parsed.id as string).startsWith("decoy-"))
+          (typeof parsed.id === "string" && (parsed.id).startsWith("decoy-"))
         );
       } catch {
         return false;

@@ -72,9 +72,10 @@ describe("MCP Server", () => {
     const cb = registeredTools.get("simulate_actor");
     expect(cb).toBeDefined();
 
-    const result = await cb!({ actorType: "competidor" });
-    const typed = result as { content: { text: string }[] };
-    const parsed = JSON.parse(typed.content[0]!.text) as Record<
+    const result = (await cb!({ actorType: "competidor" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<
       string,
       unknown
     >;
@@ -98,9 +99,10 @@ describe("MCP Server", () => {
     const cb = registeredTools.get("check_account");
     expect(cb).toBeDefined();
 
-    const result = await cb!({ sellerId: "ML-test" });
-    const typed = result as { content: { text: string }[] };
-    const parsed = JSON.parse(typed.content[0]!.text) as Record<
+    const result = (await cb!({ sellerId: "ML-test" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<
       string,
       unknown
     >;
@@ -115,9 +117,8 @@ describe("MCP Server", () => {
     const cb = registeredTools.get("list_strategies");
     expect(cb).toBeDefined();
 
-    const result = await cb!({});
-    const typed = result as { content: { text: string }[] };
-    const parsed = JSON.parse(typed.content[0]!.text) as Record<
+    const result = (await cb!({})) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<
       string,
       unknown
     >;

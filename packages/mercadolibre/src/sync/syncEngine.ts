@@ -192,7 +192,7 @@ export function createProductSyncEngine(input: {
         }
       }
       sourceListings = items;
-    } catch (err) {
+    } catch {
       const completedAt = new Date().toISOString();
       return {
         total: 0,

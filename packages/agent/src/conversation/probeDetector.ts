@@ -198,14 +198,14 @@ export function detectViewAnomalies(
 
   if (avg === 0) return []; // Avoid division by zero
 
-  if (today!.count > avg * 2) {
-    const ratio = today!.count / avg;
+  if (today.count > avg * 2) {
+    const ratio = today.count / avg;
     const confidence = Math.min(0.9, 0.65 + (ratio - 2) * 0.1);
 
     alerts.push({
       pattern: "view_anomaly",
       confidence: Number(confidence.toFixed(2)),
-      description: `Pico anómalo de vistas detectado: ${today!.count} vistas (${ratio.toFixed(1)}× el promedio de ${avg.toFixed(0)}). Posible reconocimiento de competidores.`,
+      description: `Pico anómalo de vistas detectado: ${today.count} vistas (${ratio.toFixed(1)}× el promedio de ${avg.toFixed(0)}). Posible reconocimiento de competidores.`,
       recommendedAction: "monitor",
     });
   }

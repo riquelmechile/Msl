@@ -62,7 +62,7 @@ const THRESHOLD_ORDER: Record<string, number> = {
 
 // ── Row mapping ──────────────────────────────────────────────────────
 
-interface KpiRow {
+type KpiRow = {
   level: number;
   margin_compliance: number;
   success_rate: number;
@@ -70,17 +70,6 @@ interface KpiRow {
   response_accuracy: number;
   timestamp: string;
 }
-
-interface DegradationRow {
-  id: number;
-  from_level: number;
-  to_level: number;
-  reason: string;
-  kpi_snapshot: string | null;
-  timestamp: string;
-}
-
-// ── Factory ──────────────────────────────────────────────────────────
 
 /**
  * Create the autonomy engine backed by SQLite.
@@ -139,7 +128,7 @@ export function createAutonomyEngine(
    */
   const getCurrentLevel = (): AutonomyLevel => {
     const row = getLevelStmt.get() as { current_level: number };
-    return row.current_level as AutonomyLevel;
+    return row.current_level;
   };
 
   /**
@@ -241,7 +230,7 @@ export function createAutonomyEngine(
     const current = getCurrentLevel();
     if (current === AutonomyLevel.CONSULTA) return null; // already at floor
 
-    let newLevel: number = current;
+    let newLevel: AutonomyLevel = current;
     const reasons: string[] = [];
 
     // Rule 1: safety violations > 3 in last 24h → force level 0
@@ -267,7 +256,7 @@ export function createAutonomyEngine(
         reasons.push(
           `Cumplimiento de margen promedio (${(avgMargin * 100).toFixed(0)}%) por debajo del 80% en los últimos 7 días.`,
         );
-        newLevel = Math.max(0, newLevel - 1) as AutonomyLevel;
+        newLevel = Math.max(0, newLevel - 1);
       }
     }
 
@@ -281,7 +270,7 @@ export function createAutonomyEngine(
         reasons.push(
           `Tasa de éxito promedio (${(avgSuccess * 100).toFixed(0)}%) por debajo del 50% en los últimos 30 días.`,
         );
-        newLevel = Math.max(0, newLevel - 1) as AutonomyLevel;
+        newLevel = Math.max(0, newLevel - 1);
       }
     }
 
@@ -314,7 +303,7 @@ export function createAutonomyEngine(
 
     return {
       from: current,
-      to: newLevel as AutonomyLevel,
+      to: newLevel,
       reason,
       kpiSnapshot: eventSnapshot,
       timestamp: nowIsoVal,
@@ -368,7 +357,7 @@ export function createAutonomyEngine(
       monthRows.length;
     if (avgAccuracy <= 0.9) return { recommend: false, to: current };
 
-    return { recommend: true, to: (current + 1) as AutonomyLevel };
+    return { recommend: true, to: (current + 1) };
   };
 
   // ── Auto-approval gate ────────────────────────────────────────

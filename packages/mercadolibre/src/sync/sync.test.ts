@@ -13,20 +13,15 @@ import {
 import {
   diffListings,
   isOutOfSync,
-  type DiffResult,
 } from "./diffEngine.js";
 
 import {
   createSyncStore,
-  type SyncStore,
   type SyncState,
 } from "./syncStore.js";
 
 import {
   createProductSyncEngine,
-  type ProductSyncEngine,
-  type SyncResult,
-  type SyncReport,
 } from "./syncEngine.js";
 
 import type { MlClient } from "../index.js";
@@ -381,7 +376,7 @@ describe("Sync Store", () => {
     expect(state!.targetItemId).toBe("MLC-MAUSTIAN-1");
     expect(state!.sourceData).toBeDefined();
 
-    const parsed = JSON.parse(state!.sourceData!);
+    const parsed = JSON.parse(state!.sourceData!) as { price: number };
     expect(parsed.price).toBe(10000);
 
     store.close();
@@ -536,9 +531,10 @@ describe("Product Sync Engine", () => {
     publishResults?: Map<string, MlWriteSnapshot>,
     getItemError?: string,
   ): MlClient {
-    const results = publishResults ?? new Map();
+    const results = publishResults ?? new Map<string, MlWriteSnapshot>();
 
     return {
+      // eslint-disable-next-line @typescript-eslint/require-await
       getItems: async (_sellerId: string) => ({
         sellerId: _sellerId,
         kind: "listing",
@@ -561,6 +557,7 @@ describe("Product Sync Engine", () => {
         },
         confidence: "high",
       }),
+      // eslint-disable-next-line @typescript-eslint/require-await
       getItem: async (_sellerId: string, itemId: string) => {
         if (getItemError) {
           throw new Error(getItemError);
@@ -569,6 +566,7 @@ describe("Product Sync Engine", () => {
         if (!item) throw new Error(`Item ${itemId} not found`);
         return item;
       },
+      // eslint-disable-next-line @typescript-eslint/require-await
       getOrders: async () => ({
         sellerId: "",
         kind: "order",
@@ -585,6 +583,7 @@ describe("Product Sync Engine", () => {
         },
         confidence: "high",
       }),
+      // eslint-disable-next-line @typescript-eslint/require-await
       getQuestions: async () => ({
         sellerId: "",
         kind: "message",
@@ -601,6 +600,7 @@ describe("Product Sync Engine", () => {
         },
         confidence: "high",
       }),
+      // eslint-disable-next-line @typescript-eslint/require-await
       publishItem: async (_sellerId: string, _item: NewItem) => {
         const existing = results.get(_item.title);
         if (existing) return existing;
@@ -614,17 +614,20 @@ describe("Product Sync Engine", () => {
         results.set(_item.title, snapshot);
         return snapshot;
       },
+      // eslint-disable-next-line @typescript-eslint/require-await
       updateItem: async () => ({
         id: "MLC-UPD",
         permalink: "https://example.com",
         status: "active",
         capturedAt: new Date().toISOString(),
       }),
+      // eslint-disable-next-line @typescript-eslint/require-await
       getCategories: async () => ({
         sellerId: "",
         data: [],
         capturedAt: new Date().toISOString(),
       }),
+      // eslint-disable-next-line @typescript-eslint/require-await
       getUserInfo: async () => ({
         sellerId: "",
         data: { id: 0, nickname: "", points: 0, level: "", status: "" },

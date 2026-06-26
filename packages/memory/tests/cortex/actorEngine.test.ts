@@ -58,7 +58,10 @@ describe("seedActorNodes", () => {
       expect(node).not.toBeNull();
       expect(node!.activation).toBe(0.5);
 
-      const meta = JSON.parse(node!.metadata);
+      const meta = JSON.parse(node!.metadata) as {
+        type: string;
+        persona: string;
+      };
       expect(meta.type).toBe("actor_profile");
       expect(["comprador", "proveedor", "competidor"]).toContain(meta.persona);
     }
@@ -69,17 +72,23 @@ describe("seedActorNodes", () => {
 
     const compradorNode = engine.getActorNode("comprador");
     expect(compradorNode).not.toBeNull();
-    const compMeta = JSON.parse(compradorNode!.metadata);
+    const compMeta = JSON.parse(compradorNode!.metadata) as {
+      traits: string[];
+    };
     expect(compMeta.traits).toEqual(compradorTraits);
 
     const proveedorNode = engine.getActorNode("proveedor");
     expect(proveedorNode).not.toBeNull();
-    const provMeta = JSON.parse(proveedorNode!.metadata);
+    const provMeta = JSON.parse(proveedorNode!.metadata) as {
+      traits: string[];
+    };
     expect(provMeta.traits).toEqual(proveedorTraits);
 
     const competidorNode = engine.getActorNode("competidor");
     expect(competidorNode).not.toBeNull();
-    const comp2Meta = JSON.parse(competidorNode!.metadata);
+    const comp2Meta = JSON.parse(competidorNode!.metadata) as {
+      traits: string[];
+    };
     expect(comp2Meta.traits).toEqual(competidorTraits);
   });
 
@@ -272,7 +281,7 @@ describe("recordSimulation", () => {
     expect(row.query).toBe("¿Comprarias a $15.000?");
     expect(row.created_at).toBeTruthy();
 
-    const parsed = JSON.parse(row.result);
+    const parsed = JSON.parse(row.result) as Record<string, unknown>;
     expect(parsed).toEqual(result);
   });
 

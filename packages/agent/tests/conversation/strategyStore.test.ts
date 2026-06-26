@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it, beforeEach } from "vitest";
 
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
-import type { ParsedRule, Strategy } from "../../src/conversation/types.js";
+import type { ParsedRule } from "../../src/conversation/types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ describe("strategyStore", () => {
 
   // ── Supersede ────────────────────────────────────────────────
 
-  it("supersedeStrategy marks old strategy and records replaced_by", async () => {
+  it("supersedeStrategy marks old strategy and records replaced_by", () => {
     const old = store.insertStrategy("margen 30%", marginRule({ value: "30%", originalText: "margen 30%" }), 1.0);
     const newer = store.insertStrategy("margen 50%", marginRule(), 1.0);
 

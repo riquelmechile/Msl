@@ -105,6 +105,7 @@ export class EscribanoObserver {
 
   /** Hebbian penalization: guardrail-blocked proposals weaken edges on rejected-proposal → rejection nodes. */
   #handleGuardrailRejection(proposal: AgentProposal | undefined, _response: string): void {
+    void _response;
     if (!proposal) return;
 
     const sourceId = this.#getOrCreateConcept(this.#proposalToConceptLabel(proposal));

@@ -1,6 +1,6 @@
 // Types for dual-account ML API integration (PR 1+2)
 
-export interface MlItem {
+export type MlItem = {
   id: string;
   title: string;
   price: number;
@@ -12,7 +12,7 @@ export interface MlItem {
   attributes: Array<{ id: string; value_name: string }>;
 }
 
-export interface NewItem {
+export type NewItem = {
   title: string;
   category_id: string;
   price: number;
@@ -22,7 +22,7 @@ export interface NewItem {
   attributes: Array<{ id: string; value_name: string }>;
 }
 
-export interface MlOrder {
+export type MlOrder = {
   id: string;
   status: string;
   total_amount: number;
@@ -34,7 +34,7 @@ export interface MlOrder {
   }>;
 }
 
-export interface MlQuestion {
+export type MlQuestion = {
   id: string;
   text: string;
   status: string;
@@ -42,7 +42,7 @@ export interface MlQuestion {
   item_id: string;
 }
 
-export interface MlUserInfo {
+export type MlUserInfo = {
   id: number;
   nickname: string;
   points: number;
@@ -50,7 +50,7 @@ export interface MlUserInfo {
   status: string;
 }
 
-export interface OAuthTokens {
+export type OAuthTokens = {
   access_token: string;
   refresh_token: string;
   expires_in: number;
@@ -59,7 +59,7 @@ export interface OAuthTokens {
   account_level: "classic" | "premium" | "platinum";
 }
 
-export interface StoredToken {
+export type StoredToken = {
   seller_id: string;
   access_token: string;
   refresh_token: string;
@@ -69,27 +69,27 @@ export interface StoredToken {
   account_level: string;
 }
 
-export interface MlWriteSnapshot {
+export type MlWriteSnapshot = {
   id: string;
   permalink: string;
   status: string;
   capturedAt: string;
 }
 
-export interface MlCategory {
+export type MlCategory = {
   id: string;
   name: string;
   path_from_root?: Array<{ id: string; name: string }>;
   children_categories?: Array<{ id: string; name: string }>;
 }
 
-export interface MlCategoriesSnapshot {
+export type MlCategoriesSnapshot = {
   sellerId: string;
   data: MlCategory[];
   capturedAt: string;
 }
 
-export interface MlUserSnapshot {
+export type MlUserSnapshot = {
   sellerId: string;
   data: MlUserInfo;
   capturedAt: string;

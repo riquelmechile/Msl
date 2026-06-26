@@ -860,7 +860,11 @@ describe("GraphEngine — storeProbeResult", () => {
     expect(rows[0]!.proposal_id).toBe("decoy-001");
     expect(rows[0]!.probe_type).toBe("price_probe");
 
-    const outcome = JSON.parse(rows[0]!.outcome as string);
+    const outcome = JSON.parse(rows[0]!.outcome as string) as {
+      success: boolean;
+      competitorReaction: string;
+      learnedAt: string;
+    };
     expect(outcome.success).toBe(true);
     expect(outcome.competitorReaction).toBe("Competidor bajó precio en 5%");
     expect(outcome.learnedAt).toBe("2026-06-26T14:00:00Z");
@@ -873,7 +877,12 @@ describe("GraphEngine — storeProbeResult", () => {
     expect(node).not.toBeNull();
     expect(node!.label).toBe("probe_decoy-001");
 
-    const metadata = JSON.parse(node!.metadata);
+    const metadata = JSON.parse(node!.metadata) as {
+      probe: boolean;
+      proposalId: string;
+      probeType: string;
+      description: string;
+    };
     expect(metadata.probe).toBe(true);
     expect(metadata.proposalId).toBe("decoy-001");
     expect(metadata.probeType).toBe("price_probe");

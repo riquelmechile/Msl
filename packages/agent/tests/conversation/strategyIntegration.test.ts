@@ -6,7 +6,7 @@ import { strategyValidator } from "../../src/conversation/guardrails.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { createAgentLoop } from "../../src/conversation/agentLoop.js";
-import type { AgentProposal, Strategy, ConversationState, ParsedRule } from "../../src/conversation/types.js";
+import type { AgentProposal, ConversationState } from "../../src/conversation/types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -120,17 +120,17 @@ describe("strategy integration — parse → store → inject → validate", () 
 
   it("multiple strategies in system prompt formatted correctly", () => {
     // Parse and store multiple strategies
-    const marginRule = store.insertStrategy(
+    store.insertStrategy(
       "margen mínimo 50% en electrónica",
       parseStrategy("margen mínimo 50% en electrónica").rules[0]!,
       1.0,
     );
-    const stockRule = store.insertStrategy(
+    store.insertStrategy(
       "priorizo +10 stock en productos estrella",
       parseStrategy("priorizo +10 stock en productos estrella").rules[0]!,
       1.0,
     );
-    const catRule = store.insertStrategy(
+    store.insertStrategy(
       "no competir en juguetes",
       parseStrategy("no competir en juguetes").rules[0]!,
       1.0,
@@ -177,7 +177,7 @@ describe("strategy integration — parse → store → inject → validate", () 
   it("agent loop blocks margin violation with strategy guardrail", async () => {
     // Parse and store a margin strategy
     const parsed = parseStrategy("margen mínimo 50%");
-    const strategy = store.insertStrategy("margen mínimo 50%", parsed.rules[0]!, parsed.confidence);
+    store.insertStrategy("margen mínimo 50%", parsed.rules[0]!, parsed.confidence);
     const activeStrategies = store.listActive();
 
     // Create agent with strategies
@@ -199,7 +199,7 @@ describe("strategy integration — parse → store → inject → validate", () 
   it("agent loop passes compliant proposal through strategy guardrail", async () => {
     // Parse a category exclusion strategy only
     const parsed = parseStrategy("no competir en juguetes");
-    const strategy = store.insertStrategy("no competir en juguetes", parsed.rules[0]!, parsed.confidence);
+    store.insertStrategy("no competir en juguetes", parsed.rules[0]!, parsed.confidence);
     const activeStrategies = store.listActive();
 
     const agent = createAgentLoop({

@@ -47,7 +47,7 @@ const DEPLOY_DECOY_RE =
 
 // ── Internal helpers ────────────────────────────────────────────────
 
-interface PatternMatch {
+type PatternMatch = {
   start: number;
   end: number;
   rule: ParsedRule;
@@ -93,7 +93,7 @@ function baseRule(
     operator,
     value,
     priority: 5 as const,
-    originalText: m[0]!,
+    originalText: m[0],
   };
 }
 
