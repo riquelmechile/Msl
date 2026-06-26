@@ -42,8 +42,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Integration — Agent Loop, System Prompt & Guardrails
 
-- [ ] 3.1 Register `simulate_actor` tool in `createAgentLoop` and route tool calls in `converse()`
-- [ ] 3.2 Inject actor profiles from `traverse()` result into Block C via `get_business_context`
-- [ ] 3.3 Add `## Actores del Mercado` section to `buildSystemPrompt()` when profiles are seeded
-- [ ] 3.4 Verify `strategyValidator` still runs after actor consultation (CEO wins)
-- [ ] 3.5 Write integration tests: full turn with simulate_actor tool call, profile injection, guardrail
+- [x] 3.1 Register `simulate_actor` tool in `createAgentLoop` and route tool calls in `converse()`
+- [x] 3.2 Inject actor profiles from `traverse()` result into Block C via `get_business_context`
+- [x] 3.3 Add `## Actores del Mercado` section to `buildSystemPrompt()` when profiles are seeded
+- [x] 3.4 Verify `strategyValidator` still runs after actor consultation (CEO wins)
+- [x] 3.5 Write integration tests: full turn with simulate_actor tool call, profile injection, guardrail

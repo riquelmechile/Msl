@@ -34,6 +34,19 @@ export {
 export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
 export { createStrategyStore } from "./conversation/strategyStore.js";
 
+// ── Tools (function-calling) ────────────────────────────────────────
+export type { ToolDefinition } from "./conversation/tools.js";
+export { createGetBusinessContextTool, createPrepareActionTool, createSimulateActorTool } from "./conversation/tools.js";
+
+// ── Actor simulation ────────────────────────────────────────────────
+export {
+  simulateActor,
+  getActorPrompt,
+  COMPRADOR_PROMPT,
+  PROVEEDOR_PROMPT,
+  COMPETIDOR_PROMPT,
+} from "./conversation/actorSimulator.js";
+
 export type AgentTopic =
   | "margin"
   | "profit"

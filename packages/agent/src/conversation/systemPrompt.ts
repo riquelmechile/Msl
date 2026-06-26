@@ -12,9 +12,15 @@ import type { Strategy } from "./types.js";
  *                   When provided and non-empty, appends a `## Estrategias del CEO`
  *                   section after the hard rules. When empty or undefined, the
  *                   section is omitted entirely.
+ * @param actorProfiles Optional flag to include the `## Actores del Mercado`
+ *                      section that teaches the LLM how to use `simulate_actor`.
  * @returns The complete system prompt as a single Spanish string.
  */
-export function buildSystemPrompt(sellerName: string, strategies?: Strategy[]): string {
+export function buildSystemPrompt(
+  sellerName: string,
+  strategies?: Strategy[],
+  actorProfiles?: boolean,
+): string {
   const base = `Eres un asistente de negocio con IA para ${sellerName}, que administra la tienda Plasticov/Maustian en MercadoLibre Chile.
 
 ## Identidad del negocio
@@ -43,17 +49,31 @@ Sos un asistente comercial de IA que ayuda al vendedor a tomar decisiones inform
 
 7. **Propuestas concretas**: Proponé acciones concretas y específicas, nunca des respuestas genéricas ni ambiguas. Cada propuesta debe incluir qué acción realizar, sobre qué listing o producto, y el impacto esperado.`;
 
+  let prompt = base;
+
   // Inject CEO strategies when provided.
   if (strategies && strategies.length > 0) {
     const strategyLines = strategies.map(
       (s) => `- [${s.ruleType}] ${s.ruleText}`,
     );
-    return `${base}
+    prompt = `${prompt}
 
 ## Estrategias del CEO
 Las siguientes son estrategias definidas por el dueño. DEBÉS seguirlas en cada recomendación:
 ${strategyLines.join("\n")}`;
   }
 
-  return base;
+  // Inject actor profiles section when seeded.
+  if (actorProfiles) {
+    prompt = `${prompt}
+
+## Actores del Mercado
+Podés consultar actores del mercado para simular decisiones:
+- \`comprador\`: simula cómo piensa un comprador típico de ML Chile
+- \`proveedor\`: simula comportamiento de proveedores mayoristas
+- \`competidor\`: simula reacciones de competidores
+Usá la herramienta \`simulate_actor\` cuando necesités evaluar una decisión desde la perspectiva de otro actor.`;
+  }
+
+  return prompt;
 }

@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { AgentProposal, ConversationMessage, ConversationState, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
 import { spanishValidator, harmfulContentFilter, strategyValidator } from "./guardrails.js";
 import { parseStrategy } from "./strategyParser.js";
+import type { ToolDefinition } from "./tools.js";
 
 // ── Strategy Store Interface ─────────────────────────────────────────
 
@@ -52,6 +53,12 @@ export type AgentLoopConfig = {
    * (list, update, archive) directly without sending them to the LLM.
    */
   store?: StrategyStore;
+  /**
+   * Available tool definitions for function calling. When provided, the
+   * mock client becomes tool-aware and the agent loop executes tool calls
+   * (e.g. `simulate_actor`) before synthesizing the final response.
+   */
+  tools?: ToolDefinition[];
 };
 
 /**
@@ -87,12 +94,14 @@ export type LlmClient = {
 export function createAgentLoop(config: AgentLoopConfig) {
   const model = config.model ?? "deepseek-v4-flash";
   const openai = createDeepSeekClient();
+  const tools = config.tools ?? [];
+  const toolMap = new Map(tools.map((t) => [t.name, t]));
 
   // Real client takes priority when API key is available.
   const client: LlmClient = openai
     ? createRealClient(openai, model)
     : config.mockClient
-      ? createMockClient()
+      ? createMockClient(toolMap)
       : createNoopClient();
 
   // ── Strategy state (mutable closure) ──────────────────────────────
@@ -156,7 +165,35 @@ ${strategyLines.join("\n")}`;
       const llmMessages = buildMessages(getSystemPrompt(), state, userMessage);
 
       // --- Send to LLM ---
-      const llmResponse = await client.chat(llmMessages);
+      let llmResponse = await client.chat(llmMessages);
+
+      // --- Tool call loop: execute non-prepare_action tools ---
+      while (
+        llmResponse.toolCalls &&
+        llmResponse.toolCalls.some((tc) => tc.name !== "prepare_action")
+      ) {
+        for (const tc of llmResponse.toolCalls) {
+          if (tc.name === "prepare_action") continue;
+          const tool = toolMap.get(tc.name);
+          if (tool) {
+            try {
+              const result = await tool.execute(tc.arguments);
+              llmMessages.push({
+                role: "tool",
+                content: JSON.stringify(result),
+              });
+            } catch {
+              llmMessages.push({
+                role: "tool",
+                content: JSON.stringify({
+                  error: `Tool execution failed for ${tc.name}`,
+                }),
+              });
+            }
+          }
+        }
+        llmResponse = await client.chat(llmMessages);
+      }
 
       // --- Parse response ---
       const responseText = llmResponse.content;
@@ -536,8 +573,11 @@ function createRealClient(openai: OpenAI, model: string): LlmClient {
 // Mock LLM client (deterministic, no API key needed)
 // ---------------------------------------------------------------------------
 
-function createMockClient(): LlmClient {
-  const chat = mockChat;
+function createMockClient(
+  toolMap?: Map<string, ToolDefinition>,
+): LlmClient {
+  const chat = (messages: Array<{ role: string; content: string }>) =>
+    mockChat(messages, toolMap);
 
   return {
     chat,
@@ -551,6 +591,7 @@ function createMockClient(): LlmClient {
 
 function mockChat(
   messages: Array<{ role: string; content: string }>,
+  toolMap?: Map<string, ToolDefinition>,
 ): Promise<{
   content: string;
   toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }>;
@@ -561,6 +602,60 @@ function mockChat(
     userMsgs.length > 0
       ? userMsgs[userMsgs.length - 1]!.content.toLowerCase()
       : "";
+
+  // ── Tool-aware: handle simulate_actor tool results ──────────
+  if (toolMap?.has("simulate_actor")) {
+    // If there are tool messages from a previous simulate_actor call,
+    // return an actor-informed final response.
+    const toolMsgs = messages.filter((m) => m.role === "tool");
+    if (toolMsgs.length > 0) {
+      const lastTool = toolMsgs[toolMsgs.length - 1]!;
+      let simResult: Record<string, unknown> = {};
+      try {
+        simResult = JSON.parse(lastTool.content) as Record<string, unknown>;
+      } catch {
+        /* malformed JSON — fall through */
+      }
+      const actorType =
+        typeof simResult.actorType === "string"
+          ? simResult.actorType
+          : "actor";
+      const recommendation =
+        typeof simResult.recommendation === "string"
+          ? simResult.recommendation
+          : "simulación completada";
+      const rationale =
+        typeof simResult.rationale === "string"
+          ? simResult.rationale
+          : "";
+      return Promise.resolve({
+        content:
+          `Consulté la simulación del ${actorType} y esto fue lo que encontré:\n\n` +
+          `"${recommendation}"\n\n` +
+          `Basado en esto, te recomiendo evaluar esta perspectiva antes de tomar ` +
+          `una decisión.${rationale ? ` El análisis sugiere: ${rationale}` : ""}`,
+      });
+    }
+
+    // Detect actor-related user intent → return simulate_actor tool call.
+    if (
+      /\b(?:competidor|comprador|proveedor|competencia|cliente\s+(?:t[ií]pico|chileno)?)\b/i.test(
+        lastUser,
+      )
+    ) {
+      const actorType = /\bcompetidor\b|\bcompetencia\b/i.test(lastUser)
+        ? "competidor"
+        : /\bcomprador\b|\bcliente\b/i.test(lastUser)
+          ? "comprador"
+          : "proveedor";
+      return Promise.resolve({
+        content: "",
+        toolCalls: [
+          { name: "simulate_actor", arguments: { actorType, query: lastUser } },
+        ],
+      });
+    }
+  }
 
   // Intent-based routing (mock behavior, no real LLM call).
   if (/precio|margen/.test(lastUser)) {
