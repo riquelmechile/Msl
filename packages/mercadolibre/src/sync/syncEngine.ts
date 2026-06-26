@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertPlasticovToMaustianDirection } from "../accountRoles.js";
 import type { MlClient } from "../index.js";
 import type { MlItem, MlWriteSnapshot } from "../types.js";
 import { diffListings } from "./diffEngine.js";
@@ -101,6 +102,8 @@ export function createProductSyncEngine(input: {
     itemId: string,
     strategies: Strategy[],
   ): Promise<SyncResult> {
+    assertPlasticovToMaustianDirection(sourceSellerId, targetSellerId);
+
     let sourceItem: MlItem;
     try {
       sourceItem = await source.getItem(sourceSellerId, itemId);
@@ -118,11 +121,7 @@ export function createProductSyncEngine(input: {
     const sourcePrice = sourceItem.price;
 
     // Check differential — skip if unchanged
-    const existingState = store.getSyncState(
-      itemId,
-      sourceSellerId,
-      targetSellerId,
-    );
+    const existingState = store.getSyncState(itemId, sourceSellerId, targetSellerId);
     if (existingState && existingState.syncStatus === "synced") {
       if (!store.isOutOfSync(itemId, sourceSellerId, targetSellerId, sourceItem)) {
         return {
@@ -176,9 +175,8 @@ export function createProductSyncEngine(input: {
       publishedItem: published,
     });
 
-    const margin = targetPrice > 0
-      ? Math.round(((targetPrice - sourcePrice) / sourcePrice) * 100) / 100
-      : 0;
+    const margin =
+      targetPrice > 0 ? Math.round(((targetPrice - sourcePrice) / sourcePrice) * 100) / 100 : 0;
 
     return {
       itemId,
@@ -195,6 +193,8 @@ export function createProductSyncEngine(input: {
     strategies: Strategy[],
     options?: SyncOptions,
   ): Promise<SyncReport> {
+    assertPlasticovToMaustianDirection(sourceSellerId, targetSellerId);
+
     const useDifferential = options?.differential !== false;
     const limit = options?.limit;
 
@@ -260,12 +260,7 @@ export function createProductSyncEngine(input: {
     let failedCount = 0;
 
     for (const item of itemsToProcess) {
-      const result = await syncProduct(
-        sourceSellerId,
-        targetSellerId,
-        item.id,
-        strategies,
-      );
+      const result = await syncProduct(sourceSellerId, targetSellerId, item.id, strategies);
       results.push(result);
 
       switch (result.status) {
@@ -340,6 +335,8 @@ export function createProductSyncEngine(input: {
     strategies: Strategy[],
     options?: ConcurrentSyncOptions,
   ): Promise<SyncReport> {
+    assertPlasticovToMaustianDirection(sourceSellerId, targetSellerId);
+
     const concurrency = options?.concurrency ?? 5;
     const limit = options?.limit;
     const startedAt = new Date().toISOString();
@@ -351,13 +348,21 @@ export function createProductSyncEngine(input: {
       : [];
 
     if (listingIds.length === 0) {
-      return { total: 0, published: 0, skipped: 0, failed: 0, unchanged: 0, results: [], startedAt, completedAt: new Date().toISOString() };
+      return {
+        total: 0,
+        published: 0,
+        skipped: 0,
+        failed: 0,
+        unchanged: 0,
+        results: [],
+        startedAt,
+        completedAt: new Date().toISOString(),
+      };
     }
 
     const total = listingIds.length;
-    const idsToProcess = limit !== undefined && listingIds.length > limit
-      ? listingIds.slice(0, limit)
-      : listingIds;
+    const idsToProcess =
+      limit !== undefined && listingIds.length > limit ? listingIds.slice(0, limit) : listingIds;
 
     const results: SyncResult[] = [];
 
@@ -365,9 +370,7 @@ export function createProductSyncEngine(input: {
     for (let i = 0; i < idsToProcess.length; i += concurrency) {
       const chunk = idsToProcess.slice(i, i + concurrency);
       const chunkResults = await Promise.allSettled(
-        chunk.map((id) =>
-          syncProduct(sourceSellerId, targetSellerId, id, strategies),
-        ),
+        chunk.map((id) => syncProduct(sourceSellerId, targetSellerId, id, strategies)),
       );
       for (const r of chunkResults) {
         results.push(
@@ -394,6 +397,8 @@ export function createProductSyncEngine(input: {
     strategies: Strategy[],
     options?: ConcurrentSyncOptions,
   ): { jobId: string; getStatus: () => SyncJob } {
+    assertPlasticovToMaustianDirection(sourceSellerId, targetSellerId);
+
     const jobId = randomUUID();
     const job: SyncJob = {
       jobId,

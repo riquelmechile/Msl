@@ -27,10 +27,7 @@ export type DiffResult = {
  * - **new**: items present in source but never synced before
  * - **removed**: item IDs in sync state that no longer appear in source
  */
-export function diffListings(
-  items: MlItem[],
-  syncStates: SyncState[],
-): DiffResult {
+export function diffListings(items: MlItem[], syncStates: SyncState[]): DiffResult {
   const stateMap = new Map<string, SyncState>();
   for (const state of syncStates) {
     stateMap.set(state.sourceItemId, state);

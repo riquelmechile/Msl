@@ -10,9 +10,7 @@ import type {
   MlItem,
   MlWriteSnapshot,
 } from "@msl/mercadolibre";
-import type {
-  Strategy as SyncStrategy,
-} from "@msl/mercadolibre";
+import type { Strategy as SyncStrategy } from "@msl/mercadolibre";
 
 import {
   createSyncProductTool,
@@ -26,6 +24,15 @@ import type { ConversationState } from "../../src/conversation/types.js";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const approvedSyncOptions = {
+  approvedExecution: true,
+  accountConfig: {
+    sourceSellerId: "plasticov",
+    targetSellerId: "maustian",
+    site: "MLC" as const,
+  },
+};
 
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
   return {
@@ -47,11 +54,31 @@ function marginSyncStrategy(percentage: number): SyncStrategy {
 
 /** Create a stub sync engine that tracks calls and returns predictable results. */
 function createStubSyncEngine(): ProductSyncEngine & {
-  _syncProductCalls: Array<{ sourceSellerId: string; targetSellerId: string; itemId: string; strategies: SyncStrategy[] }>;
-  _syncAllCalls: Array<{ sourceSellerId: string; targetSellerId: string; strategies: SyncStrategy[]; options?: { differential?: boolean; limit?: number } }>;
+  _syncProductCalls: Array<{
+    sourceSellerId: string;
+    targetSellerId: string;
+    itemId: string;
+    strategies: SyncStrategy[];
+  }>;
+  _syncAllCalls: Array<{
+    sourceSellerId: string;
+    targetSellerId: string;
+    strategies: SyncStrategy[];
+    options?: { differential?: boolean; limit?: number };
+  }>;
 } {
-  const _syncProductCalls: Array<{ sourceSellerId: string; targetSellerId: string; itemId: string; strategies: SyncStrategy[] }> = [];
-  const _syncAllCalls: Array<{ sourceSellerId: string; targetSellerId: string; strategies: SyncStrategy[]; options?: { differential?: boolean; limit?: number } }> = [];
+  const _syncProductCalls: Array<{
+    sourceSellerId: string;
+    targetSellerId: string;
+    itemId: string;
+    strategies: SyncStrategy[];
+  }> = [];
+  const _syncAllCalls: Array<{
+    sourceSellerId: string;
+    targetSellerId: string;
+    strategies: SyncStrategy[];
+    options?: { differential?: boolean; limit?: number };
+  }> = [];
 
   return {
     _syncProductCalls,
@@ -81,7 +108,12 @@ function createStubSyncEngine(): ProductSyncEngine & {
       strategies: SyncStrategy[],
       options?: { differential?: boolean; limit?: number },
     ): Promise<SyncReport> {
-      _syncAllCalls.push({ sourceSellerId, targetSellerId, strategies, ...(options !== undefined && { options }) });
+      _syncAllCalls.push({
+        sourceSellerId,
+        targetSellerId,
+        strategies,
+        ...(options !== undefined && { options }),
+      });
       return {
         total: 2,
         published: 1,
@@ -109,8 +141,7 @@ function createStubSyncEngine(): ProductSyncEngine & {
       };
     },
 
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async syncAllConcurrent(
+    syncAllConcurrent(
       sourceSellerId: string,
       targetSellerId: string,
       strategies: SyncStrategy[],
@@ -125,6 +156,7 @@ function createStubSyncEngine(): ProductSyncEngine & {
       _strategies: SyncStrategy[],
       _options?: { differential?: boolean; limit?: number; concurrency?: number },
     ): { jobId: string; getStatus: () => import("@msl/mercadolibre").SyncJob } {
+      void [_sourceSellerId, _targetSellerId, _strategies, _options];
       return {
         jobId: "stub-job-id",
         getStatus: () => ({
@@ -230,7 +262,7 @@ function createStubMlClient(): MlClient {
 describe("createSyncProductTool — unit", () => {
   it("executes syncProduct on the engine and returns result", async () => {
     const engine = createStubSyncEngine();
-    const tool = createSyncProductTool(engine);
+    const tool = createSyncProductTool(engine, undefined, approvedSyncOptions);
 
     const result = await tool.execute({
       sourceSellerId: "plasticov",
@@ -249,7 +281,7 @@ describe("createSyncProductTool — unit", () => {
 
   it("returns error when strategies is empty", async () => {
     const engine = createStubSyncEngine();
-    const tool = createSyncProductTool(engine);
+    const tool = createSyncProductTool(engine, undefined, approvedSyncOptions);
 
     const result = await tool.execute({
       sourceSellerId: "plasticov",
@@ -264,7 +296,7 @@ describe("createSyncProductTool — unit", () => {
 
   it("returns error when required params are missing", async () => {
     const engine = createStubSyncEngine();
-    const tool = createSyncProductTool(engine);
+    const tool = createSyncProductTool(engine, undefined, approvedSyncOptions);
 
     const result = await tool.execute({
       sourceSellerId: "",
@@ -279,7 +311,7 @@ describe("createSyncProductTool — unit", () => {
   it("stores sync outcome in Cortex when provided", async () => {
     const engine = createStubSyncEngine();
     const cortex = createGraphEngine(":memory:");
-    const tool = createSyncProductTool(engine, cortex);
+    const tool = createSyncProductTool(engine, cortex, approvedSyncOptions);
 
     await tool.execute({
       sourceSellerId: "plasticov",
@@ -301,12 +333,29 @@ describe("createSyncProductTool — unit", () => {
 
     cortex.db.close();
   });
+
+  it("blocks direct LLM sync execution unless the approved path is used", async () => {
+    const engine = createStubSyncEngine();
+    const tool = createSyncProductTool(engine, undefined, {
+      accountConfig: approvedSyncOptions.accountConfig,
+    });
+
+    const result = await tool.execute({
+      sourceSellerId: "plasticov",
+      targetSellerId: "maustian",
+      itemId: "MLC1001",
+      strategies: [marginSyncStrategy(0.5)],
+    });
+
+    expect(result).toMatchObject({ status: "approval_required", tool: "sync_product" });
+    expect(engine._syncProductCalls).toHaveLength(0);
+  });
 });
 
 describe("createSyncAllTool — unit", () => {
   it("executes syncAll on the engine and returns report", async () => {
     const engine = createStubSyncEngine();
-    const tool = createSyncAllTool(engine);
+    const tool = createSyncAllTool(engine, undefined, approvedSyncOptions);
 
     const result = await tool.execute({
       sourceSellerId: "plasticov",
@@ -324,7 +373,7 @@ describe("createSyncAllTool — unit", () => {
 
   it("passes limit and differential options to engine", async () => {
     const engine = createStubSyncEngine();
-    const tool = createSyncAllTool(engine);
+    const tool = createSyncAllTool(engine, undefined, approvedSyncOptions);
 
     await tool.execute({
       sourceSellerId: "plasticov",
@@ -342,7 +391,7 @@ describe("createSyncAllTool — unit", () => {
 
   it("returns error when strategies is empty", async () => {
     const engine = createStubSyncEngine();
-    const tool = createSyncAllTool(engine);
+    const tool = createSyncAllTool(engine, undefined, approvedSyncOptions);
 
     const result = await tool.execute({
       sourceSellerId: "plasticov",
@@ -352,6 +401,37 @@ describe("createSyncAllTool — unit", () => {
 
     expect(result).toHaveProperty("error");
     expect((result as { error: string }).error).toMatch(/no hay estrategias/i);
+  });
+
+  it("blocks reversed Plasticov/Maustian sync direction", async () => {
+    const engine = createStubSyncEngine();
+    const tool = createSyncAllTool(engine, undefined, approvedSyncOptions);
+
+    const reversed = await tool.execute({
+      sourceSellerId: "maustian",
+      targetSellerId: "plasticov",
+      strategies: [marginSyncStrategy(0.5)],
+    });
+
+    expect(reversed).toHaveProperty("error");
+    expect((reversed as { error: string }).error).toMatch(/invalid mercadolibre sync direction/i);
+    expect(engine._syncAllCalls).toHaveLength(0);
+  });
+
+  it("blocks sync_all direct execution unless the approved path is used", async () => {
+    const engine = createStubSyncEngine();
+    const tool = createSyncAllTool(engine, undefined, {
+      accountConfig: approvedSyncOptions.accountConfig,
+    });
+
+    const result = await tool.execute({
+      sourceSellerId: "plasticov",
+      targetSellerId: "maustian",
+      strategies: [marginSyncStrategy(0.5)],
+    });
+
+    expect(result).toMatchObject({ status: "approval_required", tool: "sync_all" });
+    expect(engine._syncAllCalls).toHaveLength(0);
   });
 });
 
@@ -453,7 +533,7 @@ describe("sync tools — agent loop integration", () => {
 
     // The mock client won't call sync_product by default, but we can
     // verify the safety gate through the tool itself.
-    const tool = createSyncProductTool(engine, cortex);
+    const tool = createSyncProductTool(engine, cortex, approvedSyncOptions);
     const result = await tool.execute({
       sourceSellerId: "plasticov",
       targetSellerId: "maustian",
@@ -470,7 +550,7 @@ describe("sync tools — agent loop integration", () => {
   it("sync_all with strategies produces a valid report", async () => {
     const engine = createStubSyncEngine();
     const cortex = createGraphEngine(":memory:");
-    const tool = createSyncAllTool(engine, cortex);
+    const tool = createSyncAllTool(engine, cortex, approvedSyncOptions);
 
     const result = await tool.execute({
       sourceSellerId: "plasticov",
@@ -501,7 +581,7 @@ describe("sync tools — Cortex integration", () => {
   it("creates seller nodes on first sync", async () => {
     const engine = createStubSyncEngine();
     const cortex = createGraphEngine(":memory:");
-    const tool = createSyncProductTool(engine, cortex);
+    const tool = createSyncProductTool(engine, cortex, approvedSyncOptions);
 
     await tool.execute({
       sourceSellerId: "plasticov",
@@ -524,7 +604,7 @@ describe("sync tools — Cortex integration", () => {
   it("Hebbian reinforces edges on successful sync", async () => {
     const engine = createStubSyncEngine();
     const cortex = createGraphEngine(":memory:");
-    const tool = createSyncProductTool(engine, cortex);
+    const tool = createSyncProductTool(engine, cortex, approvedSyncOptions);
 
     await tool.execute({
       sourceSellerId: "plasticov",
@@ -535,9 +615,7 @@ describe("sync tools — Cortex integration", () => {
 
     // Edge from sync-outcome node to target seller should have weight > 0.5
     // (initial 0.5 + 0.1 Hebbian reinforcement).
-    const edges = cortex.db
-      .prepare("SELECT weight FROM edges")
-      .all() as Array<{ weight: number }>;
+    const edges = cortex.db.prepare("SELECT weight FROM edges").all() as Array<{ weight: number }>;
     expect(edges.length).toBeGreaterThan(0);
 
     // At least one edge should have weight > 0.5 (reinforced).
@@ -550,7 +628,7 @@ describe("sync tools — Cortex integration", () => {
   it("reuses existing seller nodes on repeated syncs (idempotent)", async () => {
     const engine = createStubSyncEngine();
     const cortex = createGraphEngine(":memory:");
-    const tool = createSyncProductTool(engine, cortex);
+    const tool = createSyncProductTool(engine, cortex, approvedSyncOptions);
 
     // First sync.
     await tool.execute({
@@ -581,7 +659,9 @@ describe("sync tools — Cortex integration", () => {
 
     // Sync-outcome nodes should have increased.
     const outcomeCount = cortex.db
-      .prepare("SELECT COUNT(*) as cnt FROM nodes WHERE json_extract(metadata, '$.type') = 'sync_outcome'")
+      .prepare(
+        "SELECT COUNT(*) as cnt FROM nodes WHERE json_extract(metadata, '$.type') = 'sync_outcome'",
+      )
       .get() as { cnt: number };
     expect(outcomeCount.cnt).toBe(2);
 

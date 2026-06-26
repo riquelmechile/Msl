@@ -58,10 +58,7 @@ export type StrategyApplicationResult =
  * Strategies are applied in order: category → margin → pricing → stock.
  * If a category filter excludes the item, the result is `{ applied: false }`.
  */
-export function applyStrategies(
-  item: MlItem,
-  strategies: Strategy[],
-): StrategyApplicationResult {
+export function applyStrategies(item: MlItem, strategies: Strategy[]): StrategyApplicationResult {
   // --- 1. Category filter ---
   const categoryFilter = strategies.find(
     (s): s is CategoryFilterStrategy => s.type === "category_filter",
@@ -72,17 +69,13 @@ export function applyStrategies(
 
   // --- 2. Margin ---
   let price = item.price;
-  const margin = strategies.find(
-    (s): s is MarginStrategy => s.type === "margin",
-  );
+  const margin = strategies.find((s): s is MarginStrategy => s.type === "margin");
   if (margin) {
     price = Math.round(item.price * (1 + margin.percentage));
   }
 
   // --- 3. Pricing rules ---
-  const pricingRule = strategies.find(
-    (s): s is PricingRuleStrategy => s.type === "pricing_rule",
-  );
+  const pricingRule = strategies.find((s): s is PricingRuleStrategy => s.type === "pricing_rule");
   if (pricingRule) {
     if (pricingRule.floor !== undefined && price < pricingRule.floor) {
       price = pricingRule.floor;
@@ -94,9 +87,7 @@ export function applyStrategies(
 
   // --- 4. Stock ---
   let available_quantity = item.available_quantity;
-  const stock = strategies.find(
-    (s): s is StockStrategy => s.type === "stock",
-  );
+  const stock = strategies.find((s): s is StockStrategy => s.type === "stock");
   if (stock) {
     if (stock.available_quantity !== undefined) {
       available_quantity = stock.available_quantity;
