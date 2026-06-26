@@ -286,3 +286,32 @@ The system MUST inject an `## Actores del Mercado` section into Block A of the s
 - WHEN an actor profile node is seeded, updated, or removed
 - THEN the system MUST regenerate Block A with updated actor personas
 - AND accept the one-time cache miss cost
+
+### Requirement: ML API Tool Access for Dual-Account Operations
+
+The agent loop MUST register ML API sync tools (`sync_product`, `sync_all`, `check_account`) alongside existing tools. The agent SHALL route sync-related user intents to these tools. Product sync operations SHALL respect the existing autonomy engine for approval gating.
+
+#### Scenario: Agent routes sync instruction
+
+- GIVEN the CEO sends "publicá todos los productos de electrónica en Maustian con 50% de margen"
+- WHEN the agent processes the message
+- THEN it MUST infer sync intent and invoke `sync_product` or `sync_all` with category "electrónica" and margin 50%
+
+#### Scenario: Sync tools registered at startup
+
+- GIVEN the agent loop initializes
+- WHEN tools are registered
+- THEN `sync_product`, `sync_all`, and `check_account` MUST appear in the LLM tool list
+
+#### Scenario: Autonomy engine gates sync
+
+- GIVEN autonomy level requires seller confirmation for writes
+- WHEN agent invokes `sync_product` or `sync_all`
+- THEN the tool MUST route through the approval pipeline
+- AND SHALL NOT execute without valid approval
+
+#### Scenario: Non-sync queries skip sync tools
+
+- GIVEN seller asks "¿cuántas ventas tuve hoy?"
+- WHEN the agent processes the message
+- THEN sync tools SHALL NOT be invoked (read-only listing query)
