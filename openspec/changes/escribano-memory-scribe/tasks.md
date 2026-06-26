@@ -44,4 +44,4 @@ Chain strategy: stacked-to-main
 
 - [x] 4.1 Run `npm test` — all tests green
 - [x] 4.2 Run `npm run typecheck` — zero errors
-- [ ] 4.3 Commit + push to branch
+- [x] 4.3 Commit + push to branch
