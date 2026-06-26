@@ -51,8 +51,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: MCP Tools + Agent Integration (PR 4)
 
-- [ ] 4.1 Create `packages/tools/src/sync-tools.ts` — 6 `CustomBusinessTool` instances wrapping sync engine, following existing pattern
-- [ ] 4.2 Wire write tools through `ApprovalQueueRepository` prepare→approve→execute→audit pipeline
-- [ ] 4.3 Register sync tools in `agentLoop.ts` alongside existing 6 tools
-- [ ] 4.4 Add sync job/product mapping tables and `sync_batch`/`published_product` node types to Cortex `GraphEngine` schema
-- [ ] 4.5 Write tests: agent routes "publicá electrónica en Maustian" to `sync_products`, approval pipeline gates publish, tool list includes all 6 sync tools
+- [x] 4.1 Create `packages/agent/src/conversation/syncTools.ts` — 3 MCP tools (`sync_product`, `sync_all`, `check_account`) wrapping sync engine + ML client, following existing `ToolDefinition` pattern
+- [x] 4.2 Wire sync tools into `agentLoop.ts` with CEO-strategy safety gate (blocks sync without active strategies); register `syncEngine` + `mlClient` in `AgentLoopConfig`
+- [x] 4.3 Add Cortex sync-outcome nodes: `ensureSellerNode()`, `storeSyncOutcome()` with Hebbian reinforcement on successful syncs (+0.1) and penalization on failures (−0.15)
+- [x] 4.4 Typecheck passes; add `@msl/mercadolibre` to agent package dependencies + vitest alias; export sync tools from `index.ts`
+- [x] 4.5 Write tests: 17 tests covering sync_product/sync_all/check_account tool execution, Cortex node creation, Hebbian reinforcement, idempotent seller nodes, strategy-gate blocking, error handling

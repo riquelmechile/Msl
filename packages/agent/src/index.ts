@@ -49,6 +49,9 @@ export type { AutonomyEngine } from "./conversation/autonomyEngine.js";
 export type { ToolDefinition } from "./conversation/tools.js";
 export { createGetBusinessContextTool, createPrepareActionTool, createSimulateActorTool, createDetectProbesTool, createProposeHoneyPotTool } from "./conversation/tools.js";
 
+// ── Sync tools ──────────────────────────────────────────────────────
+export { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from "./conversation/syncTools.js";
+
 // ── Actor simulation ────────────────────────────────────────────────
 export {
   simulateActor,

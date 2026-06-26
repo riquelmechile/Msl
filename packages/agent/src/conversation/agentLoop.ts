@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { GraphEngine } from "@msl/memory";
+import type { MlClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type { AgentProposal, ConversationMessage, ConversationState, DecoyProposal, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
 import { AutonomyLevel } from "./types.js";
 import { spanishValidator, harmfulContentFilter, strategyValidator, honeyPotValidator, autonomyGate } from "./guardrails.js";
@@ -8,6 +9,7 @@ import { parseStrategy } from "./strategyParser.js";
 import type { ToolDefinition } from "./tools.js";
 import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
+import { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from "./syncTools.js";
 
 // ── Strategy Store Interface ─────────────────────────────────────────
 
@@ -66,7 +68,8 @@ export type AgentLoopConfig = {
   tools?: ToolDefinition[];
   /**
    * Optional Cortex graph engine. When provided, confirmed honey-pot
-   * proposals are persisted via {@link GraphEngine.storeProbeResult}.
+   * proposals are persisted via {@link GraphEngine.storeProbeResult},
+   * and sync outcomes are tracked via sync-outcome nodes + Hebbian learning.
    */
   engine?: GraphEngine;
   /**
@@ -75,6 +78,18 @@ export type AgentLoopConfig = {
    * the current autonomy level, and records KPIs after execution.
    */
   autonomyEngine?: AutonomyEngine;
+  /**
+   * Optional Product Sync Engine. When provided alongside {@link engine},
+   * registers `sync_product` and `sync_all` tools so the agent can
+   * synchronise listings from Plasticov to Maustian with CEO strategies.
+   */
+  syncEngine?: ProductSyncEngine;
+  /**
+   * Optional MercadoLibre API client. When provided, registers the
+   * `check_account` tool so the agent can query account status and
+   * reputation levels for connected sellers.
+   */
+  mlClient?: MlClient;
 };
 
 /**
@@ -132,6 +147,19 @@ export function createAgentLoop(config: AgentLoopConfig) {
         (proposal) => { pendingDecoyProposal = proposal; },
       ),
     );
+  }
+
+  // ── Sync tools ────────────────────────────────────────────────────
+  if (config.syncEngine) {
+    if (!toolMap.has("sync_product")) {
+      toolMap.set("sync_product", createSyncProductTool(config.syncEngine, config.engine));
+    }
+    if (!toolMap.has("sync_all")) {
+      toolMap.set("sync_all", createSyncAllTool(config.syncEngine, config.engine));
+    }
+  }
+  if (config.mlClient && !toolMap.has("check_account")) {
+    toolMap.set("check_account", createCheckAccountTool(config.mlClient));
   }
 
   // Real client takes priority when API key is available.
@@ -278,6 +306,23 @@ ${strategyLines.join("\n")}`;
           const tool = toolMap.get(tc.name);
           if (tool) {
             try {
+              // ── Sync safety gate: require active CEO strategies ──
+              if (
+                (tc.name === "sync_product" || tc.name === "sync_all") &&
+                activeStrategies.length === 0
+              ) {
+                llmMessages.push({
+                  role: "tool",
+                  content: JSON.stringify({
+                    error:
+                      "No hay estrategias de CEO activas. " +
+                      "Definí al menos una estrategia (margen, filtro de categoría, stock o regla de precio) " +
+                      "antes de sincronizar productos. Ej: 'cambiá margen mínimo a 50%'.",
+                  }),
+                });
+                continue;
+              }
+
               const result = await tool.execute(tc.arguments);
               llmMessages.push({
                 role: "tool",
