@@ -33,6 +33,14 @@ const CUSTOMER_RE =
 /** "igualar precio de X" — competitive price-matching */
 const COMPETITIVE_RE = /igualar\s+precio\s+de\s+([^,.\n]+)/gi;
 
+/** "probá|sondeá|monitoreá|investigá [categoría] X" — honey-pot probe on category */
+const PROBE_CATEGORY_RE =
+  /(probá|sondeá|monitoreá|investigá)\s+(?:categor(?:í|i)a\s+)?([^,.\n]+)/gi;
+
+/** "vigilá|seguí|trackeá [a] X" — honey-pot monitor competitor */
+const PROBE_COMPETITOR_RE =
+  /(vigilá|seguí|trackeá)\s+(?:a\s+)?([^,.\n]+)/gi;
+
 // ── Internal helpers ────────────────────────────────────────────────
 
 interface PatternMatch {
@@ -107,6 +115,16 @@ export function classifyRuleType(parsed: Partial<ParsedRule>): RuleType {
   if (t.includes("responder") || t.includes("contestar") || t.includes("cliente"))
     return "customer";
   if (t.includes("igualar") || t.includes("competencia")) return "competitive";
+  if (
+    t.includes("probá") ||
+    t.includes("sondeá") ||
+    t.includes("monitoreá") ||
+    t.includes("investigá") ||
+    t.includes("vigilá") ||
+    t.includes("seguí") ||
+    t.includes("trackeá")
+  )
+    return "probe";
 
   return "margin";
 }
@@ -197,6 +215,20 @@ export function parseStrategy(text: string): ParseResult {
   allMatches.push(
     ...collectMatches(trimmed, COMPETITIVE_RE, (m) => ({
       ...baseRule("competitive", "competencia", "igualar", m[1]!.trim(), m),
+    })),
+  );
+
+  // Probe category: "probá [categoría] X"
+  allMatches.push(
+    ...collectMatches(trimmed, PROBE_CATEGORY_RE, (m) => ({
+      ...baseRule("probe", "categoría", m[1]!.toLowerCase(), m[2]!.trim(), m),
+    })),
+  );
+
+  // Probe competitor: "vigilá [a] X"
+  allMatches.push(
+    ...collectMatches(trimmed, PROBE_COMPETITOR_RE, (m) => ({
+      ...baseRule("probe", "competidor", m[1]!.toLowerCase(), m[2]!.trim(), m),
     })),
   );
 

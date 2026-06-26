@@ -74,7 +74,8 @@ export type RuleType =
   | "competitive"
   | "priority"
   | "timing"
-  | "competitor";
+  | "competitor"
+  | "probe";
 
 /** A single structured rule extracted from CEO natural-language text. */
 export interface ParsedRule {
@@ -142,3 +143,46 @@ export interface ActorSimulationRecord {
   result: string;
   created_at: string;
 }
+
+// ── Honey-Pot Probing ──────────────────────────────────────────────
+
+/** A structured alert generated when competitor probing behaviour is detected. */
+export type ProbeAlert = {
+  pattern: "question_spike" | "view_anomaly" | "price_reaction" | "new_competitor";
+  /** Detection confidence 0-1. Threshold is 0.6. */
+  confidence: number;
+  /** Seller name or "unknown" when the competitor cannot be identified. */
+  competitorId?: string;
+  /** Spanish description of the detected activity. */
+  description: string;
+  /** Suggested counter-action, e.g. "deploy_decoy", "monitor". */
+  recommendedAction?: string;
+};
+
+/** A honey-pot decoy operation proposed by the agent. */
+export type DecoyProposal = {
+  /** Unique identifier for this proposal. */
+  id: string;
+  /** Kind of decoy the agent proposes to deploy. */
+  type: "price_probe" | "category_entry" | "stock_signal";
+  /** Spanish description explaining the decoy operation. */
+  description: string;
+  /** Risk assessment for this specific decoy. */
+  riskLevel: "low" | "medium" | "high";
+  /** Whether the proposal respects MercadoLibre TOS. */
+  tosCompliant: boolean;
+  /** MANDATORY — Spanish ML TOS reminder, ALWAYS populated. */
+  tosWarning: string;
+};
+
+/** Outcome recorded after a decoy proposal is executed. */
+export type ProbeOutcome = {
+  /** References the DecoyProposal.id that was executed. */
+  proposalId: string;
+  /** Whether the decoy successfully elicited competitor behaviour. */
+  success: boolean;
+  /** Observed competitor reaction, if any. */
+  competitorReaction?: string;
+  /** ISO timestamp of when the outcome was recorded. */
+  learnedAt: string;
+};

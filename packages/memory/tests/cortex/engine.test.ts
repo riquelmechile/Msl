@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase } from "../../src/cortex/database.js";
 import { cosineSimilarity, GraphEngine } from "../../src/cortex/engine.js";
-import { DuplicateEdgeError, NodeNotFoundError } from "../../src/cortex/types.js";
+import { DuplicateEdgeError, NodeNotFoundError, type ProbeRecord } from "../../src/cortex/types.js";
 
 describe("createDatabase", () => {
   it("initializes an in-memory SQLite database with the cortex schema", () => {
@@ -18,6 +18,7 @@ describe("createDatabase", () => {
     expect(tableNames).toContain("nodes");
     expect(tableNames).toContain("edges");
     expect(tableNames).toContain("darwinian_lessons");
+    expect(tableNames).toContain("actor_simulations");
   });
 
   it("issues WAL journal mode pragma (in-memory DBs stay in memory mode)", () => {
@@ -34,6 +35,28 @@ describe("createDatabase", () => {
     const db = createDatabase(":memory:");
     const [{ foreign_keys }] = db.pragma("foreign_keys") as [{ foreign_keys: number }];
     expect(foreign_keys).toBe(1);
+  });
+
+  it("creates the probe_results table", () => {
+    const db = createDatabase(":memory:");
+
+    // Verify the table exists
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='probe_results'")
+      .get() as { name: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.name).toBe("probe_results");
+
+    // Verify column structure
+    const columns = db
+      .prepare("PRAGMA table_info('probe_results')")
+      .all() as Array<{ name: string; type: string; notnull: number; dflt_value: string | null }>;
+    const colNames = columns.map((c) => c.name);
+    expect(colNames).toContain("id");
+    expect(colNames).toContain("proposal_id");
+    expect(colNames).toContain("probe_type");
+    expect(colNames).toContain("outcome");
+    expect(colNames).toContain("created_at");
   });
 });
 
@@ -762,6 +785,168 @@ describe("GraphEngine", () => {
       expect(result.context).toHaveProperty("edges");
       expect(result.context).toHaveProperty("node_count");
       expect(result.context).toHaveProperty("edge_count");
+    });
+  });
+});
+
+describe("GraphEngine — storeProbeResult", () => {
+  let db: Database.Database;
+  let engine: GraphEngine;
+
+  beforeEach(() => {
+    db = createDatabase(":memory:");
+    engine = new GraphEngine(db);
+  });
+
+  const successProbe: ProbeRecord = {
+    proposalId: "decoy-001",
+    probeType: "price_probe",
+    description: "Listing señuelo en electrónica con precio 15% menor",
+    outcome: {
+      success: true,
+      competitorReaction: "Competidor bajó precio en 5%",
+      learnedAt: "2026-06-26T14:00:00Z",
+    },
+  };
+
+  const failedProbe: ProbeRecord = {
+    proposalId: "decoy-002",
+    probeType: "stock_signal",
+    description: "Señal de stock bajo en juguetes",
+    outcome: {
+      success: false,
+      learnedAt: "2026-06-26T15:00:00Z",
+    },
+  };
+
+  it("inserts a row into probe_results table", () => {
+    engine.storeProbeResult(successProbe);
+
+    const rows = db
+      .prepare("SELECT * FROM probe_results WHERE proposal_id = ?")
+      .all("decoy-001") as Array<Record<string, unknown>>;
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].proposal_id).toBe("decoy-001");
+    expect(rows[0].probe_type).toBe("price_probe");
+
+    const outcome = JSON.parse(rows[0].outcome as string);
+    expect(outcome.success).toBe(true);
+    expect(outcome.competitorReaction).toBe("Competidor bajó precio en 5%");
+    expect(outcome.learnedAt).toBe("2026-06-26T14:00:00Z");
+  });
+
+  it("creates a Cortex node tagged probe: true", () => {
+    const nodeId = engine.storeProbeResult(successProbe);
+
+    const node = engine.getNode(nodeId);
+    expect(node).not.toBeNull();
+    expect(node!.label).toBe("probe_decoy-001");
+
+    const metadata = JSON.parse(node!.metadata);
+    expect(metadata.probe).toBe(true);
+    expect(metadata.proposalId).toBe("decoy-001");
+    expect(metadata.probeType).toBe("price_probe");
+    expect(metadata.description).toBe(successProbe.description);
+  });
+
+  it("returns the created node ID", () => {
+    const id1 = engine.storeProbeResult(successProbe);
+    const id2 = engine.storeProbeResult(failedProbe);
+
+    expect(id1).toBeGreaterThan(0);
+    expect(id2).toBe(id1 + 1);
+  });
+
+  describe("with competidor actor node seeded", () => {
+    beforeEach(() => {
+      engine.seedActorNodes([
+        {
+          actorType: "competidor",
+          traits: { aggressiveness: 0.7, priceSensitivity: 0.6 },
+        },
+      ]);
+    });
+
+    it("creates an edge between probe node and competidor actor", () => {
+      const nodeId = engine.storeProbeResult(successProbe);
+      const competidorNode = engine.getActorNode("competidor");
+
+      expect(competidorNode).not.toBeNull();
+
+      const edge = db
+        .prepare("SELECT * FROM edges WHERE source = ? AND target = ?")
+        .get(nodeId, competidorNode!.id) as { weight: number } | undefined;
+
+      expect(edge).toBeDefined();
+    });
+
+    it("reinforces edge on successful probe (+0.1 on top of base 0.5)", () => {
+      const nodeId = engine.storeProbeResult(successProbe);
+      const competidorNode = engine.getActorNode("competidor")!;
+
+      const edge = db
+        .prepare("SELECT * FROM edges WHERE source = ? AND target = ?")
+        .get(nodeId, competidorNode.id) as { weight: number };
+
+      // Base weight 0.5 + reinforcement 0.1 = 0.6
+      expect(edge.weight).toBe(0.6);
+    });
+
+    it("penalizes edge on failed probe (−0.15 on top of base 0.5)", () => {
+      const nodeId = engine.storeProbeResult(failedProbe);
+      const competidorNode = engine.getActorNode("competidor")!;
+
+      const edge = db
+        .prepare("SELECT * FROM edges WHERE source = ? AND target = ?")
+        .get(nodeId, competidorNode.id) as { weight: number };
+
+      // Base weight 0.5 − penalty 0.15 = 0.35
+      expect(edge.weight).toBe(0.35);
+    });
+
+    it("reinforces existing edge on repeated successful probes", () => {
+      // First probe creates and reinforces
+      const firstId = engine.storeProbeResult(successProbe);
+      const competidorNode = engine.getActorNode("competidor")!;
+
+      // Mock a second probe with different ID but same type
+      const secondProbe: ProbeRecord = {
+        proposalId: "decoy-003",
+        probeType: "price_probe",
+        description: "Segundo listing señuelo en electrónica",
+        outcome: {
+          success: true,
+          competitorReaction: "Mismo competidor reaccionó otra vez",
+          learnedAt: "2026-06-26T16:00:00Z",
+        },
+      };
+      const secondId = engine.storeProbeResult(secondProbe);
+
+      // Different probe nodes
+      expect(secondId).not.toBe(firstId);
+
+      const firstEdge = db
+        .prepare("SELECT * FROM edges WHERE source = ? AND target = ?")
+        .get(firstId, competidorNode.id) as { weight: number };
+      const secondEdge = db
+        .prepare("SELECT * FROM edges WHERE source = ? AND target = ?")
+        .get(secondId, competidorNode.id) as { weight: number };
+
+      expect(firstEdge.weight).toBe(0.6);
+      expect(secondEdge.weight).toBe(0.6);
+    });
+
+    it("increments probe_results row count when recording multiple probes", () => {
+      engine.storeProbeResult(successProbe);
+      engine.storeProbeResult(failedProbe);
+
+      const count = (
+        db.prepare("SELECT COUNT(*) as cnt FROM probe_results").get() as {
+          cnt: number;
+        }
+      ).cnt;
+      expect(count).toBe(2);
     });
   });
 });

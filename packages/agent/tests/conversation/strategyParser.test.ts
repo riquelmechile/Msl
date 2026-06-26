@@ -353,11 +353,124 @@ describe("classifyRuleType", () => {
     expect(classifyRuleType({ target: "competencia" })).toBe("competitive");
   });
 
+  it('classifies probe verb targets as "probe"', () => {
+    expect(classifyRuleType({ target: "probá" })).toBe("probe");
+    expect(classifyRuleType({ target: "sondeá" })).toBe("probe");
+    expect(classifyRuleType({ target: "monitoreá" })).toBe("probe");
+    expect(classifyRuleType({ target: "investigá" })).toBe("probe");
+    expect(classifyRuleType({ target: "vigilá" })).toBe("probe");
+    expect(classifyRuleType({ target: "seguí" })).toBe("probe");
+    expect(classifyRuleType({ target: "trackeá" })).toBe("probe");
+  });
+
   it('falls back to "margin" for unknown targets', () => {
     expect(classifyRuleType({ target: "xyz" })).toBe("margin");
   });
 
   it('falls back to "margin" for empty input', () => {
     expect(classifyRuleType({})).toBe("margin");
+  });
+});
+
+// ── Probe rules ─────────────────────────────────────────────────────
+
+describe("parseStrategy — probe rules", () => {
+  it('extracts "probá electrónica" as probe category directive', () => {
+    const rule = firstRule("probá electrónica");
+    expect(rule).toBeDefined();
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("categoría");
+    expect(rule!.value).toBe("electrónica");
+  });
+
+  it('extracts "probá categoría juguetes" with explicit categoría keyword', () => {
+    const rule = firstRule("probá categoría juguetes");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("categoría");
+    expect(rule!.value).toBe("juguetes");
+  });
+
+  it('extracts "sondeá ropa" as probe directive (voseo variation)', () => {
+    const rule = firstRule("sondeá ropa");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("categoría");
+    expect(rule!.value).toBe("ropa");
+  });
+
+  it('extracts "monitoreá electrónica" as probe directive', () => {
+    const rule = firstRule("monitoreá electrónica");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("categoría");
+    expect(rule!.value).toBe("electrónica");
+  });
+
+  it('extracts "investigá categoría tecnología" with explicit keyword', () => {
+    const rule = firstRule("investigá categoría tecnología");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("categoría");
+    expect(rule!.value).toBe("tecnología");
+  });
+});
+
+describe("parseStrategy — probe competitor monitor", () => {
+  it('extracts "vigilá CompetidorX" as competitor probe', () => {
+    const rule = firstRule("vigilá CompetidorX");
+    expect(rule).toBeDefined();
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("competidor");
+    expect(rule!.value).toBe("CompetidorX");
+  });
+
+  it('extracts "vigilá a TiendaY" with explicit "a" preposition', () => {
+    const rule = firstRule("vigilá a TiendaY");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("competidor");
+    expect(rule!.value).toBe("TiendaY");
+  });
+
+  it('extracts "seguí VendedorZ" as competitor probe', () => {
+    const rule = firstRule("seguí VendedorZ");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("competidor");
+    expect(rule!.value).toBe("VendedorZ");
+  });
+
+  it('extracts "trackeá CompetidorX" as competitor probe', () => {
+    const rule = firstRule("trackeá CompetidorX");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("competidor");
+    expect(rule!.value).toBe("CompetidorX");
+  });
+});
+
+describe("parseStrategy — probe vs no-competir disambiguation", () => {
+  it('"no competir en electrónica" is still extracted as category exclusion, NOT probe', () => {
+    const result = parseStrategy("no competir en electrónica");
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].ruleType).toBe("category");
+    expect(result.rules[0].operator).toBe("evitar");
+    expect(result.rules[0].value).toBe("electrónica");
+  });
+
+  it("probe pattern does NOT match text containing only 'no competir'", () => {
+    // The NO_COMPETIR_RE captures first; probe patterns should not also match.
+    const result = parseStrategy("no competir en juguetes");
+    const probeRules = result.rules.filter((r) => r.ruleType === "probe");
+    expect(probeRules).toHaveLength(0);
+  });
+
+  it("probe + category exclusion coexist in mixed text", () => {
+    const result = parseStrategy(
+      "no competir en ropa, probá electrónica",
+    );
+    expect(result.rules).toHaveLength(2);
+    const ruleTypes = result.rules.map((r) => r.ruleType);
+    expect(ruleTypes).toContain("category");
+    expect(ruleTypes).toContain("probe");
+  });
+
+  it("preserves originalText on probe rules", () => {
+    const rule = firstRule("sondeá juguetes");
+    expect(rule!.originalText).toBe("sondeá juguetes");
   });
 });

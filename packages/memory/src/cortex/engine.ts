@@ -6,6 +6,7 @@ import type {
   ConvergenceResult,
   GraphEdge,
   GraphNode,
+  ProbeRecord,
   SimulationResult,
   SpreadingOptions,
   TraversalResult,
@@ -484,5 +485,63 @@ export class GraphEngine {
     );
     const info = stmt.run(actorType, query, JSON.stringify(result));
     return Number(info.lastInsertRowid);
+  }
+
+  /**
+   * Persist a honey-pot probe result.
+   *
+   * Creates a probe_results row, a Cortex node tagged `probe: true`,
+   * and applies Hebbian reinforcement (success → +0.1) or penalization
+   * (failure → −0.15) on the edge between the probe node and the
+   * competidor actor node.
+   *
+   * @returns the inserted probe node ID.
+   */
+  storeProbeResult(proposal: ProbeRecord): number {
+    // 1. Insert into probe_results table
+    const outcomeJson = JSON.stringify(proposal.outcome);
+    this.db
+      .prepare(
+        "INSERT INTO probe_results (proposal_id, probe_type, outcome) VALUES (?, ?, ?)",
+      )
+      .run(proposal.proposalId, proposal.probeType, outcomeJson);
+
+    // 2. Create Cortex node for this probe result
+    const node = this.createNode(`probe_${proposal.proposalId}`, {
+      probe: true,
+      proposalId: proposal.proposalId,
+      probeType: proposal.probeType,
+      description: proposal.description,
+    });
+
+    // 3. Hebbian learning on probe → competidor actor edges
+    const competidorNode = this.getActorNode("competidor");
+    if (competidorNode) {
+      // Check if an edge already exists between the probe node and the competidor
+      const existing = this.db
+        .prepare(
+          "SELECT id, source, target, weight, last_activated, co_occurrence_count, distilled_lesson FROM edges WHERE source = ? AND target = ?",
+        )
+        .get(node.id, competidorNode.id) as GraphEdge | undefined;
+
+      if (existing) {
+        // Edge exists — reinforce or penalize
+        if (proposal.outcome.success) {
+          this.reinforceEdge(node.id, competidorNode.id);
+        } else {
+          this.penalizeEdge(node.id, competidorNode.id);
+        }
+      } else {
+        // Create the edge first, then reinforce or penalize
+        this.createEdge(node.id, competidorNode.id);
+        if (proposal.outcome.success) {
+          this.reinforceEdge(node.id, competidorNode.id);
+        } else {
+          this.penalizeEdge(node.id, competidorNode.id);
+        }
+      }
+    }
+
+    return node.id;
   }
 }

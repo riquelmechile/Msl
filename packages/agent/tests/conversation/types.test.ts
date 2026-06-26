@@ -4,6 +4,9 @@ import type {
   AgentProposal,
   ConversationMessage,
   ConversationState,
+  DecoyProposal,
+  ProbeAlert,
+  ProbeOutcome,
   StreamingChunk,
 } from "../../src/conversation/types.js";
 
@@ -113,5 +116,97 @@ describe("ConversationState", () => {
     expect(state.contextWindowLimit).toBe(20);
     expect(state.sessionMetadata.sellerId).toBe("seller-1");
     expect(state.sessionMetadata.startedAt).toBeInstanceOf(Date);
+  });
+});
+
+// ── Honey-Pot Probing types ─────────────────────────────────────────
+
+describe("ProbeAlert", () => {
+  it("is constructable with required fields", () => {
+    const alert: ProbeAlert = {
+      pattern: "question_spike",
+      confidence: 0.85,
+      description: "Múltiples preguntas sobre precios en un lapso de 60s.",
+    };
+
+    expect(alert.pattern).toBe("question_spike");
+    expect(alert.confidence).toBe(0.85);
+    expect(alert.description).toBe(
+      "Múltiples preguntas sobre precios en un lapso de 60s.",
+    );
+  });
+
+  it("supports optional competitorId and recommendedAction", () => {
+    const alert: ProbeAlert = {
+      pattern: "new_competitor",
+      confidence: 0.7,
+      competitorId: "TiendaX",
+      description: "Apareció un nuevo competidor en la categoría.",
+      recommendedAction: "monitor",
+    };
+
+    expect(alert.competitorId).toBe("TiendaX");
+    expect(alert.recommendedAction).toBe("monitor");
+  });
+});
+
+describe("DecoyProposal", () => {
+  it("requires id, type, description, riskLevel, tosCompliant, and tosWarning", () => {
+    const proposal: DecoyProposal = {
+      id: "decoy-001",
+      type: "price_probe",
+      description: "Listing señuelo con precio 15% menor al promedio.",
+      riskLevel: "medium",
+      tosCompliant: true,
+      tosWarning:
+        "⚠️ Las operaciones de contrainteligencia deben cumplir con los Términos y Condiciones de MercadoLibre. No se permite la creación de listings falsos o engañosos.",
+    };
+
+    expect(proposal.id).toBe("decoy-001");
+    expect(proposal.type).toBe("price_probe");
+    expect(proposal.riskLevel).toBe("medium");
+    expect(proposal.tosCompliant).toBe(true);
+    expect(proposal.tosWarning).toContain("MercadoLibre");
+  });
+
+  it("always carries a populated tosWarning", () => {
+    const proposal: DecoyProposal = {
+      id: "decoy-002",
+      type: "stock_signal",
+      description: "Señal de stock bajo para atraer competidores.",
+      riskLevel: "high",
+      tosCompliant: false,
+      tosWarning:
+        "Este tipo de operación puede violar los TOS de ML si no se maneja con transparencia.",
+    };
+
+    // Regaurdless of tosCompliant, tosWarning MUST be populated
+    expect(proposal.tosWarning.length).toBeGreaterThan(0);
+  });
+});
+
+describe("ProbeOutcome", () => {
+  it("captures success/failure and optional competitor reaction", () => {
+    const outcome: ProbeOutcome = {
+      proposalId: "decoy-001",
+      success: true,
+      competitorReaction: "Competidor bajó su precio en 5% a las 2h del deploy.",
+      learnedAt: "2026-06-26T14:00:00Z",
+    };
+
+    expect(outcome.proposalId).toBe("decoy-001");
+    expect(outcome.success).toBe(true);
+    expect(outcome.competitorReaction).toContain("Competidor");
+    expect(outcome.learnedAt).toBe("2026-06-26T14:00:00Z");
+  });
+
+  it("omits competitorReaction when none is observed", () => {
+    const outcome: ProbeOutcome = {
+      proposalId: "decoy-003",
+      success: false,
+      learnedAt: "2026-06-26T14:00:00Z",
+    };
+
+    expect(outcome.competitorReaction).toBeUndefined();
   });
 });

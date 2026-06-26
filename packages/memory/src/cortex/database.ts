@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS actor_simulations (
   result TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS probe_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  proposal_id TEXT NOT NULL,
+  probe_type TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `;
 
 export function createDatabase(path = ":memory:"): Database.Database {

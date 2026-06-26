@@ -90,3 +90,17 @@ export type ActorProfileNode = GraphNode & {
     traits: Record<string, unknown>;
   };
 };
+
+// ── Honey-Pot Probing ─────────────────────────────────────────────
+
+/** Minimal probe record passed to GraphEngine.storeProbeResult. */
+export interface ProbeRecord {
+  proposalId: string;
+  probeType: string;
+  description: string;
+  outcome: {
+    success: boolean;
+    competitorReaction?: string;
+    learnedAt: string;
+  };
+}
