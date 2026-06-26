@@ -108,6 +108,32 @@ function createStubSyncEngine(): ProductSyncEngine & {
         completedAt: "2026-06-26T10:00:01Z",
       };
     },
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async syncAllConcurrent(
+      sourceSellerId: string,
+      targetSellerId: string,
+      strategies: SyncStrategy[],
+      options?: { differential?: boolean; limit?: number; concurrency?: number },
+    ): Promise<SyncReport> {
+      return this.syncAll(sourceSellerId, targetSellerId, strategies, options);
+    },
+
+    syncAllBackground(
+      _sourceSellerId: string,
+      _targetSellerId: string,
+      _strategies: SyncStrategy[],
+      _options?: { differential?: boolean; limit?: number; concurrency?: number },
+    ): { jobId: string; getStatus: () => import("@msl/mercadolibre").SyncJob } {
+      return {
+        jobId: "stub-job-id",
+        getStatus: () => ({
+          jobId: "stub-job-id",
+          status: "done",
+          startedAt: new Date().toISOString(),
+        }),
+      };
+    },
   };
 }
 

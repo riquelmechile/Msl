@@ -24,6 +24,8 @@ import {
   createProductSyncEngine,
 } from "./syncEngine.js";
 
+import type { SyncJob } from "./syncEngine.js";
+
 import type { MlClient } from "../index.js";
 
 // ---------------------------------------------------------------------------
@@ -841,5 +843,158 @@ describe("Product Sync Engine", () => {
 
     expect(result.margin).toBe(0);
     expect(result.targetPrice).toBe(10000);
+  });
+
+  // ── Concurrent sync tests ──────────────────────────────────────────
+
+  it("syncAllConcurrent processes all items with concurrency 3", async () => {
+    const items = Array.from({ length: 9 }, (_, i) =>
+      makeItem({ id: `MLC-C${i}`, price: 1000 + i * 100 }),
+    );
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const engine = createProductSyncEngine({ source, target });
+
+    const report = await engine.syncAllConcurrent(
+      "plasticov",
+      "maustian",
+      [{ type: "margin", percentage: 0.50 }],
+      { concurrency: 3, differential: false },
+    );
+
+    expect(report.total).toBe(9);
+    expect(report.published).toBe(9);
+    expect(report.failed).toBe(0);
+    expect(report.results).toHaveLength(9);
+  });
+
+  it("syncAllConcurrent with concurrency 5", async () => {
+    const items = Array.from({ length: 10 }, (_, i) =>
+      makeItem({ id: `MLC-D${i}`, price: 1000 }),
+    );
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const engine = createProductSyncEngine({ source, target });
+
+    const report = await engine.syncAllConcurrent(
+      "plasticov",
+      "maustian",
+      [{ type: "margin", percentage: 0.50 }],
+      { concurrency: 5, differential: false },
+    );
+
+    expect(report.total).toBe(10);
+    expect(report.published).toBe(10);
+  });
+
+  it("syncAllConcurrent with concurrency 10", async () => {
+    const items = Array.from({ length: 15 }, (_, i) =>
+      makeItem({ id: `MLC-E${i}`, price: 1000 }),
+    );
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const engine = createProductSyncEngine({ source, target });
+
+    const report = await engine.syncAllConcurrent(
+      "plasticov",
+      "maustian",
+      [{ type: "margin", percentage: 0.50 }],
+      { concurrency: 10, differential: false },
+    );
+
+    expect(report.total).toBe(15);
+    expect(report.published).toBe(15);
+  });
+
+  it("syncAllConcurrent respects limit option", async () => {
+    const items = Array.from({ length: 20 }, (_, i) =>
+      makeItem({ id: `MLC-F${i}`, price: 1000 }),
+    );
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const engine = createProductSyncEngine({ source, target });
+
+    const report = await engine.syncAllConcurrent(
+      "plasticov",
+      "maustian",
+      [{ type: "margin", percentage: 0.50 }],
+      { concurrency: 3, differential: false, limit: 5 },
+    );
+
+    expect(report.results).toHaveLength(5);
+  });
+
+  it("syncAllConcurrent handles empty listings", async () => {
+    const source = stubMlClient([]);
+    const target = stubMlClient([]);
+    const engine = createProductSyncEngine({ source, target });
+
+    const report = await engine.syncAllConcurrent(
+      "plasticov",
+      "maustian",
+      [{ type: "margin", percentage: 0.50 }],
+    );
+
+    expect(report.total).toBe(0);
+    expect(report.results).toHaveLength(0);
+  });
+
+  // ── Background sync tests ─────────────────────────────────────────
+
+  it("syncAllBackground returns job token immediately", async () => {
+    const items = Array.from({ length: 5 }, (_, i) =>
+      makeItem({ id: `MLC-BG${i}`, price: 1000 }),
+    );
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const engine = createProductSyncEngine({ source, target });
+
+    const start = Date.now();
+    const { jobId, getStatus } = engine.syncAllBackground(
+      "plasticov",
+      "maustian",
+      [{ type: "margin", percentage: 0.50 }],
+      { concurrency: 3, differential: false },
+    );
+
+    // Should return nearly instantly (under 50ms for a sync job start)
+    expect(Date.now() - start).toBeLessThan(50);
+    expect(jobId).toBeDefined();
+    expect(typeof jobId).toBe("string");
+    expect(jobId.length).toBeGreaterThan(10);
+
+    // Initial status should be "running"
+    const initialStatus = getStatus();
+    expect(initialStatus.status).toBe("running");
+    expect(initialStatus.jobId).toBe(jobId);
+
+    // Wait for the background job to complete
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const finalStatus = getStatus();
+    expect(["done", "running"]).toContain(finalStatus.status);
+  });
+
+  it("syncAllBackground tracks progress", async () => {
+    const items = Array.from({ length: 3 }, (_, i) =>
+      makeItem({ id: `MLC-BG2-${i}`, price: 1000 }),
+    );
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const engine = createProductSyncEngine({ source, target });
+
+    const { getStatus } = engine.syncAllBackground(
+      "plasticov",
+      "maustian",
+      [{ type: "margin", percentage: 0.50 }],
+      { concurrency: 1, differential: false },
+    );
+
+    // Wait for completion
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const status = getStatus();
+    expect(status.status).toBe("done");
+    expect(status.progress).toBeDefined();
   });
 });

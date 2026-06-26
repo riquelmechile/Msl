@@ -16,6 +16,8 @@ import {
   type OAuthTokenState,
 } from "./index.js";
 
+import { encrypt, decrypt } from "./oauth/tokenStore.js";
+
 const now = new Date("2026-06-25T12:00:00.000Z");
 
 function tokenState(status: OAuthTokenState["status"] = "connected"): OAuthTokenState {
@@ -293,6 +295,59 @@ describe("Token Store", () => {
 
     const stored = store.getToken("seller-1");
     expect(stored!.access_token).toBe("NEW-TOKEN");
+    store.close();
+  });
+
+  it("encrypt and decrypt roundtrip correctly", () => {
+    const plaintext = "APP_USR-sensitive-token-12345";
+    const encrypted = encrypt(plaintext);
+    const decrypted = decrypt(encrypted);
+    expect(decrypted).toBe(plaintext);
+  });
+
+  it("produces different ciphertexts for the same plaintext (unique IV)", () => {
+    const plaintext = "APP_USR-same-token";
+    const enc1 = encrypt(plaintext);
+    const enc2 = encrypt(plaintext);
+    // IVs are random, so ciphertexts must differ
+    expect(enc1).not.toBe(enc2);
+  });
+
+  it("fails to decrypt with tampered ciphertext", () => {
+    const encrypted = encrypt("sensitive-data");
+    // Corrupt the ciphertext portion
+    const parts = encrypted.split(":");
+    parts[2] = "tampered-data";
+    const corrupted = parts.join(":");
+    expect(() => decrypt(corrupted)).toThrow();
+  });
+
+  it("fails to decrypt with wrong auth tag", () => {
+    const encrypted = encrypt("sensitive-data");
+    // Swap the IV with auth tag to corrupt
+    const parts = encrypted.split(":");
+    const corrupted = `${parts[2]}:${parts[1]}:${parts[0]}`;
+    expect(() => decrypt(corrupted)).toThrow();
+  });
+
+  it("encrypted tokens survive save/load cycle with real encryption", () => {
+    const store = createTokenStore();
+    const tokens = {
+      access_token: "APP_USR-real-encrypted-test",
+      refresh_token: "TG-refresh-real-encrypted",
+      expires_in: 21600,
+      user_id: "999",
+      nickname: "REALENC",
+      account_level: "premium" as const,
+    };
+
+    store.saveToken("seller-enc", tokens);
+    // Retrieve raw row to verify it's NOT stored as plaintext
+    // We can only verify the full roundtrip through the public API
+    const stored = store.getToken("seller-enc");
+    expect(stored!.access_token).toBe("APP_USR-real-encrypted-test");
+    expect(stored!.refresh_token).toBe("TG-refresh-real-encrypted");
+
     store.close();
   });
 });

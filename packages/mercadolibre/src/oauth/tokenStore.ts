@@ -1,4 +1,10 @@
 import Database from "better-sqlite3";
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from "node:crypto";
 import type { OAuthTokens, StoredToken } from "../types.js";
 
 const TOKEN_STORE_TABLE = `
@@ -15,12 +21,52 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 );
 `;
 
-function encode(data: string): string {
-  return Buffer.from(data, "utf-8").toString("base64");
+// ── AES-256-GCM Encryption ──────────────────────────────────────────────
+
+const ALGORITHM = "aes-256-gcm";
+const SALT = "msl-salt";
+
+const KEY: Buffer = (() => {
+  const secret = process.env.MSL_ENCRYPTION_KEY;
+  if (!secret) {
+    console.warn(
+      "⚠️  MSL_ENCRYPTION_KEY not set — using development key. Tokens are NOT secure.",
+    );
+    return scryptSync("msl-dev-key-change-me", SALT, 32);
+  }
+  return scryptSync(secret, SALT, 32);
+})();
+
+/**
+ * Encrypts a plaintext string using AES-256-GCM.
+ * Returns `iv:authTag:ciphertext` (all base64-encoded).
+ */
+export function encrypt(plaintext: string): string {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(ALGORITHM, KEY, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, "utf8"),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
 }
 
-function decode(data: string): string {
-  return Buffer.from(data, "base64").toString("utf-8");
+/**
+ * Decrypts a ciphertext string produced by `encrypt()`.
+ * Expects the format `iv:authTag:ciphertext`.
+ */
+export function decrypt(ciphertext: string): string {
+  const [ivB64, authTagB64, encryptedB64] = ciphertext.split(":");
+  if (!ivB64 || !authTagB64 || !encryptedB64) {
+    throw new Error("Invalid ciphertext format");
+  }
+  const iv = Buffer.from(ivB64, "base64");
+  const authTag = Buffer.from(authTagB64, "base64");
+  const encrypted = Buffer.from(encryptedB64, "base64");
+  const decipher = createDecipheriv(ALGORITHM, KEY, iv);
+  decipher.setAuthTag(authTag);
+  return decipher.update(encrypted) + decipher.final("utf8");
 }
 
 export type TokenStore = {
@@ -56,8 +102,8 @@ export function createTokenStore(dbPath = ":memory:"): TokenStore {
     saveToken(sellerId: string, tokens: OAuthTokens): void {
       insertStmt.run({
         seller_id: sellerId,
-        access_token: encode(tokens.access_token),
-        refresh_token: encode(tokens.refresh_token),
+        access_token: encrypt(tokens.access_token),
+        refresh_token: encrypt(tokens.refresh_token),
         expires_at: tokens.expires_in
           ? expiresAt(tokens.expires_in)
           : expiresAt(21600),
@@ -73,8 +119,8 @@ export function createTokenStore(dbPath = ":memory:"): TokenStore {
 
       return {
         seller_id: row.seller_id as string,
-        access_token: decode(row.access_token as string),
-        refresh_token: decode(row.refresh_token as string),
+        access_token: decrypt(row.access_token as string),
+        refresh_token: decrypt(row.refresh_token as string),
         expires_at: row.expires_at as string,
         user_id: row.user_id as string,
         nickname: row.nickname as string,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { MlClient } from "../index.js";
 import type { MlItem, MlWriteSnapshot } from "../types.js";
 import { diffListings } from "./diffEngine.js";
@@ -35,6 +36,19 @@ export type SyncOptions = {
   limit?: number;
 };
 
+export type ConcurrentSyncOptions = SyncOptions & {
+  /** Max concurrent syncProduct calls (default: 5) */
+  concurrency?: number;
+};
+
+export type SyncJob = {
+  jobId: string;
+  status: "running" | "done" | "failed";
+  startedAt: string;
+  progress?: { done: number; total: number };
+  error?: string;
+};
+
 // ---------------------------------------------------------------------------
 // ProductSyncEngine interface
 // ---------------------------------------------------------------------------
@@ -53,6 +67,20 @@ export type ProductSyncEngine = {
     strategies: Strategy[],
     options?: SyncOptions,
   ): Promise<SyncReport>;
+
+  syncAllConcurrent(
+    sourceSellerId: string,
+    targetSellerId: string,
+    strategies: Strategy[],
+    options?: ConcurrentSyncOptions,
+  ): Promise<SyncReport>;
+
+  syncAllBackground(
+    sourceSellerId: string,
+    targetSellerId: string,
+    strategies: Strategy[],
+    options?: ConcurrentSyncOptions,
+  ): { jobId: string; getStatus: () => SyncJob };
 };
 
 // ---------------------------------------------------------------------------
@@ -270,5 +298,126 @@ export function createProductSyncEngine(input: {
     };
   }
 
-  return { syncProduct, syncAll };
+  function buildReport(
+    results: SyncResult[],
+    total: number,
+    unchangedCount: number,
+    startedAt: string,
+  ): SyncReport {
+    let publishedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    for (const r of results) {
+      switch (r.status) {
+        case "published":
+          publishedCount++;
+          break;
+        case "skipped":
+          skippedCount++;
+          break;
+        case "failed":
+          failedCount++;
+          break;
+      }
+    }
+
+    return {
+      total,
+      published: publishedCount,
+      skipped: skippedCount,
+      failed: failedCount,
+      unchanged: unchangedCount + results.filter((r) => r.status === "unchanged").length,
+      results,
+      startedAt,
+      completedAt: new Date().toISOString(),
+    };
+  }
+
+  async function syncAllConcurrent(
+    sourceSellerId: string,
+    targetSellerId: string,
+    strategies: Strategy[],
+    options?: ConcurrentSyncOptions,
+  ): Promise<SyncReport> {
+    const concurrency = options?.concurrency ?? 5;
+    const limit = options?.limit;
+    const startedAt = new Date().toISOString();
+
+    // Resolve item IDs — either from a snapshot or individually fetched
+    const itemsSnapshot = await source.getItems(sourceSellerId);
+    const listingIds = Array.isArray(itemsSnapshot.data)
+      ? (itemsSnapshot.data as Array<{ id: string }>).map((l) => l.id)
+      : [];
+
+    if (listingIds.length === 0) {
+      return { total: 0, published: 0, skipped: 0, failed: 0, unchanged: 0, results: [], startedAt, completedAt: new Date().toISOString() };
+    }
+
+    const total = listingIds.length;
+    const idsToProcess = limit !== undefined && listingIds.length > limit
+      ? listingIds.slice(0, limit)
+      : listingIds;
+
+    const results: SyncResult[] = [];
+
+    // Process in chunks
+    for (let i = 0; i < idsToProcess.length; i += concurrency) {
+      const chunk = idsToProcess.slice(i, i + concurrency);
+      const chunkResults = await Promise.allSettled(
+        chunk.map((id) =>
+          syncProduct(sourceSellerId, targetSellerId, id, strategies),
+        ),
+      );
+      for (const r of chunkResults) {
+        results.push(
+          r.status === "fulfilled"
+            ? r.value
+            : {
+                itemId: "unknown",
+                status: "failed" as const,
+                sourcePrice: 0,
+                targetPrice: 0,
+                margin: 0,
+                error: String(r.reason),
+              },
+        );
+      }
+    }
+
+    return buildReport(results, total, 0, startedAt);
+  }
+
+  function syncAllBackground(
+    sourceSellerId: string,
+    targetSellerId: string,
+    strategies: Strategy[],
+    options?: ConcurrentSyncOptions,
+  ): { jobId: string; getStatus: () => SyncJob } {
+    const jobId = randomUUID();
+    const job: SyncJob = {
+      jobId,
+      status: "running",
+      startedAt: new Date().toISOString(),
+      progress: { done: 0, total: 0 },
+    };
+
+    // Fire and forget — do NOT await
+    syncAllConcurrent(sourceSellerId, targetSellerId, strategies, options)
+      .then((report) => {
+        job.status = "done";
+        job.progress = { done: report.results.length, total: report.total };
+      })
+      .catch((err: unknown) => {
+        job.status = "failed";
+        job.error = String(err);
+      });
+
+    return {
+      jobId,
+      getStatus: () => ({ ...job }),
+    };
+  }
+
+  return { syncProduct, syncAll, syncAllConcurrent, syncAllBackground };
 }

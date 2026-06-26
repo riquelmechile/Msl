@@ -119,6 +119,29 @@ function createDemoAutonomyEngine(): AutonomyEngine {
   };
 }
 
+// ── Rate Limiter ────────────────────────────────────────────────────
+
+const rateLimit = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 20; // requests
+const RATE_LIMIT_WINDOW = 60_000; // per minute (ms)
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const entry = rateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimit.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return { allowed: true };
+  }
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return {
+      allowed: false,
+      retryAfter: Math.ceil((entry.resetAt - now) / 1000),
+    };
+  }
+  entry.count++;
+  return { allowed: true };
+}
+
 // ── POST /api/chat ─────────────────────────────────────────────────
 
 /**
@@ -129,6 +152,22 @@ function createDemoAutonomyEngine(): AutonomyEngine {
  * streams the response back as Server-Sent Events.
  */
 export async function POST(req: NextRequest) {
+  // Rate-limit check
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip") ??
+    "127.0.0.1";
+  const limit = checkRateLimit(ip);
+  if (!limit.allowed) {
+    return new Response(JSON.stringify({ error: "Too many requests" }), {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(limit.retryAfter),
+      },
+    });
+  }
+
   const body = (await req.json()) as { message: string; history?: ConversationState["messages"] };
   const message = body.message?.trim() ?? "";
   const history = body.history ?? [];

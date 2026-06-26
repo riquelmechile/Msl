@@ -170,6 +170,8 @@ export {
   type SyncResult,
   type SyncReport,
   type SyncOptions,
+  type ConcurrentSyncOptions,
+  type SyncJob,
 } from "./sync/syncEngine.js";
 
 export {
