@@ -34,9 +34,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Hebbian Learning + Spreading Activation
 
-- [ ] 2.1 Add `reinforceEdge` and `penalizeEdge` to `GraphEngine` — UPDATE weight clamped [0,1] via SQL MAX/MIN, +0.1/−0.15 deltas, update `last_activated`
-- [ ] 2.2 Add `spreadActivation` to `GraphEngine` — recursive CTE with depth guard (default 3) and activation threshold, track visited pairs and increment `co_occurrence_count` on traversed edges
-- [ ] 2.3 Add engine tests — reinforce (+0.1), penalize (−0.15), boundary clamp at 0 and 1, depth limit excludes node 4 in A→B→C→D→E chain, co-occurrence count increments
+- [x] 2.1 Add `reinforceEdge` and `penalizeEdge` to `GraphEngine` — UPDATE weight clamped [0,1] via SQL MAX/MIN, +0.1/−0.15 deltas, update `last_activated`
+- [x] 2.2 Add `spreadActivation` to `GraphEngine` — recursive CTE with depth guard (default 3) and activation threshold, track visited pairs and increment `co_occurrence_count` on traversed edges
+- [x] 2.3 Add engine tests — reinforce (+0.1), penalize (−0.15), boundary clamp at 0 and 1, depth limit excludes node 4 in A→B→C→D→E chain, co-occurrence count increments
 
 ## Phase 3: Pruning + Convergence + Traversal
 

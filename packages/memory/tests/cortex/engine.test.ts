@@ -152,4 +152,270 @@ describe("GraphEngine", () => {
       expect(engine.getEdge(999)).toBeNull();
     });
   });
+
+  describe("reinforceEdge", () => {
+    it("increases weight by 0.1 and updates last_activated", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const edge = engine.createEdge(a.id, b.id);
+
+      expect(edge.weight).toBe(0.5);
+      expect(edge.last_activated).toBeNull();
+
+      const reinforced = engine.reinforceEdge(a.id, b.id);
+
+      expect(reinforced.weight).toBe(0.6);
+      expect(reinforced.last_activated).not.toBeNull();
+      expect(reinforced.source).toBe(a.id);
+      expect(reinforced.target).toBe(b.id);
+
+      // Verify persistence via getEdge
+      const persisted = engine.getEdge(edge.id);
+      expect(persisted!.weight).toBe(0.6);
+      expect(persisted!.last_activated).not.toBeNull();
+    });
+
+    it("clamps weight at 1.0 (upper boundary)", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const edge = engine.createEdge(a.id, b.id);
+
+      // Manually set weight to 0.95 via raw SQL
+      db.prepare("UPDATE edges SET weight = 0.95 WHERE id = ?").run(edge.id);
+
+      const reinforced = engine.reinforceEdge(a.id, b.id);
+
+      // 0.95 + 0.1 = 1.05 → clamped to 1.0
+      expect(reinforced.weight).toBe(1.0);
+
+      // Second reinforce: 1.0 + 0.1 = 1.1 → clamped to 1.0
+      const reinforced2 = engine.reinforceEdge(a.id, b.id);
+      expect(reinforced2.weight).toBe(1.0);
+    });
+
+    it("throws when no edge exists between source and target", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+
+      expect(() => engine.reinforceEdge(a.id, b.id)).toThrow(
+        /no edge found between source/,
+      );
+    });
+  });
+
+  describe("penalizeEdge", () => {
+    it("decreases weight by 0.15 and updates last_activated", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const edge = engine.createEdge(a.id, b.id);
+
+      expect(edge.weight).toBe(0.5);
+
+      const penalized = engine.penalizeEdge(a.id, b.id);
+
+      expect(penalized.weight).toBe(0.35);
+      expect(penalized.last_activated).not.toBeNull();
+
+      // Verify persistence
+      const persisted = engine.getEdge(edge.id);
+      expect(persisted!.weight).toBe(0.35);
+    });
+
+    it("clamps weight at 0.0 (lower boundary)", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const edge = engine.createEdge(a.id, b.id);
+
+      // Manually set weight to 0.10 via raw SQL
+      db.prepare("UPDATE edges SET weight = 0.10 WHERE id = ?").run(edge.id);
+
+      const penalized = engine.penalizeEdge(a.id, b.id);
+
+      // 0.10 − 0.15 = −0.05 → clamped to 0.0
+      expect(penalized.weight).toBe(0.0);
+
+      // Second penalize: 0.0 − 0.15 = −0.15 → clamped to 0.0
+      const penalized2 = engine.penalizeEdge(a.id, b.id);
+      expect(penalized2.weight).toBe(0.0);
+    });
+
+    it("throws when no edge exists between source and target", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+
+      expect(() => engine.penalizeEdge(a.id, b.id)).toThrow(
+        /no edge found between source/,
+      );
+    });
+  });
+
+  describe("spreadActivation", () => {
+    it("returns empty result for empty nodeIds", () => {
+      const result = engine.spreadActivation([]);
+      expect(result.activatedNodes).toEqual([]);
+    });
+
+    it("returns only the seed nodes when they have zero activation", () => {
+      const a = engine.createNode("A");
+      engine.createNode("B");
+      engine.createEdge(a.id, a.id + 1);
+
+      const result = engine.spreadActivation([a.id], { maxDepth: 2 });
+
+      // Only seed node appears (activation = 0, so recursive step yields 0 → below threshold)
+      expect(result.activatedNodes).toHaveLength(1);
+      expect(result.activatedNodes[0].id).toBe(a.id);
+      expect(result.activatedNodes[0].activation).toBe(0.0);
+    });
+
+    it("spreads activation through a chain respecting depth limit", () => {
+      // A → B → C → D → E chain
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+      const d = engine.createNode("D");
+      const e = engine.createNode("E");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+      engine.createEdge(c.id, d.id);
+      engine.createEdge(d.id, e.id);
+
+      // Set seed activation on A to 1.0
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+
+      const result = engine.spreadActivation([a.id], { maxDepth: 2 });
+
+      const ids = result.activatedNodes.map((n) => n.id);
+      expect(ids).toContain(a.id); // depth 0
+      expect(ids).toContain(b.id); // depth 1
+      expect(ids).toContain(c.id); // depth 2
+      expect(ids).not.toContain(d.id); // depth 3 — excluded
+      expect(ids).not.toContain(e.id); // depth 4 — excluded
+    });
+
+    it("sorts activated nodes by activation descending", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+
+      const result = engine.spreadActivation([a.id], { maxDepth: 2 });
+
+      // Activation decreases with depth: A(1.0) > B(0.5) > C(0.125)
+      for (let i = 1; i < result.activatedNodes.length; i++) {
+        expect(result.activatedNodes[i - 1].activation).toBeGreaterThanOrEqual(
+          result.activatedNodes[i].activation,
+        );
+      }
+    });
+
+    it("increments co_occurrence_count on traversed edges", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+
+      const edgeAB = engine.createEdge(a.id, b.id);
+      const edgeBC = engine.createEdge(b.id, c.id);
+
+      expect(edgeAB.co_occurrence_count).toBe(0);
+      expect(edgeBC.co_occurrence_count).toBe(0);
+
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+
+      engine.spreadActivation([a.id], { maxDepth: 3 });
+
+      const abAfter = engine.getEdge(edgeAB.id);
+      const bcAfter = engine.getEdge(edgeBC.id);
+
+      expect(abAfter!.co_occurrence_count).toBe(1);
+      expect(bcAfter!.co_occurrence_count).toBe(1);
+    });
+
+    it("does not increment co-occurrence on untraversed edges", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+      const d = engine.createNode("D");
+
+      const edgeAB = engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+      const edgeCD = engine.createEdge(c.id, d.id);
+
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+
+      // depth=1 — only A→B traversed
+      engine.spreadActivation([a.id], { maxDepth: 1 });
+
+      const abAfter = engine.getEdge(edgeAB.id);
+      const cdAfter = engine.getEdge(edgeCD.id);
+
+      expect(abAfter!.co_occurrence_count).toBe(1); // traversed
+      expect(cdAfter!.co_occurrence_count).toBe(0); // not traversed
+    });
+
+    it("respects activation threshold to prune weak paths", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+
+      // Low seed activation: 0.02 → B gets 0.02 * 0.5 * 0.5 = 0.005 < 0.01 threshold
+      db.prepare("UPDATE nodes SET activation = 0.02 WHERE id = ?").run(a.id);
+
+      const result = engine.spreadActivation([a.id], { maxDepth: 3 });
+
+      // Only A appears; B and C are below threshold
+      expect(result.activatedNodes).toHaveLength(1);
+      expect(result.activatedNodes[0].id).toBe(a.id);
+    });
+
+    it("uses custom SpreadingOptions (maxDepth, decayFactor, threshold)", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+      const d = engine.createNode("D");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+      engine.createEdge(c.id, d.id);
+
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+
+      // depth=1 → only A and B included
+      const result = engine.spreadActivation([a.id], { maxDepth: 1 });
+
+      const ids = result.activatedNodes.map((n) => n.id);
+      expect(ids).toContain(a.id);
+      expect(ids).toContain(b.id);
+      expect(ids).not.toContain(c.id);
+    });
+
+    it("aggregates multiple paths to the same node by keeping max activation", () => {
+      // A → B, A → C, B → D, C → D  (D reachable via two paths)
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+      const d = engine.createNode("D");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(a.id, c.id);
+      engine.createEdge(b.id, d.id);
+      engine.createEdge(c.id, d.id);
+
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+
+      const result = engine.spreadActivation([a.id], { maxDepth: 3 });
+
+      // D should appear exactly once with max activation from the two paths
+      const dNodes = result.activatedNodes.filter((n) => n.id === d.id);
+      expect(dNodes).toHaveLength(1);
+    });
+  });
 });
