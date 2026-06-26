@@ -61,7 +61,7 @@ Raw data is ~663K tokens. Full-cache is fragile (one listing change invalidates 
 | 2 | Conversational agent with DeepSeek (natural language, no commands) | ✅ |
 | 3 | CEO strategy injection via natural language | ✅ |
 | 4 | Actor Models / Shadow Actors (buyer/seller simulation) | ✅ |
-| 5 | Honey-Pot Probing (active counterintelligence) | 🔲 |
+| 5 | Honey-Pot Probing (active counterintelligence) | ✅ |
 | 6 | Autonomy levels with KPIs and auto-degradation | 🔲 |
 | 7 | Real ML API integration (OAuth, live data extraction) | 🔲 |
 

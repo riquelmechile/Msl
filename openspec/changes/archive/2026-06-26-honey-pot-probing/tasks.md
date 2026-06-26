@@ -38,12 +38,12 @@ Chain strategy: stacked-to-main
 - [x] 2.1 `packages/agent/src/conversation/probeDetector.ts` (CREATE) — `analyzeQuestions()`, `detectViewAnomalies()`, `analyzeCompetitorReaction()` returning `ProbeAlert[]` with confidence ≥ 0.6 threshold
 - [x] 2.2 `packages/agent/src/conversation/honeyPotProposer.ts` (CREATE) — `proposeDecoy()` generating `DecoyProposal` with mandatory `tosWarning` in Spanish
 - [x] 2.3 `packages/agent/src/conversation/guardrails.ts` — add `honeyPotValidator(proposal, strategies): GuardResult` (default-deny: requires active `"probe"` strategy + "dale" confirmation)
-- [ ] 2.4 `packages/agent/src/conversation/actorSimulator.ts` — enhance `COMPETIDOR_PROMPT` with counterintelligence awareness; export `simulateCounterintelligence(actorType, query)` returning `SimulationResult`
+- [x] 2.4 `packages/agent/src/conversation/actorSimulator.ts` — enhance `COMPETIDOR_PROMPT` with counterintelligence awareness; export `simulateCounterintelligence(actorType, query)` returning `SimulationResult`
 - [x] 2.5 `packages/memory/src/cortex/engine.ts` — add `storeProbeResult()` using `createNode`/`createEdge`/`reinforceEdge` with `probe: true` metadata tag
 - [x] 2.6 Write unit tests for `probeDetector.analyzeQuestions` (rapid_fire, price_probe, category_sweep patterns)
 - [x] 2.7 Write unit tests for `honeyPotProposer.proposeDecoy` (TOS warning presence, riskLevel)
 - [x] 2.8 Write unit tests for `honeyPotValidator` (block without strategy, allow with active probe strategy + "dale")
-- [ ] 2.9 Write unit tests for `storeProbeResult` (node creation, edge Hebbian adjustment, probe tag)
+- [x] 2.9 Write unit tests for `storeProbeResult` (node creation, edge Hebbian adjustment, probe tag)
 
 ## Phase 3: Integration & Wiring (tools, agent loop)
 
