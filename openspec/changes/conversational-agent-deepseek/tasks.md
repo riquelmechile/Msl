@@ -35,10 +35,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Core — Tools, Cache, Agent Loop (PR 2)
 
-- [ ] 2.1 Create `packages/agent/src/conversation/cacheBlocks.ts` — Block B (daily aggregates, stub for now, 24h TTL via `@msl/domain` `CacheFreshness`) + Block C assembly wrapper
-- [ ] 2.2 Create `packages/agent/src/conversation/tools.ts` — `get_business_context` (intent → `GraphEngine.spreadActivation` → `traverse().context`) + `prepare_action` (LLM output → `createPreparedAction`)
-- [ ] 2.3 Create `packages/agent/src/conversation/agentLoop.ts` — SDK `Agent` + `Runner` with DeepSeek provider (`baseURL: "https://api.deepseek.com"`), `converse()` entry yielding `StreamingChunk`, fallback to `answerBusinessQuestion()` on failure
-- [ ] 2.4 Write unit tests: `cacheBlocks.test.ts` (TTL behavior), `tools.test.ts` (mock `GraphEngine`, verify `PreparedAction` shape), `agentLoop.test.ts` (mock DeepSeek client, verify streaming, verify fallback path)
+- [x] 2.1 Create `packages/agent/src/conversation/cacheBlocks.ts` — Block B (daily aggregates, stub for now, 24h TTL via `@msl/domain` `CacheFreshness`) + Block C assembly wrapper
+- [x] 2.2 Create `packages/agent/src/conversation/tools.ts` — `get_business_context` (intent → `GraphEngine.spreadActivation` → `traverse().context`) + `prepare_action` (LLM output → `createPreparedAction`)
+- [x] 2.3 Create `packages/agent/src/conversation/agentLoop.ts` — SDK `Agent` + `Runner` with DeepSeek provider (`baseURL: "https://api.deepseek.com"`), `converse()` entry yielding `StreamingChunk`, fallback to `answerBusinessQuestion()` on failure
+- [x] 2.4 Write unit tests: `cacheBlocks.test.ts` (TTL behavior), `tools.test.ts` (mock `GraphEngine`, verify `PreparedAction` shape), `agentLoop.test.ts` (mock DeepSeek client, verify streaming, verify fallback path)
 
 ## Phase 3: Integration — Wire-up & Verify (PR 3)
 

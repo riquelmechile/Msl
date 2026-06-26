@@ -1,5 +1,22 @@
 import type { BusinessSignalKind, CacheFreshness, ReadSnapshot, SellerId } from "@msl/domain";
 
+// Re-export Cortex graph engine for agent conversation context.
+export {
+  createGraphEngine,
+  cosineSimilarity,
+  GraphEngine,
+} from "./cortex/index.js";
+export { DuplicateEdgeError, NodeNotFoundError } from "./cortex/index.js";
+export type {
+  ActivationSnapshot,
+  ConvergenceResult,
+  DarwinianLesson,
+  GraphEdge,
+  GraphNode,
+  SpreadingOptions,
+  TraversalResult,
+} from "./cortex/index.js";
+
 export type LocalDataResidency = "local-only" | "selective-remote-sync";
 
 export type RepositoryBoundary<TEntity, TKey> = {
