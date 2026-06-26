@@ -1,5 +1,55 @@
 import type { PreparedAction, RiskLevel, SellerId } from "@msl/domain";
 
+// ── Autonomy Levels ─────────────────────────────────────────────────
+
+/** Graduated autonomy levels controlling auto-execution permissions. */
+export enum AutonomyLevel {
+  /** Solo responde preguntas — no auto-execution. */
+  CONSULTA = 0,
+  /** Propone acciones, siempre pide "dale". */
+  SUGIERE = 1,
+  /** Propone + pre-llena detalles, pide "dale". */
+  PREPARA = 2,
+  /** Auto-aprueba acciones de bajo riesgo. */
+  BAJO_RIESGO = 3,
+  /** Auto-aprueba acciones de bajo y medio riesgo. */
+  MEDIO_RIESGO = 4,
+  /** Auto-aprueba todo salvo critical, notifica después. */
+  FULL = 5,
+}
+
+/** Snapshot of KPI values recorded after an action execution. */
+export interface KpiSnapshot {
+  /** Autonomy level at the moment the KPI was recorded. */
+  level: AutonomyLevel;
+  /** 0-1 — whether the price respected the CEO margin strategy. */
+  marginCompliance: number;
+  /** 0-1 — fraction of actions that executed without error. */
+  successRate: number;
+  /** Count of safety guardrail violations recorded. */
+  safetyViolations: number;
+  /** 0-1 — accuracy of agent responses in this period. */
+  responseAccuracy: number;
+  /** ISO timestamp of when the snapshot was created. */
+  timestamp: string;
+}
+
+/** Recorded when the autonomy level drops due to KPI breaches. */
+export interface DegradationEvent {
+  /** Level before the degradation. */
+  from: AutonomyLevel;
+  /** Level after the degradation. */
+  to: AutonomyLevel;
+  /** Spanish explanation of which thresholds were breached. */
+  reason: string;
+  /** The KPI snapshot that triggered the evaluation. */
+  kpiSnapshot: KpiSnapshot;
+  /** ISO timestamp of when the degradation was recorded. */
+  timestamp: string;
+}
+
+// ── Conversation Core ───────────────────────────────────────────────
+
 /** Role of the message author in a conversation. */
 export type ConversationRole = "user" | "assistant" | "system" | "tool";
 

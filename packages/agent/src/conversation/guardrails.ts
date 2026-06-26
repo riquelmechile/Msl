@@ -1,6 +1,7 @@
 import { riskLevelForAction } from "@msl/domain";
 
 import type { AgentProposal, DecoyProposal, Strategy } from "./types.js";
+import type { AutonomyEngine } from "./autonomyEngine.js";
 
 /** Result of a guardrail check. */
 export type GuardResult = {
@@ -219,6 +220,39 @@ export function strategyValidator(
   }
 
   return { passed: true };
+}
+
+// ---------------------------------------------------------------------------
+// Autonomy gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluates whether the current autonomy level permits auto-approval
+ * of an action at the given risk level.
+ *
+ * This gate never blocks — it returns `passed: true` in all cases.
+ * When the autonomy level allows auto-approval, the action may skip
+ * the "dale" confirmation step.  When it does not, the action falls
+ * through to the normal "dale" confirmation flow.
+ *
+ * @param action  An object with a `riskLevel` property.
+ * @param engine  The autonomy engine providing the current level.
+ * @returns A {@link GuardResult} — always `passed: true`.
+ */
+export function autonomyGate(
+  action: { riskLevel: string },
+  engine: AutonomyEngine,
+): GuardResult {
+  if (engine.canAutoApprove(action.riskLevel)) {
+    return { passed: true };
+  }
+
+  return {
+    passed: true,
+    reason:
+      `El nivel de autonomía actual no permite auto-ejecución ` +
+      `para acciones de riesgo "${action.riskLevel}". Se requiere "dale".`,
+  };
 }
 
 // ---------------------------------------------------------------------------
