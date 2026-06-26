@@ -5,7 +5,8 @@ export default defineConfig({
     alias: {
       "@msl/domain": new URL("./packages/domain/src/index.ts", import.meta.url).pathname,
       "@msl/memory": new URL("./packages/memory/src/index.ts", import.meta.url).pathname,
-      "@msl/mercadolibre": new URL("./packages/mercadolibre/src/index.ts", import.meta.url).pathname,
+      "@msl/mercadolibre": new URL("./packages/mercadolibre/src/index.ts", import.meta.url)
+        .pathname,
       "@msl/agent": new URL("./packages/agent/src/index.ts", import.meta.url).pathname,
       "@msl/bot": new URL("./packages/bot/src/index.ts", import.meta.url).pathname,
       "@msl/mcp": new URL("./packages/mcp/src/index.ts", import.meta.url).pathname,
