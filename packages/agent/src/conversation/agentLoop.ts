@@ -5,6 +5,7 @@ import type { AgentProposal, ConversationMessage, ConversationState, DecoyPropos
 import { AutonomyLevel, type TurnOutcome } from "./types.js";
 import { spanishValidator, harmfulContentFilter, strategyValidator, honeyPotValidator, autonomyGate } from "./guardrails.js";
 import type { AutonomyEngine } from "./autonomyEngine.js";
+import { selfVerify } from "./selfVerify.js";
 import { parseStrategy } from "./strategyParser.js";
 import type { ToolDefinition } from "./tools.js";
 import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
@@ -348,7 +349,7 @@ ${strategyLines.join("\n")}`;
       }
 
       // --- Parse response ---
-      const responseText = llmResponse.content;
+      let responseText = llmResponse.content;
       let proposal: AgentProposal | undefined;
 
       // Check if the LLM requested tool calls (prepare_action).
@@ -444,6 +445,38 @@ ${strategyLines.join("\n")}`;
             });
             // Clear the pending decoy after storing.
             pendingDecoyProposal = null;
+          }
+        }
+
+        // --- Calibrated-distrust self-verification (after guardrails) ---
+        {
+          const currentLevel = config.autonomyEngine
+            ? AutonomyLevel[config.autonomyEngine.getCurrentLevel()] ?? "SUGIERE"
+            : "SUGIERE";
+          const verifyResult = selfVerify(proposal, activeStrategies, {
+            sellerId: state.sessionMetadata.sellerId,
+            currentLevel,
+          });
+
+          if (!verifyResult.passed) {
+            const blockingReasons = verifyResult.checks
+              .filter((c) => c.severity === "blocking" && !c.passed)
+              .map((c) => `- ${c.name}: ${c.detail}`)
+              .join("\n");
+            return blockAndRespond(
+              state,
+              userMessage,
+              `Verificación de confianza calibrada falló:\n${blockingReasons}`,
+            );
+          }
+
+          if (verifyResult.requiresHumanReview) {
+            const warnings = verifyResult.checks
+              .filter((c) => c.severity === "warning" && !c.passed)
+              .map((c) => `- ${c.name}: ${c.detail}`)
+              .join("\n");
+            responseText =
+              `⚠️ Requiere tu revisión\n\n${warnings}\n\n---\n\n${responseText}`;
           }
         }
 

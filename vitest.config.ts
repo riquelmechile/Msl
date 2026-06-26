@@ -8,6 +8,7 @@ export default defineConfig({
       "@msl/mercadolibre": new URL("./packages/mercadolibre/src/index.ts", import.meta.url).pathname,
       "@msl/agent": new URL("./packages/agent/src/index.ts", import.meta.url).pathname,
       "@msl/bot": new URL("./packages/bot/src/index.ts", import.meta.url).pathname,
+      "@msl/mcp": new URL("./packages/mcp/src/index.ts", import.meta.url).pathname,
     },
   },
   test: {

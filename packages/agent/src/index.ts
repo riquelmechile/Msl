@@ -40,6 +40,12 @@ export {
   autonomyGate,
 } from "./conversation/guardrails.js";
 
+export { selfVerify } from "./conversation/selfVerify.js";
+export type {
+  VerificationResult,
+  VerificationCheck,
+} from "./conversation/selfVerify.js";
+
 export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
 export { createStrategyStore } from "./conversation/strategyStore.js";
 
