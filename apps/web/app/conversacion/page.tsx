@@ -271,22 +271,24 @@ export default function ConversationPage() {
             {msg.role === "system" ? (
               <div className="message-system">{msg.content}</div>
             ) : (
-              <div className={`message-bubble ${msg.role === "user" ? "bubble-user" : "bubble-agent"}`}>
+              <div
+                className={`message-bubble ${msg.role === "user" ? "bubble-user" : "bubble-agent"}`}
+              >
                 <p className="message-text">{msg.content}</p>
 
                 {/* Actor consultation badge */}
                 {msg.consultedActor && (
                   <div className="message-badge actor-badge">
-                    {actorEmoji(msg.consultedActor)}{" "}
-                    Actor consultado: {actorLabel(msg.consultedActor)}
+                    {actorEmoji(msg.consultedActor)} Actor consultado:{" "}
+                    {actorLabel(msg.consultedActor)}
                   </div>
                 )}
 
                 {/* Strategies applied badge */}
                 {msg.strategiesApplied && msg.strategiesApplied > 0 && (
                   <div className="message-badge strategies-badge">
-                    📐 {msg.strategiesApplied} estrategia{msg.strategiesApplied !== 1 ? "s" : ""} del
-                    CEO aplicada{msg.strategiesApplied !== 1 ? "s" : ""}
+                    📐 {msg.strategiesApplied} estrategia{msg.strategiesApplied !== 1 ? "s" : ""}{" "}
+                    del CEO aplicada{msg.strategiesApplied !== 1 ? "s" : ""}
                   </div>
                 )}
 

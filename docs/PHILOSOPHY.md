@@ -8,13 +8,13 @@
 
 The agent was designed to match a specific cognitive profile — one that the original project documents called "TEA functional" (high-functioning pattern recognition, focus, distrust in authority):
 
-| Trait | How MSL uses it |
-|-------|----------------|
+| Trait                   | How MSL uses it                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | **Pattern recognition** | Probe detection, strategy intent parsing, anomaly detection in competitor behavior — all use pattern matching before LLM calls |
-| **Systemizing** | Every business domain is modeled as typed data, not free-text; every action has structured exact changes |
-| **Calibrated distrust** | The agent never trusts its own output — `selfVerify()` runs 6 checks on every proposal before the user sees it |
-| **Detail focus** | 624 tests, typed audit trails, exact changes (not "adjust price" but `{field: "price", from: 15000, to: 13500}`) |
-| **Routine adherence** | The agent loop always follows the same 10-step sequence; no branching, no exceptions |
+| **Systemizing**         | Every business domain is modeled as typed data, not free-text; every action has structured exact changes                       |
+| **Calibrated distrust** | The agent never trusts its own output — `selfVerify()` runs 6 checks on every proposal before the user sees it                 |
+| **Detail focus**        | 648 tests, typed audit trails, exact changes (not "adjust price" but `{field: "price", from: 15000, to: 13500}`)               |
+| **Routine adherence**   | The agent loop always follows the same 10-step sequence; no branching, no exceptions                                           |
 
 ---
 
@@ -46,6 +46,7 @@ Phase 0          Phase 1-2           Phase 3-4            Phase 5-7
 Commands are fragile. They require the user to learn a syntax, remember parameter order, and tolerate cryptic error messages. They also create tight coupling between the UI and the backend — every new feature needs new command parsing, new validation, new error handling.
 
 **Natural language is the only durable interface.** The seller says "bajá el precio del listing MLC1001 un 10% porque no vende" and the agent:
+
 1. Infers intent: price change
 2. Identifies target: MLC1001
 3. Calculates change: 15,000 → 13,500 CLP
@@ -62,16 +63,16 @@ This is not a UX preference. It's a **durability constraint** — the interface 
 
 Vector databases (pgvector, Pinecone, Chroma) are the default choice for AI memory in 2026. MSL chose SQLite + recursive CTEs instead. Here's why:
 
-| Concern | Vector DB approach | Cortex approach |
-|---------|-------------------|-----------------|
-| **External dependency** | PostgreSQL, Pinecone API, Chroma server | Single SQLite file in-process |
-| **Schema flexibility** | Fixed embedding dimensions | Arbitrary metadata JSON per node |
-| **Relationship modeling** | Cosine similarity only | Weighted directed edges with co-occurrence counts and lifecycles |
-| **Learning** | None (static embeddings) | Hebbian (reinforce on use, penalize on rejection) |
-| **Forgetting** | Manual deletion only | Darwinian pruning: unused edges → distilled lessons → then removed |
-| **Context injection** | Top-K similarity search | Spreading activation traversal with decay |
-| **Code complexity** | ~50 lines (SDK call) | ~400 lines TypeScript |
-| **Operational cost** | External service billing | Zero — runs in the same Node.js process |
+| Concern                   | Vector DB approach                      | Cortex approach                                                    |
+| ------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| **External dependency**   | PostgreSQL, Pinecone API, Chroma server | Single SQLite file in-process                                      |
+| **Schema flexibility**    | Fixed embedding dimensions              | Arbitrary metadata JSON per node                                   |
+| **Relationship modeling** | Cosine similarity only                  | Weighted directed edges with co-occurrence counts and lifecycles   |
+| **Learning**              | None (static embeddings)                | Hebbian (reinforce on use, penalize on rejection)                  |
+| **Forgetting**            | Manual deletion only                    | Darwinian pruning: unused edges → distilled lessons → then removed |
+| **Context injection**     | Top-K similarity search                 | Spreading activation traversal with decay                          |
+| **Code complexity**       | ~50 lines (SDK call)                    | ~400 lines TypeScript                                              |
+| **Operational cost**      | External service billing                | Zero — runs in the same Node.js process                            |
 
 **The key insight:** An AI agent for a business doesn't need semantic search across millions of documents. It needs a **relationship graph** that strengthens connections that work and prunes connections that don't. SQLite + recursive CTEs give you that in 400 lines without a single external service.
 
@@ -81,14 +82,14 @@ Cortex models the agent's world as concept nodes connected by weighted edges. Wh
 
 ## Why DeepSeek over GPT
 
-| Factor | GPT-4o | DeepSeek v4 |
-|--------|--------|-------------|
-| **Context window** | 128K | 1M |
-| **Cache discount** | 50% | ~98% |
-| **Cost per 1M tokens (cached)** | ~$1.25 | ~$0.014 |
-| **API compatibility** | OpenAI native | OpenAI-compatible (`baseURL`) |
-| **Spanish quality** | Good | Comparable (tested on MercadoLibre business domain) |
-| **Chinese alignment risk** | N/A | Evaluated. DeepSeek is a tool provider, not a strategy partner. |
+| Factor                          | GPT-4o        | DeepSeek v4                                                     |
+| ------------------------------- | ------------- | --------------------------------------------------------------- |
+| **Context window**              | 128K          | 1M                                                              |
+| **Cache discount**              | 50%           | ~98%                                                            |
+| **Cost per 1M tokens (cached)** | ~$1.25        | ~$0.014                                                         |
+| **API compatibility**           | OpenAI native | OpenAI-compatible (`baseURL`)                                   |
+| **Spanish quality**             | Good          | Comparable (tested on MercadoLibre business domain)             |
+| **Chinese alignment risk**      | N/A           | Evaluated. DeepSeek is a tool provider, not a strategy partner. |
 
 The 3-block cache strategy makes DeepSeek ~98% cheaper because Block A (system prompt, 5K tokens) is placed at position 0 and never changes. DeepSeek's prefix cache anchors on it across all conversations for the same seller. Block B (daily aggregates, 15K) refreshes once every 24 hours. Block C (query-specific, 0.3-2K) is the only per-message cost.
 
@@ -167,14 +168,14 @@ The El Sindicato ecosystem was a collection of MercadoLibre automation projects 
 
 ## Summary: the principles
 
-| # | Principle | Rule |
-|---|-----------|------|
-| 1 | **Domain-first** | Pure TypeScript domain layer with zero I/O. Everything else is an adapter. |
-| 2 | **Natural language only** | No commands, no menus, no syntax. The interface is conversation. |
-| 3 | **Organic growth** | Cell → tissue → organ → organism. One capability at a time. |
-| 4 | **Cortex over vectors** | Graph relationships, not semantic similarity. Hebbian learning, not static embeddings. |
-| 5 | **Cache economics** | 3-block prefix-anchored cache. Per-message cost: $0.0003. |
-| 6 | **Calibrated distrust** | The agent verifies its own output. Never present unchecked proposals to the user. |
-| 7 | **Safety as infrastructure** | Guardrails, approval queues, and audit trails are invisible — never the product. |
-| 8 | **Escribano learning** | Memory updates happen automatically as a side effect of conversation. Zero API cost. |
-| 9 | **Fail forward** | Every architecture decision is a reaction to something that broke. Learn, don't abstract. |
+| #   | Principle                    | Rule                                                                                      |
+| --- | ---------------------------- | ----------------------------------------------------------------------------------------- |
+| 1   | **Domain-first**             | Pure TypeScript domain layer with zero I/O. Everything else is an adapter.                |
+| 2   | **Natural language only**    | No commands, no menus, no syntax. The interface is conversation.                          |
+| 3   | **Organic growth**           | Cell → tissue → organ → organism. One capability at a time.                               |
+| 4   | **Cortex over vectors**      | Graph relationships, not semantic similarity. Hebbian learning, not static embeddings.    |
+| 5   | **Cache economics**          | 3-block prefix-anchored cache. Per-message cost: $0.0003.                                 |
+| 6   | **Calibrated distrust**      | The agent verifies its own output. Never present unchecked proposals to the user.         |
+| 7   | **Safety as infrastructure** | Guardrails, approval queues, and audit trails are invisible — never the product.          |
+| 8   | **Escribano learning**       | Memory updates happen automatically as a side effect of conversation. Zero API cost.      |
+| 9   | **Fail forward**             | Every architecture decision is a reaction to something that broke. Learn, don't abstract. |
