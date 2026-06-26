@@ -1,6 +1,6 @@
 # ARCHITECTURE — MSL AI Agent
 
-> **Lead with the answer:** MSL is a hexagonal-architecture TypeScript monorepo. The domain core is pure logic (no I/O). Six satellite packages — memory, mercadolibre, tools, agent, workers, and mcp — surround it. A Next.js web app and a Telegram bot stub form the presentation layer. The agent orchestrates conversation through DeepSeek's LLM, using Cortex (SQLite neural graph) for persistent memory and learning.
+> **Lead with the answer:** MSL is a hexagonal-architecture TypeScript monorepo. The domain core is pure logic (no I/O). Six satellite packages — memory, mercadolibre, tools, agent, workers, and mcp — surround it. A Next.js demo app and a Telegram bot stub form the presentation layer. The agent package can orchestrate conversation through DeepSeek's LLM, using Cortex (SQLite neural graph) for persistent memory and learning; the current web `/api/chat` route is still demo-only.
 
 ---
 
@@ -98,15 +98,15 @@ User message (Spanish)
 
 ## Key design decisions
 
-| Decision | Choice | Tradeoff |
-|----------|--------|----------|
-| **Hexagonal domain** | `@msl/domain` has zero I/O dependencies | Tests run instantly. Every adapter is swappable. |
-| **SQLite Cortex** | Recursive CTEs for spreading activation | No graph DB dependency. Single file. ~400 lines. |
-| **3-block cache** | DeepSeek prefix-anchored cache | ~98% cost reduction. Fragile on listing changes → solved with daily aggregates. |
-| **Hybrid parser** | Regex fast-path for strategy CRUD | 80% of natural commands bypass LLM entirely. Zero API cost. |
-| **Calibrated distrust** | Agent verifies its own proposals | Catches hallucinated actions before user sees them. 6 checks per proposal. |
-| **MCP protocol** | Stdio server with 6 tools | Any MCP client (Claude, Cursor, VS Code) can use MSL tools. |
-| **No framework** | Plain TypeScript + OpenAI SDK | No LangChain, no Mastra, no abstractions. Direct API access. |
+| Decision                | Choice                                  | Tradeoff                                                                        |
+| ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------- |
+| **Hexagonal domain**    | `@msl/domain` has zero I/O dependencies | Tests run instantly. Every adapter is swappable.                                |
+| **SQLite Cortex**       | Recursive CTEs for spreading activation | No graph DB dependency. Single file. ~400 lines.                                |
+| **3-block cache**       | DeepSeek prefix-anchored cache          | ~98% cost reduction. Fragile on listing changes → solved with daily aggregates. |
+| **Hybrid parser**       | Regex fast-path for strategy CRUD       | 80% of natural commands bypass LLM entirely. Zero API cost.                     |
+| **Calibrated distrust** | Agent verifies its own proposals        | Catches hallucinated actions before user sees them. 6 checks per proposal.      |
+| **MCP protocol**        | Stdio server with 6 stubbed tools       | Compatible clients can exercise the current demo tool surface.                  |
+| **No framework**        | Plain TypeScript + OpenAI SDK           | No LangChain, no Mastra, no abstractions. Direct API access.                    |
 
 ## Directory tree
 
@@ -253,7 +253,7 @@ Sync job stubs for critical business signals (orders, claims, cancellations, sto
 
 ### `@msl/mcp` — Model Context Protocol server
 
-Stdio-based MCP server exposing 6 tools: `simulate_actor`, `detect_probes`, `sync_product`, `check_account`, `list_strategies`, `consult_cortex`. Compatible with any MCP client (Claude Desktop, Cursor, VS Code). Schema definitions use zod for input validation. All tools are stubbed — ready for real agent dependencies.
+Stdio-based MCP server exposing 6 tools: `simulate_actor`, `detect_probes`, `sync_product`, `check_account`, `list_strategies`, `consult_cortex`. Compatible with MCP clients that can launch the stdio server. Schema definitions use zod for input validation. Implementations are currently hardcoded/stubbed and are not production business-operation wiring.
 
 ### `@msl/bot` — Telegram bot (stub)
 
@@ -261,4 +261,4 @@ Thin wrapper around the agent loop. Handles incoming Telegram messages, forwards
 
 ### `apps/web` — Demo console
 
-Next.js 15 + React 19. Deterministic demo that exercises the agent's business Q&A engine without requiring a real LLM API key. Spanish product copy throughout. Interactive console UI for testing conversation flows.
+Next.js 15 + React 19. Deterministic demo that exercises the agent's business Q&A engine without requiring a real LLM API key. The `/api/chat` route creates in-memory demo strategy/autonomy stores per request and forces `mockClient: true`; it is not production chat persistence or real DeepSeek wiring. Spanish product copy throughout. Interactive console UI for testing conversation flows.

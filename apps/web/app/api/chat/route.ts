@@ -10,24 +10,9 @@ import {
   type AutonomyEngine,
   type ParsedRule,
 } from "@msl/agent";
+import { validateAuth } from "./auth";
 
 // ── API Key Auth ─────────────────────────────────────────────────────
-
-const API_KEY = process.env.MSL_API_KEY;
-
-/**
- * Validates the request's Authorization header against the configured API key.
- *
- * When `MSL_API_KEY` is not set, all requests are allowed (open mode).
- * Otherwise the caller must provide `Authorization: Bearer <key>`.
- */
-function validateAuth(request: Request): { authorized: boolean; error?: string } {
-  if (!API_KEY) return { authorized: true }; // no auth configured → open
-  const auth = request.headers.get("authorization");
-  if (!auth) return { authorized: false, error: "Missing Authorization header" };
-  if (auth !== `Bearer ${API_KEY}`) return { authorized: false, error: "Invalid API key" };
-  return { authorized: true };
-}
 
 // ── In-memory strategy store for the demo ──────────────────────────
 
@@ -166,8 +151,8 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
  * Conversational agent chat endpoint.
  *
  * Accepts a user message and conversation history, runs it through the
- * full agent loop (Cortex, strategies, actors, autonomy engine), and
- * streams the response back as Server-Sent Events.
+ * demo agent loop with in-memory strategy/autonomy stores and mock LLM output,
+ * then streams the response back as Server-Sent Events.
  */
 export async function POST(req: NextRequest) {
   // Auth check (before rate limit — unauthorised clients shouldn't burn quota)
@@ -269,9 +254,7 @@ export async function POST(req: NextRequest) {
         metadata.consultedActor = "proveedor";
       }
 
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify(metadata)}\n\n`),
-      );
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(metadata)}\n\n`));
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
       controller.close();

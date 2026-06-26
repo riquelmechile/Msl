@@ -29,7 +29,7 @@ type KpiRow = {
   safety_violations: number;
   response_accuracy: number;
   timestamp: string;
-}
+};
 
 type DegradationRow = {
   id: number;
@@ -38,7 +38,7 @@ type DegradationRow = {
   reason: string;
   kpi_snapshot: string | null;
   timestamp: string;
-}
+};
 
 const systemPrompt = "Eres Plasticov, asistente comercial. Respondé en español.";
 

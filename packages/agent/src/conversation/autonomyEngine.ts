@@ -69,7 +69,7 @@ type KpiRow = {
   safety_violations: number;
   response_accuracy: number;
   timestamp: string;
-}
+};
 
 /**
  * Create the autonomy engine backed by SQLite.
@@ -89,15 +89,13 @@ export function createAutonomyEngine(
 
   // Seed the singleton state row if it doesn't exist.
   const initialLevel = config?.initialLevel ?? AutonomyLevel.SUGIERE;
-  db.prepare(
-    `INSERT OR IGNORE INTO autonomy_state (id, current_level) VALUES (1, ?)`,
-  ).run(initialLevel);
+  db.prepare(`INSERT OR IGNORE INTO autonomy_state (id, current_level) VALUES (1, ?)`).run(
+    initialLevel,
+  );
 
   // ── Prepared statements ──────────────────────────────────────
 
-  const getLevelStmt = db.prepare(
-    `SELECT current_level FROM autonomy_state WHERE id = 1`,
-  );
+  const getLevelStmt = db.prepare(`SELECT current_level FROM autonomy_state WHERE id = 1`);
 
   const setLevelStmt = db.prepare(
     `UPDATE autonomy_state SET current_level = ?, updated_at = datetime(?) WHERE id = 1`,
@@ -247,10 +245,7 @@ export function createAutonomyEngine(
 
     // Rule 1: safety violations > 3 in last 24h → force level 0
     const dayRows = queryKpiWindow(1, now);
-    const totalSafetyViolations = dayRows.reduce(
-      (sum, r) => sum + r.safety_violations,
-      0,
-    );
+    const totalSafetyViolations = dayRows.reduce((sum, r) => sum + r.safety_violations, 0);
     if (totalSafetyViolations > 3) {
       reasons.push(
         `Más de 3 violaciones de seguridad (${totalSafetyViolations}) en las últimas 24 horas.`,
@@ -261,9 +256,7 @@ export function createAutonomyEngine(
     // Rule 2: average marginCompliance < 0.8 in last 7 days
     const weekRows = queryKpiWindow(7, now);
     if (weekRows.length > 0) {
-      const avgMargin =
-        weekRows.reduce((sum, r) => sum + r.margin_compliance, 0) /
-        weekRows.length;
+      const avgMargin = weekRows.reduce((sum, r) => sum + r.margin_compliance, 0) / weekRows.length;
       if (avgMargin < 0.8 && newLevel > AutonomyLevel.CONSULTA) {
         reasons.push(
           `Cumplimiento de margen promedio (${(avgMargin * 100).toFixed(0)}%) por debajo del 80% en los últimos 7 días.`,
@@ -275,9 +268,7 @@ export function createAutonomyEngine(
     // Rule 3: average successRate < 0.5 in last 30 days
     const monthRows = queryKpiWindow(30, now);
     if (monthRows.length > 0) {
-      const avgSuccess =
-        monthRows.reduce((sum, r) => sum + r.success_rate, 0) /
-        monthRows.length;
+      const avgSuccess = monthRows.reduce((sum, r) => sum + r.success_rate, 0) / monthRows.length;
       if (avgSuccess < 0.5 && newLevel > AutonomyLevel.CONSULTA) {
         reasons.push(
           `Tasa de éxito promedio (${(avgSuccess * 100).toFixed(0)}%) por debajo del 50% en los últimos 30 días.`,
@@ -335,9 +326,7 @@ export function createAutonomyEngine(
    *
    * @param now Frozen date for testability. Defaults to `new Date()`.
    */
-  const evaluatePromotion = (
-    now: Date = new Date(),
-  ): { recommend: boolean; to: AutonomyLevel } => {
+  const evaluatePromotion = (now: Date = new Date()): { recommend: boolean; to: AutonomyLevel } => {
     const current = getCurrentLevel();
     if (current >= AutonomyLevel.FULL) {
       return { recommend: false, to: current };
@@ -348,28 +337,20 @@ export function createAutonomyEngine(
       return { recommend: false, to: current };
     }
 
-    const totalSafety = monthRows.reduce(
-      (sum, r) => sum + r.safety_violations,
-      0,
-    );
+    const totalSafety = monthRows.reduce((sum, r) => sum + r.safety_violations, 0);
     if (totalSafety > 0) return { recommend: false, to: current };
 
-    const avgMargin =
-      monthRows.reduce((sum, r) => sum + r.margin_compliance, 0) /
-      monthRows.length;
+    const avgMargin = monthRows.reduce((sum, r) => sum + r.margin_compliance, 0) / monthRows.length;
     if (avgMargin <= 0.9) return { recommend: false, to: current };
 
-    const avgSuccess =
-      monthRows.reduce((sum, r) => sum + r.success_rate, 0) /
-      monthRows.length;
+    const avgSuccess = monthRows.reduce((sum, r) => sum + r.success_rate, 0) / monthRows.length;
     if (avgSuccess <= 0.9) return { recommend: false, to: current };
 
     const avgAccuracy =
-      monthRows.reduce((sum, r) => sum + r.response_accuracy, 0) /
-      monthRows.length;
+      monthRows.reduce((sum, r) => sum + r.response_accuracy, 0) / monthRows.length;
     if (avgAccuracy <= 0.9) return { recommend: false, to: current };
 
-    return { recommend: true, to: (current + 1) };
+    return { recommend: true, to: current + 1 };
   };
 
   // ── Auto-approval gate ────────────────────────────────────────

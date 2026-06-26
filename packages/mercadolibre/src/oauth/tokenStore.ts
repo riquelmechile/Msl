@@ -1,10 +1,5 @@
 import Database from "better-sqlite3";
-import {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-  scryptSync,
-} from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import type { OAuthTokens, StoredToken } from "../types.js";
 
 const TOKEN_STORE_TABLE = `
@@ -26,16 +21,28 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 const ALGORITHM = "aes-256-gcm";
 const SALT = "msl-salt";
 
-const KEY: Buffer = (() => {
+let cachedKey: Buffer | undefined;
+
+function getKey(): Buffer {
+  if (cachedKey) return cachedKey;
   const secret = process.env.MSL_ENCRYPTION_KEY;
   if (!secret) {
+    const allowInsecureDevSecrets =
+      process.env.MSL_ALLOW_INSECURE_DEV_SECRETS === "true" || process.env.NODE_ENV === "test";
+    if (!allowInsecureDevSecrets) {
+      throw new Error(
+        "MSL_ENCRYPTION_KEY is required for token encryption. Set MSL_ALLOW_INSECURE_DEV_SECRETS=true only for local demo/development.",
+      );
+    }
     console.warn(
-      "⚠️  MSL_ENCRYPTION_KEY not set — using development key. Tokens are NOT secure.",
+      "⚠️  MSL_ENCRYPTION_KEY not set — using explicit insecure development key. Tokens are NOT secure.",
     );
-    return scryptSync("msl-dev-key-change-me", SALT, 32);
+    cachedKey = scryptSync("msl-dev-key-change-me", SALT, 32);
+    return cachedKey;
   }
-  return scryptSync(secret, SALT, 32);
-})();
+  cachedKey = scryptSync(secret, SALT, 32);
+  return cachedKey;
+}
 
 /**
  * Encrypts a plaintext string using AES-256-GCM.
@@ -43,11 +50,8 @@ const KEY: Buffer = (() => {
  */
 export function encrypt(plaintext: string): string {
   const iv = randomBytes(16);
-  const cipher = createCipheriv(ALGORITHM, KEY, iv);
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, "utf8"),
-    cipher.final(),
-  ]);
+  const cipher = createCipheriv(ALGORITHM, getKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return `${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
 }
@@ -64,9 +68,9 @@ export function decrypt(ciphertext: string): string {
   const iv = Buffer.from(ivB64, "base64");
   const authTag = Buffer.from(authTagB64, "base64");
   const encrypted = Buffer.from(encryptedB64, "base64");
-  const decipher = createDecipheriv(ALGORITHM, KEY, iv);
+  const decipher = createDecipheriv(ALGORITHM, getKey(), iv);
   decipher.setAuthTag(authTag);
-  return decipher.update(encrypted) + decipher.final("utf8");
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
 export type TokenStore = {
@@ -95,9 +99,7 @@ export function createTokenStore(dbPath = ":memory:"): TokenStore {
       (@seller_id, @access_token, @refresh_token, @expires_at, @user_id, @nickname, @account_level, datetime('now'))
   `);
 
-  const selectStmt = db.prepare(
-    "SELECT * FROM oauth_tokens WHERE seller_id = ?",
-  );
+  const selectStmt = db.prepare("SELECT * FROM oauth_tokens WHERE seller_id = ?");
 
   const deleteStmt = db.prepare("DELETE FROM oauth_tokens WHERE seller_id = ?");
 
@@ -111,9 +113,7 @@ export function createTokenStore(dbPath = ":memory:"): TokenStore {
         seller_id: sellerId,
         access_token: encrypt(tokens.access_token),
         refresh_token: encrypt(tokens.refresh_token),
-        expires_at: tokens.expires_in
-          ? expiresAt(tokens.expires_in)
-          : expiresAt(21600),
+        expires_at: tokens.expires_in ? expiresAt(tokens.expires_in) : expiresAt(21600),
         user_id: tokens.user_id ?? "",
         nickname: tokens.nickname ?? "",
         account_level: tokens.account_level ?? "classic",
@@ -145,8 +145,13 @@ export function createTokenStore(dbPath = ":memory:"): TokenStore {
       // effectively serialising concurrent access to the same seller.
       const prev = locks.get(sellerId) ?? Promise.resolve();
       let release: () => void;
-      const next = new Promise<void>((resolve) => { release = resolve; });
-      locks.set(sellerId, prev.then(() => next));
+      const next = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      locks.set(
+        sellerId,
+        prev.then(() => next),
+      );
       try {
         await prev;
         return await fn();

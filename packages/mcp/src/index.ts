@@ -4,17 +4,15 @@ import { z } from "zod";
 
 /**
  * Validates the MCP API key against the {@link MSL_MCP_API_KEY}
- * environment variable.  Returns `true` when the environment variable
- * is not set (development mode) or when the key matches.
+ * environment variable. Fails closed unless explicit local/demo mode is enabled.
  */
 function validateApiKey(apiKey: string | undefined): boolean {
   const expected = process.env.MSL_MCP_API_KEY;
   if (!expected) {
-    // Development mode — no key configured, allow all.
-    console.warn(
-      "⚠️  MSL_MCP_API_KEY not set — MCP server is running without authentication.",
-    );
-    return true;
+    if (process.env.MSL_ALLOW_UNAUTHENTICATED_LOCAL === "true" || process.env.NODE_ENV === "test") {
+      return true;
+    }
+    return false;
   }
   return apiKey === expected;
 }
@@ -73,8 +71,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
   server.registerTool(
     "detect_probes",
     {
-      description:
-        "Detecta patrones sospechosos de contrainteligencia en preguntas y vistas",
+      description: "Detecta patrones sospechosos de contrainteligencia en preguntas y vistas",
       inputSchema: {
         questions: z.array(z.unknown()).optional(),
         views: z.array(z.unknown()).optional(),
@@ -108,8 +105,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
   server.registerTool(
     "sync_product",
     {
-      description:
-        "Sincroniza producto de Plasticov a Maustian aplicando estrategias",
+      description: "Sincroniza producto de Plasticov a Maustian aplicando estrategias",
       inputSchema: {
         sourceSellerId: z.string(),
         targetSellerId: z.string(),

@@ -102,9 +102,7 @@ describe("seedActorNodes", () => {
     expect(secondIds).toEqual(firstIds);
 
     // Node count remains 3
-    const count = (
-      db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number }
-    ).cnt;
+    const count = (db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number }).cnt;
     expect(count).toBe(3);
   });
 });
@@ -239,9 +237,7 @@ describe("reinforceActorOutcome", () => {
   });
 
   it("is a no-op for unknown actor types", () => {
-    expect(() =>
-      engine.reinforceActorOutcome("unknown" as ActorType, true),
-    ).not.toThrow();
+    expect(() => engine.reinforceActorOutcome("unknown" as ActorType, true)).not.toThrow();
   });
 });
 
@@ -267,15 +263,13 @@ describe("recordSimulation", () => {
 
     expect(id).toBeGreaterThan(0);
 
-    const row = db
-      .prepare("SELECT * FROM actor_simulations WHERE id = ?")
-      .get(id) as {
-        id: number;
-        actor_type: string;
-        query: string;
-        result: string;
-        created_at: string;
-      };
+    const row = db.prepare("SELECT * FROM actor_simulations WHERE id = ?").get(id) as {
+      id: number;
+      actor_type: string;
+      query: string;
+      result: string;
+      created_at: string;
+    };
 
     expect(row.actor_type).toBe("comprador");
     expect(row.query).toBe("¿Comprarias a $15.000?");

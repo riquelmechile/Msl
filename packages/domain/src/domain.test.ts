@@ -273,9 +273,7 @@ describe("domain types — Order", () => {
       buyerId: "buyer-42",
       status: "paid",
       totalAmount: 25990,
-      items: [
-        { itemId: "MLC123", title: "Zapatillas running", quantity: 1, unitPrice: 25990 },
-      ],
+      items: [{ itemId: "MLC123", title: "Zapatillas running", quantity: 1, unitPrice: 25990 }],
       createdAt: "2026-06-25T12:00:00.000Z",
     };
 
@@ -287,7 +285,12 @@ describe("domain types — Order", () => {
 
   it("supports all order statuses", () => {
     const statuses: MlOrder["status"][] = [
-      "pending", "paid", "shipped", "delivered", "cancelled", "returned",
+      "pending",
+      "paid",
+      "shipped",
+      "delivered",
+      "cancelled",
+      "returned",
     ];
     // Each status should be assignable — compilation check, no runtime assertion needed
     expect(statuses).toHaveLength(6);

@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { selfVerify } from "../../src/conversation/selfVerify.js";
-import type {
-  AgentProposal,
-  Strategy,
-  ParsedRule,
-} from "../../src/conversation/types.js";
+import type { AgentProposal, Strategy, ParsedRule } from "../../src/conversation/types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -15,9 +11,7 @@ function makeProposal(overrides: Partial<AgentProposal> = {}): AgentProposal {
       sellerId: "seller-1",
       kind: "price-change",
       target: { type: "listing", listingId: "MLC-42" },
-      exactChange: [
-        { field: "price", from: 15000, to: 13500 },
-      ],
+      exactChange: [{ field: "price", from: 15000, to: 13500 }],
       rationale: "Ajuste recomendado por análisis de margen.",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },
@@ -27,9 +21,7 @@ function makeProposal(overrides: Partial<AgentProposal> = {}): AgentProposal {
   };
 }
 
-function makeStrategy(
-  overrides: Partial<Strategy> = {},
-): Strategy {
+function makeStrategy(overrides: Partial<Strategy> = {}): Strategy {
   const rule: ParsedRule = {
     ruleType: "margin",
     target: "margen",
@@ -161,23 +153,18 @@ describe("selfVerify", () => {
     expect(result.passed).toBe(true); // no blocking
     expect(result.requiresHumanReview).toBe(true);
 
-    const autonomyCheck = result.checks.find(
-      (c) => c.name === "Nivel de autonomía",
-    );
+    const autonomyCheck = result.checks.find((c) => c.name === "Nivel de autonomía");
     expect(autonomyCheck!.passed).toBe(false);
     expect(autonomyCheck!.severity).toBe("warning");
   });
 
   it("passes autonomy check when level is appropriate", () => {
-    const result = selfVerify(
-      makeProposal({ riskLevel: "medium" }),
-      [],
-      { sellerId: "seller-1", currentLevel: "MEDIO_RIESGO" },
-    );
+    const result = selfVerify(makeProposal({ riskLevel: "medium" }), [], {
+      sellerId: "seller-1",
+      currentLevel: "MEDIO_RIESGO",
+    });
 
-    const autonomyCheck = result.checks.find(
-      (c) => c.name === "Nivel de autonomía",
-    );
+    const autonomyCheck = result.checks.find((c) => c.name === "Nivel de autonomía");
     expect(autonomyCheck!.passed).toBe(true);
     expect(autonomyCheck!.severity).toBe("info");
     expect(result.requiresHumanReview).toBe(false);
@@ -193,9 +180,7 @@ describe("selfVerify", () => {
       currentLevel: "FULL",
     });
 
-    const consistencyCheck = result.checks.find(
-      (c) => c.name === "Consistencia",
-    );
+    const consistencyCheck = result.checks.find((c) => c.name === "Consistencia");
     expect(consistencyCheck!.passed).toBe(false);
     expect(consistencyCheck!.severity).toBe("warning");
     expect(result.requiresHumanReview).toBe(true);
@@ -211,9 +196,7 @@ describe("selfVerify", () => {
       currentLevel: "FULL",
     });
 
-    const consistencyCheck = result.checks.find(
-      (c) => c.name === "Consistencia",
-    );
+    const consistencyCheck = result.checks.find((c) => c.name === "Consistencia");
     expect(consistencyCheck!.passed).toBe(false);
   });
 
@@ -227,9 +210,7 @@ describe("selfVerify", () => {
       currentLevel: "FULL",
     });
 
-    const consistencyCheck = result.checks.find(
-      (c) => c.name === "Consistencia",
-    );
+    const consistencyCheck = result.checks.find((c) => c.name === "Consistencia");
     expect(consistencyCheck!.passed).toBe(false);
   });
 
@@ -243,9 +224,7 @@ describe("selfVerify", () => {
       currentLevel: "FULL",
     });
 
-    const consistencyCheck = result.checks.find(
-      (c) => c.name === "Consistencia",
-    );
+    const consistencyCheck = result.checks.find((c) => c.name === "Consistencia");
     expect(consistencyCheck!.passed).toBe(true);
   });
 

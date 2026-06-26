@@ -10,7 +10,7 @@ export type MlItem = {
   status: "active" | "paused" | "closed";
   pictures: Array<{ url: string }>;
   attributes: Array<{ id: string; value_name: string }>;
-}
+};
 
 export type NewItem = {
   title: string;
@@ -20,7 +20,7 @@ export type NewItem = {
   pictures: string[];
   description: string;
   attributes: Array<{ id: string; value_name: string }>;
-}
+};
 
 export type MlOrder = {
   id: string;
@@ -32,7 +32,7 @@ export type MlOrder = {
     quantity: number;
     unit_price: number;
   }>;
-}
+};
 
 export type MlQuestion = {
   id: string;
@@ -40,7 +40,7 @@ export type MlQuestion = {
   status: string;
   date_created: string;
   item_id: string;
-}
+};
 
 export type MlUserInfo = {
   id: number;
@@ -48,7 +48,7 @@ export type MlUserInfo = {
   points: number;
   level: string;
   status: string;
-}
+};
 
 export type OAuthTokens = {
   access_token: string;
@@ -57,7 +57,7 @@ export type OAuthTokens = {
   user_id: string;
   nickname: string;
   account_level: "classic" | "premium" | "platinum";
-}
+};
 
 export type StoredToken = {
   seller_id: string;
@@ -67,30 +67,30 @@ export type StoredToken = {
   user_id: string;
   nickname: string;
   account_level: string;
-}
+};
 
 export type MlWriteSnapshot = {
   id: string;
   permalink: string;
   status: string;
   capturedAt: string;
-}
+};
 
 export type MlCategory = {
   id: string;
   name: string;
   path_from_root?: Array<{ id: string; name: string }>;
   children_categories?: Array<{ id: string; name: string }>;
-}
+};
 
 export type MlCategoriesSnapshot = {
   sellerId: string;
   data: MlCategory[];
   capturedAt: string;
-}
+};
 
 export type MlUserSnapshot = {
   sellerId: string;
   data: MlUserInfo;
   capturedAt: string;
-}
+};

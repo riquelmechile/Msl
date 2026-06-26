@@ -3,10 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GraphEngine, createGraphEngine } from "@msl/memory";
 
 import { EscribanoObserver } from "../../src/conversation/escribano.js";
-import type {
-  AgentProposal,
-  ConversationState,
-} from "../../src/conversation/types.js";
+import type { AgentProposal, ConversationState } from "../../src/conversation/types.js";
 import type { WriteActionKind } from "@msl/domain";
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -126,13 +123,7 @@ describe("EscribanoObserver", () => {
 
       const penalizeSpy = vi.spyOn(engine, "penalizeEdge");
 
-      observer.observeTurn(
-        state,
-        state,
-        "⛔ Entrada vacía",
-        undefined,
-        "blocked",
-      );
+      observer.observeTurn(state, state, "⛔ Entrada vacía", undefined, "blocked");
 
       expect(penalizeSpy).not.toHaveBeenCalled();
     });
@@ -181,9 +172,7 @@ describe("EscribanoObserver", () => {
       observer.observeTurn(prevState, newState, "¡Bien!", undefined, "none");
 
       // Only "conversation_turn" should be created (no strategy keywords matched)
-      const calls = createNodeSpy.mock.calls.filter(
-        ([label]) => label !== "conversation_turn",
-      );
+      const calls = createNodeSpy.mock.calls.filter(([label]) => label !== "conversation_turn");
       expect(calls).toHaveLength(0);
     });
   });
@@ -275,9 +264,9 @@ describe("EscribanoObserver", () => {
       expect(ceoNode.id).toBeGreaterThan(0);
 
       // Verify no duplicates by counting nodes with that label
-      const rows = engine.db.prepare(
-        "SELECT COUNT(*) as cnt FROM nodes WHERE label = 'CEO_decision'",
-      ).get() as { cnt: number };
+      const rows = engine.db
+        .prepare("SELECT COUNT(*) as cnt FROM nodes WHERE label = 'CEO_decision'")
+        .get() as { cnt: number };
       expect(rows.cnt).toBe(1);
     });
   });

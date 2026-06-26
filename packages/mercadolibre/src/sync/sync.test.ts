@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MlItem, NewItem, MlWriteSnapshot } from "../types.js";
 import {
@@ -10,21 +10,11 @@ import {
   type Strategy,
 } from "./strategyApplier.js";
 
-import {
-  diffListings,
-  isOutOfSync,
-} from "./diffEngine.js";
+import { diffListings, isOutOfSync } from "./diffEngine.js";
 
-import {
-  createSyncStore,
-  type SyncState,
-} from "./syncStore.js";
+import { createSyncStore, type SyncState } from "./syncStore.js";
 
-import {
-  createProductSyncEngine,
-} from "./syncEngine.js";
-
-import type { SyncJob } from "./syncEngine.js";
+import { createProductSyncEngine } from "./syncEngine.js";
 
 import type { MlClient } from "../index.js";
 
@@ -68,7 +58,7 @@ function makeSyncState(overrides?: Partial<SyncState>): SyncState {
 describe("Strategy Applier", () => {
   it("applies margin strategy: price * (1 + percentage)", () => {
     const item = makeItem({ price: 10000 });
-    const strategy: MarginStrategy = { type: "margin", percentage: 0.50 };
+    const strategy: MarginStrategy = { type: "margin", percentage: 0.5 };
     const result = applyStrategies(item, [strategy]);
 
     expect(result.applied).toBe(true);
@@ -183,8 +173,8 @@ describe("Strategy Applier", () => {
   it("applies multiple strategies in correct order", () => {
     const item = makeItem({ price: 10000, category_id: "MLC1000" });
     const strategies: Strategy[] = [
-      { type: "margin", percentage: 0.50 },       // 10000 → 15000
-      { type: "pricing_rule", cap: 12000 },         // cap at 12000
+      { type: "margin", percentage: 0.5 }, // 10000 → 15000
+      { type: "pricing_rule", cap: 12000 }, // cap at 12000
       { type: "stock", available_quantity: 5 },
     ];
     const result = applyStrategies(item, strategies);
@@ -206,9 +196,7 @@ describe("Strategy Applier", () => {
       expect(result.item.title).toBe("Producto de prueba");
       expect(result.item.category_id).toBe("MLC1000");
       expect(result.item.pictures).toEqual(["https://example.com/img.jpg"]);
-      expect(result.item.attributes).toEqual([
-        { id: "BRAND", value_name: "Genérica" },
-      ]);
+      expect(result.item.attributes).toEqual([{ id: "BRAND", value_name: "Genérica" }]);
     }
   });
 
@@ -311,9 +299,9 @@ describe("Diff Engine", () => {
 
   it("classifies new, changed, unchanged, removed across a batch", () => {
     const items: MlItem[] = [
-      makeItem({ id: "MLC-A", price: 12000 }),                   // changed
-      makeItem({ id: "MLC-B", price: 10000 }),                   // unchanged
-      makeItem({ id: "MLC-C", price: 50000 }),                   // new (no sync state)
+      makeItem({ id: "MLC-A", price: 12000 }), // changed
+      makeItem({ id: "MLC-B", price: 10000 }), // unchanged
+      makeItem({ id: "MLC-C", price: 50000 }), // new (no sync state)
     ];
 
     const states: SyncState[] = [
@@ -527,6 +515,15 @@ describe("Sync Store", () => {
 // ---------------------------------------------------------------------------
 
 describe("Product Sync Engine", () => {
+  beforeEach(() => {
+    vi.stubEnv("MERCADOLIBRE_SOURCE_SELLER_ID", "plasticov");
+    vi.stubEnv("MERCADOLIBRE_TARGET_SELLER_ID", "maustian");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   // Minimal stub MlClient for engine tests
   function stubMlClient(
     items: MlItem[],
@@ -638,6 +635,42 @@ describe("Product Sync Engine", () => {
     };
   }
 
+  it("rejects reversed seller direction before calling clients", async () => {
+    const items = [makeItem({ id: "MLC-1" })];
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const sourceGetItem = vi.spyOn(source, "getItem");
+    const targetPublishItem = vi.spyOn(target, "publishItem");
+    const engine = createProductSyncEngine({ source, target });
+
+    await expect(engine.syncProduct("maustian", "plasticov", "MLC-1", [])).rejects.toThrow(
+      /Invalid MercadoLibre sync direction/i,
+    );
+
+    expect(sourceGetItem).not.toHaveBeenCalled();
+    expect(targetPublishItem).not.toHaveBeenCalled();
+  });
+
+  it("rejects arbitrary seller IDs before batch fetches", async () => {
+    const items = [makeItem({ id: "MLC-1" })];
+    const source = stubMlClient(items);
+    const target = stubMlClient(items);
+    const sourceGetItems = vi.spyOn(source, "getItems");
+    const engine = createProductSyncEngine({ source, target });
+
+    await expect(engine.syncAll("seller-x", "maustian", [])).rejects.toThrow(
+      /Invalid MercadoLibre sync direction/i,
+    );
+    await expect(engine.syncAllConcurrent("plasticov", "seller-y", [])).rejects.toThrow(
+      /Invalid MercadoLibre sync direction/i,
+    );
+    expect(() => engine.syncAllBackground("seller-x", "seller-y", [])).toThrow(
+      /Invalid MercadoLibre sync direction/i,
+    );
+
+    expect(sourceGetItems).not.toHaveBeenCalled();
+  });
+
   it("syncProduct publishes a single item with margin applied", async () => {
     const items = [makeItem({ id: "MLC-1", price: 10000 })];
     const source = stubMlClient(items);
@@ -645,7 +678,7 @@ describe("Product Sync Engine", () => {
     const engine = createProductSyncEngine({ source, target });
 
     const result = await engine.syncProduct("plasticov", "maustian", "MLC-1", [
-      { type: "margin", percentage: 0.50 },
+      { type: "margin", percentage: 0.5 },
     ]);
 
     expect(result.status).toBe("published");
@@ -676,12 +709,12 @@ describe("Product Sync Engine", () => {
 
     // First sync
     await engine.syncProduct("plasticov", "maustian", "MLC-1", [
-      { type: "margin", percentage: 0.50 },
+      { type: "margin", percentage: 0.5 },
     ]);
 
     // Second sync — same item, should be unchanged
     const result = await engine.syncProduct("plasticov", "maustian", "MLC-1", [
-      { type: "margin", percentage: 0.50 },
+      { type: "margin", percentage: 0.5 },
     ]);
 
     expect(result.status).toBe("unchanged");
@@ -698,7 +731,7 @@ describe("Product Sync Engine", () => {
 
     // First sync
     await engine.syncProduct("plasticov", "maustian", "MLC-1", [
-      { type: "margin", percentage: 0.50 },
+      { type: "margin", percentage: 0.5 },
     ]);
 
     // Change price
@@ -707,7 +740,7 @@ describe("Product Sync Engine", () => {
     const engine2 = createProductSyncEngine({ source: source2, target, store });
 
     const result = await engine2.syncProduct("plasticov", "maustian", "MLC-1", [
-      { type: "margin", percentage: 0.50 },
+      { type: "margin", percentage: 0.5 },
     ]);
 
     expect(result.status).toBe("published");
@@ -729,7 +762,7 @@ describe("Product Sync Engine", () => {
     const report = await engine.syncAll(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.30 }],
+      [{ type: "margin", percentage: 0.3 }],
       { differential: false },
     );
 
@@ -758,7 +791,7 @@ describe("Product Sync Engine", () => {
       "maustian",
       [
         { type: "category_filter", excluded: ["MLC9999"] },
-        { type: "margin", percentage: 0.50 },
+        { type: "margin", percentage: 0.5 },
       ],
       { differential: false },
     );
@@ -769,10 +802,7 @@ describe("Product Sync Engine", () => {
   });
 
   it("syncAll is differential by default — skips unchanged", async () => {
-    const items = [
-      makeItem({ id: "MLC-A", price: 1000 }),
-      makeItem({ id: "MLC-B", price: 2000 }),
-    ];
+    const items = [makeItem({ id: "MLC-A", price: 1000 }), makeItem({ id: "MLC-B", price: 2000 })];
     const source = stubMlClient(items);
     const target = stubMlClient(items);
     const store = createSyncStore();
@@ -782,18 +812,16 @@ describe("Product Sync Engine", () => {
     const report1 = await engine1.syncAll(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { differential: false },
     );
     expect(report1.published).toBe(2);
 
     // Second sync — nothing changed
     const engine2 = createProductSyncEngine({ source, target, store });
-    const report2 = await engine2.syncAll(
-      "plasticov",
-      "maustian",
-      [{ type: "margin", percentage: 0.50 }],
-    );
+    const report2 = await engine2.syncAll("plasticov", "maustian", [
+      { type: "margin", percentage: 0.5 },
+    ]);
     expect(report2.unchanged).toBe(2);
     expect(report2.published).toBe(0);
 
@@ -801,9 +829,7 @@ describe("Product Sync Engine", () => {
   });
 
   it("syncAll respects limit option", async () => {
-    const items = Array.from({ length: 10 }, (_, i) =>
-      makeItem({ id: `MLC-${i}`, price: 1000 }),
-    );
+    const items = Array.from({ length: 10 }, (_, i) => makeItem({ id: `MLC-${i}`, price: 1000 }));
     const source = stubMlClient(items);
     const target = stubMlClient(items);
     const engine = createProductSyncEngine({ source, target });
@@ -811,7 +837,7 @@ describe("Product Sync Engine", () => {
     const report = await engine.syncAll(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { differential: false, limit: 3 },
     );
 
@@ -858,7 +884,7 @@ describe("Product Sync Engine", () => {
     const report = await engine.syncAllConcurrent(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { concurrency: 3, differential: false },
     );
 
@@ -869,9 +895,7 @@ describe("Product Sync Engine", () => {
   });
 
   it("syncAllConcurrent with concurrency 5", async () => {
-    const items = Array.from({ length: 10 }, (_, i) =>
-      makeItem({ id: `MLC-D${i}`, price: 1000 }),
-    );
+    const items = Array.from({ length: 10 }, (_, i) => makeItem({ id: `MLC-D${i}`, price: 1000 }));
     const source = stubMlClient(items);
     const target = stubMlClient(items);
     const engine = createProductSyncEngine({ source, target });
@@ -879,7 +903,7 @@ describe("Product Sync Engine", () => {
     const report = await engine.syncAllConcurrent(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { concurrency: 5, differential: false },
     );
 
@@ -888,9 +912,7 @@ describe("Product Sync Engine", () => {
   });
 
   it("syncAllConcurrent with concurrency 10", async () => {
-    const items = Array.from({ length: 15 }, (_, i) =>
-      makeItem({ id: `MLC-E${i}`, price: 1000 }),
-    );
+    const items = Array.from({ length: 15 }, (_, i) => makeItem({ id: `MLC-E${i}`, price: 1000 }));
     const source = stubMlClient(items);
     const target = stubMlClient(items);
     const engine = createProductSyncEngine({ source, target });
@@ -898,7 +920,7 @@ describe("Product Sync Engine", () => {
     const report = await engine.syncAllConcurrent(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { concurrency: 10, differential: false },
     );
 
@@ -907,9 +929,7 @@ describe("Product Sync Engine", () => {
   });
 
   it("syncAllConcurrent respects limit option", async () => {
-    const items = Array.from({ length: 20 }, (_, i) =>
-      makeItem({ id: `MLC-F${i}`, price: 1000 }),
-    );
+    const items = Array.from({ length: 20 }, (_, i) => makeItem({ id: `MLC-F${i}`, price: 1000 }));
     const source = stubMlClient(items);
     const target = stubMlClient(items);
     const engine = createProductSyncEngine({ source, target });
@@ -917,7 +937,7 @@ describe("Product Sync Engine", () => {
     const report = await engine.syncAllConcurrent(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { concurrency: 3, differential: false, limit: 5 },
     );
 
@@ -929,11 +949,9 @@ describe("Product Sync Engine", () => {
     const target = stubMlClient([]);
     const engine = createProductSyncEngine({ source, target });
 
-    const report = await engine.syncAllConcurrent(
-      "plasticov",
-      "maustian",
-      [{ type: "margin", percentage: 0.50 }],
-    );
+    const report = await engine.syncAllConcurrent("plasticov", "maustian", [
+      { type: "margin", percentage: 0.5 },
+    ]);
 
     expect(report.total).toBe(0);
     expect(report.results).toHaveLength(0);
@@ -942,9 +960,7 @@ describe("Product Sync Engine", () => {
   // ── Background sync tests ─────────────────────────────────────────
 
   it("syncAllBackground returns job token immediately", async () => {
-    const items = Array.from({ length: 5 }, (_, i) =>
-      makeItem({ id: `MLC-BG${i}`, price: 1000 }),
-    );
+    const items = Array.from({ length: 5 }, (_, i) => makeItem({ id: `MLC-BG${i}`, price: 1000 }));
     const source = stubMlClient(items);
     const target = stubMlClient(items);
     const engine = createProductSyncEngine({ source, target });
@@ -953,7 +969,7 @@ describe("Product Sync Engine", () => {
     const { jobId, getStatus } = engine.syncAllBackground(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { concurrency: 3, differential: false },
     );
 
@@ -986,7 +1002,7 @@ describe("Product Sync Engine", () => {
     const { getStatus } = engine.syncAllBackground(
       "plasticov",
       "maustian",
-      [{ type: "margin", percentage: 0.50 }],
+      [{ type: "margin", percentage: 0.5 }],
       { concurrency: 1, differential: false },
     );
 

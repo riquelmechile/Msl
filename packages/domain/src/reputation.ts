@@ -1,11 +1,6 @@
 import type { SellerId } from "./seller.js";
 
-export type ReputationLevel =
-  | "green"
-  | "light_green"
-  | "yellow"
-  | "orange"
-  | "red";
+export type ReputationLevel = "green" | "light_green" | "yellow" | "orange" | "red";
 
 export type SellerReputation = {
   sellerId: SellerId;

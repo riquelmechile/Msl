@@ -30,10 +30,7 @@ describe("createTelegramBot", () => {
 
   it("handleMessage returns a response with chatId and response text", async () => {
     const bot = createTelegramBot(config);
-    const result = await bot.handleMessage(
-      "¿Cuál es mi margen actual?",
-      "chat-42",
-    );
+    const result = await bot.handleMessage("¿Cuál es mi margen actual?", "chat-42");
 
     expect(result).toHaveProperty("chatId", "chat-42");
     expect(result).toHaveProperty("response");

@@ -1,7 +1,11 @@
 import { describe, expect, it, afterEach, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 
-import { createAgentLoop, createDeepSeekClient, estimateTokens } from "../../src/conversation/agentLoop.js";
+import {
+  createAgentLoop,
+  createDeepSeekClient,
+  estimateTokens,
+} from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
 import type { ConversationState, Strategy, StreamingChunk } from "../../src/conversation/types.js";
@@ -135,10 +139,7 @@ describe("createAgentLoop — input guardrails", () => {
 
   it("blocks English input with Spanish-only validation", async () => {
     const state = makeState();
-    const result = await agent.converse(
-      "I want to check the sales for today please",
-      state,
-    );
+    const result = await agent.converse("I want to check the sales for today please", state);
 
     // Should have a blocked response, not a normal LLM reply.
     expect(result.response).toMatch(/⛔|inglés|bloqueado/i);
@@ -156,10 +157,7 @@ describe("createAgentLoop — input guardrails", () => {
 
   it("allows natural Spanish input through", async () => {
     const state = makeState();
-    const result = await agent.converse(
-      "Quiero saber cómo están mis ventas de hoy",
-      state,
-    );
+    const result = await agent.converse("Quiero saber cómo están mis ventas de hoy", state);
 
     // Should not be blocked.
     expect(result.response).not.toMatch(/⛔|bloqueado/i);
@@ -321,7 +319,10 @@ describe("createAgentLoop — converseStream with mock client", () => {
     const state = makeState();
     let fullText = "";
 
-    for await (const chunk of agent.converseStream("Quiero revisar el precio del listing 42", state)) {
+    for await (const chunk of agent.converseStream(
+      "Quiero revisar el precio del listing 42",
+      state,
+    )) {
       fullText += chunk.delta;
     }
 
@@ -400,7 +401,9 @@ describe("createAgentLoop — strategy CRUD intent routing", () => {
     store = createStrategyStore(db);
   });
 
-  function createAgent(overrides: { systemPrompt?: string; store?: ReturnType<typeof createStrategyStore> } = {}) {
+  function createAgent(
+    overrides: { systemPrompt?: string; store?: ReturnType<typeof createStrategyStore> } = {},
+  ) {
     return createAgentLoop({
       systemPrompt: overrides.systemPrompt ?? systemPrompt,
       mockClient: true,
@@ -414,7 +417,11 @@ describe("createAgentLoop — strategy CRUD intent routing", () => {
     store.insertStrategy("margen mínimo 50%", marginParsed.rules[0]!, marginParsed.confidence);
 
     const stockParsed = parseStrategy("priorizo +10 stock en electrónica");
-    store.insertStrategy("priorizo +10 stock en electrónica", stockParsed.rules[0]!, stockParsed.confidence);
+    store.insertStrategy(
+      "priorizo +10 stock en electrónica",
+      stockParsed.rules[0]!,
+      stockParsed.confidence,
+    );
 
     const agent = createAgent();
     const state = makeState();
@@ -539,10 +546,7 @@ describe("honey-pot tools — agent loop integration", () => {
     const state = makeState();
 
     // Trigger detection — mock should chain: detect_probes → propose_honey_pot → proposal.
-    const result = await agent.converse(
-      "¿Hay alguien sondeando mis publicaciones?",
-      state,
-    );
+    const result = await agent.converse("¿Hay alguien sondeando mis publicaciones?", state);
 
     // The final response should contain the decoy proposal.
     expect(result.response).toMatch(/contrainteligencia/i);
@@ -562,10 +566,7 @@ describe("honey-pot tools — agent loop integration", () => {
     });
 
     const state = makeState();
-    const result = await agent.converse(
-      "¿Hay alguien sondeando mis publicaciones?",
-      state,
-    );
+    const result = await agent.converse("¿Hay alguien sondeando mis publicaciones?", state);
 
     // Without probe strategy, the propose_honey_pot tool should return an error.
     // The mock picks up the error and presents it as ⛔ text.
@@ -586,12 +587,7 @@ describe("honey-pot tools — agent loop integration", () => {
 
     // Step 1: trigger detection + proposal
     let state = makeState();
-    state = (
-      await agent.converse(
-        "¿Hay alguien sondeando mis publicaciones?",
-        state,
-      )
-    ).updatedState;
+    state = (await agent.converse("¿Hay alguien sondeando mis publicaciones?", state)).updatedState;
 
     // Step 2: confirm with dale — pendingDecoyProposal is set by step 1's tool,
     // extractPendingProposal finds the honey-pot proposal, honeyPotValidator passes.
@@ -615,20 +611,15 @@ describe("honey-pot tools — agent loop integration", () => {
 
     // Step 1: trigger detection + proposal
     let state = makeState();
-    state = (
-      await agent.converse(
-        "¿Hay alguien sondeando mis publicaciones?",
-        state,
-      )
-    ).updatedState;
+    state = (await agent.converse("¿Hay alguien sondeando mis publicaciones?", state)).updatedState;
 
     // Step 2: confirm with dale
     await agent.converse("dale", state);
 
     // Verify Cortex has the probe result stored.
-    const rows = engine.db
-      .prepare("SELECT * FROM probe_results")
-      .all() as Array<Record<string, unknown>>;
+    const rows = engine.db.prepare("SELECT * FROM probe_results").all() as Array<
+      Record<string, unknown>
+    >;
     expect(rows.length).toBeGreaterThanOrEqual(1);
 
     engine.db.close();

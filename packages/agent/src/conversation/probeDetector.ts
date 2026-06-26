@@ -61,7 +61,10 @@ function countPricingKeywords(text: string): number {
  * and count of business-relevant words.
  */
 function questionComplexity(text: string): number {
-  const words = text.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const words = text
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
   // Longer questions with more business vocabulary are more complex.
   return Math.min(1.0, words.length / 15 + text.length / 300);
 }
@@ -100,19 +103,13 @@ export function analyzeQuestions(
       let pairs = 0;
       for (let i = 0; i < userQuestions.length; i++) {
         for (let j = i + 1; j < userQuestions.length; j++) {
-          totalSim += textSimilarity(
-            userQuestions[i]!.text,
-            userQuestions[j]!.text,
-          );
+          totalSim += textSimilarity(userQuestions[i]!.text, userQuestions[j]!.text);
           pairs++;
         }
       }
       const avgSim = pairs > 0 ? totalSim / pairs : 0;
       // Spike confidence scales with count and similarity
-      const spikeConf = Math.min(
-        0.9,
-        0.55 + userQuestions.length * 0.05 + avgSim * 0.2,
-      );
+      const spikeConf = Math.min(0.9, 0.55 + userQuestions.length * 0.05 + avgSim * 0.2);
 
       if (spikeConf >= 0.6) {
         alerts.push({
@@ -126,9 +123,7 @@ export function analyzeQuestions(
     }
 
     // ── 2. Price reaction detection ─────────────────────────────────
-    const pricingQs = userQuestions.filter(
-      (q) => countPricingKeywords(q.text) >= 2,
-    );
+    const pricingQs = userQuestions.filter((q) => countPricingKeywords(q.text) >= 2);
     if (pricingQs.length >= 2) {
       const priceConf = Math.min(0.85, 0.6 + pricingQs.length * 0.08);
       alerts.push({
@@ -144,9 +139,7 @@ export function analyzeQuestions(
     // Complex business questions from an origin that only appears once
     // (no prior interaction history) suggests a new competitor probing.
     if (userQuestions.length <= 2) {
-      const complexQs = userQuestions.filter(
-        (q) => questionComplexity(q.text) >= 0.4,
-      );
+      const complexQs = userQuestions.filter((q) => questionComplexity(q.text) >= 0.4);
       if (complexQs.length >= 1) {
         const newCompConf = Math.min(
           0.8,
@@ -180,9 +173,7 @@ export function analyzeQuestions(
  * @param views — Daily view counts ordered chronologically (oldest first).
  * @returns Array of {@link ProbeAlert} objects.
  */
-export function detectViewAnomalies(
-  views: Array<{ count: number; date: string }>,
-): ProbeAlert[] {
+export function detectViewAnomalies(views: Array<{ count: number; date: string }>): ProbeAlert[] {
   if (!views || views.length < 2) return [];
 
   const alerts: ProbeAlert[] = [];
@@ -193,8 +184,7 @@ export function detectViewAnomalies(
 
   if (previous.length === 0) return [];
 
-  const avg =
-    previous.reduce((sum, v) => sum + v.count, 0) / previous.length;
+  const avg = previous.reduce((sum, v) => sum + v.count, 0) / previous.length;
 
   if (avg === 0) return []; // Avoid division by zero
 

@@ -58,9 +58,7 @@ Sos un asistente comercial de IA que ayuda al vendedor a tomar decisiones inform
 
   // Inject CEO strategies when provided.
   if (strategies && strategies.length > 0) {
-    const strategyLines = strategies.map(
-      (s) => `- [${s.ruleType}] ${s.ruleText}`,
-    );
+    const strategyLines = strategies.map((s) => `- [${s.ruleType}] ${s.ruleText}`);
     prompt = `${prompt}
 
 ## Estrategias del CEO
@@ -92,21 +90,20 @@ Usá la herramienta \`simulate_actor\` cuando necesités evaluar una decisión d
         break;
       case AutonomyLevel.SUGIERE:
         levelDesc =
-          "Proponés acciones pero SIEMPRE requerís confirmación explícita (\"dale\"). " +
+          'Proponés acciones pero SIEMPRE requerís confirmación explícita ("dale"). ' +
           "Nunca auto-ejecutés.";
         break;
       case AutonomyLevel.PREPARA:
-        levelDesc =
-          "Proponés acciones con detalles pre-llenados. Requerís \"dale\" para ejecutar.";
+        levelDesc = 'Proponés acciones con detalles pre-llenados. Requerís "dale" para ejecutar.';
         break;
       case AutonomyLevel.BAJO_RIESGO:
         levelDesc =
-          "Podés auto-ejecutar acciones de bajo riesgo sin \"dale\". " +
+          'Podés auto-ejecutar acciones de bajo riesgo sin "dale". ' +
           "Acciones de medio y alto riesgo requieren confirmación.";
         break;
       case AutonomyLevel.MEDIO_RIESGO:
         levelDesc =
-          "Podés auto-ejecutar acciones de bajo y medio riesgo sin \"dale\". " +
+          'Podés auto-ejecutar acciones de bajo y medio riesgo sin "dale". ' +
           "Solo acciones de alto riesgo requieren confirmación.";
         break;
       case AutonomyLevel.FULL:

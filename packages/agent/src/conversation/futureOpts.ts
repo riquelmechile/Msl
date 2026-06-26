@@ -8,8 +8,6 @@
 // architecture documentation and future anchor points so that when the
 // team is ready to invest in a given item, the contract already exists.
 
-import type { GraphEngine } from "@msl/memory";
-
 // ── Recursive CTE cap (bottleneck 1.3) ──────────────────────────────
 
 /** Maximum number of nodes the recursive CTE may activate in one call.

@@ -13,8 +13,7 @@ const MARGIN_RE = /margen\s*(m[íi]nimo|m[áa]ximo|objetivo|del)?\s*(?:a\s+)?(\d
 const MARGIN_REVERSE_RE = /(\d+)\s*%\s*\+\s*margen/gi;
 
 /** "prioriz[o|á|ar] +N stock [en scope]" */
-const STOCK_RE =
-  /(prioriz(?:o|á|ar)?)\s*\+\s*(\d+)\s*(stock|unidades)(?:\s+en\s+([^,.\n]+))?/gi;
+const STOCK_RE = /(prioriz(?:o|á|ar)?)\s*\+\s*(\d+)\s*(stock|unidades)(?:\s+en\s+([^,.\n]+))?/gi;
 
 /** "no competir en X" — category exclusion */
 const NO_COMPETIR_RE = /no\s+competir\s+en\s+([^,.\n]+)/gi;
@@ -23,12 +22,10 @@ const NO_COMPETIR_RE = /no\s+competir\s+en\s+([^,.\n]+)/gi;
 const ENFOCAR_RE = /(?:enfocarse|enfocate|enfocar)\s+en\s+([^,.\n]+)/gi;
 
 /** "precio máximo|mínimo $N [en scope]" */
-const PRICING_RE =
-  /precio\s+(m[áa]ximo|m[íi]nimo)\s*\$?(\d+)(?:\s+en\s+([^,.\n]+))?/gi;
+const PRICING_RE = /precio\s+(m[áa]ximo|m[íi]nimo)\s*\$?(\d+)(?:\s+en\s+([^,.\n]+))?/gi;
 
 /** "responder|contestar en [<]N hora|minuto" — response-time pledge */
-const CUSTOMER_RE =
-  /(?:responder|contestar)\s+en\s*(?:[<>])?\s*(\d+)\s*(horas?|minutos?)/gi;
+const CUSTOMER_RE = /(?:responder|contestar)\s+en\s*(?:[<>])?\s*(\d+)\s*(horas?|minutos?)/gi;
 
 /** "igualar precio de X" — competitive price-matching */
 const COMPETITIVE_RE = /igualar\s+precio\s+de\s+([^,.\n]+)/gi;
@@ -38,8 +35,7 @@ const PROBE_CATEGORY_RE =
   /(probá|sondeá|monitoreá|investigá)\s+(?:categor(?:í|i)a\s+)?([^,.\n]+)/gi;
 
 /** "vigilá|seguí|trackeá [a] X" — honey-pot monitor competitor */
-const PROBE_COMPETITOR_RE =
-  /(vigilá|seguí|trackeá)\s+(?:a\s+)?([^,.\n]+)/gi;
+const PROBE_COMPETITOR_RE = /(vigilá|seguí|trackeá)\s+(?:a\s+)?([^,.\n]+)/gi;
 
 /** "creá|crea|publicá|publica listing|listado|publicación|publicacion señuelo en X" — deploy decoy */
 const DEPLOY_DECOY_RE =
@@ -51,7 +47,7 @@ type PatternMatch = {
   start: number;
   end: number;
   rule: ParsedRule;
-}
+};
 
 /**
  * Return every regex match across `text` as a PatternMatch entry.
@@ -113,8 +109,7 @@ export function classifyRuleType(parsed: Partial<ParsedRule>): RuleType {
 
   if (t.includes("margen")) return "margin";
   if (t.includes("stock") || t.includes("unidad")) return "stock";
-  if (t.includes("categor") || t.includes("competir") || t.includes("enfocar"))
-    return "category";
+  if (t.includes("categor") || t.includes("competir") || t.includes("enfocar")) return "category";
   if (t.includes("precio")) return "pricing";
   if (t.includes("responder") || t.includes("contestar") || t.includes("cliente"))
     return "customer";
@@ -278,11 +273,7 @@ export function parseStrategy(text: string): ParseResult {
 
   const rules = merged.map((m) => m.rule);
   const confidence =
-    rules.length > 0
-      ? Number(
-          (rules.reduce((sum) => sum + 1.0, 0) / rules.length).toFixed(2),
-        )
-      : 0;
+    rules.length > 0 ? Number((rules.reduce((sum) => sum + 1.0, 0) / rules.length).toFixed(2)) : 0;
 
   return { rules, unparsed, confidence };
 }

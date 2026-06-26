@@ -8,12 +8,12 @@ export type MetricName =
   | "autonomy.degradation"
   | "token.refresh";
 
-export interface Metric {
+export type Metric = {
   name: MetricName;
   value: number;
   tags?: Record<string, string> | undefined;
   timestamp: string;
-}
+};
 
 /**
  * Simple in-memory metrics collector.

@@ -20,10 +20,7 @@ import { DuplicateEdgeError, NodeNotFoundError } from "./types.js";
  * Dot product divided by product of L2 norms across union of node IDs.
  * Returns 0 when either vector has zero magnitude (including empty maps).
  */
-export function cosineSimilarity(
-  a: Map<number, number>,
-  b: Map<number, number>,
-): number {
+export function cosineSimilarity(a: Map<number, number>, b: Map<number, number>): number {
   const allIds = new Set([...a.keys(), ...b.keys()]);
 
   let dotProduct = 0;
@@ -174,7 +171,6 @@ export class GraphEngine {
 
     const placeholders = nodeIds.map(() => "?").join(", ");
 
-     
     const rows = this.db
       .prepare(
         `WITH RECURSIVE spread(src, tgt, nid, label, act, depth) AS (
@@ -192,13 +188,13 @@ export class GraphEngine {
          SELECT src, tgt, nid, label, act, depth FROM spread`,
       )
       .all(...nodeIds) as Array<{
-        src: number | null;
-        tgt: number | null;
-        nid: number;
-        label: string;
-        act: number;
-        depth: number;
-      }>;
+      src: number | null;
+      tgt: number | null;
+      nid: number;
+      label: string;
+      act: number;
+      depth: number;
+    }>;
 
     // Track distinct traversed edge pairs and increment co-occurrence
     const seenPairs = new Set<string>();
@@ -217,7 +213,10 @@ export class GraphEngine {
     }
 
     // Aggregate: keep max activation per node; break ties with min depth
-    const nodeMap = new Map<number, { id: number; label: string; activation: number; depth: number }>();
+    const nodeMap = new Map<
+      number,
+      { id: number; label: string; activation: number; depth: number }
+    >();
     for (const row of rows) {
       const existing = nodeMap.get(row.nid);
       if (
@@ -274,9 +273,7 @@ export class GraphEngine {
         .run();
 
       // Delete the weak edges
-      const info = this.db
-        .prepare("DELETE FROM edges WHERE weight < 0.05")
-        .run();
+      const info = this.db.prepare("DELETE FROM edges WHERE weight < 0.05").run();
 
       // ── Node cap: archive oldest inactive nodes when above maxNodes ──
       const nodeCount = (
@@ -366,28 +363,28 @@ export class GraphEngine {
    * (all arrays empty, no error thrown).
    */
   traverse(): TraversalResult {
-    const nodes = this.db
-      .prepare("SELECT id, label, activation FROM nodes")
-      .all() as Array<{ id: number; label: string; activation: number }>;
+    const nodes = this.db.prepare("SELECT id, label, activation FROM nodes").all() as Array<{
+      id: number;
+      label: string;
+      activation: number;
+    }>;
 
     const edges = this.db
-      .prepare(
-        "SELECT source, target, weight, co_occurrence_count FROM edges",
-      )
+      .prepare("SELECT source, target, weight, co_occurrence_count FROM edges")
       .all() as Array<{
-        source: number;
-        target: number;
-        weight: number;
-        co_occurrence_count: number;
-      }>;
+      source: number;
+      target: number;
+      weight: number;
+      co_occurrence_count: number;
+    }>;
 
     const lessons = this.db
       .prepare("SELECT source_node, target_node, lesson FROM darwinian_lessons")
       .all() as Array<{
-        source_node: number;
-        target_node: number;
-        lesson: string;
-      }>;
+      source_node: number;
+      target_node: number;
+      lesson: string;
+    }>;
 
     const activatedNodes = nodes.map((n) => ({
       nodeId: n.id,
@@ -407,10 +404,7 @@ export class GraphEngine {
 
     if (activatedNodes.length > 0) {
       context["activated_nodes"] = activatedNodes
-        .map(
-          (n) =>
-            `node_${n.nodeId}: ${n.label} (act:${n.activation.toFixed(3)})`,
-        )
+        .map((n) => `node_${n.nodeId}: ${n.label} (act:${n.activation.toFixed(3)})`)
         .join("; ");
       context["node_count"] = activatedNodes.length;
     }
@@ -473,9 +467,7 @@ export class GraphEngine {
         ids.push(existing.id);
       } else {
         const result = this.db
-          .prepare(
-            "INSERT INTO nodes (label, activation, metadata) VALUES (?, 0.5, ?)",
-          )
+          .prepare("INSERT INTO nodes (label, activation, metadata) VALUES (?, 0.5, ?)")
           .run(`actor_${profile.actorType}`, metadata);
         ids.push(Number(result.lastInsertRowid));
       }
@@ -489,9 +481,7 @@ export class GraphEngine {
    */
   getActorNode(actorType: ActorType): GraphNode | null {
     const row = this.db
-      .prepare(
-        "SELECT id, label, activation, metadata FROM nodes WHERE metadata LIKE ?",
-      )
+      .prepare("SELECT id, label, activation, metadata FROM nodes WHERE metadata LIKE ?")
       .get(`%"persona":"${actorType}"%`) as GraphNode | undefined;
     return row ?? null;
   }
@@ -522,11 +512,7 @@ export class GraphEngine {
    *
    * @returns the inserted row ID.
    */
-  recordSimulation(
-    actorType: ActorType,
-    query: string,
-    result: SimulationResult,
-  ): number {
+  recordSimulation(actorType: ActorType, query: string, result: SimulationResult): number {
     const stmt = this.db.prepare(
       "INSERT INTO actor_simulations (actor_type, query, result) VALUES (?, ?, ?)",
     );
@@ -544,10 +530,7 @@ export class GraphEngine {
    * @param metadata — Optional metadata merged into the node on creation.
    * @returns The existing or newly created graph node.
    */
-  findOrCreateConceptNode(
-    label: string,
-    metadata: Record<string, unknown> = {},
-  ): GraphNode {
+  findOrCreateConceptNode(label: string, metadata: Record<string, unknown> = {}): GraphNode {
     const existing = this.db
       .prepare("SELECT id, label, activation, metadata FROM nodes WHERE label = ?")
       .get(label) as GraphNode | undefined;
@@ -571,9 +554,7 @@ export class GraphEngine {
     // 1. Insert into probe_results table
     const outcomeJson = JSON.stringify(proposal.outcome);
     this.db
-      .prepare(
-        "INSERT INTO probe_results (proposal_id, probe_type, outcome) VALUES (?, ?, ?)",
-      )
+      .prepare("INSERT INTO probe_results (proposal_id, probe_type, outcome) VALUES (?, ?, ?)")
       .run(proposal.proposalId, proposal.probeType, outcomeJson);
 
     // 2. Create Cortex node for this probe result

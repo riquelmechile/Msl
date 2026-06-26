@@ -8,6 +8,7 @@
     "apps/*"
   ],
   "scripts": {
+    "dev": "npm run dev --workspace @msl/web",
     "build": "tsc -b && npm run build --workspace @msl/web",
     "typecheck": "tsc -b --pretty false && npm run typecheck --workspace @msl/web",
     "test": "vitest run",

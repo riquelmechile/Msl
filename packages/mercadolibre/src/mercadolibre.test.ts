@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CacheFreshness, ReadSnapshot } from "@msl/domain";
 
@@ -228,6 +228,11 @@ describe("Token Store", () => {
     account_level: "premium" as const,
   };
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
   it("encrypts tokens at rest and decrypts on retrieval", () => {
     const store = createTokenStore();
     store.saveToken("seller-plasticov", sampleTokens);
@@ -350,6 +355,35 @@ describe("Token Store", () => {
 
     store.close();
   });
+
+  it("fails closed in production when MSL_ENCRYPTION_KEY is missing", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MSL_ENCRYPTION_KEY", "");
+    vi.stubEnv("MSL_ALLOW_INSECURE_DEV_SECRETS", "");
+    vi.resetModules();
+    const { createTokenStore: createFreshTokenStore } = await import("./oauth/tokenStore.js");
+    const store = createFreshTokenStore();
+
+    expect(() => store.saveToken("seller-prod", sampleTokens)).toThrow(/MSL_ENCRYPTION_KEY/);
+
+    store.close();
+  });
+
+  it("allows the explicit insecure development escape hatch outside test", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MSL_ENCRYPTION_KEY", "");
+    vi.stubEnv("MSL_ALLOW_INSECURE_DEV_SECRETS", "true");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.resetModules();
+    const { createTokenStore: createFreshTokenStore } = await import("./oauth/tokenStore.js");
+    const store = createFreshTokenStore();
+
+    store.saveToken("seller-dev", sampleTokens);
+
+    expect(store.getToken("seller-dev")!.access_token).toBe(sampleTokens.access_token);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("insecure development key"));
+    store.close();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -357,6 +391,11 @@ describe("Token Store", () => {
 // ---------------------------------------------------------------------------
 
 describe("OAuth Manager", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
   const stubConfig = {
     clientId: "",
     clientSecret: "",
@@ -407,6 +446,33 @@ describe("OAuth Manager", () => {
     manager.close();
   });
 
+  it("refuses to store real OAuth tokens when returned user_id does not match the configured role account", async () => {
+    vi.stubEnv("MERCADOLIBRE_SOURCE_SELLER_ID", "plasticov-id");
+    vi.stubEnv("MERCADOLIBRE_TARGET_SELLER_ID", "maustian-id");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () =>
+          Promise.resolve({
+            access_token: "APP_USR-real",
+            refresh_token: "TG-real",
+            expires_in: 21600,
+            user_id: "maustian-id",
+            nickname: "MAUSTIAN",
+          }),
+      }),
+    );
+
+    const manager = createOAuthManager(realConfig);
+
+    await expect(manager.exchangeCodeForToken("plasticov-id", "oauth-code")).rejects.toThrow(
+      /identity mismatch/i,
+    );
+    expect(manager.getStoredToken("plasticov-id")).toBeUndefined();
+    manager.close();
+  });
+
   it("reports token as not expired when recently stored", async () => {
     const manager = createOAuthManager(stubConfig);
     await manager.exchangeCodeForToken("seller-1", "code");
@@ -444,17 +510,13 @@ describe("OAuth Manager", () => {
 
   it("throws on refresh for unknown seller", async () => {
     const manager = createOAuthManager(stubConfig);
-    await expect(manager.refreshAccessToken("unknown")).rejects.toThrow(
-      "No stored token",
-    );
+    await expect(manager.refreshAccessToken("unknown")).rejects.toThrow("No stored token");
     manager.close();
   });
 
   it("throws on ensureValidToken for unknown seller", async () => {
     const manager = createOAuthManager(stubConfig);
-    await expect(manager.ensureValidToken("unknown")).rejects.toThrow(
-      "No stored token",
-    );
+    await expect(manager.ensureValidToken("unknown")).rejects.toThrow("No stored token");
     manager.close();
   });
 
@@ -475,10 +537,6 @@ describe("OAuth Manager", () => {
 
     // Expire the token so all concurrent calls need a refresh.
     // Force expiry by manipulating the store directly.
-    const store = (manager as ReturnType<typeof createOAuthManager> & {
-      store: ReturnType<typeof import("./oauth/tokenStore.js").createTokenStore>;
-    }).getStoredToken;
-    void store;
     // Instead of reaching internals, we make 3 concurrent ensureValidToken
     // calls. The mutex serialises them; no race should cause errors.
     const results = await Promise.allSettled([
@@ -492,8 +550,8 @@ describe("OAuth Manager", () => {
 
     // All resolved tokens should be the same (last refresh wins).
     const tokens = results
-      .filter((r) => r.status === "fulfilled")
-      .map((r) => (r as PromiseFulfilledResult<string>).value);
+      .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+      .map((r) => r.value);
     expect(new Set(tokens).size).toBe(1);
 
     manager.close();
@@ -639,8 +697,6 @@ describe("MlClient (stub mode)", () => {
 
   it("throws on API call for unknown seller", async () => {
     const { client } = await setupClient();
-    await expect(client.getItems("unknown-seller")).rejects.toThrow(
-      "No stored token",
-    );
+    await expect(client.getItems("unknown-seller")).rejects.toThrow("No stored token");
   });
 });

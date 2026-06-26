@@ -54,7 +54,7 @@ export default function ConversationPage() {
     {
       role: "assistant",
       content:
-        "¡Hola! Soy Plasticov AI, tu asistente de negocio para MercadoLibre Chile. " +
+        "¡Hola! Soy MSL AI, tu asistente de negocio para MercadoLibre Chile. " +
         "Preguntame sobre ventas, márgenes, reclamos, reputación, o cualquier cosa de tu tienda. " +
         "También puedo consultar actores del mercado (compradores, proveedores, competidores) " +
         "y aplicar las estrategias del CEO. ¿En qué te ayudo?",
@@ -248,9 +248,9 @@ export default function ConversationPage() {
       {/* Header */}
       <header className="chat-header">
         <div className="chat-header-left">
-          <div className="chat-avatar">P</div>
+          <div className="chat-avatar">M</div>
           <div>
-            <h1 className="chat-title">Plasticov AI</h1>
+            <h1 className="chat-title">MSL AI</h1>
             <p className="chat-subtitle">Asistente de Negocios · MercadoLibre Chile</p>
           </div>
         </div>
@@ -271,22 +271,24 @@ export default function ConversationPage() {
             {msg.role === "system" ? (
               <div className="message-system">{msg.content}</div>
             ) : (
-              <div className={`message-bubble ${msg.role === "user" ? "bubble-user" : "bubble-agent"}`}>
+              <div
+                className={`message-bubble ${msg.role === "user" ? "bubble-user" : "bubble-agent"}`}
+              >
                 <p className="message-text">{msg.content}</p>
 
                 {/* Actor consultation badge */}
                 {msg.consultedActor && (
                   <div className="message-badge actor-badge">
-                    {actorEmoji(msg.consultedActor)}{" "}
-                    Actor consultado: {actorLabel(msg.consultedActor)}
+                    {actorEmoji(msg.consultedActor)} Actor consultado:{" "}
+                    {actorLabel(msg.consultedActor)}
                   </div>
                 )}
 
                 {/* Strategies applied badge */}
                 {msg.strategiesApplied && msg.strategiesApplied > 0 && (
                   <div className="message-badge strategies-badge">
-                    📐 {msg.strategiesApplied} estrategia{msg.strategiesApplied !== 1 ? "s" : ""} del
-                    CEO aplicada{msg.strategiesApplied !== 1 ? "s" : ""}
+                    📐 {msg.strategiesApplied} estrategia{msg.strategiesApplied !== 1 ? "s" : ""}{" "}
+                    del CEO aplicada{msg.strategiesApplied !== 1 ? "s" : ""}
                   </div>
                 )}
 

@@ -57,10 +57,7 @@ CREATE TABLE IF NOT EXISTS probe_results (
  */
 const MIGRATIONS: Array<[number, string]> = [
   // Version 1: baseline — all tables created by SCHEMA_SQL above.
-  [
-    1,
-    `INSERT OR IGNORE INTO schema_version (version) VALUES (1);`,
-  ],
+  [1, `INSERT OR IGNORE INTO schema_version (version) VALUES (1);`],
   // Future migrations add rows here, e.g.:
   // [2, `ALTER TABLE nodes ADD COLUMN created_at TEXT DEFAULT (datetime('now'));`],
 ];
@@ -82,13 +79,8 @@ export function migrate(
   db: Database.Database,
   targetVersion?: number,
 ): { applied: number; skipped: number } {
-  const maxVersion = MIGRATIONS.length > 0
-    ? MIGRATIONS[MIGRATIONS.length - 1]![0]
-    : 0;
-  const actualTarget = Math.min(
-    targetVersion ?? maxVersion,
-    maxVersion,
-  );
+  const maxVersion = MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1]![0] : 0;
+  const actualTarget = Math.min(targetVersion ?? maxVersion, maxVersion);
 
   let applied = 0;
   let skipped = 0;

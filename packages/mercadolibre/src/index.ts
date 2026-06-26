@@ -143,22 +143,21 @@ export type {
   StoredToken,
 } from "./types.js";
 
-export type {
-  OAuthManager,
-  OAuthManagerConfig,
-} from "./oauth/oauthManager.js";
+export type { OAuthManager, OAuthManagerConfig } from "./oauth/oauthManager.js";
 
-export type {
-  TokenStore,
-} from "./oauth/tokenStore.js";
+export type { TokenStore } from "./oauth/tokenStore.js";
 
-export {
-  createOAuthManager,
-} from "./oauth/oauthManager.js";
+export { createOAuthManager } from "./oauth/oauthManager.js";
+
+export { createTokenStore } from "./oauth/tokenStore.js";
 
 export {
-  createTokenStore,
-} from "./oauth/tokenStore.js";
+  assertOAuthAccountMatchesRole,
+  assertPlasticovToMaustianDirection,
+  getMlAccountRoleConfig,
+  type MlAccountRole,
+  type MlAccountRoleConfig,
+} from "./accountRoles.js";
 
 // ---------------------------------------------------------------------------
 // Sync engine exports
@@ -536,10 +535,7 @@ function shouldRetry(status: number): boolean {
  * thundering-herd retry storms.  Network errors (connection refused,
  * DNS failure) are also retried.
  */
-async function fetchWithBackoff(
-  url: string,
-  init: RequestInit,
-): Promise<Response> {
+async function fetchWithBackoff(url: string, init: RequestInit): Promise<Response> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -689,11 +685,7 @@ function normalizeCategories(input: {
   };
 }
 
-function normalizeUser(input: {
-  sellerId: string;
-  payload: unknown;
-  now: Date;
-}): MlUserSnapshot {
+function normalizeUser(input: { sellerId: string; payload: unknown; now: Date }): MlUserSnapshot {
   const record = asRecord(input.payload);
   const data: MlUserInfo = {
     id: numberValue(record?.id) ?? 0,
@@ -846,11 +838,7 @@ export type MlClient = {
   getQuestions(sellerId: string): Promise<MlcMessagesSnapshot>;
   // Write operations
   publishItem(sellerId: string, item: NewItem): Promise<MlWriteSnapshot>;
-  updateItem(
-    sellerId: string,
-    itemId: string,
-    updates: Partial<NewItem>,
-  ): Promise<MlWriteSnapshot>;
+  updateItem(sellerId: string, itemId: string, updates: Partial<NewItem>): Promise<MlWriteSnapshot>;
   // Metadata operations
   getCategories(sellerId: string, categoryId?: string): Promise<MlCategoriesSnapshot>;
   getUserInfo(sellerId: string): Promise<MlUserSnapshot>;
@@ -860,10 +848,7 @@ export type MlClient = {
 // Factory: createMlClient — multi-account OAuth-aware ML API client
 // ---------------------------------------------------------------------------
 
-export function createMlClient(input: {
-  oauthManager: OAuthManager;
-  now: Date;
-}): MlClient {
+export function createMlClient(input: { oauthManager: OAuthManager; now: Date }): MlClient {
   const { oauthManager, now } = input;
   const stub = oauthManager.isStubMode();
 
@@ -926,11 +911,7 @@ export function createMlClient(input: {
     return response.json();
   }
 
-  function mockResponse(
-    path: string,
-    _method: "GET" | "POST" | "PUT",
-    body?: unknown,
-  ): unknown {
+  function mockResponse(path: string, _method: "GET" | "POST" | "PUT", body?: unknown): unknown {
     // POST /items
     if (_method === "POST" && path === "/items") {
       const newItem = body as NewItem | undefined;
@@ -965,12 +946,9 @@ export function createMlClient(input: {
 
   return {
     getItems: async (sellerId) => {
-      const payload = await apiRequestJson(
-        sellerId,
-        "GET",
-        `/users/${sellerId}/items/search`,
-        { site: "MLC" },
-      );
+      const payload = await apiRequestJson(sellerId, "GET", `/users/${sellerId}/items/search`, {
+        site: "MLC",
+      });
       return normalizeItems({ sellerId, payload, now });
     },
 
@@ -980,51 +958,33 @@ export function createMlClient(input: {
     },
 
     getOrders: async (sellerId) => {
-      const payload = await apiRequestJson(
-        sellerId,
-        "GET",
-        "/orders/search",
-        { seller: sellerId, site: "MLC" },
-      );
+      const payload = await apiRequestJson(sellerId, "GET", "/orders/search", {
+        seller: sellerId,
+        site: "MLC",
+      });
       return normalizeOrders({ sellerId, payload, now });
     },
 
     getQuestions: async (sellerId) => {
-      const payload = await apiRequestJson(
-        sellerId,
-        "GET",
-        "/questions/search",
-        { seller: sellerId, site: "MLC" },
-      );
+      const payload = await apiRequestJson(sellerId, "GET", "/questions/search", {
+        seller: sellerId,
+        site: "MLC",
+      });
       return normalizeQuestions({ sellerId, payload, now });
     },
 
     publishItem: async (sellerId, item) => {
-      const payload = await apiRequestJson(
-        sellerId,
-        "POST",
-        "/items",
-        undefined,
-        item,
-      );
+      const payload = await apiRequestJson(sellerId, "POST", "/items", undefined, item);
       return normalizeWriteResponse({ sellerId, payload, now });
     },
 
     updateItem: async (sellerId, itemId, updates) => {
-      const payload = await apiRequestJson(
-        sellerId,
-        "PUT",
-        `/items/${itemId}`,
-        undefined,
-        updates,
-      );
+      const payload = await apiRequestJson(sellerId, "PUT", `/items/${itemId}`, undefined, updates);
       return normalizeWriteResponse({ sellerId, payload, now });
     },
 
     getCategories: async (sellerId, categoryId) => {
-      const path = categoryId
-        ? `/categories/${categoryId}`
-        : "/categories";
+      const path = categoryId ? `/categories/${categoryId}` : "/categories";
       const payload = await apiRequestJson(sellerId, "GET", path, { site: "MLC" });
       return normalizeCategories({ sellerId, payload, now });
     },

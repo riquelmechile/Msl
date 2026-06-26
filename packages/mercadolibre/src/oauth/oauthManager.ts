@@ -1,4 +1,5 @@
 import type { OAuthTokens, StoredToken } from "../types.js";
+import { assertOAuthAccountMatchesRole } from "../accountRoles.js";
 import { createTokenStore, type TokenStore } from "./tokenStore.js";
 
 export type OAuthManagerConfig = {
@@ -68,10 +69,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
     return `${ML_OAUTH_AUTH_URL}?${params.toString()}`;
   }
 
-  async function exchangeCodeForToken(
-    sellerId: string,
-    code: string,
-  ): Promise<OAuthTokens> {
+  async function exchangeCodeForToken(sellerId: string, code: string): Promise<OAuthTokens> {
     if (stub) {
       const tokens = mockTokens(sellerId);
       store.saveToken(sellerId, tokens);
@@ -93,20 +91,19 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `OAuth code exchange failed: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`OAuth code exchange failed: ${response.status} ${response.statusText}`);
     }
 
     const data = (await response.json()) as Record<string, unknown>;
+    assertOAuthAccountMatchesRole(sellerId, data.user_id as string | number | undefined);
+
     const tokens: OAuthTokens = {
       access_token: data.access_token as string,
       refresh_token: data.refresh_token as string,
       expires_in: (data.expires_in as number) ?? 21600,
       user_id: (data.user_id as string) ?? "",
       nickname: (data.nickname as string) ?? sellerId,
-      account_level: (data.account_level as OAuthTokens["account_level"]) ??
-        "classic",
+      account_level: (data.account_level as OAuthTokens["account_level"]) ?? "classic",
     };
 
     store.saveToken(sellerId, tokens);
@@ -140,9 +137,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `OAuth token refresh failed: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`OAuth token refresh failed: ${response.status} ${response.statusText}`);
     }
 
     const data = (await response.json()) as Record<string, unknown>;

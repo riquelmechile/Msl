@@ -75,10 +75,7 @@ describe("MCP Server", () => {
     const result = (await cb!({ actorType: "competidor" })) as {
       content: { text: string }[];
     };
-    const parsed = JSON.parse(result.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
     expect(parsed.result).toBe("simulado");
     expect(parsed.actor).toBe("competidor");
   });
@@ -102,10 +99,7 @@ describe("MCP Server", () => {
     const result = (await cb!({ sellerId: "ML-test" })) as {
       content: { text: string }[];
     };
-    const parsed = JSON.parse(result.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
     expect(parsed.sellerId).toBe("ML-test");
     expect(parsed.level).toBe("platinum");
     expect(parsed.status).toBe("active");
@@ -118,10 +112,7 @@ describe("MCP Server", () => {
     expect(cb).toBeDefined();
 
     const result = (await cb!({})) as { content: { text: string }[] };
-    const parsed = JSON.parse(result.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
     expect(parsed.strategies).toEqual([]);
     expect(parsed.count).toBe(0);
   });
@@ -150,10 +141,7 @@ describe("MCP Server", () => {
       isError?: boolean;
     };
     expect(resultNoKey.isError).toBe(true);
-    const parsedNoKey = JSON.parse(resultNoKey.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
+    const parsedNoKey = JSON.parse(resultNoKey.content[0]!.text) as Record<string, unknown>;
     expect(parsedNoKey.error).toContain("Unauthorized");
 
     // Call WITH the wrong key — should be rejected.
@@ -162,10 +150,7 @@ describe("MCP Server", () => {
       isError?: boolean;
     };
     expect(resultWrongKey.isError).toBe(true);
-    const parsedWrongKey = JSON.parse(resultWrongKey.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
+    const parsedWrongKey = JSON.parse(resultWrongKey.content[0]!.text) as Record<string, unknown>;
     expect(parsedWrongKey.error).toContain("Unauthorized");
 
     // Call WITH the correct key — should succeed.
@@ -174,10 +159,30 @@ describe("MCP Server", () => {
       isError?: boolean;
     };
     expect(resultOk.isError).toBeFalsy();
-    const parsedOk = JSON.parse(resultOk.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
+    const parsedOk = JSON.parse(resultOk.content[0]!.text) as Record<string, unknown>;
+    expect(parsedOk).toBeDefined();
+
+    vi.unstubAllEnvs();
+  });
+
+  it("MCP auth fails closed when MSL_MCP_API_KEY is missing outside explicit local/demo mode", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MSL_MCP_API_KEY", "");
+    vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "");
+
+    createMcpServer();
+
+    const cb = registeredTools.get("list_strategies");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({})) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed.error).toContain("Unauthorized");
 
     vi.unstubAllEnvs();
   });

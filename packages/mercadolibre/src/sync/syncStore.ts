@@ -54,11 +54,7 @@ export type SyncEntry = SyncState;
 
 export type SyncStore = {
   markSynced(input: MarkSyncedInput): void;
-  markFailed(
-    sourceItemId: string,
-    sourceSellerId: string,
-    targetSellerId: string,
-  ): void;
+  markFailed(sourceItemId: string, sourceSellerId: string, targetSellerId: string): void;
   getSyncState(
     sourceItemId: string,
     sourceSellerId: string,
@@ -70,10 +66,7 @@ export type SyncStore = {
     targetSellerId: string,
     currentItem: MlItem,
   ): boolean;
-  listSynced(
-    sourceSellerId: string,
-    targetSellerId: string,
-  ): SyncState[];
+  listSynced(sourceSellerId: string, targetSellerId: string): SyncState[];
   close(): void;
 };
 
@@ -81,18 +74,11 @@ export type SyncStore = {
 // Factory
 // ---------------------------------------------------------------------------
 
-function rowToSyncState(
-  row: Record<string, unknown> | undefined,
-): SyncState | undefined {
+function rowToSyncState(row: Record<string, unknown> | undefined): SyncState | undefined {
   if (!row) return undefined;
 
   const status = (row.sync_status as string) ?? "pending";
-  const validStatuses: SyncStatus[] = [
-    "pending",
-    "synced",
-    "failed",
-    "outdated",
-  ];
+  const validStatuses: SyncStatus[] = ["pending", "synced", "failed", "outdated"];
 
   return {
     sourceItemId: row.source_item_id as string,
@@ -100,9 +86,7 @@ function rowToSyncState(
     targetItemId: (row.target_item_id as string) ?? null,
     targetSellerId: row.target_seller_id as string,
     lastSyncedAt: (row.last_synced_at as string) ?? null,
-    syncStatus: validStatuses.includes(status as SyncStatus)
-      ? (status as SyncStatus)
-      : "pending",
+    syncStatus: validStatuses.includes(status as SyncStatus) ? (status as SyncStatus) : "pending",
     sourceData: (row.source_data as string) ?? null,
     targetData: (row.target_data as string) ?? null,
   };
@@ -148,11 +132,7 @@ export function createSyncStore(dbPath = ":memory:"): SyncStore {
       });
     },
 
-    markFailed(
-      sourceItemId: string,
-      sourceSellerId: string,
-      targetSellerId: string,
-    ): void {
+    markFailed(sourceItemId: string, sourceSellerId: string, targetSellerId: string): void {
       upsertStmt.run({
         source_item_id: sourceItemId,
         source_seller_id: sourceSellerId,
@@ -170,11 +150,9 @@ export function createSyncStore(dbPath = ":memory:"): SyncStore {
       sourceSellerId: string,
       targetSellerId: string,
     ): SyncState | undefined {
-      const row = selectStmt.get(
-        sourceItemId,
-        sourceSellerId,
-        targetSellerId,
-      ) as Record<string, unknown> | undefined;
+      const row = selectStmt.get(sourceItemId, sourceSellerId, targetSellerId) as
+        | Record<string, unknown>
+        | undefined;
       return rowToSyncState(row);
     },
 
@@ -184,25 +162,15 @@ export function createSyncStore(dbPath = ":memory:"): SyncStore {
       targetSellerId: string,
       currentItem: MlItem,
     ): boolean {
-      const state = this.getSyncState(
-        sourceItemId,
-        sourceSellerId,
-        targetSellerId,
-      );
+      const state = this.getSyncState(sourceItemId, sourceSellerId, targetSellerId);
 
       if (!state) return true;
 
       return diffOutOfSync(currentItem, state);
     },
 
-    listSynced(
-      sourceSellerId: string,
-      targetSellerId: string,
-    ): SyncState[] {
-      const rows = listStmt.all(
-        sourceSellerId,
-        targetSellerId,
-      ) as Record<string, unknown>[];
+    listSynced(sourceSellerId: string, targetSellerId: string): SyncState[] {
+      const rows = listStmt.all(sourceSellerId, targetSellerId) as Record<string, unknown>[];
       return rows.map((r) => rowToSyncState(r)!).filter(Boolean);
     },
 

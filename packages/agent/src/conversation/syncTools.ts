@@ -1,16 +1,50 @@
 import type { GraphEngine } from "@msl/memory";
 import type {
   MlClient,
+  MlAccountRoleConfig,
   ProductSyncEngine,
   SyncResult,
   SyncReport,
   MlUserSnapshot,
 } from "@msl/mercadolibre";
-import type {
-  Strategy as SyncStrategy,
-} from "@msl/mercadolibre";
+import { assertPlasticovToMaustianDirection } from "@msl/mercadolibre";
+import type { Strategy as SyncStrategy } from "@msl/mercadolibre";
 
 import type { ToolDefinition } from "./tools.js";
+
+export type SyncToolOptions = {
+  approvedExecution?: boolean;
+  accountConfig?: MlAccountRoleConfig;
+};
+
+function approvalRequired(tool: "sync_product" | "sync_all"): Record<string, unknown> {
+  return {
+    status: "approval_required",
+    tool,
+    error:
+      "Direct LLM sync execution is blocked. Prepare an approval-required proposal and execute only through the explicit approved sync path.",
+  };
+}
+
+function validateSyncDirection(
+  sourceSellerId: string,
+  targetSellerId: string,
+  options?: SyncToolOptions,
+): Record<string, unknown> | undefined {
+  try {
+    if (options?.accountConfig) {
+      assertPlasticovToMaustianDirection(sourceSellerId, targetSellerId, {
+        MERCADOLIBRE_SOURCE_SELLER_ID: options.accountConfig.sourceSellerId,
+        MERCADOLIBRE_TARGET_SELLER_ID: options.accountConfig.targetSellerId,
+      });
+    } else {
+      assertPlasticovToMaustianDirection(sourceSellerId, targetSellerId);
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -26,7 +60,9 @@ function coerceStrategies(raw: unknown): SyncStrategy[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter(
     (s): s is SyncStrategy =>
-      typeof s === "object" && s !== null && typeof (s as Record<string, unknown>).type === "string",
+      typeof s === "object" &&
+      s !== null &&
+      typeof (s as Record<string, unknown>).type === "string",
   );
 }
 
@@ -60,6 +96,7 @@ function coerceItemId(raw: unknown): string | undefined {
 export function createSyncProductTool(
   syncEngine: ProductSyncEngine,
   cortex?: GraphEngine,
+  options: SyncToolOptions = {},
 ): ToolDefinition {
   return {
     name: "sync_product",
@@ -108,6 +145,11 @@ export function createSyncProductTool(
         };
       }
 
+      const directionError = validateSyncDirection(sourceSellerId, targetSellerId, options);
+      if (directionError) return directionError;
+
+      if (!options.approvedExecution) return approvalRequired("sync_product");
+
       const strategies = coerceStrategies(args.strategies);
       if (strategies.length === 0) {
         return {
@@ -153,6 +195,7 @@ export function createSyncProductTool(
 export function createSyncAllTool(
   syncEngine: ProductSyncEngine,
   cortex?: GraphEngine,
+  options: SyncToolOptions = {},
 ): ToolDefinition {
   return {
     name: "sync_all",
@@ -206,6 +249,11 @@ export function createSyncAllTool(
         };
       }
 
+      const directionError = validateSyncDirection(sourceSellerId, targetSellerId, options);
+      if (directionError) return directionError;
+
+      if (!options.approvedExecution) return approvalRequired("sync_all");
+
       const strategies = coerceStrategies(args.strategies);
       if (strategies.length === 0) {
         return {
@@ -215,19 +263,19 @@ export function createSyncAllTool(
         };
       }
 
-      const options: { differential?: boolean; limit?: number } = {};
+      const syncOptions: { differential?: boolean; limit?: number } = {};
       if (typeof args.differential === "boolean") {
-        options.differential = args.differential;
+        syncOptions.differential = args.differential;
       }
       if (typeof args.limit === "number" && args.limit > 0) {
-        options.limit = args.limit;
+        syncOptions.limit = args.limit;
       }
 
       const report: SyncReport = await syncEngine.syncAll(
         sourceSellerId,
         targetSellerId,
         strategies,
-        options,
+        syncOptions,
       );
 
       // Cortex integration: store outcomes for each synced product.
@@ -255,9 +303,7 @@ export function createSyncAllTool(
  * @param mlClient — the `MlClient` instance for API calls.
  * @returns a `check_account` tool definition compatible with OpenAI function calling.
  */
-export function createCheckAccountTool(
-  mlClient: MlClient,
-): ToolDefinition {
+export function createCheckAccountTool(mlClient: MlClient): ToolDefinition {
   return {
     name: "check_account",
     description:
@@ -269,8 +315,7 @@ export function createCheckAccountTool(
       properties: {
         sellerId: {
           type: "string",
-          description:
-            "ID del vendedor a verificar. Ej: 'plasticov' o 'maustian'.",
+          description: "ID del vendedor a verificar. Ej: 'plasticov' o 'maustian'.",
         },
       },
       required: ["sellerId"],
@@ -279,8 +324,7 @@ export function createCheckAccountTool(
       const sellerId = coerceSellerId(args.sellerId);
       if (!sellerId) {
         return {
-          error:
-            "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
         };
       }
 

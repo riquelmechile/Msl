@@ -1,16 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { proposeDecoy } from "../../src/conversation/honeyPotProposer.js";
-import type {
-  SimulationResult,
-  Strategy,
-} from "../../src/conversation/types.js";
+import type { SimulationResult, Strategy } from "../../src/conversation/types.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function makeProbeStrategy(
-  overrides: Partial<Strategy> = {},
-): Strategy {
+function makeProbeStrategy(overrides: Partial<Strategy> = {}): Strategy {
   return {
     id: 1,
     ruleType: "probe",

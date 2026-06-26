@@ -69,17 +69,12 @@ export function selfVerify(
   checks.push({
     name: "Seguridad",
     passed: safetyCheck.passed,
-    detail: safetyCheck.passed
-      ? "Acción segura"
-      : (safetyCheck.reason ?? "Riesgo detectado"),
+    detail: safetyCheck.passed ? "Acción segura" : (safetyCheck.reason ?? "Riesgo detectado"),
     severity: safetyCheck.passed ? "info" : "blocking",
   });
 
   // ── Check 3: Risk appropriateness for autonomy level ──────────────
-  const riskAppropriate = isRiskAppropriateForLevel(
-    proposal.riskLevel,
-    context.currentLevel,
-  );
+  const riskAppropriate = isRiskAppropriateForLevel(proposal.riskLevel, context.currentLevel);
   checks.push({
     name: "Nivel de autonomía",
     passed: riskAppropriate,
@@ -94,18 +89,14 @@ export function selfVerify(
   checks.push({
     name: "Consistencia",
     passed: consistent,
-    detail: consistent
-      ? "Sin contradicciones detectadas"
-      : "Posible contradicción en la propuesta",
+    detail: consistent ? "Sin contradicciones detectadas" : "Posible contradicción en la propuesta",
     severity: consistent ? "info" : "warning",
   });
 
   return {
     passed: checks.every((c) => c.severity !== "blocking"),
     checks,
-    requiresHumanReview: checks.some(
-      (c) => c.severity === "blocking" || c.severity === "warning",
-    ),
+    requiresHumanReview: checks.some((c) => c.severity === "blocking" || c.severity === "warning"),
   };
 }
 
@@ -139,10 +130,7 @@ const RISK_TIER: Record<string, number> = {
  * @param currentLevel The current autonomy level as a string name.
  * @returns `true` when the autonomy level is high enough for this risk.
  */
-function isRiskAppropriateForLevel(
-  riskLevel: string,
-  currentLevel: string,
-): boolean {
+function isRiskAppropriateForLevel(riskLevel: string, currentLevel: string): boolean {
   const autonomyTier = AUTONOMY_TIER[currentLevel] ?? 1;
   const riskTier = RISK_TIER[riskLevel] ?? 5;
   return autonomyTier >= riskTier;

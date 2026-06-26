@@ -1,9 +1,24 @@
 import OpenAI from "openai";
 import type { GraphEngine } from "@msl/memory";
 import type { MlClient, ProductSyncEngine } from "@msl/mercadolibre";
-import type { AgentProposal, ConversationMessage, ConversationState, DecoyProposal, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
+import type {
+  AgentProposal,
+  ConversationMessage,
+  ConversationState,
+  DecoyProposal,
+  ParsedRule,
+  RuleType,
+  Strategy,
+  StreamingChunk,
+} from "./types.js";
 import { AutonomyLevel, type TurnOutcome } from "./types.js";
-import { spanishValidator, harmfulContentFilter, strategyValidator, honeyPotValidator, autonomyGate } from "./guardrails.js";
+import {
+  spanishValidator,
+  harmfulContentFilter,
+  strategyValidator,
+  honeyPotValidator,
+  autonomyGate,
+} from "./guardrails.js";
 import type { AutonomyEngine } from "./autonomyEngine.js";
 import { selfVerify } from "./selfVerify.js";
 import { parseStrategy } from "./strategyParser.js";
@@ -11,15 +26,13 @@ import type { ToolDefinition } from "./tools.js";
 import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
 import { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from "./syncTools.js";
-import { createMetrics, type MetricsCollector } from "./observability.js";
+import type { MetricsCollector } from "./observability.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
 /** Coarse token estimator: character count / 4.
  *  DeepSeek tokens average ~4 characters per token for Spanish text. */
-export function estimateTokens(
-  messages: Array<{ role: string; content: string }>,
-): number {
+export function estimateTokens(messages: Array<{ role: string; content: string }>): number {
   let total = 0;
   for (const msg of messages) {
     total += Math.ceil(msg.content.length / 4);
@@ -45,7 +58,7 @@ export type StrategyStore = {
   insertStrategy(ruleText: string, parsedRule: ParsedRule, confidence: number): Strategy;
   archiveStrategy(id: number): void;
   supersedeStrategy(oldId: number, newId: number): void;
-}
+};
 
 /**
  * The result of a single turn of the agent conversation loop.
@@ -131,13 +144,12 @@ export type AgentLoopConfig = {
  * For testing, `mockClient: true` activates an internal mock.
  */
 export type LlmClient = {
-  chat(
-    messages: Array<{ role: string; content: string }>,
-  ): Promise<{ content: string; toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }> }>;
+  chat(messages: Array<{ role: string; content: string }>): Promise<{
+    content: string;
+    toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+  }>;
   /** Stream a response token-by-token. The final chunk has `done: true`. */
-  stream(
-    messages: Array<{ role: string; content: string }>,
-  ): AsyncIterable<StreamingChunk>;
+  stream(messages: Array<{ role: string; content: string }>): AsyncIterable<StreamingChunk>;
 };
 
 /**
@@ -176,7 +188,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
         proposeDecoy,
         honeyPotValidator,
         () => activeStrategies,
-        (proposal) => { pendingDecoyProposal = proposal; },
+        (proposal) => {
+          pendingDecoyProposal = proposal;
+        },
       ),
     );
   }
@@ -230,21 +244,20 @@ export function createAgentLoop(config: AgentLoopConfig) {
           break;
         case AutonomyLevel.SUGIERE:
           levelDesc =
-            "Proponés acciones pero SIEMPRE requerís confirmación explícita (\"dale\"). " +
+            'Proponés acciones pero SIEMPRE requerís confirmación explícita ("dale"). ' +
             "Nunca auto-ejecutés.";
           break;
         case AutonomyLevel.PREPARA:
-          levelDesc =
-            "Proponés acciones con detalles pre-llenados. Requerís \"dale\" para ejecutar.";
+          levelDesc = 'Proponés acciones con detalles pre-llenados. Requerís "dale" para ejecutar.';
           break;
         case AutonomyLevel.BAJO_RIESGO:
           levelDesc =
-            "Podés auto-ejecutar acciones de bajo riesgo sin \"dale\". " +
+            'Podés auto-ejecutar acciones de bajo riesgo sin "dale". ' +
             "Acciones de medio y alto riesgo requieren confirmación.";
           break;
         case AutonomyLevel.MEDIO_RIESGO:
           levelDesc =
-            "Podés auto-ejecutar acciones de bajo y medio riesgo sin \"dale\". " +
+            'Podés auto-ejecutar acciones de bajo y medio riesgo sin "dale". ' +
             "Solo acciones de alto riesgo requieren confirmación.";
           break;
         case AutonomyLevel.FULL:
@@ -266,9 +279,7 @@ Actualmente te encuentro en nivel ${name}. ${levelDesc}`;
     if (activeStrategies.length === 0) {
       return prompt;
     }
-    const strategyLines = activeStrategies.map(
-      (s) => `- [${s.ruleType}] ${s.ruleText}`,
-    );
+    const strategyLines = activeStrategies.map((s) => `- [${s.ruleType}] ${s.ruleText}`);
     return `${prompt}
 
 ## Estrategias del CEO
@@ -285,10 +296,7 @@ ${strategyLines.join("\n")}`;
      * @param state — The current conversation state (may be empty on first turn).
      * @returns The agent's response, optional proposal, and updated state.
      */
-    async converse(
-      userMessage: string,
-      state: ConversationState,
-    ): Promise<ConverseResult> {
+    async converse(userMessage: string, state: ConversationState): Promise<ConverseResult> {
       // --- Turn timing ---
       const turnStart = Date.now();
       const metrics = config.metrics;
@@ -311,7 +319,10 @@ ${strategyLines.join("\n")}`;
       if (config.autonomyEngine) {
         const deg = config.autonomyEngine.evaluateDegradation();
         if (deg) {
-          metrics?.record("autonomy.degradation", 1, { from: String(deg.from), to: String(deg.to) });
+          metrics?.record("autonomy.degradation", 1, {
+            from: String(deg.from),
+            to: String(deg.to),
+          });
           degradationMsg =
             `⚠️ Tu nivel de autonomía bajó de ${AutonomyLevel[deg.from]} (${deg.from}) ` +
             `a ${AutonomyLevel[deg.to]} (${deg.to}). Motivo: ${deg.reason}`;
@@ -362,7 +373,7 @@ ${strategyLines.join("\n")}`;
                 continue;
               }
 
-              if ((tc.name === "sync_product" || tc.name === "sync_all")) {
+              if (tc.name === "sync_product" || tc.name === "sync_all") {
                 metrics?.record("sync.product", 1, { tool: tc.name });
               }
               metrics?.record("tool.call", 1, { name: tc.name });
@@ -391,10 +402,7 @@ ${strategyLines.join("\n")}`;
       let proposal: AgentProposal | undefined;
 
       // Check if the LLM requested tool calls (prepare_action).
-      if (
-        llmResponse.toolCalls &&
-        llmResponse.toolCalls.length > 0
-      ) {
+      if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
         const toolCall = llmResponse.toolCalls[0]!;
         if (toolCall.name === "prepare_action") {
           proposal = parseProposalFromToolCall(toolCall.arguments);
@@ -404,15 +412,8 @@ ${strategyLines.join("\n")}`;
       // --- Autonomy gate (before dale confirmation) ---
       // If the agent generated a fresh proposal this turn and the autonomy
       // level allows auto-approval, execute immediately without "dale".
-      if (
-        proposal &&
-        !isConfirmation(userMessage) &&
-        config.autonomyEngine
-      ) {
-        const gateResult = autonomyGate(
-          { riskLevel: proposal.riskLevel },
-          config.autonomyEngine,
-        );
+      if (proposal && !isConfirmation(userMessage) && config.autonomyEngine) {
+        const gateResult = autonomyGate({ riskLevel: proposal.riskLevel }, config.autonomyEngine);
 
         if (!gateResult.reason) {
           // Auto-approved — record KPI and return without dale.
@@ -462,10 +463,7 @@ ${strategyLines.join("\n")}`;
             proposal.action.kind === "probe-analysis") &&
           pendingDecoyProposal
         ) {
-          const honeyPotCheck = honeyPotValidator(
-            pendingDecoyProposal,
-            activeStrategies,
-          );
+          const honeyPotCheck = honeyPotValidator(pendingDecoyProposal, activeStrategies);
           if (!honeyPotCheck.passed) {
             return blockAndRespond(state, userMessage, honeyPotCheck.reason);
           }
@@ -489,7 +487,7 @@ ${strategyLines.join("\n")}`;
         // --- Calibrated-distrust self-verification (after guardrails) ---
         {
           const currentLevel = config.autonomyEngine
-            ? AutonomyLevel[config.autonomyEngine.getCurrentLevel()] ?? "SUGIERE"
+            ? (AutonomyLevel[config.autonomyEngine.getCurrentLevel()] ?? "SUGIERE")
             : "SUGIERE";
           const verifyResult = selfVerify(proposal, activeStrategies, {
             sellerId: state.sessionMetadata.sellerId,
@@ -513,8 +511,7 @@ ${strategyLines.join("\n")}`;
               .filter((c) => c.severity === "warning" && !c.passed)
               .map((c) => `- ${c.name}: ${c.detail}`)
               .join("\n");
-            responseText =
-              `⚠️ Requiere tu revisión\n\n${warnings}\n\n---\n\n${responseText}`;
+            responseText = `⚠️ Requiere tu revisión\n\n${warnings}\n\n---\n\n${responseText}`;
           }
         }
 
@@ -546,7 +543,11 @@ ${strategyLines.join("\n")}`;
       metrics?.record("conversation.turn", 1);
       metrics?.record("conversation.duration_ms", durationMs);
 
-      return { response: responseText, updatedState, ...(proposal !== undefined ? { proposal } : {}) };
+      return {
+        response: responseText,
+        updatedState,
+        ...(proposal !== undefined ? { proposal } : {}),
+      };
     },
 
     /**
@@ -670,7 +671,9 @@ function detectStrategyIntent(userMessage: string): StrategyIntent {
   // "dejá de priorizar stock", "eliminá la estrategia de stock",
   // "sacá la regla de margen", "no quiero más esa estrategia"
   if (
-    /(?:dej[aá]|elimin[aá]|sac[aá]|quit[aá]|borr[aá]|archiv[aá]|no\s+(?:quiero|necesito|uso)\s+m[aá]s)(?:\s|$|[.,!?])/i.test(lower) &&
+    /(?:dej[aá]|elimin[aá]|sac[aá]|quit[aá]|borr[aá]|archiv[aá]|no\s+(?:quiero|necesito|uso)\s+m[aá]s)(?:\s|$|[.,!?])/i.test(
+      lower,
+    ) &&
     /estrategia|regla|prioriz|stock|margen|precio|categor/i.test(lower)
   ) {
     const ruleType = extractRuleTypeFromMessage(lower);
@@ -681,7 +684,9 @@ function detectStrategyIntent(userMessage: string): StrategyIntent {
   // "cambiá margen a 45%", "actualizá la estrategia de margen",
   // "modificá margen mínimo a 45%", "subí margen"
   if (
-    /(?:cambi[aá]|actualiz[aá]|modific[aá]|sub[ií]|baj[aá]|aument[aá]|reduc[ií])(?:\s|$|[.,!?])/i.test(lower) &&
+    /(?:cambi[aá]|actualiz[aá]|modific[aá]|sub[ií]|baj[aá]|aument[aá]|reduc[ií])(?:\s|$|[.,!?])/i.test(
+      lower,
+    ) &&
     /margen|stock|precio|estrategia|regla|categor/i.test(lower)
   ) {
     const ruleType = extractRuleTypeFromMessage(lower);
@@ -705,7 +710,8 @@ function detectStrategyIntent(userMessage: string): StrategyIntent {
 function extractRuleTypeFromMessage(lower: string): RuleType | undefined {
   if (/\bmargen\b/i.test(lower)) return "margin";
   if (/\bstock\b|\bunidad\b|\binventario\b/i.test(lower)) return "stock";
-  if (/\bcategor(?:[íi]a|ia)\b|\bcompetir\b|\benfoc(?:ar|ate|arse)\b|\bjuguetes\b/i.test(lower)) return "category";
+  if (/\bcategor(?:[íi]a|ia)\b|\bcompetir\b|\benfoc(?:ar|ate|arse)\b|\bjuguetes\b/i.test(lower))
+    return "category";
   if (/\bprecio\b/i.test(lower)) return "pricing";
   if (/\bcliente\b|\bresponder\b|\bcontestar\b/i.test(lower)) return "customer";
   if (/\bcompetencia\b|\bigualar\b/i.test(lower)) return "competitive";
@@ -736,16 +742,14 @@ function handleStrategyCommand(
       const response =
         "No tenés estrategias activas en este momento. " +
         "¿Querés que te ayude a crear una? Podés decirme algo como " +
-        "\"margen mínimo 50%\" o \"priorizar +10 stock en electrónica\".";
+        '"margen mínimo 50%" o "priorizar +10 stock en electrónica".';
       return {
         response,
         updatedState: appendMessages(state, userMessage, response),
       };
     }
 
-    const lines = strategies.map(
-      (s) => `- [${s.ruleType}] ${s.ruleText}`,
-    );
+    const lines = strategies.map((s) => `- [${s.ruleType}] ${s.ruleText}`);
     const response =
       `Acá están tus estrategias activas:\n\n${lines.join("\n")}\n\n` +
       "¿Querés modificar o eliminar alguna?";
@@ -762,7 +766,7 @@ function handleStrategyCommand(
     if (parsed.rules.length === 0) {
       const response =
         "No pude interpretar la nueva estrategia. ¿Podrías ser más " +
-        "específico? Por ejemplo: \"cambiá margen mínimo a 45%\".";
+        'específico? Por ejemplo: "cambiá margen mínimo a 45%".';
       return {
         response,
         updatedState: appendMessages(state, userMessage, response),
@@ -776,8 +780,7 @@ function handleStrategyCommand(
     if (!existing) {
       // No existing strategy of this type — create new one.
       const created = store.insertStrategy(intent.newValue, rule, parsed.confidence);
-      const response =
-        `✅ Creé la nueva estrategia [${created.ruleType}] "${created.ruleText}".`;
+      const response = `✅ Creé la nueva estrategia [${created.ruleType}] "${created.ruleText}".`;
       return {
         response,
         updatedState: appendMessages(state, userMessage, response),
@@ -871,7 +874,10 @@ function createRealClient(openai: OpenAI, model: string): LlmClient {
         return { name, arguments: args as Record<string, unknown> };
       });
 
-      const result: { content: string; toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }> } = {
+      const result: {
+        content: string;
+        toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+      } = {
         content: choice?.message?.content ?? "",
       };
       if (toolCalls) {
@@ -903,11 +909,8 @@ function createRealClient(openai: OpenAI, model: string): LlmClient {
 // Mock LLM client (deterministic, no API key needed)
 // ---------------------------------------------------------------------------
 
-function createMockClient(
-  toolMap?: Map<string, ToolDefinition>,
-): LlmClient {
-  const chat = (messages: Array<{ role: string; content: string }>) =>
-    mockChat(messages, toolMap);
+function createMockClient(toolMap?: Map<string, ToolDefinition>): LlmClient {
+  const chat = (messages: Array<{ role: string; content: string }>) => mockChat(messages, toolMap);
 
   return {
     chat,
@@ -928,10 +931,7 @@ function mockChat(
 }> {
   // Extract the last user message.
   const userMsgs = messages.filter((m) => m.role === "user");
-  const lastUser =
-    userMsgs.length > 0
-      ? userMsgs[userMsgs.length - 1]!.content.toLowerCase()
-      : "";
+  const lastUser = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1]!.content.toLowerCase() : "";
 
   // ── Tool-aware: handle simulate_actor tool results ──────────
   if (toolMap?.has("simulate_actor")) {
@@ -946,18 +946,12 @@ function mockChat(
       } catch {
         /* malformed JSON — fall through */
       }
-      const actorType =
-        typeof simResult.actorType === "string"
-          ? simResult.actorType
-          : "actor";
+      const actorType = typeof simResult.actorType === "string" ? simResult.actorType : "actor";
       const recommendation =
         typeof simResult.recommendation === "string"
           ? simResult.recommendation
           : "simulación completada";
-      const rationale =
-        typeof simResult.rationale === "string"
-          ? simResult.rationale
-          : "";
+      const rationale = typeof simResult.rationale === "string" ? simResult.rationale : "";
       return Promise.resolve({
         content:
           `Consulté la simulación del ${actorType} y esto fue lo que encontré:\n\n` +
@@ -980,9 +974,7 @@ function mockChat(
           : "proveedor";
       return Promise.resolve({
         content: "",
-        toolCalls: [
-          { name: "simulate_actor", arguments: { actorType, query: lastUser } },
-        ],
+        toolCalls: [{ name: "simulate_actor", arguments: { actorType, query: lastUser } }],
       });
     }
   }
@@ -1024,8 +1016,7 @@ function mockChat(
       try {
         const parsed = JSON.parse(m.content) as Record<string, unknown>;
         return (
-          "alerts" in parsed ||
-          (typeof parsed.id === "string" && (parsed.id).startsWith("decoy-"))
+          "alerts" in parsed || (typeof parsed.id === "string" && parsed.id.startsWith("decoy-"))
         );
       } catch {
         return false;
@@ -1088,11 +1079,8 @@ function mockChat(
         };
 
         // Check if this proposal was already presented to the user.
-        const lastAssistant = [...messages]
-          .reverse()
-          .find((m) => m.role === "assistant");
-        const alreadyShown =
-          lastAssistant?.content.includes(proposal.id);
+        const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+        const alreadyShown = lastAssistant?.content.includes(proposal.id);
 
         // If user is confirming (dale) after the proposal was shown,
         // return a confirmation response.
@@ -1242,7 +1230,7 @@ function buildMessages(
   if (tokenCount > MAX_TOKEN_BUDGET) {
     console.warn(
       `⚠️  Token budget exceeded: ${tokenCount} > ${MAX_TOKEN_BUDGET}. ` +
-      `Truncating oldest messages.`,
+        `Truncating oldest messages.`,
     );
     // Keep system + user, evict oldest history messages first.
     const systemTokens = estimateTokens(systemMsg);
@@ -1255,7 +1243,7 @@ function buildMessages(
       // because we can't drop the current request.
       console.warn(
         `⚠️  Cannot fit system+user within token budget (${headerBudget} > ${MAX_TOKEN_BUDGET}). ` +
-        `Sending anyway — response may be truncated.`,
+          `Sending anyway — response may be truncated.`,
       );
       return [...systemMsg, userMsg];
     }
@@ -1302,10 +1290,7 @@ function appendMessages(
   ];
 
   // Enforce context window limit: evict oldest messages first.
-  const trimmedMessages = enforceContextWindow(
-    newMessages,
-    state.contextWindowLimit,
-  );
+  const trimmedMessages = enforceContextWindow(newMessages, state.contextWindowLimit);
 
   return {
     messages: trimmedMessages,
@@ -1323,9 +1308,7 @@ function blockAndRespond(
   reason: string | undefined,
 ): ConverseResult {
   const now = new Date();
-  const responseText = reason
-    ? `⛔ ${reason}`
-    : "⛔ Mensaje bloqueado por razones de seguridad.";
+  const responseText = reason ? `⛔ ${reason}` : "⛔ Mensaje bloqueado por razones de seguridad.";
 
   return {
     response: responseText,
@@ -1364,9 +1347,7 @@ function isConfirmation(message: string): boolean {
  * This is a simple heuristic for the mock implementation; in production
  * the state would carry pending proposals explicitly.
  */
-function extractPendingProposal(
-  messages: ConversationMessage[],
-): AgentProposal | undefined {
+function extractPendingProposal(messages: ConversationMessage[]): AgentProposal | undefined {
   // Search recent messages (last 5) for proposal patterns.
   const recent = messages.slice(-5);
   for (const msg of recent) {
@@ -1409,9 +1390,7 @@ function extractPendingProposal(
 /**
  * Parses an AgentProposal from tool call arguments.
  */
-function parseProposalFromToolCall(
-  args: Record<string, unknown>,
-): AgentProposal {
+function parseProposalFromToolCall(args: Record<string, unknown>): AgentProposal {
   const kind = ((args.kind as string) ?? "price-change") as AgentProposal["action"]["kind"];
   const targetType = (args.targetType as string) ?? "listing";
   const targetId = (args.targetId as string) ?? "";

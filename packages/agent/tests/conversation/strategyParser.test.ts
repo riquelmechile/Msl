@@ -90,7 +90,7 @@ describe("parseStrategy — stock rules", () => {
     expect(rule!.value).toBe("+20");
   });
 
-  it('extracts stock rule without scope', () => {
+  it("extracts stock rule without scope", () => {
     const rule = firstRule("priorizo +3 stock");
     expect(rule!.ruleType).toBe("stock");
     expect(rule!.value).toBe("+3");
@@ -223,9 +223,7 @@ describe("parseStrategy — multi-rule text", () => {
   });
 
   it("extracts margin + category rules from comma-separated input", () => {
-    const result = parseStrategy(
-      "margen 50% en electrónica, no competir en juguetes",
-    );
+    const result = parseStrategy("margen 50% en electrónica, no competir en juguetes");
     expect(result.rules).toHaveLength(2);
     expect(result.rules[0]!.ruleType).toBe("margin");
     expect(result.rules[1]!.ruleType).toBe("category");
@@ -233,9 +231,7 @@ describe("parseStrategy — multi-rule text", () => {
   });
 
   it("extracts three rules from mixed text", () => {
-    const result = parseStrategy(
-      "margen mínimo 40%, priorizo +5 stock y precio máximo $3000",
-    );
+    const result = parseStrategy("margen mínimo 40%, priorizo +5 stock y precio máximo $3000");
     expect(result.rules).toHaveLength(3);
     const ruleTypes = result.rules.map((r) => r.ruleType);
     expect(ruleTypes).toContain("margin");
@@ -306,9 +302,7 @@ describe("parseStrategy — edge cases", () => {
   });
 
   it("every rule has all required ParsedRule fields", () => {
-    const result = parseStrategy(
-      "margen 50%, priorizo +10 stock en electrónica",
-    );
+    const result = parseStrategy("margen 50%, priorizo +10 stock en electrónica");
     for (const rule of result.rules) {
       expect(rule).toHaveProperty("ruleType");
       expect(rule).toHaveProperty("target");
@@ -324,9 +318,7 @@ describe("parseStrategy — edge cases", () => {
 
 describe("classifyRuleType", () => {
   it("returns existing ruleType when already set", () => {
-    expect(classifyRuleType({ ruleType: "margin" })).toBe(
-      "margin",
-    );
+    expect(classifyRuleType({ ruleType: "margin" })).toBe("margin");
   });
 
   it('classifies "margen" target as margin', () => {
@@ -487,9 +479,7 @@ describe("parseStrategy — probe vs no-competir disambiguation", () => {
   });
 
   it("probe + category exclusion coexist in mixed text", () => {
-    const result = parseStrategy(
-      "no competir en ropa, probá electrónica",
-    );
+    const result = parseStrategy("no competir en ropa, probá electrónica");
     expect(result.rules).toHaveLength(2);
     const ruleTypes = result.rules.map((r) => r.ruleType);
     expect(ruleTypes).toContain("category");
