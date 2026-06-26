@@ -46,7 +46,7 @@ export function DemoConsole({ demo }: DemoConsoleProps) {
             </ul>
           </div>
           <div className="conv-banner-action">
-            <a href="/conversation" className="conv-banner-link">
+            <a href="/conversacion" className="conv-banner-link">
               Ir al chat →
             </a>
           </div>
