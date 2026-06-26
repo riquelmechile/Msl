@@ -1,8 +1,11 @@
 import OpenAI from "openai";
-import type { AgentProposal, ConversationMessage, ConversationState, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
-import { spanishValidator, harmfulContentFilter, strategyValidator } from "./guardrails.js";
+import type { GraphEngine } from "@msl/memory";
+import type { AgentProposal, ConversationMessage, ConversationState, DecoyProposal, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
+import { spanishValidator, harmfulContentFilter, strategyValidator, honeyPotValidator } from "./guardrails.js";
 import { parseStrategy } from "./strategyParser.js";
 import type { ToolDefinition } from "./tools.js";
+import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
+import { proposeDecoy } from "./honeyPotProposer.js";
 
 // ── Strategy Store Interface ─────────────────────────────────────────
 
@@ -59,6 +62,11 @@ export type AgentLoopConfig = {
    * (e.g. `simulate_actor`) before synthesizing the final response.
    */
   tools?: ToolDefinition[];
+  /**
+   * Optional Cortex graph engine. When provided, confirmed honey-pot
+   * proposals are persisted via {@link GraphEngine.storeProbeResult}.
+   */
+  engine?: GraphEngine;
 };
 
 /**
@@ -96,6 +104,27 @@ export function createAgentLoop(config: AgentLoopConfig) {
   const openai = createDeepSeekClient();
   const tools = config.tools ?? [];
   const toolMap = new Map(tools.map((t) => [t.name, t]));
+
+  // ── Honey-pot tools ───────────────────────────────────────────────
+  // Mutable reference tracked by the propose_honey_pot tool's onProposed
+  // callback, consumed by the converse method for guardrail validation
+  // and Cortex persistence after "dale" confirmation.
+  let pendingDecoyProposal: DecoyProposal | null = null;
+
+  if (!toolMap.has("detect_probes")) {
+    toolMap.set("detect_probes", createDetectProbesTool());
+  }
+  if (!toolMap.has("propose_honey_pot")) {
+    toolMap.set(
+      "propose_honey_pot",
+      createProposeHoneyPotTool(
+        proposeDecoy,
+        honeyPotValidator,
+        () => activeStrategies,
+        (proposal) => { pendingDecoyProposal = proposal; },
+      ),
+    );
+  }
 
   // Real client takes priority when API key is available.
   const client: LlmClient = openai
@@ -224,6 +253,36 @@ ${strategyLines.join("\n")}`;
         const strategyCheck = strategyValidator(proposal, activeStrategies);
         if (!strategyCheck.passed) {
           return blockAndRespond(state, userMessage, strategyCheck.reason);
+        }
+
+        // --- Honey-pot guardrail (after strategy, before execution) ---
+        if (
+          (proposal.action.kind === "honey-pot-deploy" ||
+            proposal.action.kind === "probe-analysis") &&
+          pendingDecoyProposal
+        ) {
+          const honeyPotCheck = honeyPotValidator(
+            pendingDecoyProposal,
+            activeStrategies,
+          );
+          if (!honeyPotCheck.passed) {
+            return blockAndRespond(state, userMessage, honeyPotCheck.reason);
+          }
+
+          // Persist confirmed honey-pot execution to Cortex.
+          if (isConfirmation(userMessage) && config.engine) {
+            config.engine.storeProbeResult({
+              proposalId: pendingDecoyProposal.id,
+              probeType: pendingDecoyProposal.type,
+              description: pendingDecoyProposal.description,
+              outcome: {
+                success: true,
+                learnedAt: new Date().toISOString(),
+              },
+            });
+            // Clear the pending decoy after storing.
+            pendingDecoyProposal = null;
+          }
         }
       }
 
@@ -657,6 +716,149 @@ function mockChat(
     }
   }
 
+  // ── Tool-aware: handle detect_probes tool ──────────────────────
+  if (toolMap?.has("detect_probes")) {
+    const toolMsgs = messages.filter((m) => m.role === "tool");
+    const lastTool = toolMsgs[toolMsgs.length - 1];
+    if (lastTool) {
+      let result: Record<string, unknown> = {};
+      try {
+        result = JSON.parse(lastTool.content) as Record<string, unknown>;
+      } catch {
+        /* fall through */
+      }
+
+      // After detect_probes → if alerts found, propose a honey-pot.
+      if (
+        toolMap.has("propose_honey_pot") &&
+        Array.isArray(result.alerts) &&
+        (result.alerts as unknown[]).length > 0
+      ) {
+        // Use a synthetic negative strategy ID for the mock.
+        return Promise.resolve({
+          content: "",
+          toolCalls: [
+            {
+              name: "propose_honey_pot",
+              arguments: { strategyId: -1 },
+            },
+          ],
+        });
+      }
+    }
+
+    // Only trigger detect_probes if no prior probe results exist
+    // in the conversation (prevent infinite re-detection).
+    const hasProbeResult = toolMsgs.some((m) => {
+      try {
+        const parsed = JSON.parse(m.content) as Record<string, unknown>;
+        return (
+          "alerts" in parsed ||
+          (typeof parsed.id === "string" && (parsed.id as string).startsWith("decoy-"))
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    if (!hasProbeResult) {
+      // User asks about competitor probing → trigger detect_probes.
+      if (
+        /\b(?:contrainteligencia|sonde[ao]|sondeando|espiando|vigilando|probando|monitoreando)\b/i.test(
+          lastUser,
+        )
+      ) {
+        return Promise.resolve({
+          content: "",
+          toolCalls: [
+            {
+              name: "detect_probes",
+              arguments: {
+                questions: [
+                  {
+                    text: "¿Cuál es tu precio en electrónica? ¿Y tu margen?",
+                    from: "TiendaX",
+                    date: "2026-06-26",
+                  },
+                  {
+                    text: "¿Hacés descuento por volumen? ¿Cuánto margen manejás?",
+                    from: "TiendaX",
+                    date: "2026-06-26",
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+    }
+  }
+
+  // ── Tool-aware: handle propose_honey_pot results ───────────────
+  if (toolMap?.has("propose_honey_pot")) {
+    const toolMsgs = messages.filter((m) => m.role === "tool");
+    const lastTool = toolMsgs[toolMsgs.length - 1];
+    if (lastTool) {
+      let result: Record<string, unknown> = {};
+      try {
+        result = JSON.parse(lastTool.content) as Record<string, unknown>;
+      } catch {
+        /* fall through */
+      }
+
+      // After propose_honey_pot → present the proposal or error.
+      if (typeof result.id === "string" && result.id.startsWith("decoy-")) {
+        const proposal = result as unknown as {
+          id: string;
+          type: string;
+          description: string;
+          riskLevel: string;
+          tosWarning: string;
+        };
+
+        // Check if this proposal was already presented to the user.
+        const lastAssistant = [...messages]
+          .reverse()
+          .find((m) => m.role === "assistant");
+        const alreadyShown =
+          lastAssistant?.content.includes(proposal.id);
+
+        // If user is confirming (dale) after the proposal was shown,
+        // return a confirmation response.
+        const isConfirmMsg =
+          /^dale\b|^s[iíí]\b|^ok\b|^confirmo\b|^confirmar\b|^ejecut[áa]\b|^ejecutar\b/i.test(
+            lastUser,
+          );
+
+        if (alreadyShown && isConfirmMsg) {
+          return Promise.resolve({
+            content:
+              "¡Perfecto! La operación de contrainteligencia fue " +
+              "confirmada y quedó registrada en Cortex. " +
+              "Se ejecutará en los próximos minutos. ¿Necesitás algo más?",
+          });
+        }
+
+        // First time — present the proposal.
+        return Promise.resolve({
+          content:
+            `Generé una propuesta de contrainteligencia:\n\n` +
+            `**ID**: ${proposal.id}\n` +
+            `**Tipo**: ${proposal.type}\n` +
+            `**Descripción**: ${proposal.description}\n` +
+            `**Riesgo**: ${proposal.riskLevel}\n\n` +
+            `${proposal.tosWarning}\n\n` +
+            `¿Querés que la ejecute? Confirmá con "dale".`,
+        });
+      }
+      if (typeof result.error === "string") {
+        return Promise.resolve({
+          content: `⛔ ${result.error}`,
+        });
+      }
+    }
+  }
+
   // Intent-based routing (mock behavior, no real LLM call).
   if (/precio|margen/.test(lastUser)) {
     return Promise.resolve({
@@ -841,20 +1043,37 @@ function extractPendingProposal(
   // Search recent messages (last 5) for proposal patterns.
   const recent = messages.slice(-5);
   for (const msg of recent) {
-    if (msg.role === "assistant" && msg.content.includes("propuesta de ajuste")) {
-      return {
-        action: {
-          id: "prop-pending",
-          sellerId: "seller-1",
-          kind: "price-change",
-          target: { type: "listing", listingId: "MLC-42" },
-          exactChange: [{ field: "price", from: 15000, to: 13500 }],
-          rationale: "Ajuste recomendado por análisis de margen.",
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        },
-        naturalSummary: "¿Bajo el precio del listing MLC-42 en 10%?",
-        riskLevel: "medium",
-      };
+    if (msg.role === "assistant") {
+      if (msg.content.includes("propuesta de ajuste")) {
+        return {
+          action: {
+            id: "prop-pending",
+            sellerId: "seller-1",
+            kind: "price-change",
+            target: { type: "listing", listingId: "MLC-42" },
+            exactChange: [{ field: "price", from: 15000, to: 13500 }],
+            rationale: "Ajuste recomendado por análisis de margen.",
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+          naturalSummary: "¿Bajo el precio del listing MLC-42 en 10%?",
+          riskLevel: "medium",
+        };
+      }
+      if (msg.content.includes("contrainteligencia") || msg.content.includes("decoy-")) {
+        return {
+          action: {
+            id: "decoy-pending",
+            sellerId: "seller-1",
+            kind: "honey-pot-deploy",
+            target: { type: "listing", listingId: "decoy-listing" },
+            exactChange: [{ field: "status", from: "draft", to: "active" }],
+            rationale: "Operación de contrainteligencia aprobada por el CEO.",
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+          naturalSummary: "¿Ejecuto la operación de contrainteligencia?",
+          riskLevel: "high",
+        };
+      }
     }
   }
   return undefined;

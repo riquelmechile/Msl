@@ -18,6 +18,9 @@ export type {
   ActorType,
   SimulationResult,
   ActorSimulationRecord,
+  ProbeAlert,
+  DecoyProposal,
+  ProbeOutcome,
 } from "./conversation/types.js";
 
 export type { ConverseResult, AgentLoopConfig, LlmClient } from "./conversation/agentLoop.js";
@@ -29,6 +32,7 @@ export {
   harmfulContentFilter,
   actionSafetyValidator,
   strategyValidator,
+  honeyPotValidator,
 } from "./conversation/guardrails.js";
 
 export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
@@ -36,7 +40,7 @@ export { createStrategyStore } from "./conversation/strategyStore.js";
 
 // ── Tools (function-calling) ────────────────────────────────────────
 export type { ToolDefinition } from "./conversation/tools.js";
-export { createGetBusinessContextTool, createPrepareActionTool, createSimulateActorTool } from "./conversation/tools.js";
+export { createGetBusinessContextTool, createPrepareActionTool, createSimulateActorTool, createDetectProbesTool, createProposeHoneyPotTool } from "./conversation/tools.js";
 
 // ── Actor simulation ────────────────────────────────────────────────
 export {
@@ -46,6 +50,10 @@ export {
   PROVEEDOR_PROMPT,
   COMPETIDOR_PROMPT,
 } from "./conversation/actorSimulator.js";
+
+// ── Probe detection & honey-pot ─────────────────────────────────────
+export { analyzeQuestions, detectViewAnomalies } from "./conversation/probeDetector.js";
+export { proposeDecoy } from "./conversation/honeyPotProposer.js";
 
 export type AgentTopic =
   | "margin"

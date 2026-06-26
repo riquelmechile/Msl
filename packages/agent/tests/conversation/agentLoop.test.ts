@@ -4,7 +4,8 @@ import Database from "better-sqlite3";
 import { createAgentLoop, createDeepSeekClient } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
-import type { ConversationState, StreamingChunk } from "../../src/conversation/types.js";
+import type { ConversationState, DecoyProposal, Strategy, StreamingChunk } from "../../src/conversation/types.js";
+import { createGraphEngine } from "@msl/memory";
 
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
   return {
@@ -496,5 +497,140 @@ describe("createAgentLoop — strategy CRUD intent routing", () => {
     expect(result.response).toMatch(/no tenés estrategias activas/i);
     // Should offer guidance on creating one.
     expect(result.response).toMatch(/margen|priorizar|stock/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Honey-pot integration tests
+// ---------------------------------------------------------------------------
+
+function makeProbeStrategy(overrides: Partial<Strategy> = {}): Strategy {
+  return {
+    id: -1,
+    ruleType: "probe",
+    ruleText: "probá electrónica",
+    parsedRule: {
+      ruleType: "probe",
+      target: "categoría",
+      operator: "probá",
+      value: "electrónica",
+      priority: 5,
+      originalText: "probá electrónica",
+    },
+    confidence: 1.0,
+    status: "active",
+    createdAt: "2026-06-26T10:00:00Z",
+    updatedAt: "2026-06-26T10:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("honey-pot tools — agent loop integration", () => {
+  it("full flow: detect probes → propose honey-pot → present proposal", async () => {
+    const engine = createGraphEngine(":memory:");
+    const probeStrategy = makeProbeStrategy();
+    const agent = createAgentLoop({
+      systemPrompt: "Eres Plasticov, asistente comercial. Respondé en español.",
+      mockClient: true,
+      engine,
+      strategies: [probeStrategy],
+    });
+
+    const state = makeState();
+
+    // Trigger detection — mock should chain: detect_probes → propose_honey_pot → proposal.
+    const result = await agent.converse(
+      "¿Hay alguien sondeando mis publicaciones?",
+      state,
+    );
+
+    // The final response should contain the decoy proposal.
+    expect(result.response).toMatch(/contrainteligencia/i);
+    expect(result.response).toMatch(/decoy-/);
+    expect(result.response).toMatch(/Términos de Servicio/i);
+
+    engine.db.close();
+  });
+
+  it("blocks honey-pot proposal when no probe strategy is active", async () => {
+    const engine = createGraphEngine(":memory:");
+    const agent = createAgentLoop({
+      systemPrompt: "Eres Plasticov, asistente comercial. Respondé en español.",
+      mockClient: true,
+      engine,
+      strategies: [], // No probe strategies
+    });
+
+    const state = makeState();
+    const result = await agent.converse(
+      "¿Hay alguien sondeando mis publicaciones?",
+      state,
+    );
+
+    // Without probe strategy, the propose_honey_pot tool should return an error.
+    // The mock picks up the error and presents it as ⛔ text.
+    expect(result.response).toMatch(/⛔|contrainteligencia/);
+
+    engine.db.close();
+  });
+
+  it("confirms honey-pot via dale and validates through guardrail", async () => {
+    const engine = createGraphEngine(":memory:");
+    const probeStrategy = makeProbeStrategy();
+    const agent = createAgentLoop({
+      systemPrompt: "Eres Plasticov, asistente comercial. Respondé en español.",
+      mockClient: true,
+      engine,
+      strategies: [probeStrategy],
+    });
+
+    // Step 1: trigger detection + proposal
+    let state = makeState();
+    state = (
+      await agent.converse(
+        "¿Hay alguien sondeando mis publicaciones?",
+        state,
+      )
+    ).updatedState;
+
+    // Step 2: confirm with dale — pendingDecoyProposal is set by step 1's tool,
+    // extractPendingProposal finds the honey-pot proposal, honeyPotValidator passes.
+    const result = await agent.converse("dale", state);
+
+    // Should get the honey-pot specific confirmation (not generic "dale" response).
+    expect(result.response).toMatch(/contrainteligencia|confirmada/i);
+
+    engine.db.close();
+  });
+
+  it("stores probe result in Cortex after confirmed dale execution", async () => {
+    const engine = createGraphEngine(":memory:");
+    const probeStrategy = makeProbeStrategy();
+    const agent = createAgentLoop({
+      systemPrompt: "Eres Plasticov, asistente comercial. Respondé en español.",
+      mockClient: true,
+      engine,
+      strategies: [probeStrategy],
+    });
+
+    // Step 1: trigger detection + proposal
+    let state = makeState();
+    state = (
+      await agent.converse(
+        "¿Hay alguien sondeando mis publicaciones?",
+        state,
+      )
+    ).updatedState;
+
+    // Step 2: confirm with dale
+    await agent.converse("dale", state);
+
+    // Verify Cortex has the probe result stored.
+    const rows = engine.db
+      .prepare("SELECT * FROM probe_results")
+      .all() as Array<Record<string, unknown>>;
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+
+    engine.db.close();
   });
 });

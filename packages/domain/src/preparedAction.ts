@@ -11,7 +11,9 @@ export type WriteActionKind =
   | "cancellation"
   | "refund"
   | "listing-edit"
-  | "creative-publication";
+  | "creative-publication"
+  | "honey-pot-deploy"
+  | "probe-analysis";
 
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 
@@ -48,6 +50,8 @@ const riskByKind: Record<WriteActionKind, RiskLevel> = {
   refund: "high",
   "listing-edit": "high",
   "creative-publication": "high",
+  "honey-pot-deploy": "high",
+  "probe-analysis": "high",
 };
 
 export function riskLevelForAction(kind: WriteActionKind): RiskLevel {

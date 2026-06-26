@@ -1,8 +1,18 @@
 import type { GraphEngine, TraversalResult } from "@msl/memory";
 import { riskLevelForAction } from "@msl/domain";
 
-import type { ActorType, AgentProposal, SimulationResult } from "./types.js";
+import type {
+  ActorType,
+  AgentProposal,
+  DecoyProposal,
+  ProbeAlert,
+  SimulationResult,
+  Strategy,
+} from "./types.js";
+import type { GuardResult } from "./guardrails.js";
 import { simulateActor as defaultSimulateActor } from "./actorSimulator.js";
+import { analyzeQuestions as defaultAnalyzeQuestions, detectViewAnomalies as defaultDetectViewAnomalies } from "./probeDetector.js";
+import { proposeDecoy as defaultProposeDecoy } from "./honeyPotProposer.js";
 
 /** Function signature for the actor simulator (injected for testability). */
 type SimulateActorFn = typeof defaultSimulateActor;
@@ -129,6 +139,8 @@ export function createPrepareActionTool(): ToolDefinition {
             "refund",
             "listing-edit",
             "creative-publication",
+            "honey-pot-deploy",
+            "probe-analysis",
           ],
           description:
             "Tipo de acción a ejecutar: cambio de precio, cambio de stock, " +
@@ -299,6 +311,201 @@ export function createSimulateActorTool(
       );
 
       return result as unknown as Record<string, unknown>;
+    },
+  };
+}
+
+// ── detect_probes Tool ──────────────────────────────────────────────
+
+/** Function signatures for the probe detector (injected for testability). */
+type AnalyzeQuestionsFn = typeof defaultAnalyzeQuestions;
+type DetectViewAnomaliesFn = typeof defaultDetectViewAnomalies;
+
+/**
+ * Composed detector that runs both question analysis and view anomaly
+ * detection, merging results into a single ProbeAlert array.
+ */
+type DetectProbesFn = (
+  questions?: Array<{ text: string; from: string; date: string }>,
+  views?: Array<{ count: number; date: string }>,
+) => ProbeAlert[];
+
+function makeDetectProbes(
+  analyzeQ: AnalyzeQuestionsFn,
+  detectV: DetectViewAnomaliesFn,
+): DetectProbesFn {
+  return (questions, views) => {
+    const alerts: ProbeAlert[] = [];
+    if (questions && questions.length > 0) {
+      alerts.push(...analyzeQ(questions));
+    }
+    if (views && views.length > 0) {
+      alerts.push(...detectV(views));
+    }
+    return alerts;
+  };
+}
+
+/**
+ * Creates the `detect_probes` tool.
+ *
+ * Wraps the probe detector so the LLM can scan question and view data
+ * for suspicious competitor counterintelligence patterns on demand.
+ *
+ * @param detector — optional composed detector function (injected for testability).
+ *   Defaults to the real `analyzeQuestions` + `detectViewAnomalies` composition.
+ * @returns a tool definition compatible with OpenAI function calling.
+ */
+export function createDetectProbesTool(
+  detector: DetectProbesFn = makeDetectProbes(
+    defaultAnalyzeQuestions,
+    defaultDetectViewAnomalies,
+  ),
+): ToolDefinition {
+  return {
+    name: "detect_probes",
+    description:
+      "Detecta patrones sospechosos de contrainteligencia en preguntas " +
+      "y vistas de tus publicaciones. Usa esta herramienta cuando " +
+      "quieras saber si un competidor está sondeando tu negocio.",
+    parameters: {
+      type: "object",
+      properties: {
+        questions: {
+          type: "array",
+          description:
+            "Lista de preguntas recibidas con su texto, origen y fecha. " +
+            'Ej: [{ "text": "¿Cuál es tu precio?", "from": "TiendaX", "date": "2026-06-26" }].',
+          items: {
+            type: "object",
+            properties: {
+              text: { type: "string" },
+              from: { type: "string" },
+              date: { type: "string" },
+            },
+          },
+        },
+        views: {
+          type: "array",
+          description:
+            "Conteo diario de vistas a tus publicaciones, cronológicamente. " +
+            'Ej: [{ "count": 150, "date": "2026-06-26" }].',
+          items: {
+            type: "object",
+            properties: {
+              count: { type: "number" },
+              date: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
+      const questions = Array.isArray(args.questions)
+        ? (args.questions as Array<{ text: string; from: string; date: string }>)
+        : undefined;
+      const views = Array.isArray(args.views)
+        ? (args.views as Array<{ count: number; date: string }>)
+        : undefined;
+
+      if (!questions && !views) {
+        return {
+          error:
+            "Se requiere al menos 'questions' o 'views' para detectar patrones.",
+        };
+      }
+
+      const alerts = detector(questions, views);
+      return { alerts, count: alerts.length };
+    },
+  };
+}
+
+// ── propose_honey_pot Tool ──────────────────────────────────────────
+
+/** Function signatures for the honey-pot proposer and validator (injected). */
+type ProposeDecoyFn = typeof defaultProposeDecoy;
+type HoneyPotValidatorFn = (
+  proposal: DecoyProposal,
+  strategies: Strategy[],
+) => GuardResult;
+
+/**
+ * Creates the `propose_honey_pot` tool.
+ *
+ * Generates a decoy proposal from an active probe strategy, validates
+ * it through the honey-pot guardrail (default-deny), and either returns
+ * the {@link DecoyProposal} or a blocked error with a Spanish explanation.
+ *
+ * @param proposer — the decoy proposal generator (injected for testability).
+ * @param guardrail — the honey-pot validator function.
+ * @param getStrategies — closure that returns the current active strategies.
+ * @param onProposed — optional callback invoked when a proposal passes validation,
+ *   allowing the caller to track it for later confirmation (Cortex storage).
+ * @returns a tool definition compatible with OpenAI function calling.
+ */
+export function createProposeHoneyPotTool(
+  proposer: ProposeDecoyFn,
+  guardrail: HoneyPotValidatorFn,
+  getStrategies: () => Strategy[],
+  onProposed?: (proposal: DecoyProposal) => void,
+): ToolDefinition {
+  return {
+    name: "propose_honey_pot",
+    description:
+      "Propone una operación de contrainteligencia basada en estrategias " +
+      "activas del CEO. La propuesta incluye un listing señuelo para " +
+      "detectar y analizar el comportamiento de competidores.",
+    parameters: {
+      type: "object",
+      properties: {
+        strategyId: {
+          type: "number",
+          description:
+            "ID de la estrategia activa de tipo 'probe' a utilizar. " +
+            "Obtenelo de la lista de estrategias activas.",
+        },
+      },
+      required: ["strategyId"],
+    },
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
+      const strategyId = typeof args.strategyId === "number" ? args.strategyId : NaN;
+      if (isNaN(strategyId)) {
+        return { error: "El parámetro 'strategyId' debe ser un número." };
+      }
+
+      const strategies = getStrategies();
+      const strategy = strategies.find(
+        (s) => s.id === strategyId && s.status === "active",
+      );
+
+      if (!strategy) {
+        return {
+          error:
+            `No se encontró una estrategia activa con ID ${strategyId}. ` +
+            "Revisá las estrategias activas con 'listá mis estrategias'.",
+        };
+      }
+
+      if (strategy.ruleType !== "probe") {
+        return {
+          error:
+            `La estrategia #${strategyId} es de tipo "${strategy.ruleType}", ` +
+            "no de tipo 'probe'. Seleccioná una estrategia de contrainteligencia.",
+        };
+      }
+
+      const proposal = proposer(strategy);
+      const guard = guardrail(proposal, strategies);
+
+      if (!guard.passed) {
+        return { error: guard.reason };
+      }
+
+      // Notify the caller (agent loop) that a validated proposal was generated.
+      onProposed?.(proposal);
+
+      return proposal as unknown as Record<string, unknown>;
     },
   };
 }

@@ -29,9 +29,9 @@ Chain strategy: stacked-to-main
 - [x] 1.1 `packages/agent/src/conversation/types.ts` — add `"probe"` to `RuleType` union; add `ProbeAlert`, `DecoyProposal`, `ProbeOutcome` types
 - [x] 1.2 `packages/agent/src/conversation/strategyParser.ts` — add 3 regex patterns: `PROBE_CATEGORY_RE` ("probá competidores en {cat}"), `DEPLOY_DECOY_RE` ("creá listing señuelo"), `MONITOR_COMPETITOR_RE` ("monitoreá reacciones de {competidor}"); wire into `parseStrategy` with `ruleType: "probe"`
 - [x] 1.3 `packages/memory/src/cortex/database.ts` — add `probe_operations`, `competitor_observations`, `suspicious_events` tables to `SCHEMA_SQL`
-- [ ] 1.4 `packages/domain/src/preparedAction.ts` — add `honey-pot-deploy` and `probe-analysis` to `WriteActionKind` union; add both to `riskByKind` map as `"high"`
+- [x] 1.4 `packages/domain/src/preparedAction.ts` — add `honey-pot-deploy` and `probe-analysis` to `WriteActionKind` union; add both to `riskByKind` map as `"high"`
 - [x] 1.5 Write unit tests for new strategy parser patterns (probe directive extraction)
-- [ ] 1.6 Write unit tests for new `riskByKind` mappings
+- [x] 1.6 Write unit tests for new `riskByKind` mappings
 
 ## Phase 2: Core Modules (detection, proposal, guardrail, actor, Cortex)
 
@@ -47,7 +47,7 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Integration & Wiring (tools, agent loop)
 
-- [ ] 3.1 `packages/agent/src/conversation/tools.ts` — add `createDetectProbesTool()` and `createProposeHoneyPotTool()` factory functions following existing `createSimulateActorTool` pattern
-- [ ] 3.2 `packages/agent/src/conversation/agentLoop.ts` — register new tools in constructor's `toolMap`; invoke `honeyPotValidator` in proposal path after `strategyValidator`
-- [ ] 3.3 Write integration tests for agent loop: honey-pot tool registration, guardrail blocking/allow flow
-- [ ] 3.4 Write integration tests for Cortex `storeProbeResult` end-to-end with in-memory SQLite
+- [x] 3.1 `packages/agent/src/conversation/tools.ts` — add `createDetectProbesTool()` and `createProposeHoneyPotTool()` factory functions following existing `createSimulateActorTool` pattern
+- [x] 3.2 `packages/agent/src/conversation/agentLoop.ts` — register new tools in constructor's `toolMap`; invoke `honeyPotValidator` in proposal path after `strategyValidator`
+- [x] 3.3 Write integration tests for agent loop: honey-pot tool registration, guardrail blocking/allow flow
+- [x] 3.4 Write integration tests for Cortex `storeProbeResult` end-to-end with in-memory SQLite

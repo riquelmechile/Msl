@@ -145,6 +145,8 @@ describe("risk labels", () => {
     ["refund", "high"],
     ["listing-edit", "high"],
     ["creative-publication", "high"],
+    ["honey-pot-deploy", "high"],
+    ["probe-analysis", "high"],
   ] satisfies Array<[WriteActionKind, string]>)('labels "%s" as %s risk', (kind, risk) => {
     expect(riskLevelForAction(kind)).toBe(risk);
   });

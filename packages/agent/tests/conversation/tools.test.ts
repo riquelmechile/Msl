@@ -1,13 +1,21 @@
 import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { GraphEngine, createGraphEngine } from "@msl/memory";
 
 import {
   createGetBusinessContextTool,
   createPrepareActionTool,
   createSimulateActorTool,
+  createDetectProbesTool,
+  createProposeHoneyPotTool,
 } from "../../src/conversation/tools.js";
 import type { ToolDefinition } from "../../src/conversation/tools.js";
+import type {
+  DecoyProposal,
+  ProbeAlert,
+  Strategy,
+} from "../../src/conversation/types.js";
+import type { GuardResult } from "../../src/conversation/guardrails.js";
 import { simulateActor } from "../../src/conversation/actorSimulator.js";
 
 describe("createGetBusinessContextTool", () => {
@@ -301,5 +309,278 @@ describe("createSimulateActorTool", () => {
     expect((result as Record<string, unknown>).recommendation).toMatch(
       /competidor/i,
     );
+  });
+});
+
+// ── createDetectProbesTool ──────────────────────────────────────────
+
+describe("createDetectProbesTool", () => {
+  function makeDetector(
+    alerts: ProbeAlert[] = [],
+  ): (questions?: Array<{ text: string; from: string; date: string }>, views?: Array<{ count: number; date: string }>) => ProbeAlert[] {
+    return () => alerts;
+  }
+
+  it("has correct name and description", () => {
+    const tool = createDetectProbesTool(makeDetector());
+    expect(tool.name).toBe("detect_probes");
+    expect(tool.description).toMatch(/contrainteligencia/i);
+  });
+
+  it("has valid parameters schema with optional questions and views", () => {
+    const tool = createDetectProbesTool(makeDetector());
+    const params = tool.parameters as Record<string, unknown>;
+    expect(params.type).toBe("object");
+    const props = params.properties as Record<string, unknown>;
+    expect(props).toHaveProperty("questions");
+    expect(props).toHaveProperty("views");
+    // Neither required.
+    const required = params.required as string[] | undefined;
+    expect(required).toBeUndefined();
+  });
+
+  it("returns error when neither questions nor views provided", () => {
+    const tool = createDetectProbesTool(makeDetector());
+    const result = tool.execute({});
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(/requiere/i);
+  });
+
+  it("returns empty alerts when detector finds nothing", () => {
+    const tool = createDetectProbesTool(makeDetector([]));
+    const result = tool.execute({
+      questions: [{ text: "Hola", from: "X", date: "2026-06-26" }],
+    });
+    expect(result).toHaveProperty("alerts");
+    expect(result).toHaveProperty("count", 0);
+    expect((result as Record<string, unknown>).alerts).toEqual([]);
+  });
+
+  it("returns alerts when detector finds suspicious patterns", () => {
+    const sampleAlert: ProbeAlert = {
+      pattern: "question_spike",
+      confidence: 0.75,
+      competitorId: "TiendaX",
+      description: "Posible sondeo detectado.",
+      recommendedAction: "monitor",
+    };
+    const tool = createDetectProbesTool(makeDetector([sampleAlert]));
+    const result = tool.execute({
+      questions: [{ text: "¿Precio?", from: "X", date: "2026-06-26" }],
+    });
+    expect(result).toHaveProperty("count", 1);
+    const alerts = (result as Record<string, unknown>).alerts as ProbeAlert[];
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].pattern).toBe("question_spike");
+    expect(alerts[0].competitorId).toBe("TiendaX");
+  });
+
+  it("accepts both questions and views simultaneously", () => {
+    const questionAlert: ProbeAlert = {
+      pattern: "price_reaction",
+      confidence: 0.7,
+      description: "Preguntas de precio.",
+    };
+    const viewAlert: ProbeAlert = {
+      pattern: "view_anomaly",
+      confidence: 0.8,
+      description: "Pico de vistas.",
+    };
+    const detector = (
+      q?: Array<{ text: string; from: string; date: string }>,
+      v?: Array<{ count: number; date: string }>,
+    ) => {
+      const alerts: ProbeAlert[] = [];
+      if (q && q.length > 0) alerts.push(questionAlert);
+      if (v && v.length > 0) alerts.push(viewAlert);
+      return alerts;
+    };
+    const tool = createDetectProbesTool(detector);
+    const result = tool.execute({
+      questions: [{ text: "¿Precio?", from: "X", date: "2026-06-26" }],
+      views: [{ count: 500, date: "2026-06-26" }],
+    });
+    expect(result).toHaveProperty("count", 2);
+  });
+});
+
+// ── createProposeHoneyPotTool ───────────────────────────────────────
+
+describe("createProposeHoneyPotTool", () => {
+  function makeProbeStrategy(overrides: Partial<Strategy> = {}): Strategy {
+    return {
+      id: 1,
+      ruleType: "probe",
+      ruleText: "probá electrónica",
+      parsedRule: {
+        ruleType: "probe",
+        target: "categoría",
+        operator: "probá",
+        value: "electrónica",
+        priority: 5,
+        originalText: "probá electrónica",
+      },
+      confidence: 1.0,
+      status: "active",
+      createdAt: "2026-06-26T10:00:00Z",
+      updatedAt: "2026-06-26T10:00:00Z",
+      ...overrides,
+    };
+  }
+
+  function makeProposal(): DecoyProposal {
+    return {
+      id: "decoy-001",
+      type: "category_entry",
+      description: "Listing señuelo en electrónica.",
+      riskLevel: "medium",
+      tosCompliant: true,
+      tosWarning: "⚠️ Términos de Servicio.",
+    };
+  }
+
+  function makePassingValidator(): (proposal: DecoyProposal, strategies: Strategy[]) => GuardResult {
+    return () => ({ passed: true });
+  }
+
+  function makeBlockingValidator(reason: string): (proposal: DecoyProposal, strategies: Strategy[]) => GuardResult {
+    return () => ({ passed: false, reason });
+  }
+
+  it("has correct name and description", () => {
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [makeProbeStrategy()],
+    );
+    expect(tool.name).toBe("propose_honey_pot");
+    expect(tool.description).toMatch(/contrainteligencia/i);
+  });
+
+  it("has valid parameters schema with required strategyId", () => {
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [makeProbeStrategy()],
+    );
+    const params = tool.parameters as Record<string, unknown>;
+    expect(params.type).toBe("object");
+    const required = params.required as string[];
+    expect(required).toContain("strategyId");
+  });
+
+  it("returns error when strategyId is not a number", () => {
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [makeProbeStrategy()],
+    );
+    const result = tool.execute({ strategyId: "abc" });
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(/número/i);
+  });
+
+  it("returns error when strategy not found", () => {
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [makeProbeStrategy()],
+    );
+    const result = tool.execute({ strategyId: 999 });
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(/999/);
+  });
+
+  it("returns error when strategy is not probe type", () => {
+    const marginStrategy: Strategy = {
+      ...makeProbeStrategy(),
+      id: 1,
+      ruleType: "margin",
+      ruleText: "margen mínimo 50%",
+      parsedRule: {
+        ruleType: "margin",
+        target: "margen",
+        operator: ">=",
+        value: "50%",
+        priority: 5,
+        originalText: "margen mínimo 50%",
+      },
+    };
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [marginStrategy],
+    );
+    const result = tool.execute({ strategyId: 1 });
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(/margin/);
+  });
+
+  it("returns decoy proposal when guardrail passes", () => {
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [makeProbeStrategy()],
+    );
+    const result = tool.execute({ strategyId: 1 });
+    expect(result).toHaveProperty("id", "decoy-001");
+    expect(result).toHaveProperty("type");
+    expect(result).toHaveProperty("tosWarning");
+    expect(result).not.toHaveProperty("error");
+  });
+
+  it("returns blocked error when guardrail blocks", () => {
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makeBlockingValidator("No tenés estrategias de contrainteligencia activas."),
+      () => [makeProbeStrategy()],
+    );
+    const result = tool.execute({ strategyId: 1 });
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(/contrainteligencia/);
+  });
+
+  it("calls onProposed callback when guardrail passes", () => {
+    let captured: DecoyProposal | null = null;
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [makeProbeStrategy()],
+      (proposal) => { captured = proposal; },
+    );
+    tool.execute({ strategyId: 1 });
+    expect(captured).not.toBeNull();
+    expect(captured!.id).toBe("decoy-001");
+  });
+
+  it("does NOT call onProposed callback when guardrail blocks", () => {
+    let captured: DecoyProposal | null = null;
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makeBlockingValidator("Bloqueado."),
+      () => [makeProbeStrategy()],
+      (proposal) => { captured = proposal; },
+    );
+    tool.execute({ strategyId: 1 });
+    expect(captured).toBeNull();
+  });
+
+  it("skips archived strategies", () => {
+    const archived = makeProbeStrategy({ status: "archived", id: 1 });
+    const active = makeProbeStrategy({ status: "active", id: 2, parsedRule: {
+      ...makeProbeStrategy().parsedRule,
+      value: "ropa",
+    } });
+    const tool = createProposeHoneyPotTool(
+      () => makeProposal(),
+      makePassingValidator(),
+      () => [archived, active],
+    );
+    // Try to use archived strategy.
+    const result = tool.execute({ strategyId: 1 });
+    expect(result).toHaveProperty("error");
+    // Try active strategy.
+    const result2 = tool.execute({ strategyId: 2 });
+    expect(result2).not.toHaveProperty("error");
   });
 });
