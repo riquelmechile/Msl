@@ -22,7 +22,13 @@ export const COMPETIDOR_PROMPT =
   "Sos un vendedor competidor en MercadoLibre Chile. " +
   "Monitoreás precios de la competencia, ajustás tus publicaciones " +
   "para ganar visibilidad, reaccionás a cambios de precio en tu " +
-  "categoría, y protegés tu participación de mercado.";
+  "categoría, y protegés tu participación de mercado. " +
+  "Además, detectás patrones de sondeo: identificás cuándo un " +
+  "competidor está haciendo inteligencia de precios contra vos, " +
+  "analizás listings señuelo y preguntas sospechosas, y sabés " +
+  "diferenciar compradores reales de competidores encubiertos. " +
+  "Tu nivel de amenaza (threat_level) y patrones de sondeo detectados " +
+  "(probe_patterns) influyen en tu comportamiento defensivo.";
 
 // ── Internal Lookup ─────────────────────────────────────────────────
 
@@ -194,6 +200,83 @@ function generateSimulationId(): string {
   return `sim-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 }
 
+// ── Counterintelligence ──────────────────────────────────────────────
+
+interface CounterintelResponse {
+  recommendation: string;
+  rationale: string;
+}
+
+/**
+ * Builds a keyword-matched mock counterintelligence response for the
+ * competidor actor type.  Returns realistic Spanish responses that
+ * simulate a competitor detecting or reacting to probing behaviour.
+ */
+function buildCounterintelResponse(query: string): CounterintelResponse {
+  const lower = query.toLowerCase();
+
+  if (/monitoreando\s+mis\s+precios|\bestá\s+monitoreando\b/.test(lower)) {
+    return {
+      recommendation:
+        "Como competidor, si veo que bajás precios agresivamente, " +
+        "asumo que estás haciendo price-dumping y puedo reportarte " +
+        "a MercadoLibre. También puedo bajar mis precios sólo lo " +
+        "necesario para no perder visibilidad sin entrar en una " +
+        "guerra de precios que destruya el margen de la categoría.",
+      rationale:
+        `Análisis de contrainteligencia basado en: "${query}". ` +
+        "El competidor interpreta monitoreo de precios como posible " +
+        "price-dumping y responde con defensa de margen y amenaza " +
+        "de reporte a la plataforma.",
+    };
+  }
+
+  if (/listing\s+señuelo|listado\s+señuelo|reaccionaría\s+a\s+un\s+listing/.test(lower)) {
+    return {
+      recommendation:
+        "Si veo un listing nuevo a precio muy bajo, primero verifico " +
+        "si es real o señuelo. Si parece falso — fotos genéricas, " +
+        "vendedor nuevo sin reputación, precio muy por debajo del " +
+        "mercado — lo ignoro. Si parece real, ajusto mi precio " +
+        "para mantener competitividad pero sin caer en la trampa de " +
+        "reaccionar a un señuelo.",
+      rationale:
+        `Análisis de contrainteligencia basado en: "${query}". ` +
+        "El competidor aplica verificación de autenticidad antes de " +
+        "reaccionar a un listing que podría ser un señuelo.",
+    };
+  }
+
+  if (/patrón\s+de\s+preguntas|preguntas\s+sospechosas|usuario\s+nuevo\s+preguntando/.test(lower)) {
+    return {
+      recommendation:
+        "Cuando un usuario nuevo hace muchas preguntas sobre precios " +
+        "y márgenes en poco tiempo, asumo que es un competidor " +
+        "haciendo inteligencia. Respondo con información genérica, " +
+        "nunca revelo costos reales ni estrategia de pricing. " +
+        "Registro el patrón para futuras interacciones.",
+      rationale:
+        `Análisis de contrainteligencia basado en: "${query}". ` +
+        "El competidor detecta patrones de preguntas sospechosas y " +
+        "aplica counterintelligence: información genérica, sin " +
+        "revelar datos sensibles.",
+    };
+  }
+
+  // Default: no probe patterns detected
+  return {
+    recommendation:
+      "No se detectaron patrones de sondeo en esta categoría. " +
+      "El competidor mantiene su comportamiento normal de monitoreo " +
+      "de precios y ajuste de publicaciones sin activar defensas " +
+      "de contrainteligencia.",
+    rationale:
+      `Análisis de contrainteligencia basado en: "${query}". ` +
+      "No se identificaron indicadores de sondeo activo. " +
+      "Nivel de amenaza: bajo.",
+  };
+}
+
 // ── Public API ──────────────────────────────────────────────────────
 
 /**
@@ -264,4 +347,47 @@ export async function simulateActor(
   void agentConfig;
 
   return result;
+}
+
+/**
+ * Simulates counterintelligence analysis from a competitor's perspective.
+ *
+ * Only the "competidor" actor type is valid — other actor types throw.
+ * Uses {@link COMPETIDOR_PROMPT} with counterintelligence awareness to
+ * generate realistic Spanish responses about how a competitor would
+ * detect and react to probing behaviour (price monitoring, decoy
+ * listings, suspicious question patterns).
+ *
+ * @param actorType — Must be "competidor". Other types throw.
+ * @param query     — The counterintelligence question or scenario in Spanish.
+ * @returns A {@link SimulationResult} with recommendation, rationale,
+ *          confidence (0.8), and a unique simulationId.
+ * @throws If actorType is not "competidor" or query is empty.
+ */
+export function simulateCounterintelligence(
+  actorType: ActorType,
+  query: string,
+): SimulationResult {
+  if (actorType !== "competidor") {
+    throw new Error(
+      `Contrainteligencia solo disponible para "competidor". ` +
+        `Tipo recibido: "${actorType}".`,
+    );
+  }
+
+  if (!query || query.trim().length === 0) {
+    throw new Error("El parámetro 'query' no puede estar vacío.");
+  }
+
+  const { recommendation, rationale } = buildCounterintelResponse(
+    query.trim(),
+  );
+
+  return {
+    actorType,
+    recommendation,
+    confidence: 0.8,
+    rationale,
+    simulationId: generateSimulationId(),
+  };
 }

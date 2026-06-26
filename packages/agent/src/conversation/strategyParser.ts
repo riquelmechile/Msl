@@ -41,6 +41,10 @@ const PROBE_CATEGORY_RE =
 const PROBE_COMPETITOR_RE =
   /(vigilá|seguí|trackeá)\s+(?:a\s+)?([^,.\n]+)/gi;
 
+/** "creá|crea|publicá|publica listing|listado|publicación|publicacion señuelo en X" — deploy decoy */
+const DEPLOY_DECOY_RE =
+  /(creá|crea|publicá|publica)\s+(listing|listado|publicación|publicacion)\s+señuelo\s+en\s+(.+)/gi;
+
 // ── Internal helpers ────────────────────────────────────────────────
 
 interface PatternMatch {
@@ -229,6 +233,13 @@ export function parseStrategy(text: string): ParseResult {
   allMatches.push(
     ...collectMatches(trimmed, PROBE_COMPETITOR_RE, (m) => ({
       ...baseRule("probe", "competidor", m[1]!.toLowerCase(), m[2]!.trim(), m),
+    })),
+  );
+
+  // Decoy deploy: "creá listing señuelo en X"
+  allMatches.push(
+    ...collectMatches(trimmed, DEPLOY_DECOY_RE, (m) => ({
+      ...baseRule("probe", "decoy", "deploy", m[3]!.trim(), m),
     })),
   );
 

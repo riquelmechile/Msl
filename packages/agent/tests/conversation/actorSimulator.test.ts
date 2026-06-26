@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   simulateActor,
   getActorPrompt,
+  simulateCounterintelligence,
   COMPRADOR_PROMPT,
   PROVEEDOR_PROMPT,
   COMPETIDOR_PROMPT,
@@ -213,5 +214,133 @@ describe("simulateActor", () => {
     expect(result).toHaveProperty("actorType", "comprador");
     expect(result).toHaveProperty("recommendation");
     // agentConfig is accepted but unused in mock mode.
+  });
+});
+
+// ── simulateCounterintelligence ──────────────────────────────────────
+
+describe("simulateCounterintelligence", () => {
+  it("works with 'competidor' actor type", () => {
+    const result = simulateCounterintelligence(
+      "competidor",
+      "¿está monitoreando mis precios?",
+    );
+
+    expect(result.actorType).toBe("competidor");
+    expect(result.recommendation).toBeTruthy();
+    expect(result.rationale).toBeTruthy();
+    expect(result.confidence).toBe(0.8);
+    expect(result.simulationId).toMatch(/^sim-/);
+  });
+
+  it("throws for 'comprador' actor type", () => {
+    expect(() =>
+      simulateCounterintelligence("comprador", "test query"),
+    ).toThrow(/competidor/i);
+  });
+
+  it("throws for 'proveedor' actor type", () => {
+    expect(() =>
+      simulateCounterintelligence("proveedor", "test query"),
+    ).toThrow(/competidor/i);
+  });
+
+  it("throws for empty query", () => {
+    expect(() => simulateCounterintelligence("competidor", "")).toThrow(
+      /query.*vacío/i,
+    );
+  });
+
+  it("throws for whitespace-only query", () => {
+    expect(() => simulateCounterintelligence("competidor", "   ")).toThrow(
+      /query.*vacío/i,
+    );
+  });
+
+  it("returns price-monitoring detection for monitoring query", () => {
+    const result = simulateCounterintelligence(
+      "competidor",
+      "¿está monitoreando mis precios?",
+    );
+
+    expect(result.recommendation).toMatch(/price-dumping|reportarte/i);
+    expect(result.actorType).toBe("competidor");
+  });
+
+  it("returns decoy-listing verification for señuelo listing query", () => {
+    const result = simulateCounterintelligence(
+      "competidor",
+      "¿reaccionaría a un listing señuelo?",
+    );
+
+    expect(result.recommendation).toMatch(/verifico|señuelo/i);
+    expect(result.actorType).toBe("competidor");
+  });
+
+  it("returns different responses for different queries", () => {
+    const r1 = simulateCounterintelligence(
+      "competidor",
+      "¿está monitoreando mis precios?",
+    );
+    const r2 = simulateCounterintelligence(
+      "competidor",
+      "¿reaccionaría a un listing señuelo?",
+    );
+
+    expect(r1.recommendation).not.toBe(r2.recommendation);
+  });
+
+  it("returns no-patterns-detected for unrecognized queries", () => {
+    const result = simulateCounterintelligence(
+      "competidor",
+      "¿cómo está el clima hoy?",
+    );
+
+    expect(result.recommendation).toMatch(/no se detectaron patrones/i);
+    expect(result.confidence).toBe(0.8);
+  });
+
+  it("generates unique simulationIds for different calls", () => {
+    const r1 = simulateCounterintelligence(
+      "competidor",
+      "¿está monitoreando mis precios?",
+    );
+    const r2 = simulateCounterintelligence(
+      "competidor",
+      "¿reaccionaría a un listing señuelo?",
+    );
+
+    expect(r1.simulationId).not.toBe(r2.simulationId);
+  });
+
+  it("includes query context in rationale", () => {
+    const result = simulateCounterintelligence(
+      "competidor",
+      "¿está monitoreando mis precios?",
+    );
+
+    expect(result.rationale).toContain("monitoreando mis precios");
+  });
+
+  it("confidence is always 0.8 for mock", () => {
+    const results = [
+      simulateCounterintelligence(
+        "competidor",
+        "¿está monitoreando mis precios?",
+      ),
+      simulateCounterintelligence(
+        "competidor",
+        "¿reaccionaría a un listing señuelo?",
+      ),
+      simulateCounterintelligence(
+        "competidor",
+        "¿hay patrón de preguntas?",
+      ),
+      simulateCounterintelligence("competidor", "random query"),
+    ];
+
+    for (const r of results) {
+      expect(r.confidence).toBe(0.8);
+    }
   });
 });

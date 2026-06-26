@@ -412,6 +412,33 @@ describe("parseStrategy — probe rules", () => {
   });
 });
 
+describe("parseStrategy — probe decoy deploy", () => {
+  it('extracts "creá listing señuelo en electrónica" as decoy deploy directive', () => {
+    const rule = firstRule("creá listing señuelo en electrónica");
+    expect(rule).toBeDefined();
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("decoy");
+    expect(rule!.operator).toBe("deploy");
+    expect(rule!.value).toBe("electrónica");
+  });
+
+  it('extracts "publicá listado señuelo en juguetes" as decoy deploy (publicá variant)', () => {
+    const rule = firstRule("publicá listado señuelo en juguetes");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("decoy");
+    expect(rule!.operator).toBe("deploy");
+    expect(rule!.value).toBe("juguetes");
+  });
+
+  it('extracts "crea publicación señuelo en ropa" as decoy deploy (tuteo variant)', () => {
+    const rule = firstRule("crea publicación señuelo en ropa");
+    expect(rule!.ruleType).toBe("probe");
+    expect(rule!.target).toBe("decoy");
+    expect(rule!.operator).toBe("deploy");
+    expect(rule!.value).toBe("ropa");
+  });
+});
+
 describe("parseStrategy — probe competitor monitor", () => {
   it('extracts "vigilá CompetidorX" as competitor probe', () => {
     const rule = firstRule("vigilá CompetidorX");
