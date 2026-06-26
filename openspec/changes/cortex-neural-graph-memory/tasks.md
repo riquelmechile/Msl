@@ -40,13 +40,13 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Pruning + Convergence + Traversal
 
-- [ ] 3.1 Add `prune` to `GraphEngine` — single transaction: INSERT darwinian_lessons for edges with weight < 0.05 (distill lesson), DELETE those edges; strict less-than (0.05 survives); idempotent re-run
-- [ ] 3.2 Add `detectConvergence` and `cosineSimilarity` pure function — compare activation snapshots; converged when > 0.95; first iteration returns `{ converged: false, reason: "first-iteration" }`; zero vectors return 0
-- [ ] 3.3 Add `traverse` to `GraphEngine` — return activated nodes with scores, traversed edges, distilled lessons formatted as LLM-injectable key-value context; empty graph returns empty context (not error)
-- [ ] 3.4 Create `packages/memory/src/cortex/index.ts` — barrel export of all types + `createGraphEngine(path?)` factory
-- [ ] 3.5 Add remaining engine tests — pruning atomicity (0.04 archived, 0.06 kept), idempotent re-run, convergence (>0.95=true, <0.95=false), first iteration, full LLM context traversal, empty graph returns empty context
+- [x] 3.1 Add `prune` to `GraphEngine` — single transaction: INSERT darwinian_lessons for edges with weight < 0.05 (distill lesson), DELETE those edges; strict less-than (0.05 survives); idempotent re-run
+- [x] 3.2 Add `detectConvergence` and `cosineSimilarity` pure function — compare activation snapshots; converged when > 0.95; first iteration returns `{ converged: false, reason: "first-iteration" }`; zero vectors return 0
+- [x] 3.3 Add `traverse` to `GraphEngine` — return activated nodes with scores, traversed edges, distilled lessons formatted as LLM-injectable key-value context; empty graph returns empty context (not error)
+- [x] 3.4 Create `packages/memory/src/cortex/index.ts` — barrel export of all types + `createGraphEngine(path?)` factory
+- [x] 3.5 Add remaining engine tests — pruning atomicity (0.04 archived, 0.06 kept), idempotent re-run, convergence (>0.95=true, <0.95=false), first iteration, full LLM context traversal, empty graph returns empty context
 
 ## Phase 4: Verification
 
-- [ ] 4.1 Run `npm test` from workspace root — all existing tests pass + new cortex tests pass
-- [ ] 4.2 Run `npm run typecheck --workspace @msl/memory` — no type errors
+- [x] 4.1 Run `npm test` from workspace root — all existing tests pass + new cortex tests pass
+- [x] 4.2 Run `npm run typecheck --workspace @msl/memory` — no type errors
