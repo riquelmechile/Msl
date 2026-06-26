@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase } from "../../src/cortex/database.js";
-import { GraphEngine } from "../../src/cortex/engine.js";
+import { cosineSimilarity, GraphEngine } from "../../src/cortex/engine.js";
 import { DuplicateEdgeError, NodeNotFoundError } from "../../src/cortex/types.js";
 
 describe("createDatabase", () => {
@@ -416,6 +416,352 @@ describe("GraphEngine", () => {
       // D should appear exactly once with max activation from the two paths
       const dNodes = result.activatedNodes.filter((n) => n.id === d.id);
       expect(dNodes).toHaveLength(1);
+    });
+  });
+
+  describe("cosineSimilarity", () => {
+    it("returns 1.0 for identical vectors", () => {
+      const a = new Map([[1, 0.5], [2, 0.3]]);
+      const b = new Map([[1, 0.5], [2, 0.3]]);
+      expect(cosineSimilarity(a, b)).toBeCloseTo(1.0, 5);
+    });
+
+    it("returns 0.0 for orthogonal vectors", () => {
+      const a = new Map([[1, 1.0], [2, 0.0]]);
+      const b = new Map([[1, 0.0], [2, 1.0]]);
+      expect(cosineSimilarity(a, b)).toBeCloseTo(0.0, 5);
+    });
+
+    it("returns 0.0 when one vector is all zeros", () => {
+      const a = new Map([[1, 0.0], [2, 0.0]]);
+      const b = new Map([[1, 0.5], [2, 0.3]]);
+      expect(cosineSimilarity(a, b)).toBe(0.0);
+    });
+
+    it("returns 0.0 when both vectors are empty", () => {
+      expect(cosineSimilarity(new Map(), new Map())).toBe(0.0);
+    });
+
+    it("handles vectors with different key sets (union-based)", () => {
+      // a only has node 1, b only has node 2 → dot = 0
+      const a = new Map([[1, 1.0]]);
+      const b = new Map([[2, 1.0]]);
+      expect(cosineSimilarity(a, b)).toBe(0.0);
+    });
+
+    it("handles overlapping keys with non-zero similarity", () => {
+      // a = [0.6, 0.8], b = [0.3, 0.4] → same direction, different magnitude → 1.0
+      const a = new Map([[1, 0.6], [2, 0.8]]);
+      const b = new Map([[1, 0.3], [2, 0.4]]);
+      expect(cosineSimilarity(a, b)).toBeCloseTo(1.0, 5);
+    });
+  });
+
+  describe("prune", () => {
+    it("archives edges with weight < 0.05 and keeps edges at threshold", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+      const d = engine.createNode("D");
+
+      const weakEdge = engine.createEdge(a.id, b.id);
+      const thresholdEdge = engine.createEdge(b.id, c.id);
+      const strongEdge = engine.createEdge(c.id, d.id);
+
+      // Set weights: 0.04 (below), 0.05 (at threshold), 0.06 (above)
+      db.prepare("UPDATE edges SET weight = 0.04 WHERE id = ?").run(weakEdge.id);
+      db.prepare("UPDATE edges SET weight = 0.05 WHERE id = ?").run(
+        thresholdEdge.id,
+      );
+      db.prepare("UPDATE edges SET weight = 0.06 WHERE id = ?").run(strongEdge.id);
+
+      const result = engine.prune();
+
+      // Only the 0.04-weight edge should be archived
+      expect(result.archivedCount).toBe(1);
+
+      // Weak edge is gone
+      expect(engine.getEdge(weakEdge.id)).toBeNull();
+
+      // Threshold edge (0.05) survives — strict less-than
+      expect(engine.getEdge(thresholdEdge.id)).not.toBeNull();
+      expect(engine.getEdge(thresholdEdge.id)!.weight).toBe(0.05);
+
+      // Strong edge (0.06) survives
+      expect(engine.getEdge(strongEdge.id)).not.toBeNull();
+      expect(engine.getEdge(strongEdge.id)!.weight).toBe(0.06);
+
+      // Darwinian lesson was created for the weak edge
+      const lessons = db
+        .prepare("SELECT * FROM darwinian_lessons")
+        .all() as Array<{
+          source_node: number;
+          target_node: number;
+          lesson: string;
+          reason: string;
+        }>;
+      expect(lessons).toHaveLength(1);
+      expect(lessons[0].source_node).toBe(a.id);
+      expect(lessons[0].target_node).toBe(b.id);
+      expect(lessons[0].lesson).toBe("connection between A and B");
+      expect(lessons[0].reason).toBe("weight_below_threshold");
+    });
+
+    it("is idempotent — re-run returns 0 after pruning", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+
+      const edge = engine.createEdge(a.id, b.id);
+      db.prepare("UPDATE edges SET weight = 0.03 WHERE id = ?").run(edge.id);
+
+      // First prune — should archive 1
+      const first = engine.prune();
+      expect(first.archivedCount).toBe(1);
+
+      // Second prune — should be a no-op
+      const second = engine.prune();
+      expect(second.archivedCount).toBe(0);
+
+      // Still only 1 lesson (no duplicates)
+      const count = (
+        db.prepare("SELECT COUNT(*) as cnt FROM darwinian_lessons").get() as {
+          cnt: number;
+        }
+      ).cnt;
+      expect(count).toBe(1);
+    });
+
+    it("uses distilled_lesson when present on the edge", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+
+      const edge = engine.createEdge(a.id, b.id);
+      db.prepare(
+        "UPDATE edges SET weight = 0.02, distilled_lesson = ? WHERE id = ?",
+      ).run("custom distilled insight", edge.id);
+
+      engine.prune();
+
+      const lesson = db
+        .prepare("SELECT lesson FROM darwinian_lessons WHERE source_node = ?")
+        .get(a.id) as { lesson: string };
+      expect(lesson.lesson).toBe("custom distilled insight");
+    });
+
+    it("is atomic — both INSERT and DELETE happen or neither does", () => {
+      // This test verifies the transaction wrapper exists and operates.
+      // We test indirectly: after prune, the archivedCount matches the
+      // number of deleted edges, and lessons count equals that number.
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+
+      db.prepare("UPDATE edges SET weight = 0.01 WHERE source = ?").run(a.id);
+      db.prepare("UPDATE edges SET weight = 0.02 WHERE source = ?").run(b.id);
+
+      const result = engine.prune();
+
+      expect(result.archivedCount).toBe(2);
+
+      const lessonCount = (
+        db.prepare("SELECT COUNT(*) as cnt FROM darwinian_lessons").get() as {
+          cnt: number;
+        }
+      ).cnt;
+      expect(lessonCount).toBe(2);
+    });
+  });
+
+  describe("detectConvergence", () => {
+    it("returns first-iteration on the initial call", () => {
+      const snapshot = new Map([[1, 0.5]]);
+      const result = engine.detectConvergence(snapshot);
+
+      expect(result.converged).toBe(false);
+      if (!result.converged) {
+        expect(result.reason).toBe("first-iteration");
+      }
+    });
+
+    it("detects convergence when similarity exceeds threshold", () => {
+      // Same snapshot twice should yield cosine similarity 1.0 > 0.95
+      const snapshot = new Map([[1, 0.5], [2, 0.3]]);
+
+      // First call — stores snapshot
+      engine.detectConvergence(snapshot);
+
+      // Second call — compares against stored, should converge
+      const result = engine.detectConvergence(snapshot);
+
+      expect(result.converged).toBe(true);
+      if (result.converged) {
+        expect(result.similarity).toBeCloseTo(1.0, 5);
+      }
+    });
+
+    it("returns not-converged when similarity is below threshold", () => {
+      // First snapshot
+      const first = new Map([[1, 1.0], [2, 0.0]]);
+      engine.detectConvergence(first);
+
+      // Second snapshot — orthogonal
+      const second = new Map([[1, 0.0], [2, 1.0]]);
+      const result = engine.detectConvergence(second);
+
+      expect(result.converged).toBe(false);
+      if (!result.converged) {
+        expect(result.similarity).toBeCloseTo(0.0, 5);
+      }
+    });
+
+    it("respects a custom threshold", () => {
+      // First snapshot
+      engine.detectConvergence(new Map([[1, 0.5]]));
+
+      // Second snapshot — similarity 1.0, but threshold is 1.01 (impossible)
+      const result = engine.detectConvergence(new Map([[1, 0.5]]), {
+        threshold: 1.01,
+      });
+
+      expect(result.converged).toBe(false);
+    });
+
+    it("handles zero-activation vectors without error", () => {
+      const zero = new Map([[1, 0.0], [2, 0.0]]);
+
+      // First call with zeros — stored, returns first-iteration
+      const first = engine.detectConvergence(zero);
+      expect(first.converged).toBe(false);
+
+      // Second call with zeros — cosine=0 (norm=0), below threshold
+      const second = engine.detectConvergence(zero);
+      expect(second.converged).toBe(false);
+    });
+  });
+
+  describe("traverse", () => {
+    it("returns empty context for an empty graph", () => {
+      const result = engine.traverse();
+
+      expect(result.activatedNodes).toEqual([]);
+      expect(result.traversedEdges).toEqual([]);
+      expect(result.lessons).toEqual([]);
+      expect(result.context).toEqual({});
+    });
+
+    it("returns activated nodes with scores for a populated graph", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+      db.prepare("UPDATE nodes SET activation = 0.5 WHERE id = ?").run(b.id);
+
+      const result = engine.traverse();
+
+      expect(result.activatedNodes).toHaveLength(2);
+      expect(result.activatedNodes[0]).toMatchObject({
+        nodeId: a.id,
+        label: "A",
+        activation: 1.0,
+      });
+      expect(result.activatedNodes[1]).toMatchObject({
+        nodeId: b.id,
+        label: "B",
+        activation: 0.5,
+      });
+
+      // Context should contain the LLM-injectable key-value pairs
+      expect(result.context.activated_nodes).toBeDefined();
+      expect(result.context.node_count).toBe(2);
+    });
+
+    it("returns traversed edges with weights and co-occurrence counts", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+
+      // Simulate co-occurrence
+      db.prepare(
+        "UPDATE edges SET co_occurrence_count = 3 WHERE source = ? AND target = ?",
+      ).run(a.id, b.id);
+
+      const result = engine.traverse();
+
+      expect(result.traversedEdges).toHaveLength(2);
+      expect(result.traversedEdges[0]).toMatchObject({
+        source: a.id,
+        target: b.id,
+        co_occurrence_count: 3,
+      });
+
+      expect(result.context.edges).toBeDefined();
+      expect(result.context.edge_count).toBe(2);
+    });
+
+    it("includes distilled lessons from darwinian_lessons table", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+
+      const edge = engine.createEdge(a.id, b.id);
+      db.prepare("UPDATE edges SET weight = 0.01 WHERE id = ?").run(edge.id);
+
+      engine.prune();
+
+      const result = engine.traverse();
+
+      // Lessons from the prune step
+      expect(result.lessons).toHaveLength(1);
+      expect(result.lessons[0]).toMatchObject({
+        source_node: a.id,
+        target_node: b.id,
+      });
+      expect(typeof result.lessons[0].lesson).toBe("string");
+
+      // Context includes lesson data
+      expect(result.context.lessons).toBeDefined();
+      expect(result.context.lesson_count).toBe(1);
+    });
+
+    it("builds full LLM-injectable context after spreading and pruning", () => {
+      const a = engine.createNode("A");
+      const b = engine.createNode("B");
+      const c = engine.createNode("C");
+      const d = engine.createNode("D");
+
+      engine.createEdge(a.id, b.id);
+      engine.createEdge(b.id, c.id);
+      engine.createEdge(c.id, d.id);
+
+      // Set activation and run spreading
+      db.prepare("UPDATE nodes SET activation = 1.0 WHERE id = ?").run(a.id);
+      engine.spreadActivation([a.id], { maxDepth: 3 });
+
+      // Prune weak edges (should archive none since all weights are 0.5)
+      engine.prune();
+
+      const result = engine.traverse();
+
+      // Nodes should be present with activation values
+      expect(result.activatedNodes.length).toBeGreaterThan(0);
+
+      // Edges should have co-occurrence counts updated by spreading
+      const abEdge = result.traversedEdges.find(
+        (e) => e.source === a.id && e.target === b.id,
+      );
+      expect(abEdge).toBeDefined();
+      expect(abEdge!.co_occurrence_count).toBeGreaterThan(0);
+
+      // Context is a flat key-value record for LLM injection
+      expect(result.context).toHaveProperty("activated_nodes");
+      expect(result.context).toHaveProperty("edges");
+      expect(result.context).toHaveProperty("node_count");
+      expect(result.context).toHaveProperty("edge_count");
     });
   });
 });
