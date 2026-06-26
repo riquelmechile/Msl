@@ -56,3 +56,65 @@ export type ConversationState = {
     lastActivityAt: Date;
   };
 };
+
+// ── CEO Strategy Injection ─────────────────────────────────────────
+
+/**
+ * Classification of a parsed CEO rule.
+ *
+ * Maps Spanish business directives into structured rule types
+ * used by the strategy parser, store, and injection layers.
+ */
+export type RuleType =
+  | "margin"
+  | "stock"
+  | "category"
+  | "pricing"
+  | "customer"
+  | "competitive"
+  | "priority"
+  | "timing"
+  | "competitor";
+
+/** A single structured rule extracted from CEO natural-language text. */
+export interface ParsedRule {
+  /** Which business domain the rule governs. */
+  ruleType: RuleType;
+  /** Semantic target label, e.g. "margen", "stock", "categoría". */
+  target: string;
+  /** Comparison or action operator, e.g. ">=", "<=", "priorizar", "evitar". */
+  operator: string;
+  /** The numeric or textual value, e.g. "50%", "+10", "electrónica". */
+  value: string;
+  /** Optional qualifier narrowing the scope, e.g. "productos estrella". */
+  scope?: string;
+  /** Importance 1-10; higher means more critical. */
+  priority: number;
+  /** The exact CEO text that produced this rule. */
+  originalText: string;
+}
+
+/** A persisted strategy with lifecycle tracking. */
+export interface Strategy {
+  id: number;
+  ruleType: RuleType;
+  /** Raw CEO directive text. */
+  ruleText: string;
+  /** Structured parse result. */
+  parsedRule: ParsedRule;
+  /** Extraction confidence 0.0-1.0. */
+  confidence: number;
+  status: "active" | "archived" | "superseded";
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Result of parsing CEO strategy text. */
+export interface ParseResult {
+  /** Successfully extracted rules. */
+  rules: ParsedRule[];
+  /** Text fragments that could not be parsed into rules. */
+  unparsed: string[];
+  /** Aggregate confidence across all extracted rules (0.0-1.0). */
+  confidence: number;
+}

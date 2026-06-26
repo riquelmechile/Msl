@@ -11,6 +11,10 @@ export type {
   AgentProposal,
   ConversationState,
   StreamingChunk,
+  ParsedRule,
+  ParseResult,
+  RuleType,
+  Strategy,
 } from "./conversation/types.js";
 
 export type { ConverseResult, AgentLoopConfig, LlmClient } from "./conversation/agentLoop.js";
@@ -22,6 +26,8 @@ export {
   harmfulContentFilter,
   actionSafetyValidator,
 } from "./conversation/guardrails.js";
+
+export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
 
 export type AgentTopic =
   | "margin"
