@@ -68,13 +68,13 @@ When guardrails block, the system MUST explain in natural Spanish, not raw error
 
 ### Requirement: Human Approval for Writes
 
-The system MUST require explicit seller approval before price changes, stock changes, customer messages, cancellations, refunds, listing edits, or creative publication. Proposals MAY originate from conversational LLM or deterministic agent.
+The system MUST require explicit seller approval before price changes, stock changes, customer messages, cancellations, refunds, listing edits, or creative publication, **UNLESS** the current autonomy level permits auto-execution of actions at the proposal's risk level. When auto-approved, the system MUST still generate audit records with `approvalMethod: "auto"` and the effective autonomy level. Proposals MAY originate from conversational LLM or deterministic agent.
 
 #### Scenario: Agent prepares a write action
 
 - GIVEN the agent recommends a business write
 - WHEN the action is ready
-- THEN it MUST show the exact proposed change and wait for explicit approval
+- THEN it MUST show the exact proposed change and wait for explicit approval **unless the autonomy level permits auto-approval**
 
 #### Scenario: Conversational proposal
 
@@ -84,9 +84,28 @@ The system MUST require explicit seller approval before price changes, stock cha
 
 #### Scenario: Approval is absent
 
-- GIVEN no explicit approval has been recorded
+- GIVEN no explicit approval has been recorded **and autonomy level does not permit auto-approval**
 - WHEN execution is attempted
 - THEN the system MUST block the action
+
+#### Scenario: Auto-approved low-risk action skips dale
+
+- GIVEN autonomy level is 3 (BAJO_RIESGO) and the agent proposes a low-risk `stock-update`
+- WHEN `autonomyGate` returns auto-approval
+- THEN the system MUST execute the action without "dale" confirmation
+- AND MUST record a KPI snapshot
+
+#### Scenario: High-risk action still requires dale at any level
+
+- GIVEN autonomy level is 5 (FULL) and the agent proposes a high-risk `cancellation`
+- WHEN `autonomyGate` returns a reason requiring dale
+- THEN the system MUST present the proposal and wait for "dale" confirmation
+
+#### Scenario: Level 0 always requires dale
+
+- GIVEN autonomy level is 0 (CONSULTA) and the agent proposes any write action
+- WHEN the action is ready
+- THEN the system MUST show the exact proposed change and wait for explicit approval
 
 ### Requirement: Risk Audit Trail
 
