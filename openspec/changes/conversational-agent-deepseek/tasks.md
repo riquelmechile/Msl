@@ -42,6 +42,6 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Integration — Wire-up & Verify (PR 3)
 
-- [ ] 3.1 Add `openai` and `@openai/agents` to `packages/agent/package.json` dependencies (pin exact versions)
-- [ ] 3.2 Modify `packages/agent/src/index.ts` — export `converse`, `ConversationMessage`, `AgentProposal`, `StreamingChunk`; keep `answerBusinessQuestion()` unchanged
-- [ ] 3.3 Run full test suite: `npm test` in agent package (all 6 existing deterministic tests + new conversation tests must pass)
+- [x] 3.1 Add `openai` and `@openai/agents` to `packages/agent/package.json` dependencies (pin exact versions: `openai@6.45.0`, `@openai/agents@0.12.0`)
+- [x] 3.2 Modify `packages/agent/src/index.ts` — export `createAgentLoop` (provides `converse()`), `ConversationMessage`, `AgentProposal`, `ConversationState`, `StreamingChunk`, `GuardResult`, and all guardrail functions; keep `answerBusinessQuestion()` unchanged
+- [x] 3.3 Run full verification: `npm test` (191/191 pass, incl. 6 deterministic), `npm run typecheck` (clean), `npm run build` (succeeds). `npm run lint` has 28 pre-existing errors from PR 1/PR 2 code — none from this PR.

@@ -5,6 +5,24 @@ import {
   type SpecializationEvidence,
 } from "@msl/domain";
 
+// ── Conversational agent (DeepSeek) ────────────────────────────────
+export type {
+  ConversationMessage,
+  AgentProposal,
+  ConversationState,
+  StreamingChunk,
+} from "./conversation/types.js";
+
+export type { ConverseResult, AgentLoopConfig, LlmClient } from "./conversation/agentLoop.js";
+export { createAgentLoop } from "./conversation/agentLoop.js";
+
+export type { GuardResult } from "./conversation/guardrails.js";
+export {
+  spanishValidator,
+  harmfulContentFilter,
+  actionSafetyValidator,
+} from "./conversation/guardrails.js";
+
 export type AgentTopic =
   | "margin"
   | "profit"
