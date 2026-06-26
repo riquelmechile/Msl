@@ -1,7 +1,11 @@
 import type { GraphEngine, TraversalResult } from "@msl/memory";
 import { riskLevelForAction } from "@msl/domain";
 
-import type { AgentProposal } from "./types.js";
+import type { ActorType, AgentProposal, SimulationResult } from "./types.js";
+import { simulateActor as defaultSimulateActor } from "./actorSimulator.js";
+
+/** Function signature for the actor simulator (injected for testability). */
+type SimulateActorFn = typeof defaultSimulateActor;
 
 /**
  * Tool definition shape compatible with OpenAI function-calling schema.
@@ -214,6 +218,87 @@ export function createPrepareActionTool(): ToolDefinition {
       };
 
       return proposal;
+    },
+  };
+}
+
+// ── simulate_actor Tool ─────────────────────────────────────────────
+
+/** Valid actor type values for validation at the tool boundary. */
+const VALID_ACTOR_TYPES: readonly string[] = [
+  "comprador",
+  "proveedor",
+  "competidor",
+];
+
+/**
+ * Creates the `simulate_actor` tool.
+ *
+ * Wraps the actor simulator so the LLM can consult counter-party
+ * perspectives on demand. The tool executes a mock simulation that
+ * returns realistic Spanish responses keyed to the actor persona
+ * and query keywords.
+ *
+ * @param simulator — the actor simulation function (injected for testability).
+ *   Defaults to the mock implementation from `actorSimulator.ts`.
+ * @returns a tool definition compatible with OpenAI function calling.
+ */
+export function createSimulateActorTool(
+  simulator: SimulateActorFn = defaultSimulateActor,
+): ToolDefinition {
+  return {
+    name: "simulate_actor",
+    description:
+      "Simula el comportamiento de un actor del mercado (comprador, " +
+      "proveedor o competidor) para evaluar una decisión",
+    parameters: {
+      type: "object",
+      properties: {
+        actorType: {
+          type: "string",
+          enum: [...VALID_ACTOR_TYPES],
+          description:
+            "Tipo de actor a simular: comprador, proveedor o competidor.",
+        },
+        query: {
+          type: "string",
+          description:
+            "La pregunta o situación a evaluar desde la perspectiva del actor. " +
+            "Ej: '¿Comprarías este producto a $15.000?' o " +
+            "'¿Cómo reaccionarías si bajo el precio un 10%?'.",
+        },
+      },
+      required: ["actorType", "query"],
+    },
+    execute: async (
+      args: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> => {
+      const actorType = args.actorType as string;
+      const query = (args.query as string) ?? "";
+
+      // Validate actorType at the tool boundary.
+      if (!VALID_ACTOR_TYPES.includes(actorType)) {
+        return {
+          error:
+            `Tipo de actor "${actorType}" no válido. ` +
+            `Tipos válidos: ${VALID_ACTOR_TYPES.join(", ")}.`,
+        };
+      }
+
+      // Validate query is non-empty after trimming.
+      if (!query.trim()) {
+        return {
+          error:
+            "El parámetro 'query' es obligatorio y no puede estar vacío.",
+        };
+      }
+
+      const result: SimulationResult = await simulator(
+        actorType as ActorType,
+        query,
+      );
+
+      return result as unknown as Record<string, unknown>;
     },
   };
 }

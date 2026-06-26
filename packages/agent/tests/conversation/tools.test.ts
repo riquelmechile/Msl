@@ -5,8 +5,10 @@ import { GraphEngine, createGraphEngine } from "@msl/memory";
 import {
   createGetBusinessContextTool,
   createPrepareActionTool,
+  createSimulateActorTool,
 } from "../../src/conversation/tools.js";
 import type { ToolDefinition } from "../../src/conversation/tools.js";
+import { simulateActor } from "../../src/conversation/actorSimulator.js";
 
 describe("createGetBusinessContextTool", () => {
   let engine: GraphEngine;
@@ -179,5 +181,125 @@ describe("createPrepareActionTool", () => {
     // Should be roughly 24h (allow some slack for test execution time).
     expect(diffMs).toBeGreaterThan(23 * 60 * 60 * 1000);
     expect(diffMs).toBeLessThan(25 * 60 * 60 * 1000);
+  });
+});
+
+// ── createSimulateActorTool ─────────────────────────────────────────
+
+describe("createSimulateActorTool", () => {
+  let tool: ToolDefinition;
+
+  beforeEach(() => {
+    tool = createSimulateActorTool(simulateActor);
+  });
+
+  it("has correct name and description", () => {
+    expect(tool.name).toBe("simulate_actor");
+    expect(tool.description).toMatch(/simula el comportamiento/i);
+  });
+
+  it("has valid parameters schema with required fields", () => {
+    const params = tool.parameters as Record<string, unknown>;
+    expect(params.type).toBe("object");
+
+    const props = params.properties as Record<string, unknown>;
+    expect(props).toHaveProperty("actorType");
+    expect(props).toHaveProperty("query");
+
+    const required = params.required as string[];
+    expect(required).toContain("actorType");
+    expect(required).toContain("query");
+  });
+
+  it("has actorType enum with valid values", () => {
+    const params = tool.parameters as Record<string, unknown>;
+    const props = params.properties as Record<string, unknown>;
+    const actorTypeSchema = props.actorType as Record<string, unknown>;
+
+    expect(actorTypeSchema.type).toBe("string");
+    expect(actorTypeSchema.enum).toEqual([
+      "comprador",
+      "proveedor",
+      "competidor",
+    ]);
+  });
+
+  it("calls simulator and returns SimulationResult", async () => {
+    const result = await tool.execute({
+      actorType: "comprador",
+      query: "¿Comprarías a $15.000?",
+    });
+
+    expect(result).toHaveProperty("actorType", "comprador");
+    expect(result).toHaveProperty("recommendation");
+    expect(result).toHaveProperty("confidence", 0.85);
+    expect(result).toHaveProperty("simulationId");
+    expect(result).toHaveProperty("rationale");
+    expect((result as Record<string, unknown>).simulationId).toMatch(
+      /^sim-/,
+    );
+  });
+
+  it("returns error for invalid actorType", async () => {
+    const result = await tool.execute({
+      actorType: "desconocido",
+      query: "test query",
+    });
+
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(
+      /no válido/i,
+    );
+  });
+
+  it("returns error for empty query", async () => {
+    const result = await tool.execute({
+      actorType: "comprador",
+      query: "",
+    });
+
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(
+      /obligatorio|vacío/i,
+    );
+  });
+
+  it("returns error for missing query", async () => {
+    const result = await tool.execute({
+      actorType: "proveedor",
+    });
+
+    expect(result).toHaveProperty("error");
+    expect((result as Record<string, unknown>).error).toMatch(
+      /obligatorio|vacío/i,
+    );
+  });
+
+  it("returns proveedor SimulationResult for valid call", async () => {
+    const result = await tool.execute({
+      actorType: "proveedor",
+      query: "¿Tenés stock para 100 unidades?",
+    });
+
+    expect(result).toHaveProperty("actorType", "proveedor");
+    expect(result).toHaveProperty("recommendation");
+    expect(result).toHaveProperty("confidence", 0.85);
+    expect((result as Record<string, unknown>).recommendation).toMatch(
+      /proveedor/i,
+    );
+  });
+
+  it("returns competidor SimulationResult for valid call", async () => {
+    const result = await tool.execute({
+      actorType: "competidor",
+      query: "¿Cómo reaccionarías si bajo precios?",
+    });
+
+    expect(result).toHaveProperty("actorType", "competidor");
+    expect(result).toHaveProperty("recommendation");
+    expect(result).toHaveProperty("confidence", 0.85);
+    expect((result as Record<string, unknown>).recommendation).toMatch(
+      /competidor/i,
+    );
   });
 });

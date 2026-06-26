@@ -35,10 +35,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Core — ActorSimulator & simulate_actor Tool
 
-- [ ] 2.1 Create `packages/agent/src/conversation/actorSimulator.ts` with 3 persona prompts and `simulateActor(name, query)` function
-- [ ] 2.2 Add `createSimulateActorTool(engine)` to `packages/agent/src/conversation/tools.ts` following ToolDefinition pattern
-- [ ] 2.3 Write unit tests for actorSimulator: valid/invalid actor name, empty query, prompt structure
-- [ ] 2.4 Write unit tests for createSimulateActorTool: validation errors, execution with mock engine
+- [x] 2.1 Create `packages/agent/src/conversation/actorSimulator.ts` with 3 persona prompts and `simulateActor(name, query)` function
+- [x] 2.2 Add `createSimulateActorTool(engine)` to `packages/agent/src/conversation/tools.ts` following ToolDefinition pattern
+- [x] 2.3 Write unit tests for actorSimulator: valid/invalid actor name, empty query, prompt structure
+- [x] 2.4 Write unit tests for createSimulateActorTool: validation errors, execution with mock engine
 
 ## Phase 3: Integration — Agent Loop, System Prompt & Guardrails
 
