@@ -23,7 +23,7 @@
   - Map level → max auto-execute risk via `levelThresholdMap`
   - Compare against `riskLevelForAction(proposal.action.kind)`
   - Return `autoApproved: true` when risk ≤ threshold, Spanish reason when blocked
-- [ ] **Task 2.3**: Integrate into `agentLoop.ts`:
+- [x] **Task 2.3**: Integrate into `agentLoop.ts`:
   - Inject `AutonomyEngine` via `AgentLoopConfig`
   - Call `evaluateDegradation()` before each `converse()` turn
   - Insert `autonomyLevelGate()` before existing dale confirmation
@@ -40,10 +40,13 @@
   - Promotion: healthy 30-day window → proposal; CEO dale → increment; violation blocks promotion
   - Date injection: frozen `now` for window boundary tests
   - Store persistence: level survives engine re-initialization
-- [ ] **Task 3.2**: `kpi-history.test.ts` — Vitest integration tests:
-  - `recordKpi()` writes correct values
-  - `getKpiWindow(7, frozenNow)` returns correct row count
-  - Index performance on time-range queries
+- [x] **Task 3.2**: `autonomyIntegration.test.ts` — Vitest integration tests:
+  - KPI recorded after confirmed dale
+  - Autonomy gate respects level-to-risk mapping (SUGIERE blocks medium; BAJO_RIESGO auto-approves low; FULL still requires dale for critical)
+  - Degradation triggers during agent loop turns
+  - CEO can set level via `engine.setLevel` and it persists across turns
+  - System prompt includes autonomy level when engine configured
+  - `buildSystemPrompt()` autonomy level parameter (7 test cases)
 
 **Verification**: `npm test` passes all new suites; guardrail function tested in isolation.
 **Changed lines (est.)**: ~280

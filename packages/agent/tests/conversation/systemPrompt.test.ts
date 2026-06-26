@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildSystemPrompt } from "../../src/conversation/systemPrompt.js";
+import { AutonomyLevel } from "../../src/conversation/types.js";
 import type { Strategy } from "../../src/conversation/types.js";
 
 function makeStrategy(overrides: Partial<Strategy> = {}): Strategy {
@@ -149,5 +150,80 @@ describe("buildSystemPrompt — CEO strategies injection", () => {
     // The with-strategies prompt should contain everything the base has, plus the CEO block.
     expect(withStrats).toContain(base);
     expect(withStrats.length).toBeGreaterThan(base.length);
+  });
+});
+
+describe("buildSystemPrompt — autonomy level injection", () => {
+  const sellerName = "Juan";
+
+  it("omits autonomy section when autonomyLevel is undefined", () => {
+    const prompt = buildSystemPrompt(sellerName);
+    expect(prompt).not.toContain("Nivel de Autonomía Actual");
+  });
+
+  it("includes CONSULTA level with correct description", () => {
+    const prompt = buildSystemPrompt(sellerName, undefined, undefined, AutonomyLevel.CONSULTA);
+
+    expect(prompt).toContain("## Nivel de Autonomía Actual: CONSULTA (0)");
+    expect(prompt).toContain("Solo respondés preguntas");
+    expect(prompt).toContain("No podés ejecutar acciones");
+  });
+
+  it("includes SUGIERE level with correct description", () => {
+    const prompt = buildSystemPrompt(sellerName, undefined, undefined, AutonomyLevel.SUGIERE);
+
+    expect(prompt).toContain("## Nivel de Autonomía Actual: SUGIERE (1)");
+    expect(prompt).toContain("SIEMPRE requerís confirmación explícita");
+    expect(prompt).toContain("Nunca auto-ejecutés");
+  });
+
+  it("includes BAJO_RIESGO level with correct description", () => {
+    const prompt = buildSystemPrompt(sellerName, undefined, undefined, AutonomyLevel.BAJO_RIESGO);
+
+    expect(prompt).toContain("## Nivel de Autonomía Actual: BAJO_RIESGO (3)");
+    expect(prompt).toContain("acciones de bajo riesgo sin \"dale\"");
+  });
+
+  it("includes FULL level with correct description", () => {
+    const prompt = buildSystemPrompt(sellerName, undefined, undefined, AutonomyLevel.FULL);
+
+    expect(prompt).toContain("## Nivel de Autonomía Actual: FULL (5)");
+    expect(prompt).toContain("Notificás después de ejecutar");
+  });
+
+  it("combines autonomy level with CEO strategies", () => {
+    const strategies: Strategy[] = [
+      makeStrategy({ ruleType: "margin", ruleText: "margen mínimo 50%" }),
+    ];
+    const prompt = buildSystemPrompt(sellerName, strategies, undefined, AutonomyLevel.BAJO_RIESGO);
+
+    expect(prompt).toContain("## Nivel de Autonomía Actual: BAJO_RIESGO (3)");
+    expect(prompt).toContain("## Estrategias del CEO");
+    expect(prompt).toContain("[margin] margen mínimo 50%");
+  });
+
+  it("combines autonomy level with actor profiles", () => {
+    const prompt = buildSystemPrompt(sellerName, undefined, true, AutonomyLevel.MEDIO_RIESGO);
+
+    expect(prompt).toContain("## Nivel de Autonomía Actual: MEDIO_RIESGO (4)");
+    expect(prompt).toContain("## Actores del Mercado");
+    expect(prompt).toContain("simulate_actor");
+  });
+
+  it("accepts autonomyLevel as the 4th positional argument", () => {
+    // Verify the function signature works with all 4 arguments.
+    const strategies: Strategy[] = [
+      makeStrategy({ ruleType: "stock", ruleText: "priorizo stock" }),
+    ];
+    const prompt = buildSystemPrompt(
+      sellerName,
+      strategies,
+      true,
+      AutonomyLevel.FULL,
+    );
+
+    expect(prompt).toContain("FULL (5)");
+    expect(prompt).toContain("Estrategias del CEO");
+    expect(prompt).toContain("Actores del Mercado");
   });
 });

@@ -1,4 +1,5 @@
 import type { Strategy } from "./types.js";
+import { AutonomyLevel } from "./types.js";
 
 /**
  * Builds Block A of the 3-block prefix-anchored cache strategy.
@@ -14,12 +15,16 @@ import type { Strategy } from "./types.js";
  *                   section is omitted entirely.
  * @param actorProfiles Optional flag to include the `## Actores del Mercado`
  *                      section that teaches the LLM how to use `simulate_actor`.
+ * @param autonomyLevel Optional current autonomy level (0-5). When provided,
+ *                      appends a `## Nivel de Autonomía Actual` section that
+ *                      informs the LLM about auto-execution permissions.
  * @returns The complete system prompt as a single Spanish string.
  */
 export function buildSystemPrompt(
   sellerName: string,
   strategies?: Strategy[],
   actorProfiles?: boolean,
+  autonomyLevel?: AutonomyLevel,
 ): string {
   const base = `Eres un asistente de negocio con IA para ${sellerName}, que administra la tienda Plasticov/Maustian en MercadoLibre Chile.
 
@@ -73,6 +78,51 @@ Podés consultar actores del mercado para simular decisiones:
 - \`proveedor\`: simula comportamiento de proveedores mayoristas
 - \`competidor\`: simula reacciones de competidores
 Usá la herramienta \`simulate_actor\` cuando necesités evaluar una decisión desde la perspectiva de otro actor.`;
+  }
+
+  // Inject autonomy level section when provided.
+  if (autonomyLevel !== undefined) {
+    const name = AutonomyLevel[autonomyLevel] ?? "DESCONOCIDO";
+
+    let levelDesc: string;
+    switch (autonomyLevel) {
+      case AutonomyLevel.CONSULTA:
+        levelDesc =
+          "Solo respondés preguntas. No podés ejecutar acciones bajo ninguna circunstancia.";
+        break;
+      case AutonomyLevel.SUGIERE:
+        levelDesc =
+          "Proponés acciones pero SIEMPRE requerís confirmación explícita (\"dale\"). " +
+          "Nunca auto-ejecutés.";
+        break;
+      case AutonomyLevel.PREPARA:
+        levelDesc =
+          "Proponés acciones con detalles pre-llenados. Requerís \"dale\" para ejecutar.";
+        break;
+      case AutonomyLevel.BAJO_RIESGO:
+        levelDesc =
+          "Podés auto-ejecutar acciones de bajo riesgo sin \"dale\". " +
+          "Acciones de medio y alto riesgo requieren confirmación.";
+        break;
+      case AutonomyLevel.MEDIO_RIESGO:
+        levelDesc =
+          "Podés auto-ejecutar acciones de bajo y medio riesgo sin \"dale\". " +
+          "Solo acciones de alto riesgo requieren confirmación.";
+        break;
+      case AutonomyLevel.FULL:
+        levelDesc =
+          "Podés auto-ejecutar todas las acciones salvo las de riesgo crítico. " +
+          "Notificás después de ejecutar.";
+        break;
+      default:
+        levelDesc = "";
+        break;
+    }
+
+    prompt = `${prompt}
+
+## Nivel de Autonomía Actual: ${name} (${autonomyLevel})
+Actualmente te encuentro en nivel ${name}. ${levelDesc}`;
   }
 
   return prompt;

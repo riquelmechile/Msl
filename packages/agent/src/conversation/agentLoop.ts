@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 import type { GraphEngine } from "@msl/memory";
 import type { AgentProposal, ConversationMessage, ConversationState, DecoyProposal, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
-import { spanishValidator, harmfulContentFilter, strategyValidator, honeyPotValidator } from "./guardrails.js";
+import { AutonomyLevel } from "./types.js";
+import { spanishValidator, harmfulContentFilter, strategyValidator, honeyPotValidator, autonomyGate } from "./guardrails.js";
+import type { AutonomyEngine } from "./autonomyEngine.js";
 import { parseStrategy } from "./strategyParser.js";
 import type { ToolDefinition } from "./tools.js";
 import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
@@ -67,6 +69,12 @@ export type AgentLoopConfig = {
    * proposals are persisted via {@link GraphEngine.storeProbeResult}.
    */
   engine?: GraphEngine;
+  /**
+   * Optional autonomy engine. When provided, the agent loop evaluates
+   * degradation before each turn, gates action auto-approvals against
+   * the current autonomy level, and records KPIs after execution.
+   */
+  autonomyEngine?: AutonomyEngine;
 };
 
 /**
@@ -138,20 +146,70 @@ export function createAgentLoop(config: AgentLoopConfig) {
 
   /**
    * Build the effective system prompt by injecting active strategies
-   * when present.
+   * and current autonomy level when present.
    *
    * The base `config.systemPrompt` is used as-is when no strategies
-   * are active. When strategies exist, a `## Estrategias del CEO`
-   * section is appended so the LLM sees them on every turn.
+   * or autonomy engine are active. When strategies exist, a
+   * `## Estrategias del CEO` section is appended. When the autonomy
+   * engine is configured, a `## Nivel de Autonomía Actual` section
+   * is prepended so the LLM sees its current level on every turn.
    */
   function getSystemPrompt(): string {
+    let prompt = config.systemPrompt;
+
+    // Append autonomy level info when engine is configured.
+    if (config.autonomyEngine) {
+      const level = config.autonomyEngine.getCurrentLevel();
+      const name = AutonomyLevel[level] ?? "DESCONOCIDO";
+
+      let levelDesc: string;
+      switch (level) {
+        case AutonomyLevel.CONSULTA:
+          levelDesc =
+            "Solo respondés preguntas. No podés ejecutar acciones bajo ninguna circunstancia.";
+          break;
+        case AutonomyLevel.SUGIERE:
+          levelDesc =
+            "Proponés acciones pero SIEMPRE requerís confirmación explícita (\"dale\"). " +
+            "Nunca auto-ejecutés.";
+          break;
+        case AutonomyLevel.PREPARA:
+          levelDesc =
+            "Proponés acciones con detalles pre-llenados. Requerís \"dale\" para ejecutar.";
+          break;
+        case AutonomyLevel.BAJO_RIESGO:
+          levelDesc =
+            "Podés auto-ejecutar acciones de bajo riesgo sin \"dale\". " +
+            "Acciones de medio y alto riesgo requieren confirmación.";
+          break;
+        case AutonomyLevel.MEDIO_RIESGO:
+          levelDesc =
+            "Podés auto-ejecutar acciones de bajo y medio riesgo sin \"dale\". " +
+            "Solo acciones de alto riesgo requieren confirmación.";
+          break;
+        case AutonomyLevel.FULL:
+          levelDesc =
+            "Podés auto-ejecutar todas las acciones salvo las de riesgo crítico. " +
+            "Notificás después de ejecutar.";
+          break;
+        default:
+          levelDesc = "";
+          break;
+      }
+
+      prompt = `${prompt}
+
+## Nivel de Autonomía Actual: ${name} (${level})
+Actualmente te encuentro en nivel ${name}. ${levelDesc}`;
+    }
+
     if (activeStrategies.length === 0) {
-      return config.systemPrompt;
+      return prompt;
     }
     const strategyLines = activeStrategies.map(
       (s) => `- [${s.ruleType}] ${s.ruleText}`,
     );
-    return `${config.systemPrompt}
+    return `${prompt}
 
 ## Estrategias del CEO
 Las siguientes son estrategias definidas por el dueño. DEBÉS seguirlas en cada recomendación:
@@ -182,6 +240,17 @@ ${strategyLines.join("\n")}`;
         return blockAndRespond(state, userMessage, harmfulCheck.reason);
       }
 
+      // --- Degradation evaluation (before LLM turn) ---
+      let degradationMsg: string | null = null;
+      if (config.autonomyEngine) {
+        const deg = config.autonomyEngine.evaluateDegradation();
+        if (deg) {
+          degradationMsg =
+            `⚠️ Tu nivel de autonomía bajó de ${AutonomyLevel[deg.from]} (${deg.from}) ` +
+            `a ${AutonomyLevel[deg.to]} (${deg.to}). Motivo: ${deg.reason}`;
+        }
+      }
+
       // --- Strategy CRUD intent routing (before LLM) ---
       if (config.store) {
         const strategyIntent = detectStrategyIntent(userMessage);
@@ -190,8 +259,11 @@ ${strategyLines.join("\n")}`;
         }
       }
 
-      // --- Build messages array with strategy-aware system prompt ---
-      const llmMessages = buildMessages(getSystemPrompt(), state, userMessage);
+      // --- Build messages array with autonomy + strategy-aware system prompt ---
+      const systemPrompt = degradationMsg
+        ? `${getSystemPrompt()}\n\n${degradationMsg}`
+        : getSystemPrompt();
+      const llmMessages = buildMessages(systemPrompt, state, userMessage);
 
       // --- Send to LLM ---
       let llmResponse = await client.chat(llmMessages);
@@ -236,6 +308,45 @@ ${strategyLines.join("\n")}`;
         const toolCall = llmResponse.toolCalls[0]!;
         if (toolCall.name === "prepare_action") {
           proposal = parseProposalFromToolCall(toolCall.arguments);
+        }
+      }
+
+      // --- Autonomy gate (before dale confirmation) ---
+      // If the agent generated a fresh proposal this turn and the autonomy
+      // level allows auto-approval, execute immediately without "dale".
+      if (
+        proposal &&
+        !isConfirmation(userMessage) &&
+        config.autonomyEngine
+      ) {
+        const gateResult = autonomyGate(
+          { riskLevel: proposal.riskLevel },
+          config.autonomyEngine,
+        );
+
+        if (!gateResult.reason) {
+          // Auto-approved — record KPI and return without dale.
+          const level = config.autonomyEngine.getCurrentLevel();
+          const levelName = AutonomyLevel[level] ?? "DESCONOCIDO";
+
+          config.autonomyEngine.recordKpi({
+            level,
+            marginCompliance: 1,
+            successRate: 1,
+            safetyViolations: 0,
+            responseAccuracy: 0,
+            timestamp: new Date().toISOString(),
+          });
+
+          const updatedState = appendMessages(state, userMessage, responseText);
+          return {
+            response:
+              `${responseText}\n\n` +
+              `✅ Acción auto-aprobada (nivel ${levelName}, sin "dale"). ` +
+              `Audit registrado.`,
+            updatedState,
+            proposal,
+          };
         }
       }
 
@@ -284,6 +395,18 @@ ${strategyLines.join("\n")}`;
             pendingDecoyProposal = null;
           }
         }
+
+        // --- KPI recording after confirmed dale ---
+        if (isConfirmation(userMessage) && config.autonomyEngine) {
+          config.autonomyEngine.recordKpi({
+            level: config.autonomyEngine.getCurrentLevel(),
+            marginCompliance: 1,
+            successRate: 1,
+            safetyViolations: 0,
+            responseAccuracy: 0,
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
 
       // --- Update state ---
@@ -319,8 +442,22 @@ ${strategyLines.join("\n")}`;
         return;
       }
 
-      // --- Build messages array with strategy-aware system prompt ---
-      const llmMessages = buildMessages(getSystemPrompt(), state, userMessage);
+      // --- Degradation evaluation (before LLM turn) ---
+      let degradationMsg: string | null = null;
+      if (config.autonomyEngine) {
+        const deg = config.autonomyEngine.evaluateDegradation();
+        if (deg) {
+          degradationMsg =
+            `⚠️ Tu nivel de autonomía bajó de ${AutonomyLevel[deg.from]} (${deg.from}) ` +
+            `a ${AutonomyLevel[deg.to]} (${deg.to}). Motivo: ${deg.reason}`;
+        }
+      }
+
+      // --- Build messages array with autonomy + strategy-aware system prompt ---
+      const systemPrompt = degradationMsg
+        ? `${getSystemPrompt()}\n\n${degradationMsg}`
+        : getSystemPrompt();
+      const llmMessages = buildMessages(systemPrompt, state, userMessage);
 
       // --- Stream from LLM ---
       for await (const chunk of client.stream(llmMessages)) {

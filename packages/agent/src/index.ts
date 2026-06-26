@@ -23,6 +23,9 @@ export type {
   ProbeOutcome,
 } from "./conversation/types.js";
 
+export { AutonomyLevel } from "./conversation/types.js";
+export type { KpiSnapshot, DegradationEvent } from "./conversation/types.js";
+
 export type { ConverseResult, AgentLoopConfig, LlmClient } from "./conversation/agentLoop.js";
 export { createAgentLoop } from "./conversation/agentLoop.js";
 
@@ -33,10 +36,14 @@ export {
   actionSafetyValidator,
   strategyValidator,
   honeyPotValidator,
+  autonomyGate,
 } from "./conversation/guardrails.js";
 
 export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
 export { createStrategyStore } from "./conversation/strategyStore.js";
+
+export { createAutonomyEngine } from "./conversation/autonomyEngine.js";
+export type { AutonomyEngine } from "./conversation/autonomyEngine.js";
 
 // ── Tools (function-calling) ────────────────────────────────────────
 export type { ToolDefinition } from "./conversation/tools.js";
