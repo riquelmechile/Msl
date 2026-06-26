@@ -24,6 +24,35 @@ export function DemoConsole({ demo }: DemoConsoleProps) {
         </p>
       </header>
 
+      {/* ── Conversational agent banner ─────────────────────────── */}
+      <section className="card wide conversation-banner" aria-labelledby="conv-banner-title">
+        <div className="conv-banner-content">
+          <div>
+            <h2 id="conv-banner-title">💬 Agente Conversacional — Plasticov AI</h2>
+            <p>
+              Probá el nuevo asistente conversacional con las 7 fases del stack completo:{" "}
+              <strong>Cortex</strong> (memoria y grafos), <strong>estrategias del CEO</strong>,{" "}
+              <strong>actores del mercado</strong> (comprador, proveedor, competidor),{" "}
+              <strong>motor de autonomía</strong> (5 niveles), contrainteligencia y más.
+            </p>
+            <ul className="conv-capabilities">
+              <li>🧠 Memoria Cortex con grafos y aprendizaje Hebbiano</li>
+              <li>📐 Estrategias del CEO inyectadas en cada respuesta</li>
+              <li>🛒 Simulación de actores: comprador, proveedor, competidor</li>
+              <li>🔒 5 niveles de autonomía (CONSULTA → FULL)</li>
+              <li>🕵️ Detección de contrainteligencia y honey-pots</li>
+              <li>⚡ Preparación de acciones con confirmación &ldquo;dale&rdquo;</li>
+              <li>📊 KPI tracking y degradación automática de autonomía</li>
+            </ul>
+          </div>
+          <div className="conv-banner-action">
+            <a href="/conversation" className="conv-banner-link">
+              Ir al chat →
+            </a>
+          </div>
+        </div>
+      </section>
+
       <section className="grid" aria-label="Panel principal del agente">
         <article className="card" aria-labelledby="chat-title">
           <h2 id="chat-title">Chat de negocio</h2>

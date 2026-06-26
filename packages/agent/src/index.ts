@@ -26,8 +26,9 @@ export type {
 export { AutonomyLevel } from "./conversation/types.js";
 export type { KpiSnapshot, DegradationEvent } from "./conversation/types.js";
 
-export type { ConverseResult, AgentLoopConfig, LlmClient } from "./conversation/agentLoop.js";
+export type { ConverseResult, AgentLoopConfig, LlmClient, StrategyStore } from "./conversation/agentLoop.js";
 export { createAgentLoop } from "./conversation/agentLoop.js";
+export { buildSystemPrompt } from "./conversation/systemPrompt.js";
 
 export type { GuardResult } from "./conversation/guardrails.js";
 export {
