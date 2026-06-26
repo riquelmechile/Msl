@@ -69,3 +69,24 @@ export class NodeNotFoundError extends Error {
     this.name = "NodeNotFoundError";
   }
 }
+
+// ── Actor Models ──────────────────────────────────────────────────
+
+export type ActorType = "comprador" | "proveedor" | "competidor";
+
+export interface SimulationResult {
+  actorType: ActorType;
+  recommendation: string;
+  confidence: number;
+  rationale: string;
+  simulationId: string;
+}
+
+/** Cortex graph node tagged as an actor persona profile. */
+export type ActorProfileNode = GraphNode & {
+  metadata: {
+    type: "actor_profile";
+    persona: ActorType;
+    traits: Record<string, unknown>;
+  };
+};

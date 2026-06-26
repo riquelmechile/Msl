@@ -2,9 +2,11 @@ import Database from "better-sqlite3";
 
 import type {
   ActivationSnapshot,
+  ActorType,
   ConvergenceResult,
   GraphEdge,
   GraphNode,
+  SimulationResult,
   SpreadingOptions,
   TraversalResult,
 } from "./types.js";
@@ -388,5 +390,99 @@ export class GraphEngine {
       lessons,
       context,
     };
+  }
+
+  /**
+   * Seed actor persona nodes in the Cortex graph.
+   *
+   * Creates or updates one node per actor type with activation 0.5 and
+   * actor-profile metadata. Idempotent — re-seeding updates existing nodes
+   * rather than duplicating them.
+   *
+   * @returns the node IDs (created or existing).
+   */
+  seedActorNodes(
+    profiles: Array<{ actorType: ActorType; traits: Record<string, unknown> }>,
+  ): number[] {
+    const ids: number[] = [];
+
+    for (const profile of profiles) {
+      const metadata = JSON.stringify({
+        type: "actor_profile",
+        persona: profile.actorType,
+        traits: profile.traits,
+      });
+
+      // Look for an existing actor node by persona tag in metadata
+      const existing = this.db
+        .prepare("SELECT id FROM nodes WHERE metadata LIKE ?")
+        .get(`%"persona":"${profile.actorType}"%`) as { id: number } | undefined;
+
+      if (existing) {
+        this.db
+          .prepare("UPDATE nodes SET activation = 0.5, metadata = ? WHERE id = ?")
+          .run(metadata, existing.id);
+        ids.push(existing.id);
+      } else {
+        const result = this.db
+          .prepare(
+            "INSERT INTO nodes (label, activation, metadata) VALUES (?, 0.5, ?)",
+          )
+          .run(`actor_${profile.actorType}`, metadata);
+        ids.push(Number(result.lastInsertRowid));
+      }
+    }
+
+    return ids;
+  }
+
+  /**
+   * Retrieve an actor persona node by type.
+   */
+  getActorNode(actorType: ActorType): GraphNode | null {
+    const row = this.db
+      .prepare(
+        "SELECT id, label, activation, metadata FROM nodes WHERE metadata LIKE ?",
+      )
+      .get(`%"persona":"${actorType}"%`) as GraphNode | undefined;
+    return row ?? null;
+  }
+
+  /**
+   * Hebbian reinforcement or penalization on all edges sourced from
+   * the actor node.
+   *
+   * @param actorType — which actor persona to adjust.
+   * @param success — true strengthens edges (+0.1), false weakens them (−0.15).
+   */
+  reinforceActorOutcome(actorType: ActorType, success: boolean): void {
+    const actorNode = this.getActorNode(actorType);
+    if (!actorNode) return;
+
+    const delta = success ? 0.1 : -0.15;
+    this.db
+      .prepare(
+        `UPDATE edges SET weight = MAX(0.0, MIN(1.0, weight + ?)),
+                          last_activated = datetime('now')
+         WHERE source = ?`,
+      )
+      .run(delta, actorNode.id);
+  }
+
+  /**
+   * Persist a simulation consultation into the actor_simulations table.
+   *
+   * @returns the inserted row ID.
+   */
+  recordSimulation(
+    actorType: ActorType,
+    query: string,
+    result: SimulationResult,
+  ): number {
+    const stmt = this.db.prepare(
+      "INSERT INTO actor_simulations (actor_type, query, result) VALUES (?, ?, ?)",
+    );
+    const info = stmt.run(actorType, query, JSON.stringify(result));
+    return Number(info.lastInsertRowid);
   }
 }

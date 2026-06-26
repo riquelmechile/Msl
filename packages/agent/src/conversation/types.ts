@@ -118,3 +118,27 @@ export interface ParseResult {
   /** Aggregate confidence across all extracted rules (0.0-1.0). */
   confidence: number;
 }
+
+// ── Actor Models / Shadow Actors ──────────────────────────────────
+
+/** Counter-party actor types for market simulation. */
+export type ActorType = "comprador" | "proveedor" | "competidor";
+
+/** Structured result from an actor simulation. */
+export interface SimulationResult {
+  actorType: ActorType;
+  recommendation: string;
+  confidence: number;
+  rationale: string;
+  simulationId: string;
+}
+
+/** Persisted actor simulation row. */
+export interface ActorSimulationRecord {
+  id: number;
+  actorType: ActorType;
+  query: string;
+  /** JSON-serialized SimulationResult. */
+  result: string;
+  created_at: string;
+}

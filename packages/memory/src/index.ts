@@ -9,6 +9,7 @@ export {
 export { DuplicateEdgeError, NodeNotFoundError } from "./cortex/index.js";
 export type {
   ActivationSnapshot,
+  ActorProfileNode,
   ConvergenceResult,
   DarwinianLesson,
   GraphEdge,

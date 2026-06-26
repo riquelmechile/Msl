@@ -15,6 +15,9 @@ export type {
   ParseResult,
   RuleType,
   Strategy,
+  ActorType,
+  SimulationResult,
+  ActorSimulationRecord,
 } from "./conversation/types.js";
 
 export type { ConverseResult, AgentLoopConfig, LlmClient } from "./conversation/agentLoop.js";

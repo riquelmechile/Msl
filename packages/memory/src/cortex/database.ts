@@ -27,6 +27,14 @@ CREATE TABLE IF NOT EXISTS darwinian_lessons (
   archived_at TEXT NOT NULL,
   reason TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS actor_simulations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_type TEXT NOT NULL,
+  query TEXT NOT NULL,
+  result TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `;
 
 export function createDatabase(path = ":memory:"): Database.Database {

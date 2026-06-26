@@ -6,10 +6,13 @@ export {
 } from "./types.js";
 export type {
   ActivationSnapshot,
+  ActorProfileNode,
+  ActorType,
   ConvergenceResult,
   DarwinianLesson,
   GraphEdge,
   GraphNode,
+  SimulationResult,
   SpreadingOptions,
   TraversalResult,
 } from "./types.js";
