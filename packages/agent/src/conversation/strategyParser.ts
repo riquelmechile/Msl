@@ -6,8 +6,8 @@ import type { ParsedRule, ParseResult, RuleType } from "./types.js";
 // independently so multi-rule text ("margen 50% y priorizar +10 stock")
 // produces two ParsedRule entries with non-overlapping match ranges.
 
-/** "margen [mínimo|máximo|objetivo] N%" or "margen del N%" */
-const MARGIN_RE = /margen\s*(m[íi]nimo|m[áa]ximo|objetivo|del)?\s*(\d+)\s*%/gi;
+/** "margen [mínimo|máximo|objetivo] N%" or "margen del N%" or "margen a N%" */
+const MARGIN_RE = /margen\s*(m[íi]nimo|m[áa]ximo|objetivo|del)?\s*(?:a\s+)?(\d+)\s*%/gi;
 
 /** "N%+ margen" — reverse phrasing like "apunto a 50%+ margen" */
 const MARGIN_REVERSE_RE = /(\d+)\s*%\s*\+\s*margen/gi;

@@ -1,6 +1,9 @@
 import { describe, expect, it, afterEach, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 
 import { createAgentLoop, createDeepSeekClient } from "../../src/conversation/agentLoop.js";
+import { createStrategyStore } from "../../src/conversation/strategyStore.js";
+import { parseStrategy } from "../../src/conversation/strategyParser.js";
 import type { ConversationState, StreamingChunk } from "../../src/conversation/types.js";
 
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
@@ -380,5 +383,118 @@ describe("createAgentLoop — converseStream guardrails", () => {
     expect(chunks.length).toBeGreaterThanOrEqual(2);
     // First chunk should NOT be blocked.
     expect(chunks[0]!.delta).not.toMatch(/⛔|bloqueado/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Strategy CRUD intent routing
+// ---------------------------------------------------------------------------
+
+describe("createAgentLoop — strategy CRUD intent routing", () => {
+  let db: Database.Database;
+  let store: ReturnType<typeof createStrategyStore>;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    store = createStrategyStore(db);
+  });
+
+  function createAgent(overrides: { systemPrompt?: string; store?: ReturnType<typeof createStrategyStore> } = {}) {
+    return createAgentLoop({
+      systemPrompt: overrides.systemPrompt ?? systemPrompt,
+      mockClient: true,
+      store: overrides.store ?? store,
+    });
+  }
+
+  it("lists active strategies when user says 'listá mis estrategias'", async () => {
+    // Seed the store with two strategies.
+    const marginParsed = parseStrategy("margen mínimo 50%");
+    store.insertStrategy("margen mínimo 50%", marginParsed.rules[0]!, marginParsed.confidence);
+
+    const stockParsed = parseStrategy("priorizo +10 stock en electrónica");
+    store.insertStrategy("priorizo +10 stock en electrónica", stockParsed.rules[0]!, stockParsed.confidence);
+
+    const agent = createAgent();
+    const state = makeState();
+    const result = await agent.converse("listá mis estrategias", state);
+
+    expect(result.response).toMatch(/estrategias activas/i);
+    expect(result.response).toMatch(/margin.*margen/i);
+    expect(result.response).toMatch(/stock.*priorizo/i);
+    // Should NOT be a mock LLM response.
+    expect(result.response).not.toMatch(/podrías|podés|puedo|ayudarte/i);
+  });
+
+  it("lists active strategies when user says 'qué estrategias tengo activas'", async () => {
+    const parsed = parseStrategy("no competir en juguetes");
+    store.insertStrategy("no competir en juguetes", parsed.rules[0]!, parsed.confidence);
+
+    const agent = createAgent();
+    const state = makeState();
+    const result = await agent.converse("qué estrategias tengo activas", state);
+
+    expect(result.response).toMatch(/estrategias activas/i);
+    expect(result.response).toMatch(/category/);
+    expect(result.response).toMatch(/no competir en juguetes/);
+  });
+
+  it("updates a strategy when user says 'cambiá margen a 45%'", async () => {
+    // Seed an existing margin strategy.
+    const oldParsed = parseStrategy("margen mínimo 50%");
+    store.insertStrategy("margen mínimo 50%", oldParsed.rules[0]!, oldParsed.confidence);
+
+    const agent = createAgent();
+    const state = makeState();
+    const result = await agent.converse("cambiá margen a 45%", state);
+
+    expect(result.response).toMatch(/actualicé/i);
+    expect(result.response).toMatch(/45%/);
+    // The old strategy should be superseded.
+    const active = store.listActive();
+    expect(active).toHaveLength(1);
+    expect(active[0]!.ruleText).toMatch(/45%/);
+  });
+
+  it("archives a strategy when user says 'dejá de priorizar stock'", async () => {
+    // Seed a stock strategy.
+    const parsed = parseStrategy("priorizo +10 stock en electrónica");
+    store.insertStrategy("priorizo +10 stock en electrónica", parsed.rules[0]!, parsed.confidence);
+
+    const agent = createAgent();
+    const state = makeState();
+    const result = await agent.converse("dejá de priorizar stock", state);
+
+    expect(result.response).toMatch(/archivé/i);
+    expect(result.response).toMatch(/stock/);
+    // The strategy should now be archived.
+    const active = store.listActive();
+    expect(active).toHaveLength(0);
+  });
+
+  it("normal business question still goes to LLM (not hijacked)", async () => {
+    // Seed a strategy so the store is non-empty.
+    const parsed = parseStrategy("margen mínimo 50%");
+    store.insertStrategy("margen mínimo 50%", parsed.rules[0]!, parsed.confidence);
+
+    const agent = createAgent();
+    const state = makeState();
+
+    // "¿cómo están mis ventas?" — NOT a strategy management intent.
+    const result = await agent.converse("¿cómo están mis ventas?", state);
+
+    // Should get the mock LLM response (not a strategy list).
+    expect(result.response).not.toMatch(/estrategias activas/i);
+    expect(result.response).toMatch(/podrías|podés|puedo|ayudarte/i);
+  });
+
+  it("shows helpful message when listing and no strategies exist", async () => {
+    const agent = createAgent();
+    const state = makeState();
+    const result = await agent.converse("listá mis estrategias", state);
+
+    expect(result.response).toMatch(/no tenés estrategias activas/i);
+    // Should offer guidance on creating one.
+    expect(result.response).toMatch(/margen|priorizar|stock/i);
   });
 });

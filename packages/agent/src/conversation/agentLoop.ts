@@ -1,7 +1,23 @@
 import OpenAI from "openai";
-import type { AgentProposal, ConversationMessage, ConversationState, Strategy, StreamingChunk } from "./types.js";
+import type { AgentProposal, ConversationMessage, ConversationState, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
 import { spanishValidator, harmfulContentFilter, strategyValidator } from "./guardrails.js";
 import { parseStrategy } from "./strategyParser.js";
+
+// ── Strategy Store Interface ─────────────────────────────────────────
+
+/**
+ * Minimal interface for the strategy persistence layer consumed by the
+ * agent loop's conversation intent routing.
+ *
+ * Matches the subset of {@link createStrategyStore} methods needed for
+ * list/update/archive operations from natural conversation.
+ */
+export interface StrategyStore {
+  listActive(): Strategy[];
+  insertStrategy(ruleText: string, parsedRule: ParsedRule, confidence: number): Strategy;
+  archiveStrategy(id: number): void;
+  supersedeStrategy(oldId: number, newId: number): void;
+}
 
 /**
  * The result of a single turn of the agent conversation loop.
@@ -30,6 +46,12 @@ export type AgentLoopConfig = {
    * against proposals. Pass empty array or omit for no strategies.
    */
   strategies?: Strategy[];
+  /**
+   * Optional strategy persistence store. When provided, the agent loop
+   * will detect and handle natural-language strategy management intents
+   * (list, update, archive) directly without sending them to the LLM.
+   */
+  store?: StrategyStore;
 };
 
 /**
@@ -120,6 +142,14 @@ ${strategyLines.join("\n")}`;
       const harmfulCheck = harmfulContentFilter(userMessage);
       if (!harmfulCheck.passed) {
         return blockAndRespond(state, userMessage, harmfulCheck.reason);
+      }
+
+      // --- Strategy CRUD intent routing (before LLM) ---
+      if (config.store) {
+        const strategyIntent = detectStrategyIntent(userMessage);
+        if (strategyIntent.intent !== "none") {
+          return handleStrategyCommand(strategyIntent, config.store, state, userMessage);
+        }
       }
 
       // --- Build messages array with strategy-aware system prompt ---
@@ -228,6 +258,208 @@ ${strategyLines.join("\n")}`;
       activeStrategies = [...activeStrategies, ...newStrategies];
       return parsed;
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Strategy CRUD intent routing
+// ---------------------------------------------------------------------------
+
+/**
+ * Outcome of detecting a strategy-management intent in a user message.
+ */
+type StrategyIntent =
+  | { intent: "list" }
+  | { intent: "update"; ruleType: RuleType; newValue: string }
+  | { intent: "archive"; ruleType: RuleType }
+  | { intent: "none" };
+
+/**
+ * Match Spanish natural-language phrases to strategy management intents.
+ *
+ * Uses regex patterns to detect CEO commands for listing, updating,
+ * and archiving strategies. Designed to catch voseo, tuteo, and
+ * infinitive forms common in Argentine and neutral Spanish.
+ *
+ * Only hijacks messages that contain clear strategy-management keywords
+ * (estrategia, regla, margen, stock, etc.) with imperative or intent verbs.
+ * Normal business questions (e.g. "¿cómo está mi margen?") pass through.
+ */
+function detectStrategyIntent(userMessage: string): StrategyIntent {
+  const lower = userMessage.toLowerCase().trim();
+
+  // ── List intents ───────────────────────────────────────────────
+  // "listá mis estrategias", "mostrame las reglas", "ver estrategias",
+  // "qué estrategias tengo", "qué estrategias hay activas"
+  if (
+    /(?:list[aá]|mostr[aá]|ver)\s+(?:mis\s+)?(?:estrategias?|reglas?)/i.test(lower) ||
+    /(?:estrategias?|reglas?)\s+(?:activas|qu[ée]\s+(?:tengo|hay))/i.test(lower) ||
+    /qu[ée]\s+(?:estrategias?|reglas?)\s+(?:tengo|hay|est[aá]n\s+activas)/i.test(lower)
+  ) {
+    return { intent: "list" };
+  }
+
+  // ── Archive intents ────────────────────────────────────────────
+  // "dejá de priorizar stock", "eliminá la estrategia de stock",
+  // "sacá la regla de margen", "no quiero más esa estrategia"
+  if (
+    /(?:dej[aá]|elimin[aá]|sac[aá]|quit[aá]|borr[aá]|archiv[aá]|no\s+(?:quiero|necesito|uso)\s+m[aá]s)(?:\s|$|[.,!?])/i.test(lower) &&
+    /estrategia|regla|prioriz|stock|margen|precio|categor/i.test(lower)
+  ) {
+    const ruleType = extractRuleTypeFromMessage(lower);
+    if (ruleType) return { intent: "archive", ruleType };
+  }
+
+  // ── Update intents ─────────────────────────────────────────────
+  // "cambiá margen a 45%", "actualizá la estrategia de margen",
+  // "modificá margen mínimo a 45%", "subí margen"
+  if (
+    /(?:cambi[aá]|actualiz[aá]|modific[aá]|sub[ií]|baj[aá]|aument[aá]|reduc[ií])(?:\s|$|[.,!?])/i.test(lower) &&
+    /margen|stock|precio|estrategia|regla|categor/i.test(lower)
+  ) {
+    const ruleType = extractRuleTypeFromMessage(lower);
+    if (ruleType) return { intent: "update", ruleType, newValue: userMessage };
+  }
+
+  return { intent: "none" };
+}
+
+/**
+ * Extract the business domain (RuleType) from a Spanish message.
+ *
+ * Scans for keywords associated with each rule category:
+ * margin ("margen"), stock ("stock"/"unidad"/"inventario"),
+ * category ("categoría"/"competir"/"enfocar"/"juguetes"),
+ * pricing ("precio"), customer ("cliente"/"responder"/"contestar"),
+ * competitive ("competencia"/"igualar"), priority ("prioridad"/"priorizar").
+ *
+ * @returns The inferred RuleType or `undefined` when no keyword matches.
+ */
+function extractRuleTypeFromMessage(lower: string): RuleType | undefined {
+  if (/\bmargen\b/i.test(lower)) return "margin";
+  if (/\bstock\b|\bunidad\b|\binventario\b/i.test(lower)) return "stock";
+  if (/\bcategor(?:[íi]a|ia)\b|\bcompetir\b|\benfoc(?:ar|ate|arse)\b|\bjuguetes\b/i.test(lower)) return "category";
+  if (/\bprecio\b/i.test(lower)) return "pricing";
+  if (/\bcliente\b|\bresponder\b|\bcontestar\b/i.test(lower)) return "customer";
+  if (/\bcompetencia\b|\bigualar\b/i.test(lower)) return "competitive";
+  if (/\bprioridad\b|\bprioriz/i.test(lower)) return "priority";
+  return undefined;
+}
+
+/**
+ * Execute a detected strategy-management command directly, bypassing the LLM.
+ *
+ * - **list**: Queries active strategies from the store and formats them.
+ * - **update**: Parses the new strategy text, inserts it, and supersedes
+ *   any existing strategy of the same {@link RuleType}.
+ * - **archive**: Finds the first active strategy matching the rule type
+ *   and marks it as archived.
+ */
+function handleStrategyCommand(
+  intent: StrategyIntent,
+  store: StrategyStore,
+  state: ConversationState,
+  userMessage: string,
+): ConverseResult {
+  // ── LIST ────────────────────────────────────────────────────────
+  if (intent.intent === "list") {
+    const strategies = store.listActive();
+
+    if (strategies.length === 0) {
+      const response =
+        "No tenés estrategias activas en este momento. " +
+        "¿Querés que te ayude a crear una? Podés decirme algo como " +
+        "\"margen mínimo 50%\" o \"priorizar +10 stock en electrónica\".";
+      return {
+        response,
+        updatedState: appendMessages(state, userMessage, response),
+      };
+    }
+
+    const lines = strategies.map(
+      (s) => `- [${s.ruleType}] ${s.ruleText}`,
+    );
+    const response =
+      `Acá están tus estrategias activas:\n\n${lines.join("\n")}\n\n` +
+      "¿Querés modificar o eliminar alguna?";
+    return {
+      response,
+      updatedState: appendMessages(state, userMessage, response),
+    };
+  }
+
+  // ── UPDATE ──────────────────────────────────────────────────────
+  if (intent.intent === "update") {
+    const parsed = parseStrategy(intent.newValue);
+
+    if (parsed.rules.length === 0) {
+      const response =
+        "No pude interpretar la nueva estrategia. ¿Podrías ser más " +
+        "específico? Por ejemplo: \"cambiá margen mínimo a 45%\".";
+      return {
+        response,
+        updatedState: appendMessages(state, userMessage, response),
+      };
+    }
+
+    const rule = { ...parsed.rules[0]!, ruleType: intent.ruleType };
+    const active = store.listActive();
+    const existing = active.find((s) => s.ruleType === intent.ruleType);
+
+    if (!existing) {
+      // No existing strategy of this type — create new one.
+      const created = store.insertStrategy(intent.newValue, rule, parsed.confidence);
+      const response =
+        `✅ Creé la nueva estrategia [${created.ruleType}] "${created.ruleText}".`;
+      return {
+        response,
+        updatedState: appendMessages(state, userMessage, response),
+      };
+    }
+
+    // Supersede: insert new, mark old as superseded.
+    const created = store.insertStrategy(intent.newValue, rule, parsed.confidence);
+    store.supersedeStrategy(existing.id, created.id);
+
+    const response =
+      `✅ Actualicé la estrategia de ${intent.ruleType}: ` +
+      `"${existing.ruleText}" → "${created.ruleText}".`;
+    return {
+      response,
+      updatedState: appendMessages(state, userMessage, response),
+    };
+  }
+
+  // ── ARCHIVE ─────────────────────────────────────────────────────
+  if (intent.intent === "archive") {
+    const active = store.listActive();
+    const target = active.find((s) => s.ruleType === intent.ruleType);
+
+    if (!target) {
+      const response =
+        `No encontré ninguna estrategia activa de tipo "${intent.ruleType}". ` +
+        "¿Querés que revise las estrategias que tenés?";
+      return {
+        response,
+        updatedState: appendMessages(state, userMessage, response),
+      };
+    }
+
+    store.archiveStrategy(target.id);
+    const response =
+      `✅ Archivé la estrategia [${target.ruleType}] "${target.ruleText}". ` +
+      "Ya no se aplicará en las recomendaciones.";
+    return {
+      response,
+      updatedState: appendMessages(state, userMessage, response),
+    };
+  }
+
+  // ── Fallback (should never reach here) ──────────────────────────
+  const fallback = "No entendí bien. ¿Querés listar, modificar o eliminar estrategias?";
+  return {
+    response: fallback,
+    updatedState: appendMessages(state, userMessage, fallback),
   };
 }
 
