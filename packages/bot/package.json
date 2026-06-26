@@ -1,0 +1,25 @@
+{
+  "name": "@msl/bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@msl/agent": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node-telegram-bot-api": "^0.64.0"
+  }
+}
