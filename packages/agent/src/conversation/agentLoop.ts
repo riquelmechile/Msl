@@ -11,6 +11,7 @@ import type { ToolDefinition } from "./tools.js";
 import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
 import { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from "./syncTools.js";
+import { createMetrics, type MetricsCollector } from "./observability.js";
 
 // ── Strategy Store Interface ─────────────────────────────────────────
 
@@ -97,6 +98,12 @@ export type AgentLoopConfig = {
    * Hebbian learning to the Cortex graph based on conversation outcomes.
    */
   escribano?: import("./escribano.js").EscribanoObserver;
+  /**
+   * Optional metrics collector. When provided, the agent loop records
+   * turn count, duration, tool calls, and guardrail blocks for
+   * observability (OpenTelemetry-ready).
+   */
+  metrics?: MetricsCollector;
 };
 
 /**
@@ -264,14 +271,20 @@ ${strategyLines.join("\n")}`;
       userMessage: string,
       state: ConversationState,
     ): Promise<ConverseResult> {
+      // --- Turn timing ---
+      const turnStart = Date.now();
+      const metrics = config.metrics;
+
       // --- Input guardrails ---
       const spanishCheck = spanishValidator(userMessage);
       if (!spanishCheck.passed) {
+        metrics?.record("guardrail.block", 1, { reason: "spanish" });
         return blockAndRespond(state, userMessage, spanishCheck.reason);
       }
 
       const harmfulCheck = harmfulContentFilter(userMessage);
       if (!harmfulCheck.passed) {
+        metrics?.record("guardrail.block", 1, { reason: "harmful" });
         return blockAndRespond(state, userMessage, harmfulCheck.reason);
       }
 
@@ -280,6 +293,7 @@ ${strategyLines.join("\n")}`;
       if (config.autonomyEngine) {
         const deg = config.autonomyEngine.evaluateDegradation();
         if (deg) {
+          metrics?.record("autonomy.degradation", 1, { from: String(deg.from), to: String(deg.to) });
           degradationMsg =
             `⚠️ Tu nivel de autonomía bajó de ${AutonomyLevel[deg.from]} (${deg.from}) ` +
             `a ${AutonomyLevel[deg.to]} (${deg.to}). Motivo: ${deg.reason}`;
@@ -330,12 +344,18 @@ ${strategyLines.join("\n")}`;
                 continue;
               }
 
+              if ((tc.name === "sync_product" || tc.name === "sync_all")) {
+                metrics?.record("sync.product", 1, { tool: tc.name });
+              }
+              metrics?.record("tool.call", 1, { name: tc.name });
+
               const result = await tool.execute(tc.arguments);
               llmMessages.push({
                 role: "tool",
                 content: JSON.stringify(result),
               });
             } catch {
+              metrics?.record("tool.call", 1, { name: tc.name, status: "error" });
               llmMessages.push({
                 role: "tool",
                 content: JSON.stringify({
@@ -500,7 +520,13 @@ ${strategyLines.join("\n")}`;
       if (config.escribano && config.engine) {
         const outcome = resolveTurnOutcome(userMessage, proposal, responseText);
         config.escribano.observeTurn(state, updatedState, responseText, proposal, outcome);
+        metrics?.record("escribano.observation", 1, { outcome });
       }
+
+      // --- Record turn metrics ---
+      const durationMs = Date.now() - turnStart;
+      metrics?.record("conversation.turn", 1);
+      metrics?.record("conversation.duration_ms", durationMs);
 
       return { response: responseText, updatedState, ...(proposal !== undefined ? { proposal } : {}) };
     },

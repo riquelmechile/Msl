@@ -522,12 +522,20 @@ export function createMlcApiClient(input: {
 const ML_API_BASE = "https://api.mercadolibre.com";
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 100;
-const MAX_DELAY_MS = 10_000;
+const MAX_DELAY_MS = 30_000;
 
 function shouldRetry(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+/**
+ * Fetch with exponential backoff + jitter for ML API rate limiting.
+ *
+ * Retries on HTTP 429 (rate-limited) and 5xx (server errors), with
+ * capped exponential delay plus uniform random jitter to avoid
+ * thundering-herd retry storms.  Network errors (connection refused,
+ * DNS failure) are also retried.
+ */
 async function fetchWithBackoff(
   url: string,
   init: RequestInit,
@@ -536,7 +544,11 @@ async function fetchWithBackoff(
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      const delay = Math.min(BASE_DELAY_MS * 2 ** (attempt - 1), MAX_DELAY_MS);
+      // Exponential backoff: 100, 200, 400, 800 ms capped at 30 s
+      // plus uniform jitter of ±50 % to prevent synchronised retries.
+      const base = Math.min(BASE_DELAY_MS * 2 ** (attempt - 1), MAX_DELAY_MS);
+      const jitter = base * 0.5 * Math.random(); // ±50 %
+      const delay = Math.round(base + jitter);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 

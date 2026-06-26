@@ -30,6 +30,16 @@ export type { ConverseResult, AgentLoopConfig, LlmClient, StrategyStore } from "
 export { createAgentLoop } from "./conversation/agentLoop.js";
 export { buildSystemPrompt } from "./conversation/systemPrompt.js";
 
+// ── Observability (metrics + structured logging) ──────────────────
+export {
+  createMetrics,
+  createLogger,
+  type MetricName,
+  type Metric,
+  type MetricsCollector,
+  type Logger,
+} from "./conversation/observability.js";
+
 export type { GuardResult } from "./conversation/guardrails.js";
 export {
   spanishValidator,
@@ -48,6 +58,9 @@ export type {
 
 export { parseStrategy, classifyRuleType } from "./conversation/strategyParser.js";
 export { createStrategyStore } from "./conversation/strategyStore.js";
+
+export { createSessionStore } from "./conversation/sessionStore.js";
+export type { SessionStore } from "./conversation/sessionStore.js";
 
 export { createAutonomyEngine } from "./conversation/autonomyEngine.js";
 export type { AutonomyEngine } from "./conversation/autonomyEngine.js";

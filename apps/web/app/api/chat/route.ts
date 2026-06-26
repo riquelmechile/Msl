@@ -11,6 +11,24 @@ import {
   type ParsedRule,
 } from "@msl/agent";
 
+// ── API Key Auth ─────────────────────────────────────────────────────
+
+const API_KEY = process.env.MSL_API_KEY;
+
+/**
+ * Validates the request's Authorization header against the configured API key.
+ *
+ * When `MSL_API_KEY` is not set, all requests are allowed (open mode).
+ * Otherwise the caller must provide `Authorization: Bearer <key>`.
+ */
+function validateAuth(request: Request): { authorized: boolean; error?: string } {
+  if (!API_KEY) return { authorized: true }; // no auth configured → open
+  const auth = request.headers.get("authorization");
+  if (!auth) return { authorized: false, error: "Missing Authorization header" };
+  if (auth !== `Bearer ${API_KEY}`) return { authorized: false, error: "Invalid API key" };
+  return { authorized: true };
+}
+
 // ── In-memory strategy store for the demo ──────────────────────────
 
 function createDemoStrategyStore(): StrategyStore {
@@ -152,6 +170,15 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
  * streams the response back as Server-Sent Events.
  */
 export async function POST(req: NextRequest) {
+  // Auth check (before rate limit — unauthorised clients shouldn't burn quota)
+  const auth = validateAuth(req);
+  if (!auth.authorized) {
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   // Rate-limit check
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??

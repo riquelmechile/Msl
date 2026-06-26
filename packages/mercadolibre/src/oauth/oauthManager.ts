@@ -6,6 +6,8 @@ export type OAuthManagerConfig = {
   clientSecret: string;
   redirectUri: string;
   dbPath?: string;
+  /** Called after every token refresh so consumers can record observability metrics. */
+  onTokenRefresh?: (sellerId: string) => void;
 };
 
 export type OAuthManager = {
@@ -120,6 +122,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
     if (stub) {
       const tokens = mockTokens(sellerId);
       store.saveToken(sellerId, tokens);
+      config.onTokenRefresh?.(sellerId);
       return tokens;
     }
 
@@ -153,6 +156,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
     };
 
     store.saveToken(sellerId, tokens);
+    config.onTokenRefresh?.(sellerId);
     return tokens;
   }
 
