@@ -228,6 +228,11 @@ describe("Token Store", () => {
     account_level: "premium" as const,
   };
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
   it("encrypts tokens at rest and decrypts on retrieval", () => {
     const store = createTokenStore();
     store.saveToken("seller-plasticov", sampleTokens);
@@ -348,6 +353,35 @@ describe("Token Store", () => {
     expect(stored!.access_token).toBe("APP_USR-real-encrypted-test");
     expect(stored!.refresh_token).toBe("TG-refresh-real-encrypted");
 
+    store.close();
+  });
+
+  it("fails closed in production when MSL_ENCRYPTION_KEY is missing", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MSL_ENCRYPTION_KEY", "");
+    vi.stubEnv("MSL_ALLOW_INSECURE_DEV_SECRETS", "");
+    vi.resetModules();
+    const { createTokenStore: createFreshTokenStore } = await import("./oauth/tokenStore.js");
+    const store = createFreshTokenStore();
+
+    expect(() => store.saveToken("seller-prod", sampleTokens)).toThrow(/MSL_ENCRYPTION_KEY/);
+
+    store.close();
+  });
+
+  it("allows the explicit insecure development escape hatch outside test", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MSL_ENCRYPTION_KEY", "");
+    vi.stubEnv("MSL_ALLOW_INSECURE_DEV_SECRETS", "true");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.resetModules();
+    const { createTokenStore: createFreshTokenStore } = await import("./oauth/tokenStore.js");
+    const store = createFreshTokenStore();
+
+    store.saveToken("seller-dev", sampleTokens);
+
+    expect(store.getToken("seller-dev")!.access_token).toBe(sampleTokens.access_token);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("insecure development key"));
     store.close();
   });
 });

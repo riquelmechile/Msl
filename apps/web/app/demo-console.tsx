@@ -28,7 +28,7 @@ export function DemoConsole({ demo }: DemoConsoleProps) {
       <section className="card wide conversation-banner" aria-labelledby="conv-banner-title">
         <div className="conv-banner-content">
           <div>
-            <h2 id="conv-banner-title">💬 Agente Conversacional — Plasticov AI</h2>
+            <h2 id="conv-banner-title">💬 Agente Conversacional — MSL AI</h2>
             <p>
               Probá el nuevo asistente conversacional con las 7 fases del stack completo:{" "}
               <strong>Cortex</strong> (memoria y grafos), <strong>estrategias del CEO</strong>,{" "}

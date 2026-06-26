@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <code>648 tests</code> ·
+  <code>659 tests</code> ·
   <code>TypeScript 5.8</code> ·
   <code>Node ≥22</code> ·
   <code>DeepSeek v4</code> ·
@@ -27,13 +27,13 @@ It understands your intent, proposes concrete actions, simulates buyer/seller/co
 git clone https://github.com/riquelmechile/Msl.git
 cd Msl
 npm install
-npm test          # 648 tests in 32 files
+npm test          # 659 tests in 33 files
 npm run dev       # http://127.0.0.1:3000
 ```
 
 > **Current demo boundary:** the Next.js `/api/chat` route is a deterministic demo path. It uses in-memory demo stores and `mockClient: true`; production chat persistence, auth, and real LLM wiring are still future work.
 
-> **Verification:** the current checked gate is `npm run typecheck`, `npm run lint`, `npm run format:check`, and `npm test`. `npm run build` remains part of the intended release gate, but it was not verified in the latest cleanup pass because it writes build artifacts.
+> **Verification:** CI and release readiness should keep the durable gates green: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, and `npm run build`.
 
 ## Environment secrets
 
@@ -79,7 +79,7 @@ Naming matters here: **MSL** is the project/app name; **ML** means MercadoLibre;
             ▼               ▼               ▼
  ┌────────────────┐  ┌──────────────┐  ┌─────────────────────┐
  │  @msl/memory   │  │  @msl/tools  │  │  @msl/mercadolibre   │
- │  Cortex (SQLite)│  │  Approval Q  │  │  ML API (OAuth+HTP)  │
+ │  Cortex (SQLite)│  │  Approval Q  │  │  ML API (OAuth+HTTP) │
  │  · Hebbian      │  │  Audit trail │  │  · Product sync      │
  │  · CTE spread   │  │  Risk gates  │  │  · Orders/messages   │
  │  · Darwinian    │  │  Execute     │  │  · Reputation        │
@@ -133,7 +133,7 @@ Naming matters here: **MSL** is the project/app name; **ML** means MercadoLibre;
 | **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction          |
 | **Bot**      | Telegram (stub)                              | Natural language interface, no UI needed                  |
 | **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Stubbed project tool surface for compatible clients       |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 648 tests, guarded platform support                       |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 659 tests, guarded platform support                       |
 | **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                              |
 
 ## Philosophy
@@ -156,7 +156,7 @@ Naming matters here: **MSL** is the project/app name; **ML** means MercadoLibre;
 ## Verification
 
 ```bash
-npm test              # 648 Vitest tests in 32 files (unit + integration)
+npm test              # 659 Vitest tests in 33 files (unit + integration)
 npm run test:e2e      # Playwright E2E (auto-skipped on unsupported platforms)
 npm run typecheck     # TypeScript strict mode — zero tolerance
 npm run lint          # ESLint with typed rules

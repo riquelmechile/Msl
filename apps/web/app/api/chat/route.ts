@@ -151,8 +151,8 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
  * Conversational agent chat endpoint.
  *
  * Accepts a user message and conversation history, runs it through the
- * full agent loop (Cortex, strategies, actors, autonomy engine), and
- * streams the response back as Server-Sent Events.
+ * demo agent loop with in-memory strategy/autonomy stores and mock LLM output,
+ * then streams the response back as Server-Sent Events.
  */
 export async function POST(req: NextRequest) {
   // Auth check (before rate limit — unauthorised clients shouldn't burn quota)

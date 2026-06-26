@@ -54,7 +54,7 @@ export default function ConversationPage() {
     {
       role: "assistant",
       content:
-        "¡Hola! Soy Plasticov AI, tu asistente de negocio para MercadoLibre Chile. " +
+        "¡Hola! Soy MSL AI, tu asistente de negocio para MercadoLibre Chile. " +
         "Preguntame sobre ventas, márgenes, reclamos, reputación, o cualquier cosa de tu tienda. " +
         "También puedo consultar actores del mercado (compradores, proveedores, competidores) " +
         "y aplicar las estrategias del CEO. ¿En qué te ayudo?",
@@ -248,9 +248,9 @@ export default function ConversationPage() {
       {/* Header */}
       <header className="chat-header">
         <div className="chat-header-left">
-          <div className="chat-avatar">P</div>
+          <div className="chat-avatar">M</div>
           <div>
-            <h1 className="chat-title">Plasticov AI</h1>
+            <h1 className="chat-title">MSL AI</h1>
             <p className="chat-subtitle">Asistente de Negocios · MercadoLibre Chile</p>
           </div>
         </div>
