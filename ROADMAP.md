@@ -59,7 +59,7 @@ Raw data is ~663K tokens. Full-cache is fragile (one listing change invalidates 
 | **0** | Hexagonal domain + deterministic agent + safety gates | ✅ Done (main) |
 | **1** | **Cortex: neural graph memory** (SQLite + Hebbian + CTE + Darwinian) | ✅ [#14](https://github.com/riquelmechile/Msl/issues/14) |
 | 2 | Conversational agent with DeepSeek (natural language, no commands) | ✅ |
-| 3 | CEO strategy injection via natural language | 🔲 |
+| 3 | CEO strategy injection via natural language | ✅ |
 | 4 | Actor Models / Shadow Actors (buyer/seller simulation) | 🔲 |
 | 5 | Honey-Pot Probing (active counterintelligence) | 🔲 |
 | 6 | Autonomy levels with KPIs and auto-degradation | 🔲 |
