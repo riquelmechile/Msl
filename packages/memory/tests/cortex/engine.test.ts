@@ -116,6 +116,36 @@ describe("GraphEngine", () => {
     });
   });
 
+  describe("findOrCreateConceptNode", () => {
+    it("creates a new node when the label does not exist", () => {
+      const node = engine.findOrCreateConceptNode("strategy_margin", { domain: "pricing" });
+
+      expect(node.id).toBeGreaterThan(0);
+      expect(node.label).toBe("strategy_margin");
+      expect(node.activation).toBe(0.0);
+      expect(node.metadata).toBe(JSON.stringify({ domain: "pricing" }));
+    });
+
+    it("returns the existing node when the label already exists (idempotent)", () => {
+      const first = engine.findOrCreateConceptNode("strategy_stock");
+      const second = engine.findOrCreateConceptNode("strategy_stock", { extra: true });
+
+      expect(second.id).toBe(first.id);
+      expect(second.label).toBe("strategy_stock");
+      // Metadata is not updated on existing nodes.
+      expect(second.metadata).toBe("{}");
+    });
+
+    it("distinguishes different labels as separate nodes", () => {
+      const a = engine.findOrCreateConceptNode("CEO_decision");
+      const b = engine.findOrCreateConceptNode("guardrail_rejection");
+
+      expect(b.id).toBeGreaterThan(a.id);
+      expect(a.label).toBe("CEO_decision");
+      expect(b.label).toBe("guardrail_rejection");
+    });
+  });
+
   describe("createEdge", () => {
     it("creates an edge with weight defaulting to 0.5", () => {
       const source = engine.createNode("source");

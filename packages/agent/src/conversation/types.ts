@@ -225,6 +225,19 @@ export type DecoyProposal = {
   tosWarning: string;
 };
 
+// ── El Escribano — Memory Scribe ──────────────────────────────────
+
+/** Configuration for the Escribano memory scribe observer. */
+export type EscribanoConfig = {
+  /** Cortex graph engine for Hebbian writes. */
+  engine: import("@msl/memory").GraphEngine;
+  /** Trigger Darwinian pruning every N turns (default 10, 0 to disable). */
+  pruneInterval?: number;
+};
+
+/** Outcome of a conversation turn from the observer's perspective. */
+export type TurnOutcome = "confirmed" | "rejected" | "blocked" | "none";
+
 /** Outcome recorded after a decoy proposal is executed. */
 export type ProbeOutcome = {
   /** References the DecoyProposal.id that was executed. */

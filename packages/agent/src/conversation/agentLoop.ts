@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type { GraphEngine } from "@msl/memory";
 import type { MlClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type { AgentProposal, ConversationMessage, ConversationState, DecoyProposal, ParsedRule, RuleType, Strategy, StreamingChunk } from "./types.js";
-import { AutonomyLevel } from "./types.js";
+import { AutonomyLevel, type TurnOutcome } from "./types.js";
 import { spanishValidator, harmfulContentFilter, strategyValidator, honeyPotValidator, autonomyGate } from "./guardrails.js";
 import type { AutonomyEngine } from "./autonomyEngine.js";
 import { parseStrategy } from "./strategyParser.js";
@@ -90,6 +90,12 @@ export type AgentLoopConfig = {
    * reputation levels for connected sellers.
    */
   mlClient?: MlClient;
+  /**
+   * Optional Escribano memory scribe observer. When provided, the agent
+   * loop calls `observeTurn()` after each `converse()` return to apply
+   * Hebbian learning to the Cortex graph based on conversation outcomes.
+   */
+  escribano?: import("./escribano.js").EscribanoObserver;
 };
 
 /**
@@ -456,6 +462,12 @@ ${strategyLines.join("\n")}`;
 
       // --- Update state ---
       const updatedState = appendMessages(state, userMessage, responseText);
+
+      // --- Escribano memory scribe: observe turn outcome ---
+      if (config.escribano && config.engine) {
+        const outcome = resolveTurnOutcome(userMessage, proposal, responseText);
+        config.escribano.observeTurn(state, updatedState, responseText, proposal, outcome);
+      }
 
       return { response: responseText, updatedState, ...(proposal !== undefined ? { proposal } : {}) };
     },
@@ -1104,6 +1116,22 @@ function createNoopClient(): LlmClient {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolve the conversation turn outcome for the Escribano observer.
+ *
+ * Determines whether the turn involved a confirmed proposal, a guardrail
+ * rejection (blocked response), or neither.
+ */
+function resolveTurnOutcome(
+  userMessage: string,
+  proposal: AgentProposal | undefined,
+  responseText: string,
+): TurnOutcome {
+  if (responseText.startsWith("⛔")) return "blocked";
+  if (isConfirmation(userMessage) && proposal) return "confirmed";
+  return "none";
+}
 
 /**
  * Builds the LLM messages array from the system prompt, conversation history,

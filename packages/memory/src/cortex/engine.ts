@@ -488,6 +488,29 @@ export class GraphEngine {
   }
 
   /**
+   * Idempotent concept node lookup by label.
+   *
+   * Returns an existing node if a row with the given label already exists.
+   * Otherwise creates a new node with activation 0.0 and the provided metadata.
+   *
+   * @param label — Unique concept label (e.g., "strategy_margin").
+   * @param metadata — Optional metadata merged into the node on creation.
+   * @returns The existing or newly created graph node.
+   */
+  findOrCreateConceptNode(
+    label: string,
+    metadata: Record<string, unknown> = {},
+  ): GraphNode {
+    const existing = this.db
+      .prepare("SELECT id, label, activation, metadata FROM nodes WHERE label = ?")
+      .get(label) as GraphNode | undefined;
+
+    if (existing) return existing;
+
+    return this.createNode(label, metadata);
+  }
+
+  /**
    * Persist a honey-pot probe result.
    *
    * Creates a probe_results row, a Cortex node tagged `probe: true`,
