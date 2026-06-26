@@ -32,10 +32,14 @@ function isStubCredentials(config: OAuthManagerConfig): boolean {
   );
 }
 
+let _mockTokenCounter = 0;
+
 function mockTokens(sellerId: string): OAuthTokens {
+  const ts = Date.now();
+  const seq = _mockTokenCounter++;
   return {
-    access_token: `mock-access-${sellerId}-${Date.now()}`,
-    refresh_token: `mock-refresh-${sellerId}-${Date.now()}`,
+    access_token: `mock-access-${sellerId}-${ts}-${seq}-a`,
+    refresh_token: `mock-refresh-${sellerId}-${ts}-${seq}-r`,
     expires_in: 21600,
     user_id: `mock-user-${sellerId}`,
     nickname: `seller_${sellerId}`,

@@ -38,7 +38,7 @@ describe("ConversationMessage", () => {
     };
 
     expect(toolMsg.toolCalls).toHaveLength(1);
-    expect(toolMsg.toolCalls![0].name).toBe("get_business_context");
+    expect(toolMsg.toolCalls![0]!.name).toBe("get_business_context");
 
     const response: ConversationMessage = {
       role: "tool",

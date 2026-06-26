@@ -371,8 +371,8 @@ describe("createDetectProbesTool", () => {
     expect(result).toHaveProperty("count", 1);
     const alerts = (result as Record<string, unknown>).alerts as ProbeAlert[];
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].pattern).toBe("question_spike");
-    expect(alerts[0].competitorId).toBe("TiendaX");
+    expect(alerts[0]!.pattern).toBe("question_spike");
+    expect(alerts[0]!.competitorId).toBe("TiendaX");
   });
 
   it("accepts both questions and views simultaneously", () => {

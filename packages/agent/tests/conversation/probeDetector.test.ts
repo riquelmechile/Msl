@@ -201,11 +201,11 @@ describe("detectViewAnomalies", () => {
 
     const alerts = detectViewAnomalies(views);
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].pattern).toBe("view_anomaly");
-    expect(alerts[0].confidence).toBeGreaterThanOrEqual(0.6);
-    expect(alerts[0].recommendedAction).toBe("monitor");
-    expect(alerts[0].description).toContain("250");
-    expect(alerts[0].description).toMatch(/pico/i);
+    expect(alerts[0]!.pattern).toBe("view_anomaly");
+    expect(alerts[0]!.confidence).toBeGreaterThanOrEqual(0.6);
+    expect(alerts[0]!.recommendedAction).toBe("monitor");
+    expect(alerts[0]!.description).toContain("250");
+    expect(alerts[0]!.description).toMatch(/pico/i);
   });
 
   it("does NOT divide by zero when all previous views are 0", () => {
@@ -228,6 +228,6 @@ describe("detectViewAnomalies", () => {
 
     const alerts = detectViewAnomalies(views);
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].pattern).toBe("view_anomaly");
+    expect(alerts[0]!.pattern).toBe("view_anomaly");
   });
 });

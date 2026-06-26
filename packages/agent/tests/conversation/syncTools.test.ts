@@ -80,7 +80,7 @@ function createStubSyncEngine(): ProductSyncEngine & {
       strategies: SyncStrategy[],
       options?: { differential?: boolean; limit?: number },
     ): Promise<SyncReport> {
-      _syncAllCalls.push({ sourceSellerId, targetSellerId, strategies, options });
+      _syncAllCalls.push({ sourceSellerId, targetSellerId, strategies, ...(options !== undefined && { options }) });
       return {
         total: 2,
         published: 1,

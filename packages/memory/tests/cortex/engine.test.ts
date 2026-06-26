@@ -287,8 +287,8 @@ describe("GraphEngine", () => {
 
       // Only seed node appears (activation = 0, so recursive step yields 0 → below threshold)
       expect(result.activatedNodes).toHaveLength(1);
-      expect(result.activatedNodes[0].id).toBe(a.id);
-      expect(result.activatedNodes[0].activation).toBe(0.0);
+      expect(result.activatedNodes[0]!.id).toBe(a.id);
+      expect(result.activatedNodes[0]!.activation).toBe(0.0);
     });
 
     it("spreads activation through a chain respecting depth limit", () => {
@@ -331,8 +331,8 @@ describe("GraphEngine", () => {
 
       // Activation decreases with depth: A(1.0) > B(0.5) > C(0.125)
       for (let i = 1; i < result.activatedNodes.length; i++) {
-        expect(result.activatedNodes[i - 1].activation).toBeGreaterThanOrEqual(
-          result.activatedNodes[i].activation,
+        expect(result.activatedNodes[i - 1]!.activation).toBeGreaterThanOrEqual(
+          result.activatedNodes[i]!.activation,
         );
       }
     });
@@ -396,7 +396,7 @@ describe("GraphEngine", () => {
 
       // Only A appears; B and C are below threshold
       expect(result.activatedNodes).toHaveLength(1);
-      expect(result.activatedNodes[0].id).toBe(a.id);
+      expect(result.activatedNodes[0]!.id).toBe(a.id);
     });
 
     it("uses custom SpreadingOptions (maxDepth, decayFactor, threshold)", () => {
@@ -524,10 +524,10 @@ describe("GraphEngine", () => {
           reason: string;
         }>;
       expect(lessons).toHaveLength(1);
-      expect(lessons[0].source_node).toBe(a.id);
-      expect(lessons[0].target_node).toBe(b.id);
-      expect(lessons[0].lesson).toBe("connection between A and B");
-      expect(lessons[0].reason).toBe("weight_below_threshold");
+      expect(lessons[0]!.source_node).toBe(a.id);
+      expect(lessons[0]!.target_node).toBe(b.id);
+      expect(lessons[0]!.lesson).toBe("connection between A and B");
+      expect(lessons[0]!.reason).toBe("weight_below_threshold");
     });
 
     it("is idempotent — re-run returns 0 after pruning", () => {
@@ -744,7 +744,7 @@ describe("GraphEngine", () => {
         source_node: a.id,
         target_node: b.id,
       });
-      expect(typeof result.lessons[0].lesson).toBe("string");
+      expect(typeof result.lessons[0]!.lesson).toBe("string");
 
       // Context includes lesson data
       expect(result.context.lessons).toBeDefined();
@@ -827,10 +827,10 @@ describe("GraphEngine — storeProbeResult", () => {
       .all("decoy-001") as Array<Record<string, unknown>>;
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].proposal_id).toBe("decoy-001");
-    expect(rows[0].probe_type).toBe("price_probe");
+    expect(rows[0]!.proposal_id).toBe("decoy-001");
+    expect(rows[0]!.probe_type).toBe("price_probe");
 
-    const outcome = JSON.parse(rows[0].outcome as string);
+    const outcome = JSON.parse(rows[0]!.outcome as string);
     expect(outcome.success).toBe(true);
     expect(outcome.competitorReaction).toBe("Competidor bajó precio en 5%");
     expect(outcome.learnedAt).toBe("2026-06-26T14:00:00Z");

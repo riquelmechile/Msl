@@ -218,8 +218,8 @@ describe("parseStrategy — multi-rule text", () => {
   it('extracts two rules from "margen 50% y priorizar +10 stock"', () => {
     const result = parseStrategy("margen 50% y priorizar +10 stock");
     expect(result.rules).toHaveLength(2);
-    expect(result.rules[0].ruleType).toBe("margin");
-    expect(result.rules[1].ruleType).toBe("stock");
+    expect(result.rules[0]!.ruleType).toBe("margin");
+    expect(result.rules[1]!.ruleType).toBe("stock");
   });
 
   it("extracts margin + category rules from comma-separated input", () => {
@@ -227,9 +227,9 @@ describe("parseStrategy — multi-rule text", () => {
       "margen 50% en electrónica, no competir en juguetes",
     );
     expect(result.rules).toHaveLength(2);
-    expect(result.rules[0].ruleType).toBe("margin");
-    expect(result.rules[1].ruleType).toBe("category");
-    expect(result.rules[1].value).toBe("juguetes");
+    expect(result.rules[0]!.ruleType).toBe("margin");
+    expect(result.rules[1]!.ruleType).toBe("category");
+    expect(result.rules[1]!.value).toBe("juguetes");
   });
 
   it("extracts three rules from mixed text", () => {
@@ -269,7 +269,7 @@ describe("parseStrategy — edge cases", () => {
   it("separates matched rules from unparsed surrounding text", () => {
     const result = parseStrategy("necesito margen mínimo 50% urgente ya");
     expect(result.rules).toHaveLength(1);
-    expect(result.rules[0].ruleType).toBe("margin");
+    expect(result.rules[0]!.ruleType).toBe("margin");
     // Unparsed should contain the unmatched prefixes/suffixes
     const joined = result.unparsed.join(" ");
     expect(joined).toContain("necesito");
@@ -290,19 +290,19 @@ describe("parseStrategy — edge cases", () => {
   it("handles Spanish grammatical variation — tuteo and voseo", () => {
     // priorizá (voseo) for stock
     const r1 = parseStrategy("priorizá +10 stock");
-    expect(r1.rules[0].ruleType).toBe("stock");
+    expect(r1.rules[0]!.ruleType).toBe("stock");
 
     // enfocate (voseo) for category
     const r2 = parseStrategy("enfocate en ropa");
-    expect(r2.rules[0].ruleType).toBe("category");
+    expect(r2.rules[0]!.ruleType).toBe("category");
 
     // priorizar (infinitive)
     const r3 = parseStrategy("priorizar +5 unidades");
-    expect(r3.rules[0].ruleType).toBe("stock");
+    expect(r3.rules[0]!.ruleType).toBe("stock");
 
     // enfocarse (infinitive reflexive)
     const r4 = parseStrategy("enfocarse en tecnología");
-    expect(r4.rules[0].ruleType).toBe("category");
+    expect(r4.rules[0]!.ruleType).toBe("category");
   });
 
   it("every rule has all required ParsedRule fields", () => {
@@ -474,9 +474,9 @@ describe("parseStrategy — probe vs no-competir disambiguation", () => {
   it('"no competir en electrónica" is still extracted as category exclusion, NOT probe', () => {
     const result = parseStrategy("no competir en electrónica");
     expect(result.rules).toHaveLength(1);
-    expect(result.rules[0].ruleType).toBe("category");
-    expect(result.rules[0].operator).toBe("evitar");
-    expect(result.rules[0].value).toBe("electrónica");
+    expect(result.rules[0]!.ruleType).toBe("category");
+    expect(result.rules[0]!.operator).toBe("evitar");
+    expect(result.rules[0]!.value).toBe("electrónica");
   });
 
   it("probe pattern does NOT match text containing only 'no competir'", () => {
