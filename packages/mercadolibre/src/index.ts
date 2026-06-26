@@ -160,6 +160,43 @@ export {
   createTokenStore,
 } from "./oauth/tokenStore.js";
 
+// ---------------------------------------------------------------------------
+// Sync engine exports
+// ---------------------------------------------------------------------------
+
+export {
+  createProductSyncEngine,
+  type ProductSyncEngine,
+  type SyncResult,
+  type SyncReport,
+  type SyncOptions,
+} from "./sync/syncEngine.js";
+
+export {
+  applyStrategies,
+  type Strategy,
+  type MarginStrategy,
+  type CategoryFilterStrategy,
+  type StockStrategy,
+  type PricingRuleStrategy,
+  type StrategyApplicationResult,
+} from "./sync/strategyApplier.js";
+
+export {
+  diffListings,
+  isOutOfSync as isListingOutOfSync,
+  type DiffResult,
+} from "./sync/diffEngine.js";
+
+export {
+  createSyncStore,
+  type SyncStore,
+  type SyncState,
+  type SyncStatus,
+  type MarkSyncedInput,
+  type SyncEntry,
+} from "./sync/syncStore.js";
+
 function createFreshness(kind: MlcReadSnapshotKind, now: Date): MlcReadSnapshotFreshness {
   return evaluateFreshness({
     source: "mercadolibre-api",
