@@ -80,7 +80,7 @@ export function createGetBusinessContextTool(
       engine.spreadActivation(seedIds);
 
       const result: TraversalResult = engine.traverse();
-      return result.context as Record<string, unknown>;
+      return result.context;
     },
   };
 }
@@ -177,9 +177,9 @@ export function createPrepareActionTool(): ToolDefinition {
       ],
     },
     execute: (args: Record<string, unknown>): Record<string, unknown> => {
-      const kind = String(args.kind ?? "");
-      const targetType = String(args.targetType ?? "");
-      const targetId = String(args.targetId ?? "");
+      const kind = (args.kind as string) ?? "";
+      const targetType = (args.targetType as string) ?? "";
+      const targetId = (args.targetId as string) ?? "";
 
       // Build the action target from the flat args.
       const target: AgentProposal["action"]["target"] =
@@ -193,27 +193,27 @@ export function createPrepareActionTool(): ToolDefinition {
 
       const proposal: AgentProposal = {
         action: {
-          id: String(args.id ?? ""),
-          sellerId: String(args.sellerId ?? ""),
+          id: (args.id as string) ?? "",
+          sellerId: (args.sellerId as string) ?? "",
           kind: kind as AgentProposal["action"]["kind"],
           target,
           exactChange: [
             {
-              field: String(args.field ?? ""),
+              field: (args.field as string) ?? "",
               from: args.fromValue as string | number | boolean | null,
               to: args.toValue as string | number | boolean | null,
             },
           ],
-          rationale: String(args.rationale ?? ""),
+          rationale: (args.rationale as string) ?? "",
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h expiry
         },
-        naturalSummary: String(args.summary ?? ""),
+        naturalSummary: (args.summary as string) ?? "",
         riskLevel: riskLevelForAction(
           kind as AgentProposal["action"]["kind"],
         ),
       };
 
-      return proposal as unknown as Record<string, unknown>;
+      return proposal;
     },
   };
 }

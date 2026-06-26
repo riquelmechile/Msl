@@ -1,4 +1,4 @@
-import type { AgentProposal, ConversationMessage, ConversationState, StreamingChunk } from "./types.js";
+import type { AgentProposal, ConversationMessage, ConversationState } from "./types.js";
 import { spanishValidator, harmfulContentFilter } from "./guardrails.js";
 
 /**
@@ -160,7 +160,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
 
 function createMockClient(): LlmClient {
   return {
-    async chat(
+    chat(
       messages: Array<{ role: string; content: string }>,
     ): Promise<{
       content: string;
@@ -175,18 +175,18 @@ function createMockClient(): LlmClient {
 
       // Intent-based routing (mock behavior, no real LLM call).
       if (/precio|margen/.test(lastUser)) {
-        return {
+        return Promise.resolve({
           content:
             "Analicé tus márgenes actuales. El margen promedio de la tienda " +
             "es 32.4%. En la categoría Hogar y Muebles, los márgenes están entre " +
             "28% y 38%. Veo 89 listings con precio por encima del promedio de " +
             "categoría que podrían estar perdiendo visibilidad. ¿Querés que te " +
             "prepare una propuesta de ajuste de precios para esos listings?",
-        };
+        });
       }
 
       if (/reclamo|reputación/.test(lastUser)) {
-        return {
+        return Promise.resolve({
           content:
             "Revisé tu situación actual de reclamos. Tenés 3 reclamos abiertos: " +
             "1 en mediación y 2 esperando tu respuesta. Tu tasa de reclamos es " +
@@ -194,35 +194,35 @@ function createMockClient(): LlmClient {
             "reputación está bien protegida. Te recomiendo priorizar los 2 reclamos " +
             "en espera — si no respondés en 24h, pueden escalar a mediación. " +
             "¿Querés que te ayude a redactar las respuestas?",
-        };
+        });
       }
 
       if (/dale|sí\b|sí,|ok\b|confirmo|confirmar|ejecutá|ejecutar/i.test(lastUser)) {
-        return {
+        return Promise.resolve({
           content:
             "¡Perfecto! La acción fue confirmada y quedó registrada. " +
             "Se ejecutará en los próximos minutos. ¿Necesitás algo más?",
-        };
+        });
       }
 
       // Default: ask a clarifying question in Spanish.
-      return {
+      return Promise.resolve({
         content:
           "Entendido. Para poder ayudarte mejor, ¿podrías contarme un poco más? " +
           "Por ejemplo: ¿querés revisar ventas, márgenes, reputación, reclamos, " +
           "o prioridades del día? También puedo prepararte una acción concreta " +
           "si ya tenés claro qué necesitás.",
-      };
+      });
     },
   };
 }
 
 function createNoopClient(): LlmClient {
   return {
-    async chat(): Promise<{ content: string }> {
-      return {
+    chat(): Promise<{ content: string }> {
+      return Promise.resolve({
         content: "Lo siento, el servicio de IA no está disponible en este momento.",
-      };
+      });
     },
   };
 }
@@ -309,9 +309,9 @@ function extractPendingProposal(
 function parseProposalFromToolCall(
   args: Record<string, unknown>,
 ): AgentProposal {
-  const kind = String(args.kind ?? "price-change") as AgentProposal["action"]["kind"];
-  const targetType = String(args.targetType ?? "listing");
-  const targetId = String(args.targetId ?? "");
+  const kind = ((args.kind as string) ?? "price-change") as AgentProposal["action"]["kind"];
+  const targetType = (args.targetType as string) ?? "listing";
+  const targetId = (args.targetId as string) ?? "";
 
   const target: AgentProposal["action"]["target"] =
     targetType === "listing"
@@ -324,21 +324,21 @@ function parseProposalFromToolCall(
 
   return {
     action: {
-      id: String(args.id ?? ""),
-      sellerId: String(args.sellerId ?? ""),
+      id: (args.id as string) ?? "",
+      sellerId: (args.sellerId as string) ?? "",
       kind,
       target,
       exactChange: [
         {
-          field: String(args.field ?? ""),
+          field: (args.field as string) ?? "",
           from: (args.fromValue as string | number | boolean | null) ?? null,
           to: (args.toValue as string | number | boolean | null) ?? null,
         },
       ],
-      rationale: String(args.rationale ?? ""),
+      rationale: (args.rationale as string) ?? "",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },
-    naturalSummary: String(args.summary ?? ""),
+    naturalSummary: (args.summary as string) ?? "",
     riskLevel: "medium",
   };
 }
