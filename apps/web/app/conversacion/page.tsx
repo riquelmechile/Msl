@@ -28,6 +28,7 @@ type ChatMetadata = {
   hasProposal: boolean;
   strategiesActive: number;
   consultedActor?: string;
+  sessionId?: string;
   proposal?: {
     id: string;
     summary: string;
@@ -64,6 +65,7 @@ export default function ConversationPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [currentAutonomy, setCurrentAutonomy] = useState("SUGIERE");
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -105,7 +107,7 @@ export default function ConversationPage() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text.trim(), history }),
+          body: JSON.stringify({ message: text.trim(), history, sessionId }),
         });
 
         if (!res.ok || !res.body) {
@@ -187,6 +189,9 @@ export default function ConversationPage() {
               if (metadata.proposal) {
                 last.proposal = metadata.proposal;
               }
+              if (metadata.sessionId) {
+                setSessionId(metadata.sessionId);
+              }
               // Update global autonomy level.
               setCurrentAutonomy(metadata.autonomyLevel);
             }
@@ -207,7 +212,7 @@ export default function ConversationPage() {
         inputRef.current?.focus();
       }
     },
-    [messages, loading],
+    [messages, loading, sessionId],
   );
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

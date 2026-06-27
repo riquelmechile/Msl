@@ -1,8 +1,12 @@
 import { NextRequest } from "next/server";
+import Database from "better-sqlite3";
 import {
   createAgentLoop,
   createSimulateActorTool,
   buildSystemPrompt,
+  createAutonomyEngine,
+  createSessionStore,
+  createStrategyStore,
   AutonomyLevel,
   type ConversationState,
   type Strategy,
@@ -128,6 +132,144 @@ const rateLimit = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_MAX = 20; // requests
 const RATE_LIMIT_WINDOW = 60_000; // per minute (ms)
 
+type ChatRequestBody = {
+  message: string;
+  history?: ConversationState["messages"];
+  sessionId?: string;
+};
+
+const CLIENT_SESSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_SELLER_ID_LENGTH = 128;
+const PRE_NAMESPACE_DURABLE_STATE_TABLES = ["ceo_strategies", "autonomy_state"] as const;
+
+type DurableChatState = {
+  sqlitePath: string;
+  sellerId: string;
+  db: Database.Database;
+  store: ReturnType<typeof createStrategyStore>;
+  sessionStore: ReturnType<typeof createSessionStore>;
+  autonomyEngine: ReturnType<typeof createAutonomyEngine>;
+};
+
+let durableState: DurableChatState | null = null;
+
+function requireDurableSellerId(): string {
+  const sellerId = process.env.MSL_CHAT_SELLER_ID?.trim();
+  if (!sellerId || sellerId === "seller-mlc-demo" || sellerId.length > MAX_SELLER_ID_LENGTH) {
+    throw new Error(
+      "MSL_CHAT_SELLER_ID must be explicitly set to a non-demo seller id for durable chat.",
+    );
+  }
+  return sellerId;
+}
+
+function assertDurableSellerNamespace(db: Database.Database, sellerId: string): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_seller_namespace (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      seller_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  const existing = db.prepare("SELECT seller_id FROM chat_seller_namespace WHERE id = 1").get() as
+    | { seller_id: string }
+    | undefined;
+
+  if (!existing) {
+    assertNoPreNamespaceDurableState(db);
+    db.prepare("INSERT INTO chat_seller_namespace (id, seller_id) VALUES (1, ?)").run(sellerId);
+    return;
+  }
+
+  if (existing.seller_id !== sellerId) {
+    throw new Error("MSL_CHAT_SQLITE_PATH is already bound to a different seller id.");
+  }
+}
+
+function tableHasRows(db: Database.Database, tableName: string): boolean {
+  const table = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(tableName);
+  if (!table) return false;
+
+  const row = db.prepare(`SELECT 1 FROM ${tableName} LIMIT 1`).get();
+  return Boolean(row);
+}
+
+function assertNoPreNamespaceDurableState(db: Database.Database): void {
+  const hasPreNamespaceDurableState = PRE_NAMESPACE_DURABLE_STATE_TABLES.some((tableName) =>
+    tableHasRows(db, tableName),
+  );
+
+  if (hasPreNamespaceDurableState) {
+    throw new Error(
+      "MSL_CHAT_SQLITE_PATH contains durable state without a seller namespace; refusing to adopt it automatically.",
+    );
+  }
+}
+
+function getDurableChatState(sellerId: string): DurableChatState | null {
+  const sqlitePath = process.env.MSL_CHAT_SQLITE_PATH?.trim();
+  if (!sqlitePath) return null;
+  if (durableState?.sqlitePath === sqlitePath) {
+    if (durableState.sellerId !== sellerId) {
+      throw new Error("MSL_CHAT_SQLITE_PATH is already bound to a different seller id.");
+    }
+    return durableState;
+  }
+  durableState?.db.close();
+  durableState = null;
+
+  const db = new Database(sqlitePath);
+  try {
+    assertDurableSellerNamespace(db, sellerId);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  durableState = {
+    sqlitePath,
+    sellerId,
+    db,
+    store: createStrategyStore(db),
+    sessionStore: createSessionStore(db),
+    autonomyEngine: createAutonomyEngine(db),
+  };
+  return durableState;
+}
+
+function parseClientSessionId(sessionId: string | undefined): string | null {
+  const value = sessionId?.trim();
+  if (!value) return crypto.randomUUID();
+  return CLIENT_SESSION_ID_PATTERN.test(value) ? value : null;
+}
+
+function createDurableSessionKey(sellerId: string, clientSessionId: string): string {
+  const normalizedSellerId = sellerId.trim();
+  if (!normalizedSellerId || normalizedSellerId.length > MAX_SELLER_ID_LENGTH) {
+    throw new Error("MSL_CHAT_SELLER_ID must be set and at most 128 characters.");
+  }
+  return `${normalizedSellerId}:${clientSessionId}`;
+}
+
+function createInitialState(
+  history: ConversationState["messages"],
+  sellerId: string,
+): ConversationState {
+  const now = new Date();
+  return {
+    messages: history,
+    contextWindowLimit: 50,
+    sessionMetadata: {
+      sellerId,
+      startedAt: now,
+      lastActivityAt: now,
+    },
+  };
+}
+
 function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
   const now = Date.now();
   const entry = rateLimit.get(ip);
@@ -180,36 +322,52 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const body = (await req.json()) as { message: string; history?: ConversationState["messages"] };
+  const body = (await req.json()) as ChatRequestBody;
   const message = body.message?.trim() ?? "";
   const history = body.history ?? [];
+  const sessionId = parseClientSessionId(body.sessionId);
 
   if (!message) {
     return Response.json({ error: "El mensaje no puede estar vacío." }, { status: 400 });
   }
 
-  const store = createDemoStrategyStore();
-  const autonomyEngine = createDemoAutonomyEngine();
+  if (!sessionId) {
+    return Response.json({ error: "Invalid sessionId." }, { status: 400 });
+  }
+
+  const durableConfigured = Boolean(process.env.MSL_CHAT_SQLITE_PATH?.trim());
+  let sellerId: string;
+  let durable: DurableChatState | null;
+  try {
+    sellerId = durableConfigured
+      ? requireDurableSellerId()
+      : process.env.MSL_CHAT_SELLER_ID?.trim() || "seller-mlc-demo";
+    durable = getDurableChatState(sellerId);
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Invalid durable chat configuration." },
+      { status: 500 },
+    );
+  }
+  const store = durable?.store ?? createDemoStrategyStore();
+  const autonomyEngine = durable?.autonomyEngine ?? createDemoAutonomyEngine();
+  const sellerName = process.env.MSL_CHAT_SELLER_NAME?.trim() || "Plasticov";
+  const durableSessionKey = durable ? createDurableSessionKey(sellerId, sessionId) : sessionId;
+  const useRealDeepSeek = Boolean(durable && process.env.DEEPSEEK_API_KEY);
 
   const loop = createAgentLoop({
-    systemPrompt: buildSystemPrompt("Plasticov"),
-    mockClient: true,
+    systemPrompt: buildSystemPrompt(sellerName),
+    mockClient: !useRealDeepSeek,
     tools: [createSimulateActorTool()],
     store,
     autonomyEngine,
   });
 
-  const state: ConversationState = {
-    messages: history,
-    contextWindowLimit: 50,
-    sessionMetadata: {
-      sellerId: "seller-mlc-demo",
-      startedAt: new Date(),
-      lastActivityAt: new Date(),
-    },
-  };
+  const state =
+    durable?.sessionStore.load(durableSessionKey) ?? createInitialState(history, sellerId);
 
   const result = await loop.converse(message, state);
+  durable?.sessionStore.save(durableSessionKey, result.updatedState);
 
   // Stream the response via SSE with a simulated typing effect.
   const encoder = new TextEncoder();
@@ -234,6 +392,7 @@ export async function POST(req: NextRequest) {
         autonomyLevelNumber: autonomyEngine.getCurrentLevel(),
         hasProposal: !!result.proposal,
         strategiesActive: store.listActive().length,
+        sessionId,
       };
 
       if (result.proposal) {

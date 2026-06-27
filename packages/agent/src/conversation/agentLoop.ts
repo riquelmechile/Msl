@@ -168,7 +168,7 @@ export type LlmClient = {
  */
 export function createAgentLoop(config: AgentLoopConfig) {
   const model = config.model ?? "deepseek-v4-flash";
-  const openai = createDeepSeekClient();
+  const openai = config.mockClient ? null : createDeepSeekClient();
   const tools = config.tools ?? [];
   const toolMap = new Map(tools.map((t) => [t.name, t]));
 
@@ -208,12 +208,13 @@ export function createAgentLoop(config: AgentLoopConfig) {
     toolMap.set("check_account", createCheckAccountTool(config.mlClient));
   }
 
-  // Real client takes priority when API key is available.
-  const client: LlmClient = openai
-    ? createRealClient(openai, model)
-    : config.mockClient
-      ? createMockClient(toolMap)
-      : createNoopClient();
+  // Real client is used only when the caller has not explicitly requested the mock.
+  const client: LlmClient =
+    openai && !config.mockClient
+      ? createRealClient(openai, model)
+      : config.mockClient
+        ? createMockClient(toolMap)
+        : createNoopClient();
 
   // ── Strategy state (mutable closure) ──────────────────────────────
   let activeStrategies = config.strategies ?? [];
