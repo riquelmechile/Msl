@@ -54,7 +54,8 @@ export type OfficialMercadoLibreDocsAdapter = {
 
 export type ReadToolBlocked =
   | { status: "blocked"; reason: "reconnect-required"; message: string }
-  | { status: "blocked"; reason: "seller-access-mismatch"; message: string };
+  | { status: "blocked"; reason: "seller-access-mismatch"; message: string }
+  | { status: "blocked"; reason: "seller-not-configured"; message: string };
 
 export type MlcReadTools = {
   listings: CustomBusinessTool<
@@ -176,6 +177,10 @@ function toReadToolBlocked(error: unknown): ReadToolBlocked | undefined {
 
   if (candidate.reason === "seller-access-mismatch") {
     return { status: "blocked", reason: "seller-access-mismatch", message };
+  }
+
+  if (candidate.reason === "seller-not-configured") {
+    return { status: "blocked", reason: "seller-not-configured", message };
   }
 
   return undefined;

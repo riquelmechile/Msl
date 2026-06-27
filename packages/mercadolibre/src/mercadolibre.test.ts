@@ -6,6 +6,7 @@ import {
   createMlcApiClient,
   createMlClient,
   createOAuthManager,
+  createOAuthMlcApiClient,
   createTokenStore,
   evaluateOAuthAccess,
   type MlcListingSummary,
@@ -13,6 +14,7 @@ import {
   type MlcOrderSummary,
   type MlcReadSnapshotFreshness,
   type MercadoLibreApiTransport,
+  type OAuthManager,
   type OAuthTokenState,
 } from "./index.js";
 
@@ -211,6 +213,149 @@ describe("direct MLC API client boundary", () => {
       connectedSellerId: "seller-1",
     });
     expect(calls).toBe(0);
+  });
+
+  it("resolves OAuth access tokens for every read method without exposing write methods", async () => {
+    const tokenCalls: string[] = [];
+    const requests: Array<{
+      path: string;
+      query: Readonly<Record<string, string>> | undefined;
+      accessToken: string;
+    }> = [];
+    const oauthManager = {
+      ensureValidToken: (sellerId: string) => {
+        tokenCalls.push(sellerId);
+        return Promise.resolve(`access-for-${sellerId}-${tokenCalls.length}`);
+      },
+    } as Pick<OAuthManager, "ensureValidToken"> as OAuthManager;
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        requests.push({
+          path: request.path,
+          query: request.query,
+          accessToken: request.accessToken,
+        });
+        if (request.path === "/messages/search") {
+          return Promise.resolve({ messages: [] });
+        }
+        if (request.path === "/users/seller-1") {
+          return Promise.resolve({ seller_reputation: { transactions: {} } });
+        }
+        return Promise.resolve({ results: [] });
+      },
+    };
+
+    const client = createOAuthMlcApiClient({
+      oauthManager,
+      transport,
+      now: () => now,
+      allowedSellerIds: ["seller-1"],
+    });
+
+    expect("publishItem" in client).toBe(false);
+    await client.getListings("seller-1");
+    await client.getOrders("seller-1");
+    await client.getMessages("seller-1");
+    await client.getReputation("seller-1");
+
+    expect(tokenCalls).toEqual(["seller-1", "seller-1", "seller-1", "seller-1"]);
+    expect(requests).toEqual([
+      {
+        path: "/users/seller-1/items/search",
+        query: { site: "MLC" },
+        accessToken: "access-for-seller-1-1",
+      },
+      {
+        path: "/orders/search",
+        query: { seller: "seller-1", site: "MLC" },
+        accessToken: "access-for-seller-1-2",
+      },
+      {
+        path: "/messages/search",
+        query: { seller: "seller-1", site: "MLC" },
+        accessToken: "access-for-seller-1-3",
+      },
+      {
+        path: "/users/seller-1",
+        query: { site: "MLC" },
+        accessToken: "access-for-seller-1-4",
+      },
+    ]);
+  });
+
+  it("rejects unconfigured OAuth read sellers before token resolution", async () => {
+    const ensureValidToken = vi.fn().mockResolvedValue("access-token");
+    const request = vi.fn().mockResolvedValue({ results: [] });
+    const client = createOAuthMlcApiClient({
+      oauthManager: { ensureValidToken } as Pick<OAuthManager, "ensureValidToken"> as OAuthManager,
+      transport: { request },
+      now: () => now,
+      allowedSellerIds: ["source-seller", "target-seller"],
+    });
+
+    await expect(client.getListings("unconfigured-seller")).rejects.toMatchObject({
+      reason: "seller-not-configured",
+      sellerId: "unconfigured-seller",
+    });
+    expect(ensureValidToken).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when OAuth read sellers are omitted", () => {
+    const ensureValidToken = vi.fn().mockResolvedValue("access-token");
+    const request = vi.fn().mockResolvedValue({ results: [] });
+
+    expect(() =>
+      createOAuthMlcApiClient({
+        oauthManager: { ensureValidToken } as Pick<
+          OAuthManager,
+          "ensureValidToken"
+        > as OAuthManager,
+        transport: { request },
+        now: () => now,
+      } as unknown as Parameters<typeof createOAuthMlcApiClient>[0]),
+    ).toThrow(
+      "Requested seller is not configured as an allowed MercadoLibre account role for MSL.",
+    );
+    expect(ensureValidToken).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when OAuth read sellers are empty", () => {
+    const ensureValidToken = vi.fn().mockResolvedValue("access-token");
+    const request = vi.fn().mockResolvedValue({ results: [] });
+
+    expect(() =>
+      createOAuthMlcApiClient({
+        oauthManager: { ensureValidToken } as Pick<
+          OAuthManager,
+          "ensureValidToken"
+        > as OAuthManager,
+        transport: { request },
+        now: () => now,
+        allowedSellerIds: ["", "  "],
+      }),
+    ).toThrow(
+      "Requested seller is not configured as an allowed MercadoLibre account role for MSL.",
+    );
+    expect(ensureValidToken).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("propagates OAuth token resolution failures without calling the transport", async () => {
+    const failure = new Error("No stored token for seller source-seller");
+    const ensureValidToken = vi.fn().mockRejectedValue(failure);
+    const request = vi.fn().mockResolvedValue({ results: [] });
+    const client = createOAuthMlcApiClient({
+      oauthManager: { ensureValidToken } as Pick<OAuthManager, "ensureValidToken"> as OAuthManager,
+      transport: { request },
+      now: () => now,
+      allowedSellerIds: ["source-seller"],
+    });
+
+    await expect(client.getOrders("source-seller")).rejects.toThrow(failure.message);
+    expect(ensureValidToken).toHaveBeenCalledWith("source-seller");
+    expect(request).not.toHaveBeenCalled();
   });
 });
 

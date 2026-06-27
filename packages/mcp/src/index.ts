@@ -18,6 +18,7 @@ import {
 } from "@msl/domain";
 import type { MlcApiClient } from "@msl/mercadolibre";
 import { z } from "zod";
+import { createMcpRuntimeDependencies } from "./runtimeDependencies.js";
 
 type McpToolResult = {
   content: { type: "text"; text: string }[];
@@ -331,7 +332,15 @@ export type McpServerConfig = {
  * ```
  */
 export async function startMcpServer(): Promise<void> {
-  const server = createMcpServer();
+  const runtimeDependencies = createMcpRuntimeDependencies();
+  const server = createMcpServer(runtimeDependencies);
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+  try {
+    await server.connect(transport);
+  } catch (error) {
+    runtimeDependencies.close();
+    throw error;
+  }
 }
+
+export { createMcpRuntimeDependencies } from "./runtimeDependencies.js";

@@ -7,6 +7,7 @@ export default defineConfig({
       "@msl/memory": new URL("./packages/memory/src/index.ts", import.meta.url).pathname,
       "@msl/mercadolibre": new URL("./packages/mercadolibre/src/index.ts", import.meta.url)
         .pathname,
+      "@msl/tools": new URL("./packages/tools/src/index.ts", import.meta.url).pathname,
       "@msl/agent": new URL("./packages/agent/src/index.ts", import.meta.url).pathname,
       "@msl/bot": new URL("./packages/bot/src/index.ts", import.meta.url).pathname,
       "@msl/mcp": new URL("./packages/mcp/src/index.ts", import.meta.url).pathname,

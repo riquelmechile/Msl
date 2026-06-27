@@ -121,6 +121,13 @@ export type MercadoLibreApiTransport = {
   request(request: MercadoLibreApiRequest): Promise<unknown>;
 };
 
+export type OAuthSellerAuthorizationFailure = {
+  allowed: false;
+  reason: "seller-not-configured";
+  sellerId: string;
+  message: "Requested seller is not configured as an allowed MercadoLibre account role for MSL.";
+};
+
 export type MlcApiClient = {
   getListings(sellerId: string): Promise<MlcListingsSnapshot>;
   getOrders(sellerId: string): Promise<MlcOrdersSnapshot>;
@@ -514,6 +521,73 @@ export function createMlcApiClient(input: {
   };
 }
 
+export function createOAuthMlcApiClient(input: {
+  oauthManager: OAuthManager;
+  transport: MercadoLibreApiTransport;
+  now(): Date;
+  allowedSellerIds: ReadonlyArray<string>;
+}): MlcApiClient {
+  const allowedSellerIds = new Set(
+    (input.allowedSellerIds ?? []).map((sellerId) => sellerId.trim()).filter(Boolean),
+  );
+
+  if (allowedSellerIds.size === 0) {
+    const failure: OAuthSellerAuthorizationFailure = {
+      allowed: false,
+      reason: "seller-not-configured",
+      sellerId: "",
+      message:
+        "Requested seller is not configured as an allowed MercadoLibre account role for MSL.",
+    };
+    throw Object.assign(new Error(failure.message), failure);
+  }
+
+  const request = async (
+    sellerId: string,
+    path: string,
+    query?: Readonly<Record<string, string>>,
+  ) => {
+    if (!allowedSellerIds.has(sellerId)) {
+      const failure: OAuthSellerAuthorizationFailure = {
+        allowed: false,
+        reason: "seller-not-configured",
+        sellerId,
+        message:
+          "Requested seller is not configured as an allowed MercadoLibre account role for MSL.",
+      };
+      throw Object.assign(new Error(failure.message), failure);
+    }
+
+    const accessToken = await input.oauthManager.ensureValidToken(sellerId);
+    const apiRequest: MercadoLibreApiRequest = { method: "GET", path, accessToken };
+
+    if (query !== undefined) {
+      apiRequest.query = query;
+    }
+
+    return input.transport.request(apiRequest);
+  };
+
+  return {
+    getListings: (sellerId) =>
+      request(sellerId, `/users/${sellerId}/items/search`, { site: "MLC" }).then((payload) =>
+        normalizeListings({ sellerId, payload, now: input.now() }),
+      ),
+    getOrders: (sellerId) =>
+      request(sellerId, `/orders/search`, { seller: sellerId, site: "MLC" }).then((payload) =>
+        normalizeOrders({ sellerId, payload, now: input.now() }),
+      ),
+    getMessages: (sellerId) =>
+      request(sellerId, `/messages/search`, { seller: sellerId, site: "MLC" }).then((payload) =>
+        normalizeMessages({ sellerId, payload, now: input.now() }),
+      ),
+    getReputation: (sellerId) =>
+      request(sellerId, `/users/${sellerId}`, { site: "MLC" }).then((payload) =>
+        normalizeReputation({ sellerId, payload, now: input.now() }),
+      ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Real fetch-based HTTP transport with exponential backoff
 // ---------------------------------------------------------------------------
@@ -564,6 +638,30 @@ async function fetchWithBackoff(url: string, init: RequestInit): Promise<Respons
   }
 
   throw lastError;
+}
+
+export function createMercadoLibreApiFetchTransport(): MercadoLibreApiTransport {
+  return {
+    async request(request) {
+      let url = `${ML_API_BASE}${request.path}`;
+      if (request.query && Object.keys(request.query).length > 0) {
+        url = `${url}?${new URLSearchParams(request.query).toString()}`;
+      }
+
+      const response = await fetchWithBackoff(url, {
+        method: request.method,
+        headers: { Authorization: `Bearer ${request.accessToken}` },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `ML API ${request.method} ${request.path} failed: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      return response.json();
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

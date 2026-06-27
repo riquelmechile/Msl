@@ -34,6 +34,7 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
 
 // ── Dynamically import after mocks are set ──────────────────────────
 const { createMcpServer, startMcpServer } = await import("../src/index.js");
+const { createMcpRuntimeDependencies } = await import("../src/runtimeDependencies.js");
 
 function makeApprovalDependencies() {
   const save = vi.fn<ApprovalQueueRepository["save"]>().mockResolvedValue(undefined);
@@ -240,6 +241,41 @@ describe("MCP Server", () => {
     expect(parsed.data).toMatchObject({ sellerId: "ML-test" });
   });
 
+  it("returns a controlled blocked response for unconfigured MercadoLibre read sellers", async () => {
+    const getListings = vi.fn().mockRejectedValue(
+      Object.assign(new Error("Requested seller is not configured."), {
+        reason: "seller-not-configured",
+        sellerId: "unconfigured-seller",
+      }),
+    );
+
+    createMcpServer({
+      mlcClient: {
+        getListings,
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_listings");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "unconfigured-seller" })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBeFalsy();
+    expect(parsed.data).toMatchObject({
+      status: "blocked",
+      reason: "seller-not-configured",
+      message: "Requested seller is not configured.",
+    });
+    expect(parsed.metadata).toMatchObject({ requiresApproval: false, confidence: "low" });
+  });
+
   it("applies MCP auth before calling injected MercadoLibre read dependencies", async () => {
     vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
     const getListings = vi.fn();
@@ -433,5 +469,92 @@ describe("MCP Server", () => {
     expect(parsed.error).toContain("Unauthorized");
 
     vi.unstubAllEnvs();
+  });
+
+  it("builds prepare-only runtime dependencies when local MercadoLibre OAuth env is absent", () => {
+    const runtime = createMcpRuntimeDependencies({ NODE_ENV: "test" });
+
+    createMcpServer(runtime);
+
+    expect(runtime.mlcClient).toBeUndefined();
+    expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_listings")).toBe(false);
+    expect(registeredTools.has("executePreparedAction")).toBe(false);
+    runtime.close();
+  });
+
+  it("fails closed in production when required runtime auth and secret env is absent", () => {
+    expect(() => createMcpRuntimeDependencies({ NODE_ENV: "production" })).toThrow(
+      /MSL_MCP_API_KEY/,
+    );
+  });
+
+  it("reports missing runtime config without leaking raw secret values", () => {
+    const secretValue = "raw-client-secret-value";
+
+    try {
+      createMcpRuntimeDependencies({
+        NODE_ENV: "development",
+        MERCADOLIBRE_CLIENT_ID: "client-id-value",
+        MERCADOLIBRE_CLIENT_SECRET: secretValue,
+      });
+      throw new Error("Expected runtime config construction to fail.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain("Missing");
+      expect((error as Error).message).not.toContain(secretValue);
+      expect((error as Error).message).not.toContain("client-id-value");
+    }
+  });
+
+  it("builds configured OAuth-backed read tools plus prepare-only proposals", () => {
+    const runtime = createMcpRuntimeDependencies({
+      NODE_ENV: "test",
+      MSL_MCP_API_KEY: "mcp-key",
+      MSL_ENCRYPTION_KEY: "encryption-key",
+      MERCADOLIBRE_CLIENT_ID: "client-id",
+      MERCADOLIBRE_CLIENT_SECRET: "client-secret",
+      MERCADOLIBRE_REDIRECT_URI: "https://example.test/oauth/callback",
+      MSL_MERCADOLIBRE_OAUTH_DB_PATH: ":memory:",
+      MERCADOLIBRE_SOURCE_SELLER_ID: "source-seller",
+      MERCADOLIBRE_TARGET_SELLER_ID: "target-seller",
+    });
+
+    createMcpServer(runtime);
+
+    expect(runtime.mlcClient).toBeDefined();
+    expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_reputation")).toBe(true);
+    expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
+    expect(registeredTools.has("executePreparedAction")).toBe(false);
+    runtime.close();
+  });
+
+  it("rejects unconfigured runtime OAuth read sellers before token lookup", async () => {
+    const runtime = createMcpRuntimeDependencies({
+      NODE_ENV: "test",
+      MSL_MCP_API_KEY: "mcp-key",
+      MSL_ENCRYPTION_KEY: "encryption-key",
+      MERCADOLIBRE_CLIENT_ID: "client-id",
+      MERCADOLIBRE_CLIENT_SECRET: "client-secret",
+      MERCADOLIBRE_REDIRECT_URI: "https://example.test/oauth/callback",
+      MSL_MERCADOLIBRE_OAUTH_DB_PATH: ":memory:",
+      MERCADOLIBRE_SOURCE_SELLER_ID: "source-seller",
+      MERCADOLIBRE_TARGET_SELLER_ID: "target-seller",
+    });
+
+    try {
+      await expect(runtime.mlcClient!.getListings("unconfigured-seller")).rejects.toMatchObject({
+        reason: "seller-not-configured",
+        sellerId: "unconfigured-seller",
+      });
+      await expect(runtime.mlcClient!.getListings("source-seller")).rejects.toThrow(
+        /No stored token for seller source-seller/,
+      );
+    } finally {
+      runtime.close();
+    }
   });
 });
