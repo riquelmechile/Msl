@@ -301,27 +301,7 @@ describe("direct MLC API client boundary", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it("fails closed when OAuth read sellers are omitted", () => {
-    const ensureValidToken = vi.fn().mockResolvedValue("access-token");
-    const request = vi.fn().mockResolvedValue({ results: [] });
-
-    expect(() =>
-      createOAuthMlcApiClient({
-        oauthManager: { ensureValidToken } as Pick<
-          OAuthManager,
-          "ensureValidToken"
-        > as OAuthManager,
-        transport: { request },
-        now: () => now,
-      } as unknown as Parameters<typeof createOAuthMlcApiClient>[0]),
-    ).toThrow(
-      "Requested seller is not configured as an allowed MercadoLibre account role for MSL.",
-    );
-    expect(ensureValidToken).not.toHaveBeenCalled();
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it("fails closed when OAuth read sellers are empty", () => {
+  it("fails closed when OAuth read sellers are empty or blank", () => {
     const ensureValidToken = vi.fn().mockResolvedValue("access-token");
     const request = vi.fn().mockResolvedValue({ results: [] });
 

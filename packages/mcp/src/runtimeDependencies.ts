@@ -42,26 +42,28 @@ function missingKeys(env: RuntimeEnv, keys: ReadonlyArray<string>): string[] {
   return keys.filter((key) => !nonEmpty(env[key]));
 }
 
-function assertNoIncompleteOAuthConfig(env: RuntimeEnv): boolean {
+function hasAnyOAuthConfig(env: RuntimeEnv): boolean {
   const missing = missingKeys(env, OAUTH_ENV_KEYS);
-  const anyConfigured = missing.length < OAUTH_ENV_KEYS.length;
 
-  if (!anyConfigured) {
-    if (isProduction(env)) {
-      throw new Error(
-        `MCP MercadoLibre OAuth runtime is not configured. Missing ${missing.join(", ")}.`,
-      );
-    }
-    return false;
+  return missing.length < OAUTH_ENV_KEYS.length;
+}
+
+function assertOAuthConfigPresentInProduction(env: RuntimeEnv): void {
+  if (!hasAnyOAuthConfig(env) && isProduction(env)) {
+    throw new Error(
+      `MCP MercadoLibre OAuth runtime is not configured. Missing ${OAUTH_ENV_KEYS.join(", ")}.`,
+    );
   }
+}
+
+function assertCompleteOAuthConfig(env: RuntimeEnv): void {
+  const missing = missingKeys(env, OAUTH_ENV_KEYS);
 
   if (missing.length > 0) {
     throw new Error(
       `Incomplete MCP MercadoLibre OAuth runtime config. Missing ${missing.join(", ")}.`,
     );
   }
-
-  return true;
 }
 
 function assertProductionSecrets(env: RuntimeEnv): void {
@@ -80,9 +82,13 @@ function createPrepareWriteDependencies(): { repository: ApprovalQueueRepository
 }
 
 function createRuntimeReadClient(env: RuntimeEnv): { client?: MlcApiClient; close(): void } {
-  if (!assertNoIncompleteOAuthConfig(env)) {
+  assertOAuthConfigPresentInProduction(env);
+
+  if (!hasAnyOAuthConfig(env)) {
     return { close: () => undefined };
   }
+
+  assertCompleteOAuthConfig(env);
 
   const roleConfig = getMlAccountRoleConfig(env);
 

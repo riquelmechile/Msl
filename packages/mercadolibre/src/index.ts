@@ -135,6 +135,18 @@ export type MlcApiClient = {
   getReputation(sellerId: string): Promise<MlcReputationSnapshot>;
 };
 
+type MlcReadRequest = (
+  sellerId: string,
+  path: string,
+  query?: Readonly<Record<string, string>>,
+) => Promise<unknown>;
+
+type MlcReadEndpoint<TSnapshot> = {
+  path(sellerId: string): string;
+  query(sellerId: string): Readonly<Record<string, string>>;
+  normalize(input: { sellerId: string; payload: unknown; now: Date }): TSnapshot;
+};
+
 // --- Re-exports from types.ts ---
 export type {
   MlCategory,
@@ -443,6 +455,77 @@ function normalizeReputation(input: {
   };
 }
 
+const MLC_READ_ENDPOINTS = {
+  listings: {
+    path: (sellerId: string) => `/users/${sellerId}/items/search`,
+    query: () => ({ site: "MLC" }),
+    normalize: normalizeListings,
+  },
+  orders: {
+    path: () => "/orders/search",
+    query: (sellerId: string) => ({ seller: sellerId, site: "MLC" }),
+    normalize: normalizeOrders,
+  },
+  messages: {
+    path: () => "/messages/search",
+    query: (sellerId: string) => ({ seller: sellerId, site: "MLC" }),
+    normalize: normalizeMessages,
+  },
+  reputation: {
+    path: (sellerId: string) => `/users/${sellerId}`,
+    query: () => ({ site: "MLC" }),
+    normalize: normalizeReputation,
+  },
+} satisfies Record<string, MlcReadEndpoint<unknown>>;
+
+async function readMlcSnapshot<TSnapshot>(input: {
+  sellerId: string;
+  endpoint: MlcReadEndpoint<TSnapshot>;
+  request: MlcReadRequest;
+  now: Date;
+}): Promise<TSnapshot> {
+  const payload = await input.request(
+    input.sellerId,
+    input.endpoint.path(input.sellerId),
+    input.endpoint.query(input.sellerId),
+  );
+
+  return input.endpoint.normalize({ sellerId: input.sellerId, payload, now: input.now });
+}
+
+function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): MlcApiClient {
+  return {
+    getListings: (sellerId) =>
+      readMlcSnapshot({
+        sellerId,
+        endpoint: MLC_READ_ENDPOINTS.listings,
+        request: input.request,
+        now: input.now(),
+      }),
+    getOrders: (sellerId) =>
+      readMlcSnapshot({
+        sellerId,
+        endpoint: MLC_READ_ENDPOINTS.orders,
+        request: input.request,
+        now: input.now(),
+      }),
+    getMessages: (sellerId) =>
+      readMlcSnapshot({
+        sellerId,
+        endpoint: MLC_READ_ENDPOINTS.messages,
+        request: input.request,
+        now: input.now(),
+      }),
+    getReputation: (sellerId) =>
+      readMlcSnapshot({
+        sellerId,
+        endpoint: MLC_READ_ENDPOINTS.reputation,
+        request: input.request,
+        now: input.now(),
+      }),
+  };
+}
+
 export function evaluateOAuthAccess(state: OAuthTokenState, now: Date): AccessEvaluation {
   if (state.status === "revoked" || state.status === "expired" || state.expiresAt <= now) {
     return {
@@ -501,24 +584,7 @@ export function createMlcApiClient(input: {
     return input.transport.request(apiRequest);
   };
 
-  return {
-    getListings: (sellerId) =>
-      request(sellerId, `/users/${sellerId}/items/search`, { site: "MLC" }).then((payload) =>
-        normalizeListings({ sellerId, payload, now: input.now }),
-      ),
-    getOrders: (sellerId) =>
-      request(sellerId, `/orders/search`, { seller: sellerId, site: "MLC" }).then((payload) =>
-        normalizeOrders({ sellerId, payload, now: input.now }),
-      ),
-    getMessages: (sellerId) =>
-      request(sellerId, `/messages/search`, { seller: sellerId, site: "MLC" }).then((payload) =>
-        normalizeMessages({ sellerId, payload, now: input.now }),
-      ),
-    getReputation: (sellerId) =>
-      request(sellerId, `/users/${sellerId}`, { site: "MLC" }).then((payload) =>
-        normalizeReputation({ sellerId, payload, now: input.now }),
-      ),
-  };
+  return createMlcReadMethods({ request, now: () => input.now });
 }
 
 export function createOAuthMlcApiClient(input: {
@@ -528,7 +594,7 @@ export function createOAuthMlcApiClient(input: {
   allowedSellerIds: ReadonlyArray<string>;
 }): MlcApiClient {
   const allowedSellerIds = new Set(
-    (input.allowedSellerIds ?? []).map((sellerId) => sellerId.trim()).filter(Boolean),
+    input.allowedSellerIds.map((sellerId) => sellerId.trim()).filter(Boolean),
   );
 
   if (allowedSellerIds.size === 0) {
@@ -568,24 +634,7 @@ export function createOAuthMlcApiClient(input: {
     return input.transport.request(apiRequest);
   };
 
-  return {
-    getListings: (sellerId) =>
-      request(sellerId, `/users/${sellerId}/items/search`, { site: "MLC" }).then((payload) =>
-        normalizeListings({ sellerId, payload, now: input.now() }),
-      ),
-    getOrders: (sellerId) =>
-      request(sellerId, `/orders/search`, { seller: sellerId, site: "MLC" }).then((payload) =>
-        normalizeOrders({ sellerId, payload, now: input.now() }),
-      ),
-    getMessages: (sellerId) =>
-      request(sellerId, `/messages/search`, { seller: sellerId, site: "MLC" }).then((payload) =>
-        normalizeMessages({ sellerId, payload, now: input.now() }),
-      ),
-    getReputation: (sellerId) =>
-      request(sellerId, `/users/${sellerId}`, { site: "MLC" }).then((payload) =>
-        normalizeReputation({ sellerId, payload, now: input.now() }),
-      ),
-  };
+  return createMlcReadMethods({ request, now: input.now });
 }
 
 // ---------------------------------------------------------------------------
