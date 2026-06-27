@@ -7,6 +7,9 @@ import { resetConversationAccessLoginLimitForTests } from "../apps/web/app/api/c
 import { POST as login } from "../apps/web/app/api/conversation-access/route.ts";
 import { POST as conversationChat } from "../apps/web/app/api/conversation-chat/route.ts";
 
+const INVALID_ACCESS_LOGIN_LIMIT = 5;
+const INVALID_ACCESS_LOGIN_RETRY_AFTER_SECONDS = 60;
+
 async function readSse(response: Response): Promise<Array<Record<string, unknown>>> {
   const text = await response.text();
   return text
@@ -107,7 +110,10 @@ describe("/api/conversation-chat auth bridge", () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get("set-cookie")).toBeNull();
-    await expect(response.json()).resolves.toEqual({ error: "Invalid conversation access token." });
+    await expect(response.json()).resolves.toEqual({
+      reason: "invalid_token",
+      error: "Invalid conversation access token.",
+    });
   });
 
   it("rate-limits repeated invalid access login attempts", async () => {
@@ -116,7 +122,7 @@ describe("/api/conversation-chat auth bridge", () => {
     vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "");
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    for (let attempt = 0; attempt < INVALID_ACCESS_LOGIN_LIMIT; attempt += 1) {
       const response = await login(
         new Request("https://msl.local/api/conversation-access", {
           method: "POST",
@@ -137,8 +143,14 @@ describe("/api/conversation-chat auth bridge", () => {
     );
 
     expect(blocked.status).toBe(429);
-    expect(blocked.headers.get("retry-after")).toBe("60");
+    expect(blocked.headers.get("retry-after")).toBe(
+      String(INVALID_ACCESS_LOGIN_RETRY_AFTER_SECONDS),
+    );
     expect(blocked.headers.get("set-cookie")).toBeNull();
+    await expect(blocked.json()).resolves.toEqual({
+      reason: "too_many_attempts",
+      error: "Too many invalid conversation access attempts.",
+    });
   });
 
   it("issues an HttpOnly same-site cookie and forwards authorized browser chat server-side", async () => {

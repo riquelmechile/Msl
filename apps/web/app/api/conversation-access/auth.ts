@@ -7,6 +7,26 @@ const INVALID_LOGIN_MAX = 5;
 const INVALID_LOGIN_WINDOW_MS = 60_000;
 const INVALID_LOGIN_LOCKOUT_MS = 60_000;
 
+export const CONVERSATION_ACCESS_DENIAL_REASONS = {
+  unconfigured: "unconfigured",
+  missingToken: "missing_token",
+  invalidToken: "invalid_token",
+} as const;
+
+type ConversationAccessDenialReason =
+  (typeof CONVERSATION_ACCESS_DENIAL_REASONS)[keyof typeof CONVERSATION_ACCESS_DENIAL_REASONS];
+
+const CONVERSATION_ACCESS_DENIAL_MESSAGES: Record<ConversationAccessDenialReason, string> = {
+  [CONVERSATION_ACCESS_DENIAL_REASONS.unconfigured]:
+    "MSL_CONVERSATION_ACCESS_TOKEN is required for browser conversation access outside local/test mode.",
+  [CONVERSATION_ACCESS_DENIAL_REASONS.missingToken]: "Conversation access is required.",
+  [CONVERSATION_ACCESS_DENIAL_REASONS.invalidToken]: "Invalid conversation access token.",
+};
+
+type ConversationAccessResult =
+  | { authorized: true }
+  | { authorized: false; reason: ConversationAccessDenialReason; error: string };
+
 type InvalidLoginState = {
   count: number;
   resetAt: number;
@@ -35,40 +55,30 @@ function createCookieValue(token: string): string {
   return createHash("sha256").update(token).digest("base64url");
 }
 
-export function validateConversationAccessToken(candidate: string): {
-  authorized: boolean;
-  error?: string;
-} {
+function denyConversationAccess(reason: ConversationAccessDenialReason): ConversationAccessResult {
+  return { authorized: false, reason, error: CONVERSATION_ACCESS_DENIAL_MESSAGES[reason] };
+}
+
+export function validateConversationAccessToken(candidate: string): ConversationAccessResult {
   const accessToken = getAccessToken();
   if (!accessToken) {
     if (allowUnauthenticatedLocal()) return { authorized: true };
-    return {
-      authorized: false,
-      error:
-        "MSL_CONVERSATION_ACCESS_TOKEN is required for browser conversation access outside local/test mode.",
-    };
+    return denyConversationAccess(CONVERSATION_ACCESS_DENIAL_REASONS.unconfigured);
   }
 
   if (!safeEqual(candidate, accessToken)) {
-    return { authorized: false, error: "Invalid conversation access token." };
+    return denyConversationAccess(CONVERSATION_ACCESS_DENIAL_REASONS.invalidToken);
   }
 
   return { authorized: true };
 }
 
-export function validateConversationAccess(request: Request): {
-  authorized: boolean;
-  error?: string;
-} {
+export function validateConversationAccess(request: Request): ConversationAccessResult {
   if (allowUnauthenticatedLocal()) return { authorized: true };
 
   const accessToken = getAccessToken();
   if (!accessToken) {
-    return {
-      authorized: false,
-      error:
-        "MSL_CONVERSATION_ACCESS_TOKEN is required for browser conversation access outside local/test mode.",
-    };
+    return denyConversationAccess(CONVERSATION_ACCESS_DENIAL_REASONS.unconfigured);
   }
 
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -78,17 +88,17 @@ export function validateConversationAccess(request: Request): {
     .find((part) => part.startsWith(`${COOKIE_NAME}=`))
     ?.slice(COOKIE_NAME.length + 1);
 
-  if (!accessCookie) return { authorized: false, error: "Conversation access is required." };
+  if (!accessCookie) return denyConversationAccess(CONVERSATION_ACCESS_DENIAL_REASONS.missingToken);
 
   let decodedCookie: string;
   try {
     decodedCookie = decodeURIComponent(accessCookie);
   } catch {
-    return { authorized: false, error: "Invalid conversation access token." };
+    return denyConversationAccess(CONVERSATION_ACCESS_DENIAL_REASONS.invalidToken);
   }
 
   if (!safeEqual(decodedCookie, createCookieValue(accessToken))) {
-    return { authorized: false, error: "Invalid conversation access token." };
+    return denyConversationAccess(CONVERSATION_ACCESS_DENIAL_REASONS.invalidToken);
   }
 
   return { authorized: true };

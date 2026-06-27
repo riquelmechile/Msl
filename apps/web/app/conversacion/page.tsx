@@ -48,6 +48,22 @@ const AUTONOMY_EMOJI: Record<string, string> = {
   FULL: "🔵",
 };
 
+type AccessLoginErrorBody = {
+  reason?: string;
+};
+
+function getAccessLoginErrorMessage(status: number, body: AccessLoginErrorBody): string {
+  if (status === 429 || body.reason === "too_many_attempts") {
+    return "⏳ Demasiados intentos inválidos. Esperá un minuto e intentá de nuevo.";
+  }
+
+  if (body.reason === "invalid_token") {
+    return "🔐 Clave de acceso inválida.";
+  }
+
+  return "⛔ El acceso a la conversación no está disponible. Revisá la configuración e intentá más tarde.";
+}
+
 // ── Component ──────────────────────────────────────────────────────
 
 export default function ConversationPage() {
@@ -236,11 +252,12 @@ export default function ConversationPage() {
       });
 
       if (!res.ok) {
+        const errorBody = (await res.json().catch(() => ({}))) as AccessLoginErrorBody;
         setMessages((prev) => [
           ...prev,
           {
             role: "system",
-            content: "🔐 Clave de acceso inválida.",
+            content: getAccessLoginErrorMessage(res.status, errorBody),
             timestamp: new Date(),
           },
         ]);

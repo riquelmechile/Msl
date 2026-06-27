@@ -1,9 +1,14 @@
 import {
+  CONVERSATION_ACCESS_DENIAL_REASONS,
   validateConversationAccessToken,
   createConversationAccessCookie,
   checkConversationAccessLoginLimit,
   recordConversationAccessLoginFailure,
 } from "./auth";
+
+const LOGIN_DENIAL_REASONS = {
+  tooManyAttempts: "too_many_attempts",
+} as const;
 
 type LoginBody = {
   token?: string;
@@ -15,7 +20,10 @@ export async function POST(request: Request) {
   const limit = checkConversationAccessLoginLimit();
   if (!limit.allowed) {
     return Response.json(
-      { error: "Too many invalid conversation access attempts." },
+      {
+        reason: LOGIN_DENIAL_REASONS.tooManyAttempts,
+        error: "Too many invalid conversation access attempts.",
+      },
       { status: 429, headers: { "Retry-After": String(limit.retryAfter ?? 60) } },
     );
   }
@@ -23,10 +31,10 @@ export async function POST(request: Request) {
   const access = validateConversationAccessToken(token);
 
   if (!access.authorized) {
-    if (access.error === "Invalid conversation access token.") {
+    if (access.reason === CONVERSATION_ACCESS_DENIAL_REASONS.invalidToken) {
       recordConversationAccessLoginFailure();
     }
-    return Response.json({ error: access.error }, { status: 401 });
+    return Response.json({ reason: access.reason, error: access.error }, { status: 401 });
   }
 
   return Response.json(
