@@ -162,9 +162,10 @@ export type LlmClient = {
  *   4. Parse response for action proposals
  *   5. Update conversation state
  *
- * If the `DEEPSEEK_API_KEY` environment variable is set, a real DeepSeek
- * client is created via the OpenAI SDK. Otherwise it falls back to the
- * configured mock or noop client.
+ * If `mockClient` is true, the loop always stays local even when
+ * `DEEPSEEK_API_KEY` is set. Otherwise, a real DeepSeek client is created via
+ * the OpenAI SDK when the environment variable is present; without it, the loop
+ * falls back to the noop client.
  */
 export function createAgentLoop(config: AgentLoopConfig) {
   const model = config.model ?? "deepseek-v4-flash";

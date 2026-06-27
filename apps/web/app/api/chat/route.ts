@@ -292,9 +292,11 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
 /**
  * Conversational agent chat endpoint.
  *
- * Accepts a user message and conversation history, runs it through the
- * demo agent loop with in-memory strategy/autonomy stores and mock LLM output,
- * then streams the response back as Server-Sent Events.
+ * Accepts a user message and optional client session id, runs it through the
+ * agent loop, then streams the response back as Server-Sent Events. By default
+ * it stays local/demo with in-memory stores and mock LLM output. When durable
+ * chat is configured, it persists state in seller-bound SQLite storage and can
+ * use real DeepSeek if the API key is present.
  */
 export async function POST(req: NextRequest) {
   // Auth check (before rate limit — unauthorised clients shouldn't burn quota)
