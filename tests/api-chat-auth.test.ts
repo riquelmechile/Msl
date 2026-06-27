@@ -54,6 +54,28 @@ describe("/api/chat auth", () => {
     expect(result.authorized).toBe(true);
   });
 
+  it("rejects direct /api/chat calls without the bearer token when MSL_API_KEY is set", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MSL_API_KEY", "server-chat-key");
+    vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "");
+
+    const missing = validateAuth(new Request("https://msl.local/api/chat"));
+    const invalid = validateAuth(
+      new Request("https://msl.local/api/chat", {
+        headers: { authorization: "Bearer wrong-key" },
+      }),
+    );
+    const valid = validateAuth(
+      new Request("https://msl.local/api/chat", {
+        headers: { authorization: "Bearer server-chat-key" },
+      }),
+    );
+
+    expect(missing).toEqual({ authorized: false, error: "Missing Authorization header" });
+    expect(invalid).toEqual({ authorized: false, error: "Invalid API key" });
+    expect(valid).toEqual({ authorized: true });
+  });
+
   it("keeps demo chat local even when a DeepSeek key exists without durable chat state", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("DEEPSEEK_API_KEY", "test-key-that-must-not-be-called");

@@ -64,6 +64,9 @@ export default function ConversationPage() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [accessToken, setAccessToken] = useState("");
+  const [accessRequired, setAccessRequired] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [currentAutonomy, setCurrentAutonomy] = useState("SUGIERE");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -104,18 +107,24 @@ export default function ConversationPage() {
           timestamp: m.timestamp,
         }));
 
-        const res = await fetch("/api/chat", {
+        const res = await fetch("/api/conversation-chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text.trim(), history, sessionId }),
         });
 
         if (!res.ok || !res.body) {
+          if (res.status === 401) {
+            setAccessRequired(true);
+          }
           setMessages((prev) => [
             ...prev,
             {
               role: "system",
-              content: "⛔ Error al conectar con el agente. Intentá de nuevo.",
+              content:
+                res.status === 401
+                  ? "🔐 Ingresá la clave de acceso para usar la conversación."
+                  : "⛔ Error al conectar con el agente. Intentá de nuevo.",
               timestamp: new Date(),
             },
           ]);
@@ -214,6 +223,54 @@ export default function ConversationPage() {
     },
     [messages, loading, sessionId],
   );
+
+  const handleAccessLogin = useCallback(async () => {
+    if (!accessToken.trim() || loginLoading) return;
+
+    setLoginLoading(true);
+    try {
+      const res = await fetch("/api/conversation-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: accessToken.trim() }),
+      });
+
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "system",
+            content: "🔐 Clave de acceso inválida.",
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
+
+      setAccessToken("");
+      setAccessRequired(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system",
+          content: "✅ Acceso habilitado. Ya podés conversar con el agente.",
+          timestamp: new Date(),
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system",
+          content: "⛔ Error al validar la clave de acceso. Intentá de nuevo.",
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
+      setLoginLoading(false);
+      inputRef.current?.focus();
+    }
+  }, [accessToken, loginLoading]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -339,6 +396,34 @@ export default function ConversationPage() {
 
         <div ref={bottomRef} />
       </main>
+
+      {accessRequired && (
+        <section className="chat-access-bar" aria-label="Acceso a la conversación">
+          <input
+            type="password"
+            className="chat-input"
+            placeholder="Clave de acceso"
+            value={accessToken}
+            onChange={(e) => setAccessToken(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleAccessLogin();
+              }
+            }}
+            disabled={loginLoading}
+            aria-label="Clave de acceso a la conversación"
+          />
+          <button
+            type="button"
+            className="chat-access-btn"
+            onClick={() => void handleAccessLogin()}
+            disabled={loginLoading || !accessToken.trim()}
+          >
+            Entrar
+          </button>
+        </section>
+      )}
 
       {/* Input */}
       <footer className="chat-input-bar">

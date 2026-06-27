@@ -405,6 +405,16 @@ button.secondary {
   padding: 0.5rem 0.75rem;
 }
 
+.chat-access-bar {
+  align-items: center;
+  background: #fff8e1;
+  border-top: 1px solid #eedc82;
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
 .chat-input {
   background: white;
   border: 0;
@@ -440,6 +450,22 @@ button.secondary {
   padding: 0;
   transition: background 0.15s;
   width: 40px;
+}
+
+.chat-access-btn {
+  background: #075e54;
+  border: 0;
+  border-radius: 999px;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+}
+
+.chat-access-btn:disabled {
+  background: #b0c4c1;
+  cursor: default;
 }
 
 .chat-send-btn:hover:not(:disabled) {
