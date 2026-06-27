@@ -1,6 +1,38 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  createMlcReadTools,
+  createPreparedActionTool,
+  type ApprovalQueueRepository,
+  type Clock,
+  type MlcReadTools,
+  type PrepareWriteInput,
+  type PreparedWriteKind,
+} from "@msl/tools";
+import type { ExactChange, PreparedAction, SellerId } from "@msl/domain";
+import type { MlcApiClient } from "@msl/mercadolibre";
 import { z } from "zod";
+
+type McpToolResult = {
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+};
+
+function jsonResult(value: unknown, isError = false): McpToolResult {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(value),
+      },
+    ],
+    ...(isError ? { isError: true } : {}),
+  };
+}
+
+function unauthorizedResult(): McpToolResult {
+  return jsonResult({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }, true);
+}
 
 /**
  * Validates the MCP API key against the {@link MSL_MCP_API_KEY}
@@ -23,11 +55,12 @@ function validateApiKey(apiKey: string | undefined): boolean {
  * Cursor, VS Code, etc.).
  */
 export function createMcpServer(config: McpServerConfig = {}) {
-  void config; // reserved for future deps
   const server = new McpServer(
     { name: "msl-mcp-server", version: "0.1.0" },
     { capabilities: { tools: {} } },
   );
+
+  const readTools = config.mlcClient ? createMlcReadTools({ client: config.mlcClient }) : undefined;
 
   // ── simulate_actor ────────────────────────────────────────────────
   server.registerTool(
@@ -43,27 +76,12 @@ export function createMcpServer(config: McpServerConfig = {}) {
     },
     ({ actorType, msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
-            },
-          ],
-          isError: true,
-        };
+        return unauthorizedResult();
       }
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              result: "simulado",
-              actor: actorType ?? "desconocido",
-            }),
-          },
-        ],
-      };
+      return jsonResult({
+        result: "simulado",
+        actor: actorType ?? "desconocido",
+      });
     },
   );
 
@@ -80,24 +98,9 @@ export function createMcpServer(config: McpServerConfig = {}) {
     },
     ({ msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
-            },
-          ],
-          isError: true,
-        };
+        return unauthorizedResult();
       }
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ status: "ok", tool: "detect_probes" }),
-          },
-        ],
-      };
+      return jsonResult({ status: "ok", tool: "detect_probes" });
     },
   );
 
@@ -115,24 +118,9 @@ export function createMcpServer(config: McpServerConfig = {}) {
     },
     ({ msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
-            },
-          ],
-          isError: true,
-        };
+        return unauthorizedResult();
       }
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ status: "ok", tool: "sync_product" }),
-          },
-        ],
-      };
+      return jsonResult({ status: "ok", tool: "sync_product" });
     },
   );
 
@@ -146,17 +134,12 @@ export function createMcpServer(config: McpServerConfig = {}) {
         msl_api_key: z.string().optional(),
       },
     },
-    ({ sellerId, msl_api_key }) => {
+    async ({ sellerId, msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
-            },
-          ],
-          isError: true,
-        };
+        return unauthorizedResult();
+      }
+      if (readTools) {
+        return jsonResult(await readTools.reputation.execute({ sellerId: sellerId as SellerId }));
       }
       return {
         content: [
@@ -184,24 +167,9 @@ export function createMcpServer(config: McpServerConfig = {}) {
     },
     ({ msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
-            },
-          ],
-          isError: true,
-        };
+        return unauthorizedResult();
       }
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ strategies: [], count: 0 }),
-          },
-        ],
-      };
+      return jsonResult({ strategies: [], count: 0 });
     },
   );
 
@@ -217,34 +185,132 @@ export function createMcpServer(config: McpServerConfig = {}) {
     },
     ({ msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }),
-            },
-          ],
-          isError: true,
-        };
+        return unauthorizedResult();
       }
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ status: "ok", tool: "consult_cortex" }),
-          },
-        ],
-      };
+      return jsonResult({ status: "ok", tool: "consult_cortex" });
     },
   );
+
+  if (readTools) {
+    registerMlcReadTool(server, "read_mercadolibre_listings", readTools.listings);
+    registerMlcReadTool(server, "read_mercadolibre_orders", readTools.orders);
+    registerMlcReadTool(server, "read_mercadolibre_messages", readTools.messages);
+    registerMlcReadTool(server, "read_mercadolibre_reputation", readTools.reputation);
+  }
+
+  if (config.prepareWrite) {
+    const prepareTool = createPreparedActionTool(config.prepareWrite);
+    server.registerTool(
+      "prepare_mercadolibre_write",
+      {
+        description:
+          "Prepares a MercadoLibre write for seller approval. This tool does not execute mutations.",
+        inputSchema: {
+          id: z.string(),
+          sellerId: z.string(),
+          kind: z.enum([
+            "price-change",
+            "stock-change",
+            "customer-message",
+            "cancellation",
+            "refund",
+            "listing-edit",
+            "creative-publication",
+          ]),
+          target: z.union([
+            z.object({ type: z.literal("listing"), listingId: z.string() }),
+            z.object({ type: z.literal("order"), orderId: z.string() }),
+            z.object({ type: z.literal("message"), threadId: z.string() }),
+            z.object({ type: z.literal("creative-asset"), assetId: z.string() }),
+          ]),
+          exactChange: z.array(
+            z.object({
+              field: z.string(),
+              from: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+              to: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+            }),
+          ),
+          rationale: z.string(),
+          expiresAt: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ msl_api_key, id, sellerId, kind, target, exactChange, rationale, expiresAt }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+
+        const parsedExpiresAt = parseStrictIsoTimestamp(expiresAt);
+        if (!parsedExpiresAt) {
+          return jsonResult(
+            { error: "Invalid expiresAt — expected a valid ISO 8601 timestamp" },
+            true,
+          );
+        }
+
+        const request: PrepareWriteInput = {
+          id,
+          sellerId: sellerId as SellerId,
+          kind: kind as PreparedWriteKind,
+          target: target as PreparedAction["target"],
+          exactChange: exactChange as ExactChange[],
+          rationale,
+          expiresAt: parsedExpiresAt,
+        };
+
+        return jsonResult(await prepareTool.execute(request));
+      },
+    );
+  }
 
   return server;
 }
 
-/** Configuration for the MCP server (reserved for future agent deps). */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+function parseStrictIsoTimestamp(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const normalized = value.includes(".") ? value : value.replace("Z", ".000Z");
+  return parsed.toISOString() === normalized ? parsed : null;
+}
+
+function registerMlcReadTool(
+  server: McpServer,
+  name: string,
+  tool: MlcReadTools[keyof MlcReadTools],
+): void {
+  server.registerTool(
+    name,
+    {
+      description: tool.description,
+      inputSchema: {
+        sellerId: z.string(),
+        msl_api_key: z.string().optional(),
+      },
+    },
+    async ({ sellerId, msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      return jsonResult(await tool.execute({ sellerId: sellerId as SellerId }));
+    },
+  );
+}
+
+/** Configuration for MCP server dependencies. Dependencies are injected by callers. */
 export type McpServerConfig = {
-  // Reserved for future dependencies (engine, syncEngine, mlClient, etc.)
+  mlcClient?: MlcApiClient;
+  prepareWrite?: {
+    repository: ApprovalQueueRepository;
+    clock: Clock;
+  };
 };
 
 /**

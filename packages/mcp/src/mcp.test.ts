@@ -34,6 +34,7 @@ const { createMcpServer, startMcpServer } = await import("../src/index.js");
 
 describe("MCP Server", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     registeredTools.clear();
     MockMcpServer.mockClear();
     mockMcpServer.registerTool.mockClear();
@@ -103,6 +104,244 @@ describe("MCP Server", () => {
     expect(parsed.sellerId).toBe("ML-test");
     expect(parsed.level).toBe("platinum");
     expect(parsed.status).toBe("active");
+  });
+
+  it("check_account delegates to the injected MercadoLibre reputation read tool", async () => {
+    const getReputation = vi.fn().mockResolvedValue({
+      kind: "account-health",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+      completeness: "complete",
+      confidence: "high",
+      freshness: {
+        source: "mercadolibre-api",
+        signalKind: "account-health",
+        capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+        ageMs: 0,
+        status: "fresh",
+        risk: "medium",
+      },
+      data: { level: "gold", completedTransactions: 10 },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation,
+      },
+    });
+
+    const cb = registeredTools.get("check_account");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test" })) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getReputation).toHaveBeenCalledWith("ML-test");
+    expect(parsed.metadata).toMatchObject({
+      source: "mercadolibre-api",
+      confidence: "high",
+      requiresApproval: false,
+    });
+    expect(parsed.data).toMatchObject({
+      sellerId: "ML-test",
+      data: { level: "gold", completedTransactions: 10 },
+    });
+  });
+
+  it("registers injected MercadoLibre read tools without replacing stub-only behavior", async () => {
+    const getListings = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+      completeness: "complete",
+      confidence: "high",
+      freshness: {
+        source: "mercadolibre-api",
+        signalKind: "business-signal",
+        capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+        ageMs: 0,
+        status: "fresh",
+        risk: "medium",
+      },
+      data: [{ id: "MLC-1", title: "Test listing" }],
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings,
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+      },
+    });
+
+    expect(registeredTools.size).toBe(10);
+    expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_reputation")).toBe(true);
+
+    const cb = registeredTools.get("read_mercadolibre_listings");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test" })) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getListings).toHaveBeenCalledWith("ML-test");
+    expect(parsed.metadata).toMatchObject({ requiresApproval: false });
+    expect(parsed.data).toMatchObject({ sellerId: "ML-test" });
+  });
+
+  it("applies MCP auth before calling injected MercadoLibre read dependencies", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const getListings = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings,
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_listings");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", msl_api_key: "wrong" })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+
+    expect(result.isError).toBe(true);
+    expect(getListings).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed.error).toContain("Unauthorized");
+  });
+
+  it("registers a prepare-only write proposal tool when approval dependencies are injected", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+
+    createMcpServer({
+      prepareWrite: {
+        repository: {
+          save,
+          findAction: vi.fn(),
+          saveApproval: vi.fn(),
+          findApproval: vi.fn(),
+          saveAudit: vi.fn(),
+          listAudits: vi.fn(),
+        },
+        clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
+      },
+    });
+
+    expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
+    expect(registeredTools.has("executePreparedAction")).toBe(false);
+
+    const cb = registeredTools.get("prepare_mercadolibre_write");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      id: "prepared-1",
+      sellerId: "ML-target",
+      kind: "price-change",
+      target: { type: "listing", listingId: "MLC-1" },
+      exactChange: [{ field: "price", from: 100, to: 110 }],
+      rationale: "Seller requested pricing update.",
+      expiresAt: "2026-01-02T00:00:00.000Z",
+    })) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        highlightedRisk: "medium",
+        status: "pending",
+      }),
+    );
+    expect(parsed.metadata).toMatchObject({ requiresApproval: true });
+    expect(parsed.data).toMatchObject({
+      highlightedRisk: "medium",
+      status: "pending",
+      action: { id: "prepared-1", approvalStatus: "pending" },
+    });
+  });
+
+  it("rejects prepare-only write proposals with invalid expiresAt without saving", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+
+    createMcpServer({
+      prepareWrite: {
+        repository: {
+          save,
+          findAction: vi.fn(),
+          saveApproval: vi.fn(),
+          findApproval: vi.fn(),
+          saveAudit: vi.fn(),
+          listAudits: vi.fn(),
+        },
+        clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
+      },
+    });
+
+    const cb = registeredTools.get("prepare_mercadolibre_write");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      id: "prepared-invalid-date",
+      sellerId: "ML-target",
+      kind: "price-change",
+      target: { type: "listing", listingId: "MLC-1" },
+      exactChange: [{ field: "price", from: 100, to: 110 }],
+      rationale: "Seller requested pricing update.",
+      expiresAt: "not-a-date",
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed).toEqual({ error: "Invalid expiresAt — expected a valid ISO 8601 timestamp" });
+  });
+
+  it("rejects prepare-only write proposals with parseable non-ISO expiresAt without saving", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+
+    createMcpServer({
+      prepareWrite: {
+        repository: {
+          save,
+          findAction: vi.fn(),
+          saveApproval: vi.fn(),
+          findApproval: vi.fn(),
+          saveAudit: vi.fn(),
+          listAudits: vi.fn(),
+        },
+        clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
+      },
+    });
+
+    const cb = registeredTools.get("prepare_mercadolibre_write");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      id: "prepared-date-only",
+      sellerId: "ML-target",
+      kind: "price-change",
+      target: { type: "listing", listingId: "MLC-1" },
+      exactChange: [{ field: "price", from: 100, to: 110 }],
+      rationale: "Seller requested pricing update.",
+      expiresAt: "2026-01-02",
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed).toEqual({ error: "Invalid expiresAt — expected a valid ISO 8601 timestamp" });
   });
 
   it("list_strategies tool returns empty strategies", async () => {
