@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
+import { PREPARED_WRITE_KINDS, type ApprovalQueueRepository } from "@msl/tools";
+import type { z } from "zod";
 
 // ── Mock @modelcontextprotocol/sdk ──────────────────────────────────
 
@@ -31,6 +34,46 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
 
 // ── Dynamically import after mocks are set ──────────────────────────
 const { createMcpServer, startMcpServer } = await import("../src/index.js");
+
+function makeApprovalDependencies() {
+  const save = vi.fn<ApprovalQueueRepository["save"]>().mockResolvedValue(undefined);
+
+  return {
+    save,
+    prepareWrite: {
+      repository: {
+        save,
+        findAction: vi.fn(),
+        saveApproval: vi.fn(),
+        findApproval: vi.fn(),
+        saveAudit: vi.fn(),
+        listAudits: vi.fn(),
+      },
+      clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
+    },
+  };
+}
+
+function makePrepareWritePayload(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "prepared-1",
+    sellerId: "ML-target",
+    kind: "price-change",
+    target: { type: "listing", listingId: "MLC-1" },
+    exactChange: [{ field: "price", from: 100, to: 110 }],
+    rationale: "Seller requested pricing update.",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function prepareWriteInputSchema() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const calls = mockMcpServer.registerTool.mock.calls as any[][];
+  const prepareWriteCall = calls.find((call) => call[0] === "prepare_mercadolibre_write");
+  expect(prepareWriteCall).toBeDefined();
+  return (prepareWriteCall![1] as { inputSchema: Record<string, z.ZodType> }).inputSchema;
+}
 
 describe("MCP Server", () => {
   beforeEach(() => {
@@ -225,21 +268,9 @@ describe("MCP Server", () => {
   });
 
   it("registers a prepare-only write proposal tool when approval dependencies are injected", async () => {
-    const save = vi.fn().mockResolvedValue(undefined);
+    const { save, prepareWrite } = makeApprovalDependencies();
 
-    createMcpServer({
-      prepareWrite: {
-        repository: {
-          save,
-          findAction: vi.fn(),
-          saveApproval: vi.fn(),
-          findApproval: vi.fn(),
-          saveAudit: vi.fn(),
-          listAudits: vi.fn(),
-        },
-        clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
-      },
-    });
+    createMcpServer({ prepareWrite });
 
     expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
     expect(registeredTools.has("executePreparedAction")).toBe(false);
@@ -247,15 +278,7 @@ describe("MCP Server", () => {
     const cb = registeredTools.get("prepare_mercadolibre_write");
     expect(cb).toBeDefined();
 
-    const result = (await cb!({
-      id: "prepared-1",
-      sellerId: "ML-target",
-      kind: "price-change",
-      target: { type: "listing", listingId: "MLC-1" },
-      exactChange: [{ field: "price", from: 100, to: 110 }],
-      rationale: "Seller requested pricing update.",
-      expiresAt: "2026-01-02T00:00:00.000Z",
-    })) as { content: { text: string }[] };
+    const result = (await cb!(makePrepareWritePayload())) as { content: { text: string }[] };
     const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
 
     expect(save).toHaveBeenCalledWith(
@@ -272,35 +295,39 @@ describe("MCP Server", () => {
     });
   });
 
-  it("rejects prepare-only write proposals with invalid expiresAt without saving", async () => {
-    const save = vi.fn().mockResolvedValue(undefined);
+  it("derives prepare-write kind schema from the tools prepared-write kinds", () => {
+    const { prepareWrite } = makeApprovalDependencies();
 
-    createMcpServer({
-      prepareWrite: {
-        repository: {
-          save,
-          findAction: vi.fn(),
-          saveApproval: vi.fn(),
-          findApproval: vi.fn(),
-          saveAudit: vi.fn(),
-          listAudits: vi.fn(),
-        },
-        clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
-      },
-    });
+    createMcpServer({ prepareWrite });
+
+    const inputSchema = prepareWriteInputSchema();
+    for (const kind of PREPARED_WRITE_KINDS) {
+      expect(inputSchema.kind!.safeParse(kind).success).toBe(true);
+    }
+  });
+
+  it("derives prepare-write target schema from the domain action target variants", () => {
+    const { prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+
+    const inputSchema = prepareWriteInputSchema();
+    for (const [type, idField] of Object.entries(ACTION_TARGET_FIELD_BY_TYPE)) {
+      expect(inputSchema.target!.safeParse({ type, [idField]: "target-1" }).success).toBe(true);
+    }
+  });
+
+  it("rejects prepare-only write proposals with invalid expiresAt without saving", async () => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
 
     const cb = registeredTools.get("prepare_mercadolibre_write");
     expect(cb).toBeDefined();
 
-    const result = (await cb!({
-      id: "prepared-invalid-date",
-      sellerId: "ML-target",
-      kind: "price-change",
-      target: { type: "listing", listingId: "MLC-1" },
-      exactChange: [{ field: "price", from: 100, to: 110 }],
-      rationale: "Seller requested pricing update.",
-      expiresAt: "not-a-date",
-    })) as { content: { text: string }[]; isError?: boolean };
+    const result = (await cb!(
+      makePrepareWritePayload({ id: "prepared-invalid-date", expiresAt: "not-a-date" }),
+    )) as { content: { text: string }[]; isError?: boolean };
 
     expect(result.isError).toBe(true);
     expect(save).not.toHaveBeenCalled();
@@ -309,34 +336,16 @@ describe("MCP Server", () => {
   });
 
   it("rejects prepare-only write proposals with parseable non-ISO expiresAt without saving", async () => {
-    const save = vi.fn().mockResolvedValue(undefined);
+    const { save, prepareWrite } = makeApprovalDependencies();
 
-    createMcpServer({
-      prepareWrite: {
-        repository: {
-          save,
-          findAction: vi.fn(),
-          saveApproval: vi.fn(),
-          findApproval: vi.fn(),
-          saveAudit: vi.fn(),
-          listAudits: vi.fn(),
-        },
-        clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
-      },
-    });
+    createMcpServer({ prepareWrite });
 
     const cb = registeredTools.get("prepare_mercadolibre_write");
     expect(cb).toBeDefined();
 
-    const result = (await cb!({
-      id: "prepared-date-only",
-      sellerId: "ML-target",
-      kind: "price-change",
-      target: { type: "listing", listingId: "MLC-1" },
-      exactChange: [{ field: "price", from: 100, to: 110 }],
-      rationale: "Seller requested pricing update.",
-      expiresAt: "2026-01-02",
-    })) as { content: { text: string }[]; isError?: boolean };
+    const result = (await cb!(
+      makePrepareWritePayload({ id: "prepared-date-only", expiresAt: "2026-01-02" }),
+    )) as { content: { text: string }[]; isError?: boolean };
 
     expect(result.isError).toBe(true);
     expect(save).not.toHaveBeenCalled();

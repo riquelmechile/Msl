@@ -181,14 +181,17 @@ function toReadToolBlocked(error: unknown): ReadToolBlocked | undefined {
   return undefined;
 }
 
-export type PreparedWriteKind =
-  | "price-change"
-  | "stock-change"
-  | "customer-message"
-  | "cancellation"
-  | "refund"
-  | "listing-edit"
-  | "creative-publication";
+export const PREPARED_WRITE_KINDS = [
+  "price-change",
+  "stock-change",
+  "customer-message",
+  "cancellation",
+  "refund",
+  "listing-edit",
+  "creative-publication",
+] as const;
+
+export type PreparedWriteKind = (typeof PREPARED_WRITE_KINDS)[number];
 
 export type PrepareWriteInput = {
   id: PreparedActionId;

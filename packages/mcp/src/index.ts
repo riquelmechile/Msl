@@ -3,13 +3,19 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   createMlcReadTools,
   createPreparedActionTool,
+  PREPARED_WRITE_KINDS,
   type ApprovalQueueRepository,
   type Clock,
   type MlcReadTools,
   type PrepareWriteInput,
   type PreparedWriteKind,
 } from "@msl/tools";
-import type { ExactChange, PreparedAction, SellerId } from "@msl/domain";
+import {
+  ACTION_TARGET_FIELD_BY_TYPE,
+  type ExactChange,
+  type PreparedAction,
+  type SellerId,
+} from "@msl/domain";
 import type { MlcApiClient } from "@msl/mercadolibre";
 import { z } from "zod";
 
@@ -34,6 +40,31 @@ function unauthorizedResult(): McpToolResult {
   return jsonResult({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }, true);
 }
 
+const mcpPrepareWriteTargetSchema = z.union(
+  Object.entries(ACTION_TARGET_FIELD_BY_TYPE).map(([type, idField]) =>
+    z.object({ type: z.literal(type), [idField]: z.string() }),
+  ) as unknown as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]],
+);
+
+const mcpExactChangeValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+const mcpPrepareWriteInputSchema = {
+  id: z.string(),
+  sellerId: z.string(),
+  kind: z.enum(PREPARED_WRITE_KINDS),
+  target: mcpPrepareWriteTargetSchema,
+  exactChange: z.array(
+    z.object({
+      field: z.string(),
+      from: mcpExactChangeValueSchema,
+      to: mcpExactChangeValueSchema,
+    }),
+  ),
+  rationale: z.string(),
+  expiresAt: z.string(),
+  msl_api_key: z.string().optional(),
+};
+
 /**
  * Validates the MCP API key against the {@link MSL_MCP_API_KEY}
  * environment variable. Fails closed unless explicit local/demo mode is enabled.
@@ -50,9 +81,9 @@ function validateApiKey(apiKey: string | undefined): boolean {
 }
 
 /**
- * Creates an MCP server that exposes all MSL agent tools via the
- * Model Context Protocol. Compatible with any MCP client (Claude Desktop,
- * Cursor, VS Code, etc.).
+ * Creates an MCP server with base MSL stub tools and optional injected
+ * MercadoLibre read tools plus prepare-only write proposal tooling.
+ * Compatible with any MCP client (Claude Desktop, Cursor, VS Code, etc.).
  */
 export function createMcpServer(config: McpServerConfig = {}) {
   const server = new McpServer(
@@ -205,35 +236,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
       {
         description:
           "Prepares a MercadoLibre write for seller approval. This tool does not execute mutations.",
-        inputSchema: {
-          id: z.string(),
-          sellerId: z.string(),
-          kind: z.enum([
-            "price-change",
-            "stock-change",
-            "customer-message",
-            "cancellation",
-            "refund",
-            "listing-edit",
-            "creative-publication",
-          ]),
-          target: z.union([
-            z.object({ type: z.literal("listing"), listingId: z.string() }),
-            z.object({ type: z.literal("order"), orderId: z.string() }),
-            z.object({ type: z.literal("message"), threadId: z.string() }),
-            z.object({ type: z.literal("creative-asset"), assetId: z.string() }),
-          ]),
-          exactChange: z.array(
-            z.object({
-              field: z.string(),
-              from: z.union([z.string(), z.number(), z.boolean(), z.null()]),
-              to: z.union([z.string(), z.number(), z.boolean(), z.null()]),
-            }),
-          ),
-          rationale: z.string(),
-          expiresAt: z.string(),
-          msl_api_key: z.string().optional(),
-        },
+        inputSchema: mcpPrepareWriteInputSchema,
       },
       async ({ msl_api_key, id, sellerId, kind, target, exactChange, rationale, expiresAt }) => {
         if (!validateApiKey(msl_api_key)) {

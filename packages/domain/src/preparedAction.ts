@@ -4,24 +4,37 @@ import type { SellerId } from "./seller.js";
 export type PreparedActionId = string;
 export type AuditId = string;
 
-export type WriteActionKind =
-  | "price-change"
-  | "stock-change"
-  | "customer-message"
-  | "cancellation"
-  | "refund"
-  | "listing-edit"
-  | "creative-publication"
-  | "honey-pot-deploy"
-  | "probe-analysis";
+export const WRITE_ACTION_KINDS = [
+  "price-change",
+  "stock-change",
+  "customer-message",
+  "cancellation",
+  "refund",
+  "listing-edit",
+  "creative-publication",
+  "honey-pot-deploy",
+  "probe-analysis",
+] as const;
+
+export type WriteActionKind = (typeof WRITE_ACTION_KINDS)[number];
 
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 
-export type ActionTarget =
-  | { type: "listing"; listingId: ListingId }
-  | { type: "order"; orderId: string }
-  | { type: "message"; threadId: string }
-  | { type: "creative-asset"; assetId: string };
+export const ACTION_TARGET_FIELD_BY_TYPE = {
+  listing: "listingId",
+  order: "orderId",
+  message: "threadId",
+  "creative-asset": "assetId",
+} as const;
+
+type ActionTargetFieldByType = typeof ACTION_TARGET_FIELD_BY_TYPE;
+
+export type ActionTarget = {
+  [TargetType in keyof ActionTargetFieldByType]: { type: TargetType } & Record<
+    ActionTargetFieldByType[TargetType],
+    TargetType extends "listing" ? ListingId : string
+  >;
+}[keyof ActionTargetFieldByType];
 
 export type ExactChange = {
   field: string;
