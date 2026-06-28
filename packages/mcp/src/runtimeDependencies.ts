@@ -124,6 +124,6 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
   return {
     ...(readRuntime.client ? { mlcClient: readRuntime.client } : {}),
     prepareWrite: createPrepareWriteDependencies(),
-    close: readRuntime.close,
+    close: () => readRuntime.close(),
   };
 }

@@ -166,6 +166,8 @@ describe("MCP Server", () => {
         status: "fresh",
         risk: "medium",
       },
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
       data: { level: "gold", completedTransactions: 10 },
     });
 
@@ -175,6 +177,8 @@ describe("MCP Server", () => {
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation,
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
       },
     });
 
@@ -189,6 +193,7 @@ describe("MCP Server", () => {
       source: "mercadolibre-api",
       confidence: "high",
       requiresApproval: false,
+      siteSupport: "MLC-confirmed",
     });
     expect(parsed.data).toMatchObject({
       sellerId: "ML-test",
@@ -221,14 +226,18 @@ describe("MCP Server", () => {
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
       },
     });
 
-    expect(registeredTools.size).toBe(10);
+    expect(registeredTools.size).toBe(12);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_reputation")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_category_attributes")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_category_technical_specs")).toBe(true);
 
     const cb = registeredTools.get("read_mercadolibre_listings");
     expect(cb).toBeDefined();
@@ -239,6 +248,288 @@ describe("MCP Server", () => {
     expect(getListings).toHaveBeenCalledWith("ML-test");
     expect(parsed.metadata).toMatchObject({ requiresApproval: false });
     expect(parsed.data).toMatchObject({ sellerId: "ML-test" });
+  });
+
+  it("registers only supported new MCP category safe reads and no mutation execution tools", () => {
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+    });
+
+    const toolNames = [...registeredTools.keys()];
+    expect(toolNames).toContain("read_mercadolibre_category_attributes");
+    expect(toolNames).toContain("read_mercadolibre_category_technical_specs");
+    expect(toolNames).not.toContain("read_mercadolibre_questions");
+    expect(toolNames).not.toContain("read_mercadolibre_shipping");
+    expect(toolNames).not.toContain("read_mercadolibre_visits");
+    expect(toolNames).not.toContain("read_mercadolibre_listing_quality");
+    expect(toolNames).not.toContain("read_mercadolibre_pictures");
+    expect(toolNames).not.toContain("execute_mercadolibre_write");
+    expect(toolNames).not.toContain("answer_mercadolibre_question");
+    expect(toolNames).not.toContain("reply_mercadolibre_message");
+    expect(toolNames).not.toContain("mark_mercadolibre_message_read");
+  });
+
+  it("executes category attributes reads with seller scope and metadata", async () => {
+    const getCategoryAttributes = vi.fn().mockResolvedValue({
+      kind: "category-attributes",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+      completeness: "complete",
+      confidence: "high",
+      freshness: {
+        source: "mercadolibre-api",
+        signalKind: "category-attributes",
+        capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+        ageMs: 0,
+        status: "fresh",
+        risk: "medium",
+      },
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+      data: { categoryId: "MLC123", attributes: [{ id: "BRAND", name: "Brand" }] },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes,
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_category_attributes");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", categoryId: "MLC123" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getCategoryAttributes).toHaveBeenCalledWith("ML-test", "MLC123");
+    expect(parsed.metadata).toMatchObject({
+      source: "mercadolibre-api",
+      confidence: "high",
+      requiresApproval: false,
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+    });
+    expect(parsed.data).toMatchObject({
+      kind: "category-attributes",
+      sellerId: "ML-test",
+      data: { categoryId: "MLC123" },
+    });
+  });
+
+  it("executes category technical specs reads with seller scope and metadata", async () => {
+    const getCategoryTechnicalSpecs = vi.fn().mockResolvedValue({
+      kind: "category-technical-specs",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+      completeness: "complete",
+      confidence: "high",
+      freshness: {
+        source: "mercadolibre-api",
+        signalKind: "category-technical-specs",
+        capturedAt: new Date("2026-01-01T00:00:00.000Z"),
+        ageMs: 0,
+        status: "fresh",
+        risk: "medium",
+      },
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+      data: { domainId: "MLC-CELLPHONES", technicalSpecs: [{ id: "COLOR", name: "Color" }] },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs,
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_category_technical_specs");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", domainId: "MLC-CELLPHONES" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getCategoryTechnicalSpecs).toHaveBeenCalledWith("ML-test", "MLC-CELLPHONES");
+    expect(parsed.metadata).toMatchObject({
+      source: "mercadolibre-api",
+      confidence: "high",
+      requiresApproval: false,
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+    });
+    expect(parsed.data).toMatchObject({
+      kind: "category-technical-specs",
+      sellerId: "ML-test",
+      data: { domainId: "MLC-CELLPHONES" },
+    });
+  });
+
+  it("applies MCP auth before calling injected category read dependencies", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const getCategoryAttributes = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes,
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_category_attributes");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      categoryId: "MLC123",
+      msl_api_key: "wrong",
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(getCategoryAttributes).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed.error).toContain("Unauthorized");
+  });
+
+  it("returns controlled blocked category read responses", async () => {
+    const getCategoryTechnicalSpecs = vi.fn().mockRejectedValue(
+      Object.assign(new Error("Requested seller is not configured."), {
+        reason: "seller-not-configured",
+        sellerId: "unconfigured-seller",
+      }),
+    );
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs,
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_category_technical_specs");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "unconfigured-seller",
+      domainId: "MLC-CELLPHONES",
+    })) as { content: { text: string }[]; isError?: boolean };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBeFalsy();
+    expect(parsed.data).toMatchObject({
+      status: "blocked",
+      reason: "seller-not-configured",
+      message: "Requested seller is not configured.",
+    });
+    expect(parsed.metadata).toMatchObject({ requiresApproval: false, confidence: "low" });
+  });
+
+  it("blocks malformed category identifiers at the MCP tool boundary", async () => {
+    const getCategoryAttributes = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes,
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_category_attributes");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", categoryId: "MLA123/../../users/me" })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBeFalsy();
+    expect(getCategoryAttributes).not.toHaveBeenCalled();
+    expect(parsed.data).toMatchObject({
+      status: "blocked",
+      reason: "unsupported-category-id",
+      siteSupport: "unknown",
+    });
+    expect(parsed.metadata).toMatchObject({
+      requiresApproval: false,
+      confidence: "low",
+      siteSupport: "unknown",
+      degradedReason: "unsupported-category-id",
+    });
+  });
+
+  it("returns controlled degraded category read responses for runtime API failures", async () => {
+    const getCategoryTechnicalSpecs = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("ML API GET /domains/MLC-CELLPHONES/technical_specs failed: 500"),
+      );
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs,
+      },
+    });
+
+    const cb = registeredTools.get("read_mercadolibre_category_technical_specs");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", domainId: "MLC-CELLPHONES" })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBeFalsy();
+    expect(parsed.data).toMatchObject({
+      status: "degraded",
+      reason: "ml-api-read-failed",
+      siteSupport: "unknown",
+    });
+    expect(parsed.metadata).toMatchObject({
+      requiresApproval: false,
+      confidence: "low",
+      siteSupport: "unknown",
+      degradedReason: "ml-api-read-failed",
+    });
   });
 
   it("returns a controlled blocked response for unconfigured MercadoLibre read sellers", async () => {
@@ -255,6 +546,8 @@ describe("MCP Server", () => {
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
       },
     });
 
@@ -286,6 +579,8 @@ describe("MCP Server", () => {
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
       },
     });
 
@@ -527,7 +822,10 @@ describe("MCP Server", () => {
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_reputation")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_category_attributes")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_category_technical_specs")).toBe(true);
     expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
+    expect(registeredTools.has("execute_mercadolibre_write")).toBe(false);
     expect(registeredTools.has("executePreparedAction")).toBe(false);
     runtime.close();
   });
