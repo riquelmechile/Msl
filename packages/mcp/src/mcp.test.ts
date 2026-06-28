@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
 import { PREPARED_WRITE_KINDS, type ApprovalQueueRepository } from "@msl/tools";
+import { readFileSync } from "node:fs";
 import type { z } from "zod";
 
 // ── Mock @modelcontextprotocol/sdk ──────────────────────────────────
@@ -36,9 +37,9 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
 const { createMcpServer, startMcpServer } = await import("../src/index.js");
 const { createMcpRuntimeDependencies } = await import("../src/runtimeDependencies.js");
 
-function makeApprovalDependencies() {
-  const save = vi.fn<ApprovalQueueRepository["save"]>().mockResolvedValue(undefined);
-
+function makeApprovalDependencies(
+  save = vi.fn<ApprovalQueueRepository["save"]>().mockResolvedValue(undefined),
+) {
   return {
     save,
     prepareWrite: {
@@ -65,6 +66,35 @@ function makePrepareWritePayload(overrides: Record<string, unknown> = {}) {
     rationale: "Seller requested pricing update.",
     expiresAt: "2026-01-02T00:00:00.000Z",
     ...overrides,
+  };
+}
+
+function makeSyncProductPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    sourceSellerId: "plasticov-seller",
+    targetSellerId: "maustian-seller",
+    itemId: "MLC-1",
+    rationale: "Prepare a seller-approved Plasticov to Maustian product sync proposal.",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    requiresApproval: true,
+    risk: "high",
+    ...overrides,
+  };
+}
+
+function syncProductConfig() {
+  const { save, prepareWrite } = makeApprovalDependencies();
+
+  return {
+    save,
+    config: {
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "maustian-seller",
+        site: "MLC" as const,
+      },
+    },
   };
 }
 
@@ -413,7 +443,7 @@ describe("MCP Server", () => {
     expect(result.isError).toBe(true);
     expect(getCategoryAttributes).not.toHaveBeenCalled();
     const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-    expect(parsed.error).toContain("Unauthorized");
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
   });
 
   it("returns controlled blocked category read responses", async () => {
@@ -595,7 +625,7 @@ describe("MCP Server", () => {
     expect(result.isError).toBe(true);
     expect(getListings).not.toHaveBeenCalled();
     const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-    expect(parsed.error).toContain("Unauthorized");
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
   });
 
   it("registers a prepare-only write proposal tool when approval dependencies are injected", async () => {
@@ -684,6 +714,175 @@ describe("MCP Server", () => {
     expect(parsed).toEqual({ error: "Invalid expiresAt — expected a valid ISO 8601 timestamp" });
   });
 
+  it("sync_product creates a pending prepare-only proposal for configured Plasticov to Maustian direction", async () => {
+    const { save, config } = syncProductConfig();
+
+    createMcpServer(config);
+
+    const cb = registeredTools.get("sync_product");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeSyncProductPayload())) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(parsed.reason).toBeUndefined();
+    expect(save).toHaveBeenCalledTimes(1);
+    const savedEntry = save.mock.calls[0]![0];
+    expect(savedEntry.highlightedRisk).toBe("high");
+    expect(savedEntry.status).toBe("pending");
+    expect(savedEntry.action).toMatchObject({
+      sellerId: "maustian-seller",
+      kind: "listing-edit",
+      target: { type: "listing", listingId: "MLC-1" },
+      approvalStatus: "pending",
+      riskLevel: "high",
+    });
+    expect(parsed.metadata).toMatchObject({
+      source: "seller-input",
+      requiresApproval: true,
+      sourceSellerId: "plasticov-seller",
+      targetSellerId: "maustian-seller",
+      site: "MLC",
+      risk: "high",
+      noMutationExecuted: true,
+    });
+    expect(parsed.data).toMatchObject({
+      status: "pending",
+      action: { approvalStatus: "pending" },
+    });
+  });
+
+  it.each([
+    ["invalid API key", { msl_api_key: "wrong" }, "unauthorized", true],
+    [
+      "reversed seller direction",
+      { sourceSellerId: "maustian-seller", targetSellerId: "plasticov-seller" },
+      "unsafe-direction",
+      false,
+    ],
+    ["arbitrary seller direction", { sourceSellerId: "other-seller" }, "unsafe-direction", false],
+    ["invalid expiry", { expiresAt: "2026-01-02" }, "invalid-expires-at", false],
+    ["missing rationale", { rationale: "   " }, "missing-rationale", false],
+    ["missing approval metadata", { requiresApproval: false }, "approval-required", false],
+    ["missing risk", { risk: undefined }, "invalid-risk", false],
+    ["non-high risk", { risk: "medium" }, "invalid-risk", false],
+    ["bulk sync intent", { syncAll: true }, "unsupported-sync-intent", false],
+    [
+      "multi-product sync intent",
+      { itemIds: ["MLC-1", "MLC-2"] },
+      "unsupported-sync-intent",
+      false,
+    ],
+  ])(
+    "sync_product blocks %s before repository save",
+    async (_name, overrides, reason, setApiKey) => {
+      if (setApiKey) {
+        vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+      }
+      const { save, config } = syncProductConfig();
+
+      createMcpServer(config);
+
+      const cb = registeredTools.get("sync_product");
+      expect(cb).toBeDefined();
+
+      const result = (await cb!(makeSyncProductPayload(overrides))) as {
+        content: { text: string }[];
+        isError?: boolean;
+      };
+      const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+      expect(result.isError).toBe(true);
+      expect(save).not.toHaveBeenCalled();
+      expect(parsed).toMatchObject({ status: "blocked", reason });
+    },
+  );
+
+  it("sync_product blocks when account roles are not configured", async () => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+
+    const cb = registeredTools.get("sync_product");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeSyncProductPayload())) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({ status: "blocked", reason: "missing-account-roles" });
+  });
+
+  it.each([
+    ["non-MLC account roles", { site: "MLB" }, "unsupported-site"],
+    ["missing account-role seller id", { sourceSellerId: "   " }, "missing-account-roles"],
+  ])("sync_product blocks %s before repository save", async (_name, roleOverrides, reason) => {
+    const { save, config } = syncProductConfig();
+    config.accountRoles = {
+      ...config.accountRoles,
+      ...roleOverrides,
+    } as typeof config.accountRoles;
+
+    createMcpServer(config);
+
+    const cb = registeredTools.get("sync_product");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeSyncProductPayload())) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({ status: "blocked", reason });
+  });
+
+  it("sync_product returns a controlled blocked response when approval repository save fails", async () => {
+    const save = vi.fn<ApprovalQueueRepository["save"]>().mockRejectedValue(new Error("db down"));
+    const { prepareWrite } = makeApprovalDependencies(save);
+
+    createMcpServer({
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "maustian-seller",
+        site: "MLC",
+      },
+    });
+
+    const cb = registeredTools.get("sync_product");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeSyncProductPayload())) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(parsed).toMatchObject({ status: "blocked", reason: "prepare-write-failed" });
+    expect(JSON.stringify(parsed)).not.toContain("db down");
+  });
+
+  it("does not expose mutation execution tools or import ProductSyncEngine from the MCP package", () => {
+    createMcpServer(syncProductConfig().config);
+
+    const toolNames = [...registeredTools.keys()];
+    expect(toolNames).not.toContain("sync_all");
+    expect(toolNames).not.toContain("execute_mercadolibre_write");
+    expect(toolNames).not.toContain("executePreparedAction");
+
+    const mcpSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    expect(mcpSource).not.toContain("ProductSyncEngine");
+  });
+
   it("list_strategies tool returns empty strategies", async () => {
     createMcpServer();
 
@@ -721,7 +920,7 @@ describe("MCP Server", () => {
     };
     expect(resultNoKey.isError).toBe(true);
     const parsedNoKey = JSON.parse(resultNoKey.content[0]!.text) as Record<string, unknown>;
-    expect(parsedNoKey.error).toContain("Unauthorized");
+    expect(parsedNoKey).toMatchObject({ status: "blocked", reason: "unauthorized" });
 
     // Call WITH the wrong key — should be rejected.
     const resultWrongKey = (await cb!({ msl_api_key: "wrong" })) as {
@@ -730,7 +929,7 @@ describe("MCP Server", () => {
     };
     expect(resultWrongKey.isError).toBe(true);
     const parsedWrongKey = JSON.parse(resultWrongKey.content[0]!.text) as Record<string, unknown>;
-    expect(parsedWrongKey.error).toContain("Unauthorized");
+    expect(parsedWrongKey).toMatchObject({ status: "blocked", reason: "unauthorized" });
 
     // Call WITH the correct key — should succeed.
     const resultOk = (await cb!({ msl_api_key: "secret-key-42" })) as {
@@ -761,7 +960,7 @@ describe("MCP Server", () => {
 
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-    expect(parsed.error).toContain("Unauthorized");
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
 
     vi.unstubAllEnvs();
   });
@@ -775,6 +974,26 @@ describe("MCP Server", () => {
     expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(false);
     expect(registeredTools.has("executePreparedAction")).toBe(false);
+    runtime.close();
+  });
+
+  it("builds prepare-only runtime dependencies with account roles without requiring OAuth env", () => {
+    const runtime = createMcpRuntimeDependencies({
+      NODE_ENV: "test",
+      MERCADOLIBRE_SOURCE_SELLER_ID: "plasticov-seller",
+      MERCADOLIBRE_TARGET_SELLER_ID: "maustian-seller",
+    });
+
+    createMcpServer(runtime);
+
+    expect(runtime.accountRoles).toEqual({
+      sourceSellerId: "plasticov-seller",
+      targetSellerId: "maustian-seller",
+      site: "MLC",
+    });
+    expect(runtime.mlcClient).toBeUndefined();
+    expect(registeredTools.has("sync_product")).toBe(true);
+    expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
     runtime.close();
   });
 
@@ -818,6 +1037,11 @@ describe("MCP Server", () => {
     createMcpServer(runtime);
 
     expect(runtime.mlcClient).toBeDefined();
+    expect(runtime.accountRoles).toEqual({
+      sourceSellerId: "source-seller",
+      targetSellerId: "target-seller",
+      site: "MLC",
+    });
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
