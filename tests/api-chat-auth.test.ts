@@ -146,7 +146,7 @@ describe("/api/chat auth", () => {
           state_json: string;
         }>;
         expect(rows).toHaveLength(1);
-        expect(rows[0]?.id).toBe(`seller-a:${sessionId}`);
+        expect(rows[0]?.id).toBe(`seller-a:${String(sessionId)}`);
 
         const state = JSON.parse(rows[0]!.state_json) as {
           messages?: Array<{ role?: string; content?: string }>;

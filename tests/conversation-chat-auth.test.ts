@@ -40,13 +40,13 @@ describe("/api/conversation-chat auth bridge", () => {
     vi.stubEnv("MSL_CONVERSATION_ACCESS_TOKEN", "");
     vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "");
 
-    const response = await conversationChat(
+    const response = (await conversationChat(
       new Request("https://msl.local/api/conversation-chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: "hola", history: [] }),
       }) as NextRequest,
-    );
+    )) as Response;
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
@@ -61,13 +61,13 @@ describe("/api/conversation-chat auth bridge", () => {
     vi.stubEnv("MSL_API_KEY", "server-chat-key");
     vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "");
 
-    const response = await conversationChat(
+    const response = (await conversationChat(
       new Request("https://msl.local/api/conversation-chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: "hola", history: [] }),
       }) as NextRequest,
-    );
+    )) as Response;
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Conversation access is required." });
@@ -79,7 +79,7 @@ describe("/api/conversation-chat auth bridge", () => {
     vi.stubEnv("MSL_API_KEY", "server-chat-key");
     vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "");
 
-    const response = await conversationChat(
+    const response = (await conversationChat(
       new Request("https://msl.local/api/conversation-chat", {
         method: "POST",
         headers: {
@@ -88,7 +88,7 @@ describe("/api/conversation-chat auth bridge", () => {
         },
         body: JSON.stringify({ message: "hola", history: [] }),
       }) as NextRequest,
-    );
+    )) as Response;
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Invalid conversation access token." });
@@ -177,7 +177,7 @@ describe("/api/conversation-chat auth bridge", () => {
     expect(cookie).toContain("SameSite=Strict");
     expect(cookie).toContain("Secure");
 
-    const response = await conversationChat(
+    const response = (await conversationChat(
       new Request("https://msl.local/api/conversation-chat", {
         method: "POST",
         headers: {
@@ -187,7 +187,7 @@ describe("/api/conversation-chat auth bridge", () => {
         },
         body: JSON.stringify({ message: "hola", history: [] }),
       }) as NextRequest,
-    );
+    )) as Response;
 
     expect(response.status).toBe(200);
     const events = await readSse(response);
@@ -229,7 +229,7 @@ describe("/api/conversation-chat auth bridge", () => {
     );
     const cookie = loginResponse.headers.get("set-cookie") ?? "";
 
-    const response = await conversationChat(
+    const response = (await conversationChat(
       new Request("https://msl.local/api/conversation-chat", {
         method: "POST",
         headers: {
@@ -240,7 +240,7 @@ describe("/api/conversation-chat auth bridge", () => {
         },
         body: JSON.stringify({ message: "hola", history: [] }),
       }) as NextRequest,
-    );
+    )) as Response;
 
     expect(response.status).toBe(200);
   });
