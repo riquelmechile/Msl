@@ -37,3 +37,22 @@ The system MUST explain recommendations in terms of profit, margin, supplier sou
 - GIVEN the available evidence is incomplete or uncertain
 - WHEN the agent proposes an action
 - THEN it MUST mark confidence as low and request seller review
+
+### Requirement: Read-First Recommendation Evidence
+
+The system MUST cite source, freshness, confidence, and partial coverage when recommendations use refreshed MercadoLibre capability evidence for listing quality, category attributes/specs, pictures, shipping, visits/metrics, reputation, questions, or messages. Recommendations MUST NOT imply mutation ability unless a separate approved execution capability exists.
+
+#### Scenario: Evidence supports recommendation
+
+- GIVEN fresh or acceptable safe-read evidence exists for the relevant seller area
+- WHEN the system explains an opportunity or risk
+- THEN it MUST cite the evidence source, area, freshness, and confidence level
+- AND it MUST disclose whether coverage is complete or partial
+- AND it MUST avoid implying unverified mutation capability
+
+#### Scenario: Evidence is partial, stale, or unsupported
+
+- GIVEN evidence is stale, missing, unsupported for `MLC`, or incomplete
+- WHEN the system produces guidance
+- THEN it MUST mark the recommendation as partial or low confidence
+- AND it SHOULD request confirmation or more evidence before proposing action

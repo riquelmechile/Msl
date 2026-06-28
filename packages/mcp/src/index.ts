@@ -6,16 +6,11 @@ import {
   PREPARED_WRITE_KINDS,
   type ApprovalQueueRepository,
   type Clock,
+  type MlcCategoryReadTools,
   type MlcReadTools,
   type PrepareWriteInput,
-  type PreparedWriteKind,
 } from "@msl/tools";
-import {
-  ACTION_TARGET_FIELD_BY_TYPE,
-  type ExactChange,
-  type PreparedAction,
-  type SellerId,
-} from "@msl/domain";
+import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
 import type { MlcApiClient } from "@msl/mercadolibre";
 import { z } from "zod";
 import { createMcpRuntimeDependencies } from "./runtimeDependencies.js";
@@ -171,7 +166,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
         return unauthorizedResult();
       }
       if (readTools) {
-        return jsonResult(await readTools.reputation.execute({ sellerId: sellerId as SellerId }));
+        return jsonResult(await readTools.reputation.execute({ sellerId }));
       }
       return {
         content: [
@@ -228,6 +223,16 @@ export function createMcpServer(config: McpServerConfig = {}) {
     registerMlcReadTool(server, "read_mercadolibre_orders", readTools.orders);
     registerMlcReadTool(server, "read_mercadolibre_messages", readTools.messages);
     registerMlcReadTool(server, "read_mercadolibre_reputation", readTools.reputation);
+    registerMlcCategoryAttributesReadTool(
+      server,
+      "read_mercadolibre_category_attributes",
+      readTools.categoryAttributes,
+    );
+    registerMlcCategoryTechnicalSpecsReadTool(
+      server,
+      "read_mercadolibre_category_technical_specs",
+      readTools.categoryTechnicalSpecs,
+    );
   }
 
   if (config.prepareWrite) {
@@ -254,10 +259,10 @@ export function createMcpServer(config: McpServerConfig = {}) {
 
         const request: PrepareWriteInput = {
           id,
-          sellerId: sellerId as SellerId,
-          kind: kind as PreparedWriteKind,
-          target: target as PreparedAction["target"],
-          exactChange: exactChange as ExactChange[],
+          sellerId,
+          kind,
+          target: target as PrepareWriteInput["target"],
+          exactChange,
           rationale,
           expiresAt: parsedExpiresAt,
         };
@@ -303,7 +308,57 @@ function registerMlcReadTool(
         return unauthorizedResult();
       }
 
-      return jsonResult(await tool.execute({ sellerId: sellerId as SellerId }));
+      return jsonResult(await tool.execute({ sellerId }));
+    },
+  );
+}
+
+function registerMlcCategoryAttributesReadTool(
+  server: McpServer,
+  name: string,
+  tool: MlcCategoryReadTools["categoryAttributes"],
+): void {
+  server.registerTool(
+    name,
+    {
+      description: tool.description,
+      inputSchema: {
+        sellerId: z.string(),
+        categoryId: z.string(),
+        msl_api_key: z.string().optional(),
+      },
+    },
+    async ({ sellerId, categoryId, msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      return jsonResult(await tool.execute({ sellerId, categoryId }));
+    },
+  );
+}
+
+function registerMlcCategoryTechnicalSpecsReadTool(
+  server: McpServer,
+  name: string,
+  tool: MlcCategoryReadTools["categoryTechnicalSpecs"],
+): void {
+  server.registerTool(
+    name,
+    {
+      description: tool.description,
+      inputSchema: {
+        sellerId: z.string(),
+        domainId: z.string(),
+        msl_api_key: z.string().optional(),
+      },
+    },
+    async ({ sellerId, domainId, msl_api_key }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      return jsonResult(await tool.execute({ sellerId, domainId }));
     },
   );
 }

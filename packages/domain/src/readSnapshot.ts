@@ -1,13 +1,26 @@
 import type { CacheFreshness } from "./cacheFreshness.js";
 import type { SellerId } from "./seller.js";
 
-export type ReadSnapshotKind = "listing" | "order" | "message" | "reputation";
+export type ReadSnapshotKind =
+  | "listing"
+  | "order"
+  | "message"
+  | "reputation"
+  | "category-attributes"
+  | "category-technical-specs";
+
+export type MlCapabilitySiteSupport = "MLC-confirmed" | "unknown";
 
 export type ReadSnapshotCompleteness = "complete" | "partial";
 
 export type ReadSnapshotConfidence = "low" | "medium" | "high";
 
 export type ReadSnapshotSource = CacheFreshness["source"];
+
+export type ReadSnapshotSellerScope = {
+  sellerId: SellerId;
+  site: "MLC";
+};
 
 export type ReadSnapshot<TData> = {
   sellerId: SellerId;
@@ -17,7 +30,20 @@ export type ReadSnapshot<TData> = {
   completeness: ReadSnapshotCompleteness;
   freshness: CacheFreshness;
   confidence: ReadSnapshotConfidence;
+  siteSupport?: MlCapabilitySiteSupport;
+  sellerScope?: ReadSnapshotSellerScope;
 };
+
+const MLC_CATEGORY_ID_PATTERN = /^MLC\d+$/;
+const MLC_DOMAIN_ID_PATTERN = /^MLC-[A-Z0-9_]+$/;
+
+export function isMlcCategoryId(identifier: string): boolean {
+  return MLC_CATEGORY_ID_PATTERN.test(identifier);
+}
+
+export function isMlcDomainId(identifier: string): boolean {
+  return MLC_DOMAIN_ID_PATTERN.test(identifier);
+}
 
 export function isReadSnapshotFresh(snapshot: ReadSnapshot<unknown>): boolean {
   return snapshot.freshness.status === "fresh";

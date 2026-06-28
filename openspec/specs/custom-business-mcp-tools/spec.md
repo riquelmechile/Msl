@@ -22,6 +22,14 @@ The system MUST use the official MercadoLibre MCP only for updated API documenta
 - WHEN choosing an execution path
 - THEN it MUST use project-owned tools backed by direct APIs, not official MCP execution
 
+#### Scenario: Capability matrix needs updated documentation
+
+- GIVEN the system needs current MercadoLibre endpoint behavior or site support evidence
+- WHEN official MercadoLibre MCP is available
+- THEN it MAY be used only to retrieve documentation
+- AND the resulting classification MUST be stored in project-owned specs or code before any runtime tool can rely on it
+- AND official MercadoLibre MCP MUST NOT be exposed as a seller-data read or mutation executor.
+
 ### Requirement: Safe Business Tool Surface
 
 The system MUST expose custom tools for authorized reads, prepared writes, local memory/cache access, business insights, creative drafts, and audit review.
@@ -87,3 +95,21 @@ Read tools MUST NOT create approval requests because they do not mutate seller s
 - WHEN selecting an execution path
 - THEN it MUST NOT use official MercadoLibre MCP as an executor
 - AND official MCP MAY be used only for documentation lookup
+
+### Requirement: Project-Owned Capability Runtime Boundary
+
+The system MUST map MercadoLibre capability classifications to runtime behavior only through project-owned tools. `docs-only` capabilities MUST have no tool surface, `safe-read` capabilities MAY be implemented as read tools after direct API support is confirmed, `prepare-only` capabilities MUST produce approval-bound proposals without execution, and `future-execute-with-approval` capabilities MUST remain blocked until a later approved implementation slice adds explicit execution, approval, and audit controls.
+
+#### Scenario: Capability is safe-read
+
+- GIVEN a capability matrix entry is classified as `safe-read`
+- WHEN the custom tool layer exposes that capability
+- THEN the tool MUST use project-owned direct API clients
+- AND it MUST include source, freshness, confidence, seller scope, and site support metadata.
+
+#### Scenario: Capability is low-confidence or unknown for MLC
+
+- GIVEN a capability has `siteSupport` set to `unknown` or confidence set to low
+- WHEN the custom tool layer evaluates runtime exposure
+- THEN it MUST NOT expose executable mutation behavior
+- AND it MUST either block the request or return prepared, non-executing guidance with the uncertainty disclosed.

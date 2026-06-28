@@ -1,17 +1,23 @@
 import {
   canExecutePreparedAction,
   createPreparedAction,
+  isMlcCategoryId,
+  isMlcDomainId,
   type ApprovalRecord,
   type AuditRecord,
   type CacheFreshness,
   type ExactChange,
+  type MlCapabilitySiteSupport,
   type PreparedAction,
   type PreparedActionId,
+  type ReadSnapshotSellerScope,
   type RiskLevel,
   type SellerId,
 } from "@msl/domain";
 import type {
   MlcApiClient,
+  MlcCategoryAttributeSummary,
+  MlcCategoryTechnicalSpecSummary,
   MlcListingSummary,
   MlcMessageSummary,
   MlcOrderSummary,
@@ -32,6 +38,9 @@ export type ToolResponseMetadata = {
   freshness: CacheFreshness | null;
   confidence: ConfidenceLevel;
   requiresApproval: boolean;
+  siteSupport?: MlCapabilitySiteSupport;
+  sellerScope?: ReadSnapshotSellerScope;
+  degradedReason?: string;
 };
 
 export type BusinessToolResponse<TData> = {
@@ -55,7 +64,15 @@ export type OfficialMercadoLibreDocsAdapter = {
 export type ReadToolBlocked =
   | { status: "blocked"; reason: "reconnect-required"; message: string }
   | { status: "blocked"; reason: "seller-access-mismatch"; message: string }
-  | { status: "blocked"; reason: "seller-not-configured"; message: string };
+  | { status: "blocked"; reason: "seller-not-configured"; message: string }
+  | {
+      status: "blocked";
+      reason: "unsupported-category-id";
+      message: string;
+      siteSupport: "unknown";
+    }
+  | { status: "blocked"; reason: "unsupported-domain-id"; message: string; siteSupport: "unknown" }
+  | { status: "degraded"; reason: "ml-api-read-failed"; message: string; siteSupport: "unknown" };
 
 export type MlcReadTools = {
   listings: CustomBusinessTool<
@@ -76,6 +93,17 @@ export type MlcReadTools = {
   >;
 };
 
+export type MlcCategoryReadTools = {
+  categoryAttributes: CustomBusinessTool<
+    { sellerId: SellerId; categoryId: string },
+    MlcReadSnapshot<MlcCategoryAttributeSummary> | ReadToolBlocked
+  >;
+  categoryTechnicalSpecs: CustomBusinessTool<
+    { sellerId: SellerId; domainId: string },
+    MlcReadSnapshot<MlcCategoryTechnicalSpecSummary> | ReadToolBlocked
+  >;
+};
+
 export function createOfficialMercadoLibreDocsAdapter(input: {
   lookupDocumentation(topic: string): Promise<string>;
 }): OfficialMercadoLibreDocsAdapter {
@@ -93,76 +121,141 @@ export function createOfficialMercadoLibreDocsAdapter(input: {
   };
 }
 
-export function createMlcReadTools(input: { client: MlcApiClient }): MlcReadTools {
+export function createMlcReadTools(input: {
+  client: MlcApiClient;
+}): MlcReadTools & MlcCategoryReadTools {
   return {
     listings: createMlcReadTool({
       name: "read-mercadolibre-listings",
       description: "Reads authorized MercadoLibre listing snapshots for the connected seller.",
-      read: (sellerId) => input.client.getListings(sellerId),
+      read: ({ sellerId }) => input.client.getListings(sellerId),
     }),
     orders: createMlcReadTool({
       name: "read-mercadolibre-orders",
       description: "Reads authorized MercadoLibre order snapshots for the connected seller.",
-      read: (sellerId) => input.client.getOrders(sellerId),
+      read: ({ sellerId }) => input.client.getOrders(sellerId),
     }),
     messages: createMlcReadTool({
       name: "read-mercadolibre-messages",
       description: "Reads authorized MercadoLibre message snapshots for the connected seller.",
-      read: (sellerId) => input.client.getMessages(sellerId),
+      read: ({ sellerId }) => input.client.getMessages(sellerId),
     }),
     reputation: createMlcReadTool({
       name: "read-mercadolibre-reputation",
       description: "Reads authorized MercadoLibre reputation snapshots for the connected seller.",
-      read: (sellerId) => input.client.getReputation(sellerId),
+      read: ({ sellerId }) => input.client.getReputation(sellerId),
+    }),
+    categoryAttributes: createMlcReadTool({
+      name: "read-mercadolibre-category-attributes",
+      description:
+        "Reads authorized MLC-confirmed MercadoLibre category attribute snapshots for the connected seller.",
+      validate: ({ categoryId }) =>
+        isMlcCategoryId(categoryId)
+          ? undefined
+          : {
+              status: "blocked",
+              reason: "unsupported-category-id",
+              message:
+                "Only MLC-confirmed category IDs are supported for category attribute reads.",
+              siteSupport: "unknown",
+            },
+      catchUnexpectedErrors: true,
+      read: ({ sellerId, categoryId }) => input.client.getCategoryAttributes(sellerId, categoryId),
+    }),
+    categoryTechnicalSpecs: createMlcReadTool({
+      name: "read-mercadolibre-category-technical-specs",
+      description:
+        "Reads authorized MLC-confirmed MercadoLibre category technical specification snapshots for the connected seller.",
+      validate: ({ domainId }) =>
+        isMlcDomainId(domainId)
+          ? undefined
+          : {
+              status: "blocked",
+              reason: "unsupported-domain-id",
+              message:
+                "Only MLC-confirmed domain IDs are supported for category technical spec reads.",
+              siteSupport: "unknown",
+            },
+      catchUnexpectedErrors: true,
+      read: ({ sellerId, domainId }) => input.client.getCategoryTechnicalSpecs(sellerId, domainId),
     }),
   };
 }
 
-function createMlcReadTool<TData>(input: {
+function createMlcReadTool<TInput extends { sellerId: SellerId }, TData>(input: {
   name: string;
   description: string;
-  read(sellerId: SellerId): Promise<MlcReadSnapshot<TData>>;
-}): CustomBusinessTool<{ sellerId: SellerId }, MlcReadSnapshot<TData> | ReadToolBlocked> {
+  validate?(request: TInput): ReadToolBlocked | undefined;
+  catchUnexpectedErrors?: boolean;
+  read(request: TInput): Promise<MlcReadSnapshot<TData>>;
+}): CustomBusinessTool<TInput, MlcReadSnapshot<TData> | ReadToolBlocked> {
   return {
     name: input.name,
     description: input.description,
     execute: async (request) => {
+      const validationBlocked = input.validate?.(request);
+      if (validationBlocked !== undefined) {
+        return blockedReadResponse(validationBlocked);
+      }
+
       try {
-        const snapshot = await input.read(request.sellerId);
+        const snapshot = await input.read(request);
 
         return {
           data: snapshot,
-          metadata: {
-            source: "mercadolibre-api",
-            freshness: snapshot.freshness,
-            confidence: snapshot.confidence,
-            requiresApproval: false,
-          },
+          metadata: readMetadata(snapshot),
         };
       } catch (error) {
-        const blocked = toReadToolBlocked(error);
+        const blocked = toReadToolBlocked(error, input.catchUnexpectedErrors ?? false);
 
         if (blocked === undefined) {
           throw error;
         }
 
-        return {
-          data: blocked,
-          metadata: {
-            source: "mercadolibre-api",
-            freshness: null,
-            confidence: "low",
-            requiresApproval: false,
-          },
-        };
+        return blockedReadResponse(blocked);
       }
     },
   };
 }
 
-function toReadToolBlocked(error: unknown): ReadToolBlocked | undefined {
+function blockedReadResponse(blocked: ReadToolBlocked): BusinessToolResponse<ReadToolBlocked> {
+  return {
+    data: blocked,
+    metadata: {
+      source: "mercadolibre-api",
+      freshness: null,
+      confidence: "low",
+      requiresApproval: false,
+      degradedReason: blocked.reason,
+      ...("siteSupport" in blocked ? { siteSupport: blocked.siteSupport } : {}),
+    },
+  };
+}
+
+function readMetadata<TData>(snapshot: MlcReadSnapshot<TData>): ToolResponseMetadata {
+  return {
+    source: "mercadolibre-api",
+    freshness: snapshot.freshness,
+    confidence: snapshot.confidence,
+    requiresApproval: false,
+    ...(snapshot.siteSupport !== undefined ? { siteSupport: snapshot.siteSupport } : {}),
+    ...(snapshot.sellerScope !== undefined ? { sellerScope: snapshot.sellerScope } : {}),
+  };
+}
+
+function toReadToolBlocked(
+  error: unknown,
+  catchUnexpectedErrors: boolean,
+): ReadToolBlocked | undefined {
   if (typeof error !== "object" || error === null) {
-    return undefined;
+    return catchUnexpectedErrors
+      ? {
+          status: "degraded",
+          reason: "ml-api-read-failed",
+          message: "MercadoLibre read failed before reliable data could be returned.",
+          siteSupport: "unknown",
+        }
+      : undefined;
   }
 
   const candidate = error as { reason?: unknown; message?: unknown };
@@ -181,6 +274,28 @@ function toReadToolBlocked(error: unknown): ReadToolBlocked | undefined {
 
   if (candidate.reason === "seller-not-configured") {
     return { status: "blocked", reason: "seller-not-configured", message };
+  }
+
+  if (candidate.reason === "unsupported-category-id") {
+    return {
+      status: "blocked",
+      reason: "unsupported-category-id",
+      message,
+      siteSupport: "unknown",
+    };
+  }
+
+  if (candidate.reason === "unsupported-domain-id") {
+    return { status: "blocked", reason: "unsupported-domain-id", message, siteSupport: "unknown" };
+  }
+
+  if (catchUnexpectedErrors) {
+    return {
+      status: "degraded",
+      reason: "ml-api-read-failed",
+      message,
+      siteSupport: "unknown",
+    };
   }
 
   return undefined;
