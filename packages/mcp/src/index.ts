@@ -11,7 +11,12 @@ import {
   type PrepareWriteInput,
 } from "@msl/tools";
 import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
-import type { MlcApiClient } from "@msl/mercadolibre";
+import {
+  assertPlasticovToMaustianDirection,
+  getMlAccountRoleConfig,
+  type MlcApiClient,
+  type MlAccountRoleConfig,
+} from "@msl/mercadolibre";
 import { z } from "zod";
 import { createMcpRuntimeDependencies } from "./runtimeDependencies.js";
 
@@ -33,7 +38,29 @@ function jsonResult(value: unknown, isError = false): McpToolResult {
 }
 
 function unauthorizedResult(): McpToolResult {
-  return jsonResult({ error: "Unauthorized — invalid MSL_MCP_API_KEY" }, true);
+  return blockedResult(
+    "unauthorized",
+    "Unauthorized MCP request. Provide a valid MSL MCP API key.",
+  );
+}
+
+type SyncProductBlockedReason =
+  | "unauthorized"
+  | "missing-account-roles"
+  | "unsafe-direction"
+  | "missing-target"
+  | "missing-rationale"
+  | "invalid-expires-at"
+  | "expired-proposal"
+  | "approval-required"
+  | "invalid-risk"
+  | "unsupported-sync-intent"
+  | "unsupported-site"
+  | "prepare-write-unavailable"
+  | "prepare-write-failed";
+
+function blockedResult(reason: SyncProductBlockedReason, message: string): McpToolResult {
+  return jsonResult({ status: "blocked", reason, message }, true);
 }
 
 const mcpPrepareWriteTargetSchema = z.union(
@@ -60,6 +87,65 @@ const mcpPrepareWriteInputSchema = {
   expiresAt: z.string(),
   msl_api_key: z.string().optional(),
 };
+
+const mcpSyncProductInputSchema = {
+  sourceSellerId: z.unknown().optional(),
+  targetSellerId: z.unknown().optional(),
+  itemId: z.unknown().optional(),
+  itemIds: z.unknown().optional(),
+  productIds: z.unknown().optional(),
+  items: z.unknown().optional(),
+  syncAll: z.unknown().optional(),
+  bulk: z.unknown().optional(),
+  rationale: z.unknown().optional(),
+  expiresAt: z.unknown().optional(),
+  requiresApproval: z.unknown().optional(),
+  risk: z.unknown().optional(),
+  msl_api_key: z.string().optional(),
+};
+
+type SyncProductInput = {
+  sourceSellerId?: unknown;
+  targetSellerId?: unknown;
+  itemId?: unknown;
+  itemIds?: unknown;
+  productIds?: unknown;
+  items?: unknown;
+  syncAll?: unknown;
+  bulk?: unknown;
+  rationale?: unknown;
+  expiresAt?: unknown;
+  requiresApproval?: unknown;
+  risk?: unknown;
+  msl_api_key?: string;
+};
+
+function trimmedString(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() : undefined;
+}
+
+function hasUnsupportedBulkIntent(request: SyncProductInput): boolean {
+  return (
+    request.syncAll === true ||
+    request.bulk === true ||
+    Array.isArray(request.itemId) ||
+    Array.isArray(request.itemIds) ||
+    Array.isArray(request.productIds) ||
+    Array.isArray(request.items)
+  );
+}
+
+function validateMlcRoleConfig(roleConfig: MlAccountRoleConfig): SyncProductBlockedReason | null {
+  if (!trimmedString(roleConfig.sourceSellerId) || !trimmedString(roleConfig.targetSellerId)) {
+    return "missing-account-roles";
+  }
+
+  if (roleConfig.site !== "MLC") {
+    return "unsupported-site";
+  }
+
+  return null;
+}
 
 /**
  * Validates the MCP API key against the {@link MSL_MCP_API_KEY}
@@ -136,18 +222,148 @@ export function createMcpServer(config: McpServerConfig = {}) {
     "sync_product",
     {
       description: "Sincroniza producto de Plasticov a Maustian aplicando estrategias",
-      inputSchema: {
-        sourceSellerId: z.string(),
-        targetSellerId: z.string(),
-        itemId: z.string(),
-        msl_api_key: z.string().optional(),
-      },
+      inputSchema: mcpSyncProductInputSchema,
     },
-    ({ msl_api_key }) => {
+    async (request) => {
+      const syncRequest = request as SyncProductInput;
+      const { msl_api_key } = syncRequest;
       if (!validateApiKey(msl_api_key)) {
         return unauthorizedResult();
       }
-      return jsonResult({ status: "ok", tool: "sync_product" });
+
+      if (!config.prepareWrite) {
+        return blockedResult(
+          "prepare-write-unavailable",
+          "Product sync proposal preparation is unavailable in this MCP runtime.",
+        );
+      }
+
+      const sourceSellerId = trimmedString(syncRequest.sourceSellerId);
+      const targetSellerId = trimmedString(syncRequest.targetSellerId);
+      const itemId = trimmedString(syncRequest.itemId);
+      const rationale = trimmedString(syncRequest.rationale);
+
+      if (hasUnsupportedBulkIntent(syncRequest)) {
+        return blockedResult(
+          "unsupported-sync-intent",
+          "Product sync preparation supports one MLC itemId only; bulk or multi-product sync is out of scope.",
+        );
+      }
+
+      if (!itemId) {
+        return blockedResult(
+          "missing-target",
+          "Product sync preparation requires one target itemId.",
+        );
+      }
+
+      if (!rationale) {
+        return blockedResult("missing-rationale", "Product sync preparation requires a rationale.");
+      }
+
+      if (!sourceSellerId || !targetSellerId) {
+        return blockedResult(
+          "unsafe-direction",
+          "Product sync preparation requires configured sourceSellerId and targetSellerId for the Plasticov to Maustian MLC direction.",
+        );
+      }
+
+      if (syncRequest.requiresApproval !== true) {
+        return blockedResult(
+          "approval-required",
+          "Product sync preparation requires requiresApproval: true.",
+        );
+      }
+
+      if (syncRequest.risk !== "high") {
+        return blockedResult("invalid-risk", 'Product sync preparation requires risk: "high".');
+      }
+
+      const parsedExpiresAt = parseStrictIsoTimestamp(syncRequest.expiresAt);
+      if (!parsedExpiresAt) {
+        return blockedResult(
+          "invalid-expires-at",
+          "Product sync preparation requires a strict ISO 8601 UTC expiresAt timestamp.",
+        );
+      }
+
+      if (parsedExpiresAt <= config.prepareWrite.clock.now()) {
+        return blockedResult(
+          "expired-proposal",
+          "Product sync proposal expiry must be in the future.",
+        );
+      }
+
+      let roleConfig: MlAccountRoleConfig;
+      try {
+        roleConfig = config.accountRoles ?? getMlAccountRoleConfig();
+      } catch {
+        return blockedResult(
+          "missing-account-roles",
+          "MercadoLibre account roles are not configured for Plasticov to Maustian MLC sync preparation.",
+        );
+      }
+
+      const roleConfigFailure = validateMlcRoleConfig(roleConfig);
+      if (roleConfigFailure) {
+        return blockedResult(
+          roleConfigFailure,
+          "Product sync preparation requires configured Plasticov and Maustian account roles on site MLC.",
+        );
+      }
+
+      try {
+        assertPlasticovToMaustianDirection(sourceSellerId, targetSellerId, {
+          MERCADOLIBRE_SOURCE_SELLER_ID: roleConfig.sourceSellerId,
+          MERCADOLIBRE_TARGET_SELLER_ID: roleConfig.targetSellerId,
+        });
+      } catch {
+        return blockedResult(
+          "unsafe-direction",
+          "Product sync preparation is limited to the configured Plasticov source to Maustian target direction on MLC.",
+        );
+      }
+
+      const prepareTool = createPreparedActionTool(config.prepareWrite);
+      let response: Awaited<ReturnType<typeof prepareTool.execute>>;
+      try {
+        response = await prepareTool.execute({
+          id: `sync-product:${itemId}:${config.prepareWrite.clock.now().toISOString()}`,
+          sellerId: targetSellerId,
+          kind: "listing-edit",
+          target: { type: "listing", listingId: itemId },
+          exactChange: [
+            { field: "sourceSellerId", from: null, to: sourceSellerId },
+            { field: "targetSellerId", from: null, to: targetSellerId },
+            { field: "syncIntent", from: null, to: "prepare-only product sync proposal" },
+            { field: "mutationExecuted", from: null, to: false },
+          ],
+          rationale,
+          expiresAt: parsedExpiresAt,
+        });
+      } catch {
+        return blockedResult(
+          "prepare-write-failed",
+          "Product sync proposal could not be prepared because approval storage is unavailable.",
+        );
+      }
+
+      return jsonResult({
+        ...response,
+        metadata: {
+          ...response.metadata,
+          sourceSellerId,
+          targetSellerId,
+          site: roleConfig.site,
+          risk: "high",
+          expiresAt: parsedExpiresAt.toISOString(),
+          approvalPersistence: "in-memory-only",
+          auditReplay: "not-available",
+          persistentApprovalStorage: false,
+          noMutationExecuted: true,
+          operation: "sync_product",
+        },
+      });
     },
   );
 
@@ -275,7 +491,11 @@ export function createMcpServer(config: McpServerConfig = {}) {
   return server;
 }
 
-function parseStrictIsoTimestamp(value: string): Date | null {
+function parseStrictIsoTimestamp(value: unknown): Date | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
     return null;
   }
@@ -366,6 +586,7 @@ function registerMlcCategoryTechnicalSpecsReadTool(
 /** Configuration for MCP server dependencies. Dependencies are injected by callers. */
 export type McpServerConfig = {
   mlcClient?: MlcApiClient;
+  accountRoles?: MlAccountRoleConfig;
   prepareWrite?: {
     repository: ApprovalQueueRepository;
     clock: Clock;

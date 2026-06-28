@@ -8,6 +8,7 @@ import {
   createOAuthManager,
   createOAuthMlcApiClient,
   getMlAccountRoleConfig,
+  type MlAccountRoleConfig,
 } from "@msl/mercadolibre";
 import type { MlcApiClient, OAuthManager } from "@msl/mercadolibre";
 import type { McpServerConfig } from "./index.js";
@@ -81,6 +82,14 @@ function createPrepareWriteDependencies(): { repository: ApprovalQueueRepository
   };
 }
 
+function getOptionalRoleConfig(env: RuntimeEnv): MlAccountRoleConfig | undefined {
+  const hasAnyRoleConfig =
+    nonEmpty(env.MERCADOLIBRE_SOURCE_SELLER_ID) !== undefined ||
+    nonEmpty(env.MERCADOLIBRE_TARGET_SELLER_ID) !== undefined;
+
+  return hasAnyRoleConfig ? getMlAccountRoleConfig(env) : undefined;
+}
+
 function createRuntimeReadClient(env: RuntimeEnv): { client?: MlcApiClient; close(): void } {
   assertOAuthConfigPresentInProduction(env);
 
@@ -120,9 +129,11 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
   }
 
   const readRuntime = createRuntimeReadClient(env);
+  const accountRoles = getOptionalRoleConfig(env);
 
   return {
     ...(readRuntime.client ? { mlcClient: readRuntime.client } : {}),
+    ...(accountRoles ? { accountRoles } : {}),
     prepareWrite: createPrepareWriteDependencies(),
     close: () => readRuntime.close(),
   };
