@@ -9,6 +9,8 @@ import {
   createOAuthMlcApiClient,
   createTokenStore,
   evaluateOAuthAccess,
+  type MlcCategoryAttributeSummary,
+  type MlcCategoryTechnicalSpecSummary,
   type MlcListingSummary,
   type MlcMessageSummary,
   type MlcOrderSummary,
@@ -92,7 +94,40 @@ describe("direct MLC API client boundary", () => {
           level_id: "5_green",
           power_seller_status: "gold",
           transactions: { completed: 95, total: 100, ratings: { positive: 0.98 } },
+          metrics: {
+            claims: { rate: 0.01 },
+            cancellations: { rate: 0.02 },
+            delayed_handling_time: { rate: 0.03 },
+          },
         },
+      },
+      "/categories/MLC1743/attributes": [
+        {
+          id: "BRAND",
+          name: "Brand",
+          value_type: "string",
+          tags: { required: true, catalog_required: true, variation_attribute: false },
+          values: [{ id: "123", name: "Generic" }],
+        },
+      ],
+      "/domains/MLC-CARS/technical_specs": {
+        groups: [
+          {
+            components: [
+              {
+                attributes: [
+                  {
+                    id: "MODEL",
+                    name: "Model",
+                    value_type: "string",
+                    hierarchy: "TECHNICAL_SPECIFICATIONS",
+                    tags: { required: true, catalog_listing_required: true },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       },
     };
     const transport: MercadoLibreApiTransport = {
@@ -103,7 +138,12 @@ describe("direct MLC API client boundary", () => {
     const orders = await client.getOrders("seller-1");
     const messages = await client.getMessages("seller-1");
     const reputation = await client.getReputation("seller-1");
+    const attributes = await client.getCategoryAttributes("seller-1", "MLC1743");
+    const technicalSpecs = await client.getCategoryTechnicalSpecs("seller-1", "MLC-CARS");
     const domainListingSnapshot: ReadSnapshot<MlcListingSummary> = listings;
+    const domainAttributeSnapshot: ReadSnapshot<MlcCategoryAttributeSummary> = attributes;
+    const domainTechnicalSpecSnapshot: ReadSnapshot<MlcCategoryTechnicalSpecSummary> =
+      technicalSpecs;
     const domainFreshness: CacheFreshness = listings.freshness;
     const mlcFreshness: MlcReadSnapshotFreshness = listings.freshness;
 
@@ -141,11 +181,97 @@ describe("direct MLC API client boundary", () => {
     });
     expect(reputation).toMatchObject({
       kind: "reputation",
-      data: { level: "5_green", completedTransactions: 95, positiveRating: 0.98 },
+      data: {
+        level: "5_green",
+        completedTransactions: 95,
+        positiveRating: 0.98,
+        claimsRate: 0.01,
+        cancellationsRate: 0.02,
+        delayedHandlingTimeRate: 0.03,
+        metricPeriodDays: 60,
+      },
       completeness: "complete",
       confidence: "high",
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "seller-1", site: "MLC" },
       freshness: { risk: "critical", maxAgeMs: 5 * 60 * 1000 },
     });
+    expect(domainAttributeSnapshot).toMatchObject({ kind: "category-attributes" });
+    expect(attributes).toMatchObject({
+      kind: "category-attributes",
+      data: [
+        {
+          id: "BRAND",
+          name: "Brand",
+          valueType: "string",
+          required: true,
+          catalogRequired: true,
+          variationAttribute: false,
+          readOnly: false,
+          values: [{ id: "123", name: "Generic" }],
+        },
+      ],
+      completeness: "complete",
+      confidence: "high",
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "seller-1", site: "MLC" },
+      freshness: { risk: "medium", maxAgeMs: 60 * 60 * 1000 },
+    });
+    expect(domainTechnicalSpecSnapshot).toMatchObject({ kind: "category-technical-specs" });
+    expect(technicalSpecs).toMatchObject({
+      kind: "category-technical-specs",
+      data: [
+        {
+          id: "MODEL",
+          name: "Model",
+          valueType: "string",
+          required: true,
+          catalogRequired: true,
+          group: "TECHNICAL_SPECIFICATIONS",
+        },
+      ],
+      completeness: "complete",
+      confidence: "high",
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "seller-1", site: "MLC" },
+    });
+  });
+
+  it("treats valid empty category technical specs as complete medium-confidence evidence", async () => {
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        expect(request.path).toBe("/domains/MLC-EMPTY/technical_specs");
+        return Promise.resolve({ groups: [] });
+      },
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(client.getCategoryTechnicalSpecs("seller-1", "MLC-EMPTY")).resolves.toMatchObject({
+      kind: "category-technical-specs",
+      data: [],
+      completeness: "complete",
+      confidence: "medium",
+      siteSupport: "MLC-confirmed",
+    });
+  });
+
+  it("blocks non-MLC category and domain identifiers before path construction", async () => {
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue([]);
+    const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });
+
+    await expect(
+      client.getCategoryAttributes("seller-1", "MLA1743/../users/me"),
+    ).rejects.toMatchObject({
+      reason: "unsupported-category-id",
+      siteSupport: "unknown",
+    });
+    await expect(
+      client.getCategoryTechnicalSpecs("seller-1", "CARS/../../users/me"),
+    ).rejects.toMatchObject({
+      reason: "unsupported-domain-id",
+      siteSupport: "unknown",
+    });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("marks incomplete transport evidence as partial and low confidence", async () => {
@@ -241,6 +367,12 @@ describe("direct MLC API client boundary", () => {
         if (request.path === "/users/seller-1") {
           return Promise.resolve({ seller_reputation: { transactions: {} } });
         }
+        if (request.path === "/categories/MLC1743/attributes") {
+          return Promise.resolve([]);
+        }
+        if (request.path === "/domains/MLC-CARS/technical_specs") {
+          return Promise.resolve({ groups: [] });
+        }
         return Promise.resolve({ results: [] });
       },
     };
@@ -253,12 +385,24 @@ describe("direct MLC API client boundary", () => {
     });
 
     expect("publishItem" in client).toBe(false);
+    expect("getListingQuality" in client).toBe(false);
+    expect("getVisits" in client).toBe(false);
+    expect("getShipping" in client).toBe(false);
     await client.getListings("seller-1");
     await client.getOrders("seller-1");
     await client.getMessages("seller-1");
     await client.getReputation("seller-1");
+    await client.getCategoryAttributes("seller-1", "MLC1743");
+    await client.getCategoryTechnicalSpecs("seller-1", "MLC-CARS");
 
-    expect(tokenCalls).toEqual(["seller-1", "seller-1", "seller-1", "seller-1"]);
+    expect(tokenCalls).toEqual([
+      "seller-1",
+      "seller-1",
+      "seller-1",
+      "seller-1",
+      "seller-1",
+      "seller-1",
+    ]);
     expect(requests).toEqual([
       {
         path: "/users/seller-1/items/search",
@@ -279,6 +423,16 @@ describe("direct MLC API client boundary", () => {
         path: "/users/seller-1",
         query: { site: "MLC" },
         accessToken: "access-for-seller-1-4",
+      },
+      {
+        path: "/categories/MLC1743/attributes",
+        query: undefined,
+        accessToken: "access-for-seller-1-5",
+      },
+      {
+        path: "/domains/MLC-CARS/technical_specs",
+        query: undefined,
+        accessToken: "access-for-seller-1-6",
       },
     ]);
   });
@@ -333,7 +487,9 @@ describe("direct MLC API client boundary", () => {
       allowedSellerIds: ["source-seller"],
     });
 
-    await expect(client.getOrders("source-seller")).rejects.toThrow(failure.message);
+    await expect(client.getCategoryAttributes("source-seller", "MLC1743")).rejects.toThrow(
+      failure.message,
+    );
     expect(ensureValidToken).toHaveBeenCalledWith("source-seller");
     expect(request).not.toHaveBeenCalled();
   });

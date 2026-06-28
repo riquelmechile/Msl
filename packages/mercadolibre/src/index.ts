@@ -1,4 +1,10 @@
-import { evaluateFreshness, type CacheFreshness, type ReadSnapshot } from "@msl/domain";
+import {
+  evaluateFreshness,
+  isMlcCategoryId,
+  isMlcDomainId,
+  type CacheFreshness,
+  type ReadSnapshot,
+} from "@msl/domain";
 import type { OAuthManager } from "./oauth/oauthManager.js";
 import type {
   MlCategory,
@@ -66,12 +72,47 @@ export type MlcReputationSummary = {
   positiveRating?: number;
   neutralRating?: number;
   negativeRating?: number;
+  claimsRate?: number;
+  cancellationsRate?: number;
+  delayedHandlingTimeRate?: number;
+  metricPeriodDays?: 60 | 365;
+};
+
+const MLC_REPUTATION_RULES = {
+  establishedSellerCompletedTransactions: 40,
+  establishedSellerMetricPeriodDays: 60,
+  newSellerMetricPeriodDays: 365,
+} as const;
+
+const MLC_CONFIRMED_SITE_SUPPORT = "MLC-confirmed" as const;
+
+export type MlcCategoryAttributeSummary = {
+  id: string;
+  name?: string;
+  valueType?: string;
+  required: boolean;
+  catalogRequired: boolean;
+  variationAttribute: boolean;
+  readOnly: boolean;
+  values: ReadonlyArray<{ id?: string; name?: string }>;
+  units: ReadonlyArray<string>;
+};
+
+export type MlcCategoryTechnicalSpecSummary = {
+  id: string;
+  name?: string;
+  valueType?: string;
+  required: boolean;
+  catalogRequired: boolean;
+  group?: string;
 };
 
 export type MlcListingsSnapshot = MlcReadSnapshot<MlcListingSummary>;
 export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary>;
 export type MlcMessagesSnapshot = MlcReadSnapshot<MlcMessageSummary>;
 export type MlcReputationSnapshot = MlcReadSnapshot<MlcReputationSummary>;
+export type MlcCategoryAttributesSnapshot = MlcReadSnapshot<MlcCategoryAttributeSummary>;
+export type MlcCategoryTechnicalSpecsSnapshot = MlcReadSnapshot<MlcCategoryTechnicalSpecSummary>;
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -128,11 +169,27 @@ export type OAuthSellerAuthorizationFailure = {
   message: "Requested seller is not configured as an allowed MercadoLibre account role for MSL.";
 };
 
+export type MlcCategoryIdentifierFailure = {
+  allowed: false;
+  reason: "unsupported-category-id" | "unsupported-domain-id";
+  identifier: string;
+  message: string;
+  siteSupport: "unknown";
+};
+
 export type MlcApiClient = {
   getListings(sellerId: string): Promise<MlcListingsSnapshot>;
   getOrders(sellerId: string): Promise<MlcOrdersSnapshot>;
   getMessages(sellerId: string): Promise<MlcMessagesSnapshot>;
   getReputation(sellerId: string): Promise<MlcReputationSnapshot>;
+  getCategoryAttributes(
+    sellerId: string,
+    categoryId: string,
+  ): Promise<MlcCategoryAttributesSnapshot>;
+  getCategoryTechnicalSpecs(
+    sellerId: string,
+    domainId: string,
+  ): Promise<MlcCategoryTechnicalSpecsSnapshot>;
 };
 
 type MlcReadRequest = (
@@ -246,6 +303,10 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function pushOptional<T extends object, K extends keyof T>(
   target: T,
   key: K,
@@ -265,6 +326,36 @@ function snapshotConfidence(
   }
 
   return count > 0 ? "high" : "medium";
+}
+
+function sellerScope(sellerId: string): { sellerId: string; site: "MLC" } {
+  return { sellerId, site: "MLC" };
+}
+
+function assertMlcCategoryId(categoryId: string): void {
+  if (!isMlcCategoryId(categoryId)) {
+    const failure: MlcCategoryIdentifierFailure = {
+      allowed: false,
+      reason: "unsupported-category-id",
+      identifier: categoryId,
+      message: "Only MLC-confirmed category IDs are supported for category attribute reads.",
+      siteSupport: "unknown",
+    };
+    throw Object.assign(new Error(failure.message), failure);
+  }
+}
+
+function assertMlcDomainId(domainId: string): void {
+  if (!isMlcDomainId(domainId)) {
+    const failure: MlcCategoryIdentifierFailure = {
+      allowed: false,
+      reason: "unsupported-domain-id",
+      identifier: domainId,
+      message: "Only MLC-confirmed domain IDs are supported for category technical spec reads.",
+      siteSupport: "unknown",
+    };
+    throw Object.assign(new Error(failure.message), failure);
+  }
 }
 
 function normalizeListings(input: {
@@ -436,6 +527,20 @@ function normalizeReputation(input: {
   pushOptional(data, "neutralRating", numberValue(ratings?.neutral));
   pushOptional(data, "negativeRating", numberValue(ratings?.negative));
 
+  const metrics = asRecord(reputation?.metrics);
+  const claims = asRecord(metrics?.claims);
+  const cancellations = asRecord(metrics?.cancellations);
+  const delayedHandlingTime = asRecord(metrics?.delayed_handling_time);
+  pushOptional(data, "claimsRate", numberValue(claims?.rate));
+  pushOptional(data, "cancellationsRate", numberValue(cancellations?.rate));
+  pushOptional(data, "delayedHandlingTimeRate", numberValue(delayedHandlingTime?.rate));
+  if (data.completedTransactions !== undefined) {
+    data.metricPeriodDays =
+      data.completedTransactions >= MLC_REPUTATION_RULES.establishedSellerCompletedTransactions
+        ? MLC_REPUTATION_RULES.establishedSellerMetricPeriodDays
+        : MLC_REPUTATION_RULES.newSellerMetricPeriodDays;
+  }
+
   const completeness =
     root !== undefined &&
     reputation !== undefined &&
@@ -452,6 +557,133 @@ function normalizeReputation(input: {
     completeness,
     freshness: createFreshness("reputation", input.now),
     confidence: snapshotConfidence(completeness, Object.keys(data).length),
+    siteSupport: MLC_CONFIRMED_SITE_SUPPORT,
+    sellerScope: sellerScope(input.sellerId),
+  };
+}
+
+function attributeTags(
+  record: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return asRecord(record.tags) ?? {};
+}
+
+function normalizeAttribute(
+  record: Readonly<Record<string, unknown>>,
+): MlcCategoryAttributeSummary | undefined {
+  const id = stringValue(record.id);
+  if (id === undefined) return undefined;
+
+  const tags = attributeTags(record);
+  const attribute: MlcCategoryAttributeSummary = {
+    id,
+    required: booleanValue(tags.required) ?? false,
+    catalogRequired:
+      booleanValue(tags.catalog_required) ?? booleanValue(tags.catalog_listing_required) ?? false,
+    variationAttribute:
+      booleanValue(tags.variation_attribute) ?? booleanValue(tags.allow_variations) ?? false,
+    readOnly: booleanValue(tags.read_only) ?? false,
+    values: asArray(record.values).flatMap((value) => {
+      const valueRecord = asRecord(value);
+      if (valueRecord === undefined) return [];
+      const normalizedValue: { id?: string; name?: string } = {};
+      pushOptional(normalizedValue, "id", stringValue(valueRecord.id));
+      pushOptional(normalizedValue, "name", stringValue(valueRecord.name));
+      return [normalizedValue];
+    }),
+    units: asArray(record.allowed_units ?? record.default_unit).flatMap((unit) => {
+      const unitRecord = asRecord(unit);
+      const name = stringValue(unitRecord?.name) ?? stringValue(unit);
+      return name === undefined ? [] : [name];
+    }),
+  };
+  pushOptional(attribute, "name", stringValue(record.name));
+  pushOptional(attribute, "valueType", stringValue(record.value_type));
+
+  return attribute;
+}
+
+function normalizeCategoryAttributes(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcCategoryAttributesSnapshot {
+  const data = asArray(input.payload).flatMap((item): MlcCategoryAttributeSummary[] => {
+    const record = asRecord(item);
+    const attribute = record === undefined ? undefined : normalizeAttribute(record);
+    return attribute === undefined ? [] : [attribute];
+  });
+  const completeness = Array.isArray(input.payload) ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "category-attributes",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("category-attributes", input.now),
+    confidence: snapshotConfidence(completeness, data.length),
+    siteSupport: MLC_CONFIRMED_SITE_SUPPORT,
+    sellerScope: sellerScope(input.sellerId),
+  };
+}
+
+function extractTechnicalSpecAttributes(payload: unknown): {
+  attributes: ReadonlyArray<unknown>;
+  validShape: boolean;
+} {
+  const root = asRecord(payload);
+  const rawGroups = root?.groups ?? asRecord(root?.input)?.groups;
+
+  if (!Array.isArray(rawGroups)) {
+    return { attributes: [], validShape: false };
+  }
+
+  const attributes = rawGroups.flatMap((group) => {
+    const groupRecord = asRecord(group);
+    const components = asArray(groupRecord?.components);
+    return components.flatMap((component) => {
+      const componentRecord = asRecord(component);
+      return asArray(componentRecord?.attributes);
+    });
+  });
+
+  return { attributes, validShape: true };
+}
+
+function normalizeCategoryTechnicalSpecs(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcCategoryTechnicalSpecsSnapshot {
+  const extracted = extractTechnicalSpecAttributes(input.payload);
+  const data = extracted.attributes.flatMap((item): MlcCategoryTechnicalSpecSummary[] => {
+    const record = asRecord(item);
+    if (record === undefined) return [];
+    const attribute = normalizeAttribute(record);
+    if (attribute === undefined) return [];
+    const spec: MlcCategoryTechnicalSpecSummary = {
+      id: attribute.id,
+      required: attribute.required,
+      catalogRequired: attribute.catalogRequired,
+    };
+    pushOptional(spec, "name", attribute.name);
+    pushOptional(spec, "valueType", attribute.valueType);
+    pushOptional(spec, "group", stringValue(record.hierarchy));
+    return [spec];
+  });
+  const completeness = extracted.validShape ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "category-technical-specs",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("category-technical-specs", input.now),
+    confidence: snapshotConfidence(completeness, data.length),
+    siteSupport: MLC_CONFIRMED_SITE_SUPPORT,
+    sellerScope: sellerScope(input.sellerId),
   };
 }
 
@@ -523,6 +755,16 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         request: input.request,
         now: input.now(),
       }),
+    getCategoryAttributes: async (sellerId, categoryId) => {
+      assertMlcCategoryId(categoryId);
+      const payload = await input.request(sellerId, `/categories/${categoryId}/attributes`);
+      return normalizeCategoryAttributes({ sellerId, payload, now: input.now() });
+    },
+    getCategoryTechnicalSpecs: async (sellerId, domainId) => {
+      assertMlcDomainId(domainId);
+      const payload = await input.request(sellerId, `/domains/${domainId}/technical_specs`);
+      return normalizeCategoryTechnicalSpecs({ sellerId, payload, now: input.now() });
+    },
   };
 }
 
@@ -634,7 +876,7 @@ export function createOAuthMlcApiClient(input: {
     return input.transport.request(apiRequest);
   };
 
-  return createMlcReadMethods({ request, now: input.now });
+  return createMlcReadMethods({ request, now: () => input.now() });
 }
 
 // ---------------------------------------------------------------------------

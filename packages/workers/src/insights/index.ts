@@ -33,6 +33,8 @@ const confidenceWeight: Record<InsightCandidate["confidence"], number> = {
 };
 const signalLabels: Record<BusinessSignalKind, string> = {
   cancellation: "cancelaciones",
+  "category-attributes": "category attributes",
+  "category-technical-specs": "category technical specs",
   claim: "reclamos",
   "historical-summary": "resumen histórico",
   listing: "publicaciones",

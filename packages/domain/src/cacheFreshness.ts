@@ -6,6 +6,8 @@ export type BusinessSignalKind =
   | "reputation"
   | "message"
   | "listing"
+  | "category-attributes"
+  | "category-technical-specs"
   | "pricing"
   | "historical-summary";
 
