@@ -199,3 +199,21 @@ The system MUST apply a `honeyPotGuardrail` with default-deny posture to all `Wr
 - GIVEN a regular `price-change` or `stock-update` action
 - WHEN `honeyPotGuardrail` evaluates
 - THEN it MUST pass through without blocking
+
+### Requirement: Capability Refresh Mutation Deferral
+
+The system MUST treat seller-impacting MercadoLibre capabilities discovered during the API capabilities refresh as `prepare-only` or `future-execute-with-approval`. Refreshed capability metadata MUST NOT introduce direct execution for listing edits, answer-question flows, catalog fixes, promotions, sync operations, public messages, refunds, cancellations, or other seller-impacting mutations.
+
+#### Scenario: Mutation-like capability is requested
+
+- GIVEN refreshed capability evidence identifies a seller-impacting operation
+- WHEN the agent or tool is asked to perform that operation
+- THEN the system MUST create a prepared action or defer execution to a future approved slice
+- AND the prepared or deferred record MUST include intended change, rationale, risk, approval requirement, and audit expectation
+
+#### Scenario: Direct execution is attempted before approval support exists
+
+- GIVEN no approved execution slice exists for the refreshed capability
+- WHEN direct execution is attempted from capability metadata
+- THEN the system MUST block execution
+- AND it MUST preserve existing approval, autonomy, and audit safeguards

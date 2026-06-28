@@ -79,3 +79,21 @@ The system MAY consult official MercadoLibre MCP or docs for API reference, but 
 - WHEN documentation is consulted
 - THEN official MercadoLibre MCP MAY be used as reference only
 - AND it MUST NOT receive or execute seller operational requests
+
+### Requirement: MLC Account-Safe Capability Reads
+
+The system MUST preserve fail-closed OAuth, configured allowed seller IDs, MLC seller scope, and account mismatch blocking for every read-first MercadoLibre capability, including listing quality, category attributes/specs, pictures, shipping, visits/metrics, reputation, questions, and messages. Unknown MLC support MUST remain unsupported or low confidence and MUST NOT bypass account protections.
+
+#### Scenario: Allowed MLC seller requests capability evidence
+
+- GIVEN a valid OAuth token belongs to the requested allowed `MLC` seller
+- WHEN capability evidence is read through project-owned direct API tooling
+- THEN the system MUST scope the read to that seller and `MLC`
+- AND it MUST return seller identity, site, source, freshness, and confidence metadata
+
+#### Scenario: Read access is unsafe
+
+- GIVEN OAuth access is missing, revoked, mismatched, not allowed, non-`MLC`, or unsupported for `MLC`
+- WHEN capability evidence is requested
+- THEN the system MUST block the read or mark the evidence unsupported with low confidence
+- AND it MUST NOT return another seller's operational data
