@@ -1,4 +1,5 @@
 import type { MlItem, NewItem } from "../types.js";
+import type { ExactChange } from "@msl/domain";
 
 // ---------------------------------------------------------------------------
 // Strategy types
@@ -45,6 +46,10 @@ export type Strategy =
 export type StrategyApplicationResult =
   | { applied: true; item: NewItem }
   | { applied: false; reason: "category_excluded" };
+
+export type StrategyPreviewResult =
+  | { status: "available"; fieldChanges: ExactChange[] }
+  | { status: "unavailable"; reason: "strategy-unavailable" };
 
 /**
  * Apply a set of CEO strategies to a source MlItem, producing a NewItem ready
@@ -111,4 +116,23 @@ export function applyStrategies(item: MlItem, strategies: Strategy[]): StrategyA
   };
 
   return { applied: true, item: newItem };
+}
+
+export function previewStrategyChanges(item: MlItem, strategies: Strategy[]): StrategyPreviewResult {
+  const result = applyStrategies(item, strategies);
+
+  if (!result.applied) {
+    return { status: "unavailable", reason: "strategy-unavailable" };
+  }
+
+  const fieldChanges: ExactChange[] = [];
+  const fields = ["title", "category_id", "price", "available_quantity"] as const;
+
+  for (const field of fields) {
+    if (item[field] !== result.item[field]) {
+      fieldChanges.push({ field, from: item[field], to: result.item[field] });
+    }
+  }
+
+  return { status: "available", fieldChanges };
 }

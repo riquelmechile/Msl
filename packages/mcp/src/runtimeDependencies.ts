@@ -12,8 +12,9 @@ import {
   getMlAccountRoleConfig,
   type MlAccountRoleConfig,
 } from "@msl/mercadolibre";
-import type { MlcApiClient, OAuthManager } from "@msl/mercadolibre";
+import type { MlcApiClient, OAuthManager, Strategy } from "@msl/mercadolibre";
 import type { McpServerConfig } from "./index.js";
+import { areStrategies } from "./strategyValidation.js";
 
 type RuntimeEnv = NodeJS.ProcessEnv;
 
@@ -57,6 +58,15 @@ function isCloseableRepository(
   repository: ApprovalQueueRepository | CloseableApprovalQueueRepository,
 ): repository is CloseableApprovalQueueRepository {
   return "close" in repository && typeof repository.close === "function";
+}
+
+function parsePreviewStrategies(rawStrategies: string): Strategy[] {
+  const parsed = JSON.parse(rawStrategies) as unknown;
+  if (!areStrategies(parsed)) {
+    throw new Error("Invalid sync preview strategy config.");
+  }
+
+  return parsed;
 }
 
 function assertOAuthConfigPresentInProduction(env: RuntimeEnv): void {
@@ -161,6 +171,15 @@ function createRuntimeReadClient(env: RuntimeEnv): { client?: MlcApiClient; clos
   };
 }
 
+function createRuntimeStrategyProvider(env: RuntimeEnv): (() => Promise<Strategy[]>) | undefined {
+  const rawStrategies = nonEmpty(env.MSL_SYNC_PREVIEW_STRATEGIES_JSON);
+  if (!rawStrategies) return undefined;
+
+  return async () => {
+    return parsePreviewStrategies(rawStrategies);
+  };
+}
+
 export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): RuntimeDependencies {
   if (isProduction(env)) {
     assertProductionSecrets(env);
@@ -169,11 +188,20 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
   const readRuntime = createRuntimeReadClient(env);
   const accountRoles = getOptionalRoleConfig(env);
   const prepareWrite = createPrepareWriteDependencies(env);
+  const getStrategies = createRuntimeStrategyProvider(env);
   let closed = false;
 
   return {
     ...(readRuntime.client ? { mlcClient: readRuntime.client } : {}),
     ...(accountRoles ? { accountRoles } : {}),
+    ...(readRuntime.client && accountRoles && getStrategies
+      ? {
+          syncPreview: {
+            getSourceItem: readRuntime.client.getItem,
+            getStrategies,
+          },
+        }
+      : {}),
     prepareWrite: {
       repository: prepareWrite.repository,
       clock: prepareWrite.clock,

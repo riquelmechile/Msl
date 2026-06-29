@@ -220,7 +220,7 @@ The system MUST treat seller-impacting MercadoLibre capabilities discovered duri
 
 ### Requirement: Product Sync Proposals Remain Pending
 
-Product sync business operations MUST remain pending prepared actions unless a future approved slice adds explicit execution, approval, and audit behavior. This slice MAY persist prepared proposal state when durable approval storage is configured, but it MUST NOT execute sync mutations, replay audits, calculate sync previews, persist credentials, or expand the approval/execution surface.
+Product sync business operations MUST remain pending prepared actions unless a future approved slice adds explicit execution, approval, and audit behavior. This slice MAY persist prepared proposal state and non-sensitive preview evidence when durable approval storage is configured, and MAY calculate read-only preview evidence. It MUST NOT execute sync mutations, replay audits, persist credentials, or expand the approval/execution surface.
 
 #### Scenario: Prepared sync proposal is returned
 
@@ -228,6 +228,13 @@ Product sync business operations MUST remain pending prepared actions unless a f
 - WHEN the proposal is created
 - THEN it MUST have pending approval status and `requiresApproval: true`
 - AND it MUST include intended target, rationale, risk, and expiry metadata
+
+#### Scenario: Read-only preview evidence is attached
+
+- GIVEN read-only item evidence and applicable strategies are available
+- WHEN a product sync proposal is prepared
+- THEN the proposal MAY include non-sensitive preview evidence for proposed field changes
+- AND it MUST still disclose that no mutation, approval execution, or audit replay occurred
 
 #### Scenario: Execution is attempted from a prepared proposal
 
@@ -248,8 +255,7 @@ Product sync business operations MUST remain pending prepared actions unless a f
 - GIVEN the generic prepared write tool receives a target, exact change, or rationale containing API keys, OAuth tokens, client secrets, raw credentials, or database paths
 - WHEN the proposal is validated
 - THEN the system MUST block before repository save
-- AND it MUST NOT persist the credential-like payload in memory or durable storage
-- AND it MUST NOT echo the credential-like payload in the response
+- AND it MUST NOT persist or echo the credential-like payload
 
 #### Scenario: Durable storage is not configured
 
@@ -263,7 +269,7 @@ Product sync business operations MUST remain pending prepared actions unless a f
 - GIVEN durable proposal storage is configured but unavailable
 - WHEN a product sync proposal is prepared
 - THEN the system MUST return a controlled blocked response with redacted error details
-- AND it MUST NOT execute mutation, replay audit, or calculate sync preview
+- AND it MUST NOT execute mutation, replay audit, persist credentials, or expose raw errors
 
 #### Scenario: Durable storage fails during MCP startup
 

@@ -63,7 +63,7 @@ function makePrepareWritePayload(overrides: Record<string, unknown> = {}) {
     id: "prepared-1",
     sellerId: "ML-target",
     kind: "price-change",
-    target: { type: "listing", listingId: "MLC-1" },
+    target: { type: "listing", listingId: "MLC1001" },
     exactChange: [{ field: "price", from: 100, to: 110 }],
     rationale: "Seller requested pricing update.",
     expiresAt: "2026-01-02T00:00:00.000Z",
@@ -75,11 +75,26 @@ function makeSyncProductPayload(overrides: Record<string, unknown> = {}) {
   return {
     sourceSellerId: "plasticov-seller",
     targetSellerId: "maustian-seller",
-    itemId: "MLC-1",
+    itemId: "MLC1001",
     rationale: "Prepare a seller-approved Plasticov to Maustian product sync proposal.",
     expiresAt: "2026-01-02T00:00:00.000Z",
     requiresApproval: true,
     risk: "high",
+    ...overrides,
+  };
+}
+
+function makeSourceItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "MLC1001",
+    title: "Source item",
+    price: 10000,
+    available_quantity: 10,
+    category_id: "MLC1000",
+    seller_id: 123,
+    status: "active" as const,
+    pictures: [{ url: "https://example.test/item.jpg" }],
+    attributes: [{ id: "BRAND", value_name: "Generic" }],
     ...overrides,
   };
 }
@@ -215,6 +230,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation,
@@ -258,12 +274,13 @@ describe("MCP Server", () => {
         status: "fresh",
         risk: "medium",
       },
-      data: [{ id: "MLC-1", title: "Test listing" }],
+      data: [{ id: "MLC1001", title: "Test listing" }],
     });
 
     createMcpServer({
       mlcClient: {
         getListings,
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -295,6 +312,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -341,6 +359,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -396,6 +415,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -434,6 +454,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -468,6 +489,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -500,6 +522,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -542,6 +565,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings: vi.fn(),
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -584,6 +608,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings,
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -617,6 +642,7 @@ describe("MCP Server", () => {
     createMcpServer({
       mlcClient: {
         getListings,
+        getItem: vi.fn(),
         getOrders: vi.fn(),
         getMessages: vi.fn(),
         getReputation: vi.fn(),
@@ -840,7 +866,7 @@ describe("MCP Server", () => {
     expect(savedEntry.action).toMatchObject({
       sellerId: "maustian-seller",
       kind: "listing-edit",
-      target: { type: "listing", listingId: "MLC-1" },
+      target: { type: "listing", listingId: "MLC1001" },
       approvalStatus: "pending",
       riskLevel: "high",
     });
@@ -859,6 +885,95 @@ describe("MCP Server", () => {
     });
   });
 
+  it("sync_product attaches safe available preview metadata and scalar exact changes", async () => {
+    const { save, config } = syncProductConfig();
+    const getSourceItem = vi.fn().mockResolvedValue(makeSourceItem({ price: 10000 }));
+    const getStrategies = vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]);
+
+    createMcpServer({ ...config, syncPreview: { getSourceItem, getStrategies } });
+
+    const cb = registeredTools.get("sync_product");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeSyncProductPayload())) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    const savedEntry = save.mock.calls[0]![0];
+
+    expect(getSourceItem).toHaveBeenCalledWith("plasticov-seller", "MLC1001");
+    expect(parsed.metadata).toMatchObject({
+      requiresApproval: true,
+      noMutationExecuted: true,
+      preview: {
+        status: "available",
+        evidenceSource: "read-only-item",
+        fieldChanges: [{ field: "price", from: 10000, to: 15000 }],
+      },
+    });
+    expect(savedEntry.action.exactChange).toEqual(
+      expect.arrayContaining([
+        { field: "preview.status", from: null, to: "available" },
+        { field: "preview.price", from: 10000, to: 15000 },
+      ]),
+    );
+  });
+
+  it.each([
+    ["missing dependency", undefined, "missing-preview-dependency"],
+    [
+      "failed source read",
+      {
+        getSourceItem: vi.fn().mockRejectedValue(new Error("ML API failed with token raw-secret")),
+        getStrategies: vi.fn(),
+      },
+      "source-read-failed",
+    ],
+    [
+      "absent strategy source",
+      { getSourceItem: vi.fn().mockResolvedValue(makeSourceItem()), getStrategies: vi.fn().mockResolvedValue([]) },
+      "strategy-unavailable",
+    ],
+    [
+      "malformed strategy config",
+      {
+        getSourceItem: vi.fn().mockResolvedValue(makeSourceItem()),
+        getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: Number.NaN }]),
+      },
+      "strategy-unavailable",
+    ],
+    [
+      "incomplete source item",
+      {
+        getSourceItem: vi.fn().mockResolvedValue(makeSourceItem({ title: undefined })),
+        getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+      },
+      "source-read-failed",
+    ],
+  ])("sync_product returns degraded preview metadata for %s", async (_name, syncPreview, reason) => {
+    const { save, config } = syncProductConfig();
+
+    createMcpServer({ ...config, ...(syncPreview ? { syncPreview } : {}) });
+
+    const cb = registeredTools.get("sync_product");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeSyncProductPayload())) as { content: { text: string }[] };
+    const responseText = result.content[0]!.text;
+    const parsed = JSON.parse(responseText) as Record<string, unknown>;
+    const savedEntry = save.mock.calls[0]![0];
+
+    expect(parsed.metadata).toMatchObject({
+      noMutationExecuted: true,
+      preview: { status: "unavailable", reason },
+    });
+    expect(savedEntry.action.exactChange).toEqual(
+      expect.arrayContaining([
+        { field: "preview.status", from: null, to: "unavailable" },
+        { field: "preview.reason", from: null, to: reason },
+      ]),
+    );
+    expect(responseText).not.toContain("raw-secret");
+  });
+
   it.each([
     ["invalid API key", { msl_api_key: "wrong" }, "unauthorized", true],
     [
@@ -869,6 +984,7 @@ describe("MCP Server", () => {
     ],
     ["arbitrary seller direction", { sourceSellerId: "other-seller" }, "unsafe-direction", false],
     ["invalid expiry", { expiresAt: "2026-01-02" }, "invalid-expires-at", false],
+    ["crafted itemId path", { itemId: "MLC1001/visits?include=orders" }, "invalid-target", false],
     ["missing rationale", { rationale: "   " }, "missing-rationale", false],
     ["missing approval metadata", { requiresApproval: false }, "approval-required", false],
     ["missing risk", { risk: undefined }, "invalid-risk", false],
@@ -876,7 +992,7 @@ describe("MCP Server", () => {
     ["bulk sync intent", { syncAll: true }, "unsupported-sync-intent", false],
     [
       "multi-product sync intent",
-      { itemIds: ["MLC-1", "MLC-2"] },
+      { itemIds: ["MLC1001", "MLC1002"] },
       "unsupported-sync-intent",
       false,
     ],
@@ -1258,7 +1374,7 @@ describe("MCP Server", () => {
 
         const mcpSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
         expect(mcpSource).not.toContain("ProductSyncEngine");
-        expect(mcpSource).not.toContain("syncPreview");
+        expect(mcpSource).not.toContain("preview_product_sync");
       } finally {
         runtime.close();
       }
@@ -1296,6 +1412,28 @@ describe("MCP Server", () => {
     expect(registeredTools.has("execute_mercadolibre_write")).toBe(false);
     expect(registeredTools.has("executePreparedAction")).toBe(false);
     runtime.close();
+  });
+
+  it("keeps malformed runtime preview strategy config unavailable instead of casting it", async () => {
+    const runtime = createMcpRuntimeDependencies({
+      NODE_ENV: "test",
+      MSL_MCP_API_KEY: "mcp-key",
+      MSL_ENCRYPTION_KEY: "encryption-key",
+      MERCADOLIBRE_CLIENT_ID: "client-id",
+      MERCADOLIBRE_CLIENT_SECRET: "client-secret",
+      MERCADOLIBRE_REDIRECT_URI: "https://example.test/oauth/callback",
+      MSL_MERCADOLIBRE_OAUTH_DB_PATH: ":memory:",
+      MERCADOLIBRE_SOURCE_SELLER_ID: "source-seller",
+      MERCADOLIBRE_TARGET_SELLER_ID: "target-seller",
+      MSL_SYNC_PREVIEW_STRATEGIES_JSON: JSON.stringify([{ type: "margin", percentage: "NaN" }]),
+    });
+
+    try {
+      expect(runtime.syncPreview).toBeDefined();
+      await expect(runtime.syncPreview!.getStrategies()).rejects.toThrow(/Invalid sync preview/);
+    } finally {
+      runtime.close();
+    }
   });
 
   it("rejects unconfigured runtime OAuth read sellers before token lookup", async () => {

@@ -10,19 +10,36 @@ import {
   type MlcReadTools,
   type PrepareWriteInput,
 } from "@msl/tools";
-import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
+import { ACTION_TARGET_FIELD_BY_TYPE, type ExactChange } from "@msl/domain";
 import {
   assertPlasticovToMaustianDirection,
   getMlAccountRoleConfig,
+  normalizeMlcItemId,
+  previewStrategyChanges,
   type MlcApiClient,
+  type MlItem,
   type MlAccountRoleConfig,
+  type Strategy,
 } from "@msl/mercadolibre";
 import { z } from "zod";
 import { createMcpRuntimeDependencies } from "./runtimeDependencies.js";
+import { areStrategies, isFiniteNumber } from "./strategyValidation.js";
 
 type McpToolResult = {
   content: { type: "text"; text: string }[];
   isError?: boolean;
+};
+
+export type SyncProductPreview =
+  | { status: "available"; fieldChanges: ExactChange[]; evidenceSource: "read-only-item" }
+  | {
+      status: "unavailable";
+      reason: "missing-preview-dependency" | "source-read-failed" | "strategy-unavailable";
+    };
+
+export type SyncPreviewDependency = {
+  getSourceItem(sellerId: string, itemId: string): Promise<MlItem>;
+  getStrategies(): Promise<Strategy[]>;
 };
 
 function jsonResult(value: unknown, isError = false): McpToolResult {
@@ -49,6 +66,7 @@ type SyncProductBlockedReason =
   | "missing-account-roles"
   | "unsafe-direction"
   | "missing-target"
+  | "invalid-target"
   | "missing-rationale"
   | "credential-like-payload"
   | "invalid-expires-at"
@@ -148,6 +166,21 @@ function validateMlcRoleConfig(roleConfig: MlAccountRoleConfig): SyncProductBloc
   return null;
 }
 
+function isCompletePreviewItem(item: MlItem): boolean {
+  return (
+    typeof item.id === "string" &&
+    normalizeMlcItemId(item.id) !== null &&
+    typeof item.title === "string" &&
+    item.title.length > 0 &&
+    isFiniteNumber(item.price) &&
+    isFiniteNumber(item.available_quantity) &&
+    typeof item.category_id === "string" &&
+    item.category_id.length > 0 &&
+    isFiniteNumber(item.seller_id) &&
+    (item.status === "active" || item.status === "paused" || item.status === "closed")
+  );
+}
+
 /**
  * Validates the MCP API key against the {@link MSL_MCP_API_KEY}
  * environment variable. Fails closed unless explicit local/demo mode is enabled.
@@ -222,6 +255,68 @@ function hasUnsafePrepareWritePayload(
     containsCredentialLikeContent(input.exactChange) ||
     containsCredentialLikeContent(input.rationale)
   );
+}
+
+async function buildSyncProductPreview(input: {
+  dependency?: SyncPreviewDependency | undefined;
+  sourceSellerId: string;
+  itemId: string;
+}): Promise<SyncProductPreview> {
+  if (!input.dependency) {
+    return { status: "unavailable", reason: "missing-preview-dependency" };
+  }
+
+  let item: MlItem;
+  try {
+    item = await input.dependency.getSourceItem(input.sourceSellerId, input.itemId);
+  } catch {
+    return { status: "unavailable", reason: "source-read-failed" };
+  }
+
+  if (!isCompletePreviewItem(item)) {
+    return { status: "unavailable", reason: "source-read-failed" };
+  }
+
+  let strategies: unknown;
+  try {
+    strategies = await input.dependency.getStrategies();
+  } catch {
+    return { status: "unavailable", reason: "strategy-unavailable" };
+  }
+
+  if (!areStrategies(strategies)) {
+    return { status: "unavailable", reason: "strategy-unavailable" };
+  }
+
+  let preview: ReturnType<typeof previewStrategyChanges>;
+  try {
+    preview = previewStrategyChanges(item, strategies);
+  } catch {
+    return { status: "unavailable", reason: "strategy-unavailable" };
+  }
+  if (preview.status === "unavailable") {
+    return preview;
+  }
+
+  return { ...preview, evidenceSource: "read-only-item" };
+}
+
+function previewExactChanges(preview: SyncProductPreview): ExactChange[] {
+  if (preview.status === "unavailable") {
+    return [
+      { field: "preview.status", from: null, to: preview.status },
+      { field: "preview.reason", from: null, to: preview.reason },
+    ];
+  }
+
+  return [
+    { field: "preview.status", from: null, to: preview.status },
+    ...preview.fieldChanges.map((change) => ({
+      field: `preview.${change.field}`,
+      from: change.from,
+      to: change.to,
+    })),
+  ];
 }
 
 /**
@@ -319,6 +414,14 @@ export function createMcpServer(config: McpServerConfig = {}) {
         );
       }
 
+      const safeItemId = normalizeMlcItemId(itemId);
+      if (!safeItemId) {
+        return blockedResult(
+          "invalid-target",
+          "Product sync preparation requires one valid MLC itemId.",
+        );
+      }
+
       if (!rationale) {
         return blockedResult("missing-rationale", "Product sync preparation requires a rationale.");
       }
@@ -386,19 +489,25 @@ export function createMcpServer(config: McpServerConfig = {}) {
         );
       }
 
+      const preview = await buildSyncProductPreview({
+        dependency: config.syncPreview,
+        sourceSellerId,
+        itemId: safeItemId,
+      });
       const prepareTool = createPreparedActionTool(config.prepareWrite);
       let response: Awaited<ReturnType<typeof prepareTool.execute>>;
       try {
         response = await prepareTool.execute({
-          id: `sync-product:${itemId}:${config.prepareWrite.clock.now().toISOString()}`,
+          id: `sync-product:${safeItemId}:${config.prepareWrite.clock.now().toISOString()}`,
           sellerId: targetSellerId,
           kind: "listing-edit",
-          target: { type: "listing", listingId: itemId },
+          target: { type: "listing", listingId: safeItemId },
           exactChange: [
             { field: "sourceSellerId", from: null, to: sourceSellerId },
             { field: "targetSellerId", from: null, to: targetSellerId },
             { field: "syncIntent", from: null, to: "prepare-only product sync proposal" },
             { field: "mutationExecuted", from: null, to: false },
+            ...previewExactChanges(preview),
           ],
           rationale,
           expiresAt: parsedExpiresAt,
@@ -423,6 +532,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
           auditReplay: "not-available",
           noMutationExecuted: true,
           operation: "sync_product",
+          preview,
         },
       });
     },
@@ -661,6 +771,7 @@ function registerMlcCategoryTechnicalSpecsReadTool(
 /** Configuration for MCP server dependencies. Dependencies are injected by callers. */
 export type McpServerConfig = {
   mlcClient?: MlcApiClient;
+  syncPreview?: SyncPreviewDependency;
   accountRoles?: MlAccountRoleConfig;
   approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
   prepareWrite?: {

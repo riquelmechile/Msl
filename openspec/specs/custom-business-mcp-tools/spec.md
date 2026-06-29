@@ -116,7 +116,7 @@ The system MUST map MercadoLibre capability classifications to runtime behavior 
 
 ### Requirement: Prepare-Only Product Sync Tool
 
-The `sync_product` MCP tool MUST create an approval-required prepared business-operation proposal for one Plasticov-to-Maustian product sync intent and MUST NOT report fake execution success. When durable proposal storage is configured, responses MUST disclose storage durability metadata; otherwise the tool MUST preserve default in-memory behavior.
+The `sync_product` MCP tool MUST create an approval-required proposal for one Plasticov-to-Maustian product sync intent and MUST NOT report fake execution success. It MAY include safe read-only preview metadata on the same pending proposal when available. When durable proposal storage is configured, responses MUST disclose durability metadata; otherwise the tool MUST preserve default in-memory behavior.
 
 #### Scenario: Valid product sync intent is prepared
 
@@ -124,6 +124,20 @@ The `sync_product` MCP tool MUST create an approval-required prepared business-o
 - WHEN `sync_product` is requested with target, rationale, risk, expiry, and `requiresApproval: true`
 - THEN the tool MUST return a pending prepared proposal with proposal metadata
 - AND it MUST disclose that no MercadoLibre mutation has executed
+
+#### Scenario: Safe preview metadata is available
+
+- GIVEN the valid request can be evaluated with read-only source data and strategies
+- WHEN `sync_product` prepares the proposal
+- THEN the response MAY include proposed field-change preview evidence
+- AND it MUST keep `approvalStatus: "pending"`, `requiresApproval: true`, and `noMutationExecuted: true`
+
+#### Scenario: Preview metadata is unavailable
+
+- GIVEN source reads or strategies are unavailable
+- WHEN `sync_product` prepares the proposal
+- THEN the response MUST still return a pending proposal with preview-unavailable metadata
+- AND it MUST NOT execute mutation or claim completion
 
 #### Scenario: Durable metadata is reported when configured
 
@@ -137,8 +151,7 @@ The `sync_product` MCP tool MUST create an approval-required prepared business-o
 - GIVEN durable proposal storage is configured but cannot be opened during MCP startup
 - WHEN `sync_product` prepares a valid proposal
 - THEN the runtime MUST continue with controlled degraded in-memory proposal storage metadata
-- AND the metadata MUST NOT falsely report persistent storage
-- AND the response MUST NOT expose database paths, credentials, or raw storage errors
+- AND the metadata MUST NOT falsely report persistent storage or expose sensitive details
 
 #### Scenario: Default in-memory behavior remains
 
@@ -165,20 +178,19 @@ The `sync_product` MCP tool MUST create an approval-required prepared business-o
 
 - GIVEN durable proposal storage is active
 - WHEN the MCP tool surface is listed or invoked
-- THEN it MUST NOT expose approval execution tools, `sync_all`, mutation execution, or sync preview tools
+- THEN it MUST NOT expose approval execution tools, `sync_all`, mutation execution, or separate sync preview tools
 - AND `sync_product` MUST remain prepare-only
 
 #### Scenario: Generic prepared writes reject credential-like payloads
 
-- GIVEN MCP API-key auth is valid and the generic `prepare_mercadolibre_write` tool is available
+- GIVEN MCP API-key auth is valid and `prepare_mercadolibre_write` is available
 - WHEN the request target, exact changes, or rationale includes API keys, OAuth tokens, client secrets, raw credential material, or database paths
 - THEN the tool MUST return a controlled blocked response before repository save
-- AND it MUST NOT persist the credential-like payload in memory or durable storage
-- AND the response MUST NOT echo the credential-like content
+- AND it MUST NOT persist or echo the credential-like payload
 
 #### Scenario: Generic prepared write storage save fails
 
-- GIVEN MCP API-key auth is valid and the generic `prepare_mercadolibre_write` tool is available
+- GIVEN MCP API-key auth is valid and `prepare_mercadolibre_write` is available
 - WHEN approval storage fails while saving the prepared proposal
 - THEN the tool MUST return a controlled blocked response with redacted error details
 - AND it MUST NOT expose database paths, credentials, or raw storage errors
