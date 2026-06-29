@@ -1,8 +1,17 @@
+import Database from "better-sqlite3";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { MlcApiClient, MlcReadSnapshot } from "@msl/mercadolibre";
 
-import { createMlcReadTools, PREPARED_WRITE_KINDS } from "./index.js";
+import {
+  createMlcReadTools,
+  createSqliteApprovalQueueRepository,
+  PREPARED_WRITE_KINDS,
+  type ApprovalQueueEntry,
+} from "./index.js";
 
 const now = new Date("2026-06-25T12:00:00.000Z");
 
@@ -246,6 +255,67 @@ describe("project-owned MercadoLibre safe read tools", () => {
   });
 });
 
+describe("SQLite approval queue repository", () => {
+  it("restores saved prepared actions after repository reopen with Date fields", async () => {
+    await withTempDb(async (dbPath) => {
+      const entry = approvalEntry();
+      const repository = createSqliteApprovalQueueRepository(dbPath);
+
+      await repository.save(entry);
+      repository.close();
+
+      const reopened = createSqliteApprovalQueueRepository(dbPath);
+      const restored = await reopened.findAction(entry.action.id);
+      reopened.close();
+
+      expect(restored).toEqual(entry);
+      expect(restored?.action.expiresAt).toBeInstanceOf(Date);
+      expect(restored?.requestedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  it("persists approvals and audits without credential fields", async () => {
+    await withTempDb(async (dbPath) => {
+      const entry = approvalEntry();
+      const approval = {
+        id: "approval-1",
+        actionId: entry.action.id,
+        sellerId: entry.action.sellerId,
+        approvedBy: "seller" as const,
+        approvedAt: new Date("2026-06-25T12:05:00.000Z"),
+        exactChangeAccepted: entry.action.exactChange,
+        riskAccepted: entry.action.riskLevel,
+      };
+      const audit = {
+        id: "audit-1",
+        sellerId: entry.action.sellerId,
+        actionId: entry.action.id,
+        approvedBy: "seller" as const,
+        exactChange: entry.action.exactChange,
+        rationale: entry.action.rationale,
+        riskLevel: entry.action.riskLevel,
+        status: "executed" as const,
+        recordedAt: new Date("2026-06-25T12:06:00.000Z"),
+        resultMessage: "Execution recorded.",
+      };
+      const repository = createSqliteApprovalQueueRepository(dbPath);
+
+      await repository.save(entry);
+      await repository.saveApproval(approval);
+      await repository.saveAudit(audit);
+      repository.close();
+
+      const reopened = createSqliteApprovalQueueRepository(dbPath);
+      expect(await reopened.findApproval(entry.action.id)).toEqual(approval);
+      expect(await reopened.listAudits(entry.action.id)).toEqual([audit]);
+      reopened.close();
+
+      const persistedJson = readPersistedJson(dbPath);
+      expect(persistedJson).not.toMatch(/oauth|api[_-]?key|client[_-]?secret|credential|token/i);
+    });
+  });
+});
+
 function snapshot<TData>(
   sellerId: string,
   kind: MlcReadSnapshot<TData>["kind"],
@@ -286,4 +356,44 @@ function clientWith(overrides: Partial<MlcApiClient>): MlcApiClient {
     getCategoryTechnicalSpecs: vi.fn(),
     ...overrides,
   };
+}
+
+function approvalEntry(): ApprovalQueueEntry {
+  return {
+    action: {
+      id: "action-1",
+      sellerId: "seller-1",
+      kind: "listing-edit",
+      target: { type: "listing", listingId: "MLC123" },
+      exactChange: [{ field: "price", from: 1000, to: 950 }],
+      rationale: "Align Maustian listing with Plasticov source data.",
+      riskLevel: "high",
+      expiresAt: new Date("2026-06-25T13:00:00.000Z"),
+      approvalStatus: "pending",
+    },
+    requestedAt: new Date("2026-06-25T12:00:00.000Z"),
+    highlightedRisk: "high",
+    status: "pending",
+  };
+}
+
+async function withTempDb(operation: (dbPath: string) => Promise<void>): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), "msl-approval-queue-"));
+  try {
+    await operation(join(directory, "approval-queue.sqlite"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function readPersistedJson(dbPath: string): string {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const entryRows = db.prepare("SELECT action_json FROM approval_queue_entries").all();
+    const approvalRows = db.prepare("SELECT approval_json FROM approval_records").all();
+    const auditRows = db.prepare("SELECT audit_json FROM audit_records").all();
+    return JSON.stringify([...entryRows, ...approvalRows, ...auditRows]);
+  } finally {
+    db.close();
+  }
 }

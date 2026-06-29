@@ -18,6 +18,10 @@
   },
   "dependencies": {
     "@msl/domain": "file:../domain",
-    "@msl/mercadolibre": "file:../mercadolibre"
+    "@msl/mercadolibre": "file:../mercadolibre",
+    "better-sqlite3": "^12.11.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
   }
 }
