@@ -118,7 +118,10 @@ export function applyStrategies(item: MlItem, strategies: Strategy[]): StrategyA
   return { applied: true, item: newItem };
 }
 
-export function previewStrategyChanges(item: MlItem, strategies: Strategy[]): StrategyPreviewResult {
+export function previewStrategyChanges(
+  item: MlItem,
+  strategies: Strategy[],
+): StrategyPreviewResult {
   const result = applyStrategies(item, strategies);
 
   if (!result.applied) {

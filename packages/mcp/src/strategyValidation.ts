@@ -14,10 +14,13 @@ function isStrategy(value: unknown): value is Strategy {
     case "margin":
       return isFiniteNumber(strategy.percentage);
     case "category_filter":
-      return Array.isArray(strategy.excluded) && strategy.excluded.every((id) => typeof id === "string");
+      return (
+        Array.isArray(strategy.excluded) && strategy.excluded.every((id) => typeof id === "string")
+      );
     case "stock":
       return (
-        (strategy.available_quantity === undefined || isFiniteNumber(strategy.available_quantity)) &&
+        (strategy.available_quantity === undefined ||
+          isFiniteNumber(strategy.available_quantity)) &&
         (strategy.limit === undefined || isFiniteNumber(strategy.limit))
       );
     case "pricing_rule":

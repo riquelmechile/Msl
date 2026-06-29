@@ -122,7 +122,11 @@ describe("MCP Server SDK integration", () => {
     ["missing risk metadata", { risk: undefined }, "invalid-risk"],
     ["invalid risk metadata", { risk: "medium" }, "invalid-risk"],
     ["bulk sync intent", { syncAll: true }, "unsupported-sync-intent"],
-    ["multi-product sync intent", { productIds: ["MLC1001", "MLC1002"] }, "unsupported-sync-intent"],
+    [
+      "multi-product sync intent",
+      { productIds: ["MLC1001", "MLC1002"] },
+      "unsupported-sync-intent",
+    ],
   ])("returns a controlled blocked response for %s", async (_name, overrides, reason) => {
     const { result, save } = await callSyncProductThroughSdk(makeSyncProductPayload(overrides));
 

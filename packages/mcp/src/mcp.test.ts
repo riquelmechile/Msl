@@ -929,7 +929,10 @@ describe("MCP Server", () => {
     ],
     [
       "absent strategy source",
-      { getSourceItem: vi.fn().mockResolvedValue(makeSourceItem()), getStrategies: vi.fn().mockResolvedValue([]) },
+      {
+        getSourceItem: vi.fn().mockResolvedValue(makeSourceItem()),
+        getStrategies: vi.fn().mockResolvedValue([]),
+      },
       "strategy-unavailable",
     ],
     [
@@ -948,31 +951,34 @@ describe("MCP Server", () => {
       },
       "source-read-failed",
     ],
-  ])("sync_product returns degraded preview metadata for %s", async (_name, syncPreview, reason) => {
-    const { save, config } = syncProductConfig();
+  ])(
+    "sync_product returns degraded preview metadata for %s",
+    async (_name, syncPreview, reason) => {
+      const { save, config } = syncProductConfig();
 
-    createMcpServer({ ...config, ...(syncPreview ? { syncPreview } : {}) });
+      createMcpServer({ ...config, ...(syncPreview ? { syncPreview } : {}) });
 
-    const cb = registeredTools.get("sync_product");
-    expect(cb).toBeDefined();
+      const cb = registeredTools.get("sync_product");
+      expect(cb).toBeDefined();
 
-    const result = (await cb!(makeSyncProductPayload())) as { content: { text: string }[] };
-    const responseText = result.content[0]!.text;
-    const parsed = JSON.parse(responseText) as Record<string, unknown>;
-    const savedEntry = save.mock.calls[0]![0];
+      const result = (await cb!(makeSyncProductPayload())) as { content: { text: string }[] };
+      const responseText = result.content[0]!.text;
+      const parsed = JSON.parse(responseText) as Record<string, unknown>;
+      const savedEntry = save.mock.calls[0]![0];
 
-    expect(parsed.metadata).toMatchObject({
-      noMutationExecuted: true,
-      preview: { status: "unavailable", reason },
-    });
-    expect(savedEntry.action.exactChange).toEqual(
-      expect.arrayContaining([
-        { field: "preview.status", from: null, to: "unavailable" },
-        { field: "preview.reason", from: null, to: reason },
-      ]),
-    );
-    expect(responseText).not.toContain("raw-secret");
-  });
+      expect(parsed.metadata).toMatchObject({
+        noMutationExecuted: true,
+        preview: { status: "unavailable", reason },
+      });
+      expect(savedEntry.action.exactChange).toEqual(
+        expect.arrayContaining([
+          { field: "preview.status", from: null, to: "unavailable" },
+          { field: "preview.reason", from: null, to: reason },
+        ]),
+      );
+      expect(responseText).not.toContain("raw-secret");
+    },
+  );
 
   it.each([
     ["invalid API key", { msl_api_key: "wrong" }, "unauthorized", true],
