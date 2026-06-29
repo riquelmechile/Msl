@@ -116,7 +116,7 @@ The system MUST map MercadoLibre capability classifications to runtime behavior 
 
 ### Requirement: Prepare-Only Product Sync Tool
 
-The `sync_product` MCP tool MUST create an approval-required prepared business-operation proposal for one Plasticov-to-Maustian product sync intent and MUST NOT report fake execution success.
+The `sync_product` MCP tool MUST create an approval-required prepared business-operation proposal for one Plasticov-to-Maustian product sync intent and MUST NOT report fake execution success. When durable proposal storage is configured, responses MUST disclose storage durability metadata; otherwise the tool MUST preserve default in-memory behavior.
 
 #### Scenario: Valid product sync intent is prepared
 
@@ -124,6 +124,28 @@ The `sync_product` MCP tool MUST create an approval-required prepared business-o
 - WHEN `sync_product` is requested with target, rationale, risk, expiry, and `requiresApproval: true`
 - THEN the tool MUST return a pending prepared proposal with proposal metadata
 - AND it MUST disclose that no MercadoLibre mutation has executed
+
+#### Scenario: Durable metadata is reported when configured
+
+- GIVEN MCP API-key auth is valid and durable proposal storage is configured
+- WHEN `sync_product` prepares a valid proposal
+- THEN the response MUST indicate durable proposal storage is active
+- AND the metadata MUST NOT expose database paths, credentials, or raw error details
+
+#### Scenario: Durable storage startup is unavailable
+
+- GIVEN durable proposal storage is configured but cannot be opened during MCP startup
+- WHEN `sync_product` prepares a valid proposal
+- THEN the runtime MUST continue with controlled degraded in-memory proposal storage metadata
+- AND the metadata MUST NOT falsely report persistent storage
+- AND the response MUST NOT expose database paths, credentials, or raw storage errors
+
+#### Scenario: Default in-memory behavior remains
+
+- GIVEN MCP API-key auth is valid and durable proposal storage is not configured
+- WHEN `sync_product` prepares a valid proposal
+- THEN the response MUST indicate non-durable in-memory proposal storage
+- AND it MUST NOT require deployment-specific persistence configuration
 
 #### Scenario: Required proposal metadata is missing
 
@@ -138,3 +160,25 @@ The `sync_product` MCP tool MUST create an approval-required prepared business-o
 - WHEN a request asks for `sync_all` or multi-product sync execution
 - THEN the tool MUST block the request as out of scope
 - AND it MUST limit guidance to preparing a single-product proposal
+
+#### Scenario: Approval execution tools remain absent
+
+- GIVEN durable proposal storage is active
+- WHEN the MCP tool surface is listed or invoked
+- THEN it MUST NOT expose approval execution tools, `sync_all`, mutation execution, or sync preview tools
+- AND `sync_product` MUST remain prepare-only
+
+#### Scenario: Generic prepared writes reject credential-like payloads
+
+- GIVEN MCP API-key auth is valid and the generic `prepare_mercadolibre_write` tool is available
+- WHEN the request target, exact changes, or rationale includes API keys, OAuth tokens, client secrets, raw credential material, or database paths
+- THEN the tool MUST return a controlled blocked response before repository save
+- AND it MUST NOT persist the credential-like payload in memory or durable storage
+- AND the response MUST NOT echo the credential-like content
+
+#### Scenario: Generic prepared write storage save fails
+
+- GIVEN MCP API-key auth is valid and the generic `prepare_mercadolibre_write` tool is available
+- WHEN approval storage fails while saving the prepared proposal
+- THEN the tool MUST return a controlled blocked response with redacted error details
+- AND it MUST NOT expose database paths, credentials, or raw storage errors
