@@ -8,7 +8,7 @@ function makeSyncProductPayload(overrides: Record<string, unknown> = {}) {
   return {
     sourceSellerId: "plasticov-seller",
     targetSellerId: "maustian-seller",
-    itemId: "MLC-1",
+    itemId: "MLC1001",
     rationale: "Prepare a seller-approved Plasticov to Maustian product sync proposal.",
     expiresAt: "2026-01-02T00:00:00.000Z",
     requiresApproval: true,
@@ -61,12 +61,14 @@ async function callSyncProductThroughSdk(
     accountRoles?: { sourceSellerId: string; targetSellerId: string; site: "MLC" };
     save?: ReturnType<typeof vi.fn<ApprovalQueueRepository["save"]>>;
     approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
+    syncPreview?: NonNullable<Parameters<typeof createMcpServer>[0]>["syncPreview"];
   } = {},
 ) {
   const { save, prepareWrite } = makeApprovalDependencies(options.save);
   const server = createMcpServer({
     prepareWrite,
     ...(options.approvalStorage ? { approvalStorage: options.approvalStorage } : {}),
+    ...(options.syncPreview ? { syncPreview: options.syncPreview } : {}),
     accountRoles: options.accountRoles ?? {
       sourceSellerId: "plasticov-seller",
       targetSellerId: "maustian-seller",
@@ -120,7 +122,11 @@ describe("MCP Server SDK integration", () => {
     ["missing risk metadata", { risk: undefined }, "invalid-risk"],
     ["invalid risk metadata", { risk: "medium" }, "invalid-risk"],
     ["bulk sync intent", { syncAll: true }, "unsupported-sync-intent"],
-    ["multi-product sync intent", { productIds: ["MLC-1", "MLC-2"] }, "unsupported-sync-intent"],
+    [
+      "multi-product sync intent",
+      { productIds: ["MLC1001", "MLC1002"] },
+      "unsupported-sync-intent",
+    ],
   ])("returns a controlled blocked response for %s", async (_name, overrides, reason) => {
     const { result, save } = await callSyncProductThroughSdk(makeSyncProductPayload(overrides));
 
@@ -221,5 +227,65 @@ describe("MCP Server SDK integration", () => {
     });
     expect(content.text).not.toContain("sqlite:");
     expect(content.text).not.toContain("clientSecret");
+  });
+
+  it("exposes inline preview metadata without changing the MCP tool surface", async () => {
+    const getSourceItem = vi.fn().mockResolvedValue({
+      id: "MLC1001",
+      title: "Source item",
+      price: 10000,
+      available_quantity: 10,
+      category_id: "MLC1000",
+      seller_id: 123,
+      status: "active",
+      pictures: [{ url: "https://example.test/item.jpg" }],
+      attributes: [{ id: "BRAND", value_name: "Generic" }],
+    });
+    const getStrategies = vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]);
+    const { result, save } = await callSyncProductThroughSdk(makeSyncProductPayload(), {
+      syncPreview: { getSourceItem, getStrategies },
+    });
+
+    const content = result.content[0];
+    if (!content || content.type !== "text" || content.text === undefined) {
+      throw new Error("Expected sync_product to return text content.");
+    }
+    const parsed = JSON.parse(content.text) as Record<string, unknown>;
+    const savedEntry = save.mock.calls[0]![0];
+
+    expect(result.isError).toBeFalsy();
+    expect(parsed.metadata).toMatchObject({
+      requiresApproval: true,
+      noMutationExecuted: true,
+      preview: { status: "available", evidenceSource: "read-only-item" },
+    });
+    expect(savedEntry.action.exactChange).toEqual(
+      expect.arrayContaining([{ field: "preview.price", from: 10000, to: 15000 }]),
+    );
+    expect(content.text).not.toContain("preview_product_sync");
+    expect(content.text).not.toContain("execute_mercadolibre_write");
+  });
+
+  it("redacts degraded preview source errors in SDK responses", async () => {
+    const { result } = await callSyncProductThroughSdk(makeSyncProductPayload(), {
+      syncPreview: {
+        getSourceItem: vi.fn().mockRejectedValue(new Error("Bearer raw-token database.sqlite")),
+        getStrategies: vi.fn(),
+      },
+    });
+
+    const content = result.content[0];
+    if (!content || content.type !== "text" || content.text === undefined) {
+      throw new Error("Expected sync_product to return text content.");
+    }
+    const parsed = JSON.parse(content.text) as Record<string, unknown>;
+
+    expect(result.isError).toBeFalsy();
+    expect(parsed.metadata).toMatchObject({
+      preview: { status: "unavailable", reason: "source-read-failed" },
+      noMutationExecuted: true,
+    });
+    expect(content.text).not.toContain("raw-token");
+    expect(content.text).not.toContain("database.sqlite");
   });
 });

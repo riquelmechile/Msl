@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MlItem, NewItem, MlWriteSnapshot } from "../types.js";
 import {
   applyStrategies,
+  previewStrategyChanges,
   type MarginStrategy,
   type CategoryFilterStrategy,
   type StockStrategy,
@@ -214,6 +215,29 @@ describe("Strategy Applier", () => {
       expect(Array.isArray(newItem.pictures)).toBe(true);
       expect(Array.isArray(newItem.attributes)).toBe(true);
     }
+  });
+
+  it("previews scalar field changes without publishing", () => {
+    const preview = previewStrategyChanges(makeItem({ price: 10000, available_quantity: 50 }), [
+      { type: "margin", percentage: 0.5 },
+      { type: "stock", limit: 20 },
+    ]);
+
+    expect(preview).toEqual({
+      status: "available",
+      fieldChanges: [
+        { field: "price", from: 10000, to: 15000 },
+        { field: "available_quantity", from: 50, to: 20 },
+      ],
+    });
+  });
+
+  it("returns unavailable preview evidence when category is excluded", () => {
+    const preview = previewStrategyChanges(makeItem({ category_id: "MLC9999" }), [
+      { type: "category_filter", excluded: ["MLC9999"] },
+    ]);
+
+    expect(preview).toEqual({ status: "unavailable", reason: "strategy-unavailable" });
   });
 });
 

@@ -179,6 +179,7 @@ export type MlcCategoryIdentifierFailure = {
 
 export type MlcApiClient = {
   getListings(sellerId: string): Promise<MlcListingsSnapshot>;
+  getItem(sellerId: string, itemId: string): Promise<MlItem>;
   getOrders(sellerId: string): Promise<MlcOrdersSnapshot>;
   getMessages(sellerId: string): Promise<MlcMessagesSnapshot>;
   getReputation(sellerId: string): Promise<MlcReputationSnapshot>;
@@ -251,12 +252,14 @@ export {
 
 export {
   applyStrategies,
+  previewStrategyChanges,
   type Strategy,
   type MarginStrategy,
   type CategoryFilterStrategy,
   type StockStrategy,
   type PricingRuleStrategy,
   type StrategyApplicationResult,
+  type StrategyPreviewResult,
 } from "./sync/strategyApplier.js";
 
 export {
@@ -345,6 +348,20 @@ function assertMlcCategoryId(categoryId: string): void {
   }
 }
 
+export function normalizeMlcItemId(itemId: string): string | null {
+  const trimmed = itemId.trim();
+  return /^MLC\d+$/.test(trimmed) ? trimmed : null;
+}
+
+function assertMlcItemId(itemId: string): string {
+  const normalized = normalizeMlcItemId(itemId);
+  if (!normalized) {
+    throw new Error("Only MLC item IDs are supported for item reads.");
+  }
+
+  return normalized;
+}
+
 function assertMlcDomainId(domainId: string): void {
   if (!isMlcDomainId(domainId)) {
     const failure: MlcCategoryIdentifierFailure = {
@@ -405,6 +422,51 @@ function normalizeListings(input: {
     completeness,
     freshness: createFreshness("listing", input.now),
     confidence: snapshotConfidence(completeness, data.length),
+  };
+}
+
+function normalizeItem(payload: unknown): MlItem {
+  const record = asRecord(payload);
+  const id = stringValue(record?.id);
+  const title = stringValue(record?.title);
+  const price = numberValue(record?.price);
+  const available_quantity = numberValue(record?.available_quantity);
+  const category_id = stringValue(record?.category_id);
+  const seller_id = numberValue(record?.seller_id);
+  const status = stringValue(record?.status);
+
+  if (
+    !record ||
+    !id ||
+    !normalizeMlcItemId(id) ||
+    !title ||
+    price === undefined ||
+    available_quantity === undefined ||
+    !category_id ||
+    seller_id === undefined ||
+    (status !== "active" && status !== "paused" && status !== "closed")
+  ) {
+    throw new Error("Incomplete MercadoLibre item payload.");
+  }
+
+  return {
+    id,
+    title,
+    price,
+    available_quantity,
+    category_id,
+    seller_id,
+    status,
+    pictures: asArray(record?.pictures).flatMap((picture) => {
+      const url = stringValue(asRecord(picture)?.url);
+      return url === undefined ? [] : [{ url }];
+    }),
+    attributes: asArray(record?.attributes).flatMap((attribute) => {
+      const attributeRecord = asRecord(attribute);
+      const attributeId = stringValue(attributeRecord?.id);
+      if (attributeId === undefined) return [];
+      return [{ id: attributeId, value_name: stringValue(attributeRecord?.value_name) ?? "" }];
+    }),
   };
 }
 
@@ -734,6 +796,11 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         request: input.request,
         now: input.now(),
       }),
+    getItem: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(sellerId, `/items/${safeItemId}`);
+      return normalizeItem(payload);
+    },
     getOrders: (sellerId) =>
       readMlcSnapshot({
         sellerId,

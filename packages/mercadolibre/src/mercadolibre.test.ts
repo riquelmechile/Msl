@@ -74,6 +74,28 @@ describe("direct MLC API client boundary", () => {
     expect(requests).toEqual(["/users/seller-1/items/search", "/orders/search"]);
   });
 
+  it("blocks crafted item IDs before item read path construction", async () => {
+    const request = vi.fn().mockResolvedValue({});
+    const transport: MercadoLibreApiTransport = {
+      request,
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(client.getItem("seller-1", "MLC1001/visits?include=orders")).rejects.toThrow(
+      /MLC item IDs/,
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("fails item reads with incomplete source payloads instead of synthetic defaults", async () => {
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({ id: "MLC1001", price: 10000 }),
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(client.getItem("seller-1", "MLC1001")).rejects.toThrow(/Incomplete/);
+  });
+
   it("normalizes listing, order, message, and reputation snapshots with metadata", async () => {
     const payloads: Record<string, unknown> = {
       "/users/seller-1/items/search": {

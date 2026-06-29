@@ -349,6 +349,7 @@ function snapshot<TData>(
 function clientWith(overrides: Partial<MlcApiClient>): MlcApiClient {
   return {
     getListings: vi.fn(),
+    getItem: vi.fn(),
     getOrders: vi.fn(),
     getMessages: vi.fn(),
     getReputation: vi.fn(),
