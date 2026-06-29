@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
 import { PREPARED_WRITE_KINDS, type ApprovalQueueRepository } from "@msl/tools";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { z } from "zod";
 
 // ── Mock @modelcontextprotocol/sdk ──────────────────────────────────
@@ -104,6 +106,15 @@ function prepareWriteInputSchema() {
   const prepareWriteCall = calls.find((call) => call[0] === "prepare_mercadolibre_write");
   expect(prepareWriteCall).toBeDefined();
   return (prepareWriteCall![1] as { inputSchema: Record<string, z.ZodType> }).inputSchema;
+}
+
+async function withTempDbPath(run: (dbPath: string) => void | Promise<void>): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), "msl-mcp-approval-"));
+  try {
+    await run(join(dir, "approval-queue.sqlite"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("MCP Server", () => {
@@ -714,6 +725,102 @@ describe("MCP Server", () => {
     expect(parsed).toEqual({ error: "Invalid expiresAt — expected a valid ISO 8601 timestamp" });
   });
 
+  it.each([
+    [
+      "target database path",
+      { target: { type: "listing", listingId: "/tmp/msl/approval.sqlite" } },
+    ],
+    [
+      "exact change token field",
+      { exactChange: [{ field: "access_token", from: null, to: "Bearer abcdefghijklmnop" }] },
+    ],
+    [
+      "exact change secret field name",
+      { exactChange: [{ field: "clientSecret", from: null, to: "redacted" }] },
+    ],
+    ["rationale client secret", { rationale: "client_secret=super-secret-value" }],
+    ["rationale OAuth token", { rationale: "oauth_token=raw-token-value" }],
+  ])(
+    "rejects prepare-only write proposals with credential-like %s before saving",
+    async (_name, overrides) => {
+      const { save, prepareWrite } = makeApprovalDependencies();
+
+      createMcpServer({ prepareWrite });
+
+      const cb = registeredTools.get("prepare_mercadolibre_write");
+      expect(cb).toBeDefined();
+
+      const result = (await cb!(makePrepareWritePayload(overrides))) as {
+        content: { text: string }[];
+        isError?: boolean;
+      };
+      const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+      expect(result.isError).toBe(true);
+      expect(save).not.toHaveBeenCalled();
+      expect(parsed).toMatchObject({ status: "blocked", reason: "credential-like-payload" });
+      expect(JSON.stringify(parsed)).not.toContain("super-secret-value");
+      expect(JSON.stringify(parsed)).not.toContain("/tmp/msl/approval.sqlite");
+    },
+  );
+
+  it("does not persist credential-like generic write payloads in configured SQLite storage", async () => {
+    await withTempDbPath(async (dbPath) => {
+      const runtime = createMcpRuntimeDependencies({
+        NODE_ENV: "test",
+        MSL_APPROVAL_QUEUE_DB_PATH: dbPath,
+      });
+
+      try {
+        createMcpServer(runtime);
+        const cb = registeredTools.get("prepare_mercadolibre_write");
+        expect(cb).toBeDefined();
+
+        const result = (await cb!(
+          makePrepareWritePayload({
+            id: "credential-payload",
+            rationale: "Use access_token=raw-token-value for the update.",
+          }),
+        )) as { content: { text: string }[]; isError?: boolean };
+        const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+        expect(result.isError).toBe(true);
+        expect(parsed).toMatchObject({ status: "blocked", reason: "credential-like-payload" });
+        await expect(
+          runtime.prepareWrite!.repository.findAction("credential-payload"),
+        ).resolves.toBe(null);
+        expect(result.content[0]!.text).not.toContain("raw-token-value");
+        expect(result.content[0]!.text).not.toContain(dbPath);
+      } finally {
+        runtime.close();
+      }
+    });
+  });
+
+  it("returns a redacted blocked response when generic prepare-write storage save fails", async () => {
+    const save = vi
+      .fn<ApprovalQueueRepository["save"]>()
+      .mockRejectedValue(new Error("SQLITE_CANTOPEN /tmp/msl/secrets.sqlite"));
+    const { prepareWrite } = makeApprovalDependencies(save);
+
+    createMcpServer({ prepareWrite });
+
+    const cb = registeredTools.get("prepare_mercadolibre_write");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makePrepareWritePayload())) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(parsed).toMatchObject({ status: "blocked", reason: "prepare-write-failed" });
+    expect(JSON.stringify(parsed)).not.toContain("SQLITE_CANTOPEN");
+    expect(JSON.stringify(parsed)).not.toContain("/tmp/msl/secrets.sqlite");
+  });
+
   it("sync_product creates a pending prepare-only proposal for configured Plasticov to Maustian direction", async () => {
     const { save, config } = syncProductConfig();
 
@@ -971,10 +1078,76 @@ describe("MCP Server", () => {
     createMcpServer(runtime);
 
     expect(runtime.mlcClient).toBeUndefined();
+    expect(runtime.approvalStorage).toBe("memory");
     expect(registeredTools.has("prepare_mercadolibre_write")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(false);
     expect(registeredTools.has("executePreparedAction")).toBe(false);
     runtime.close();
+  });
+
+  it("defaults blank approval queue DB paths to in-memory proposal storage", () => {
+    const runtime = createMcpRuntimeDependencies({
+      NODE_ENV: "test",
+      MSL_APPROVAL_QUEUE_DB_PATH: "   ",
+    });
+
+    expect(runtime.approvalStorage).toBe("memory");
+    runtime.close();
+    expect(() => runtime.close()).not.toThrow();
+  });
+
+  it("uses configured SQLite proposal storage and closes it once", async () => {
+    await withTempDbPath((dbPath) => {
+      const runtime = createMcpRuntimeDependencies({
+        NODE_ENV: "test",
+        MSL_APPROVAL_QUEUE_DB_PATH: dbPath,
+      });
+
+      expect(runtime.approvalStorage).toBe("sqlite");
+      expect(runtime.prepareWrite?.repository).toBeDefined();
+      expect(() => runtime.close()).not.toThrow();
+      expect(() => runtime.close()).not.toThrow();
+    });
+  });
+
+  it("falls back to degraded in-memory proposal storage when configured SQLite startup fails", async () => {
+    await withTempDbPath(async (dbPath) => {
+      const unavailableDbPath = join(dbPath, "missing-parent", "approval.sqlite");
+      const runtime = createMcpRuntimeDependencies({
+        NODE_ENV: "test",
+        MSL_APPROVAL_QUEUE_DB_PATH: unavailableDbPath,
+        MERCADOLIBRE_SOURCE_SELLER_ID: "plasticov-seller",
+        MERCADOLIBRE_TARGET_SELLER_ID: "maustian-seller",
+      });
+
+      try {
+        expect(runtime.approvalStorage).toBe("sqlite-unavailable");
+        createMcpServer(runtime);
+        const cb = registeredTools.get("sync_product");
+        expect(cb).toBeDefined();
+
+        const result = (await cb!(
+          makeSyncProductPayload({ expiresAt: new Date(Date.now() + 86_400_000).toISOString() }),
+        )) as {
+          content: { text: string }[];
+          isError?: boolean;
+        };
+        const responseText = result.content[0]!.text;
+        const parsed = JSON.parse(responseText) as Record<string, unknown>;
+
+        expect(result.isError).toBeFalsy();
+        expect(parsed.metadata).toMatchObject({
+          approvalPersistence: "sqlite-unavailable",
+          persistentApprovalStorage: false,
+          approvalStorageDegraded: true,
+          noMutationExecuted: true,
+        });
+        expect(responseText).not.toContain(unavailableDbPath);
+        expect(responseText).not.toContain("SQLITE_CANTOPEN");
+      } finally {
+        runtime.close();
+      }
+    });
   });
 
   it("builds prepare-only runtime dependencies with account roles without requiring OAuth env", () => {
@@ -1019,6 +1192,77 @@ describe("MCP Server", () => {
       expect((error as Error).message).not.toContain(secretValue);
       expect((error as Error).message).not.toContain("client-id-value");
     }
+  });
+
+  it("sync_product reports durable SQLite metadata without exposing secrets or DB paths", async () => {
+    await withTempDbPath(async (dbPath) => {
+      vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+      const runtime = createMcpRuntimeDependencies({
+        NODE_ENV: "test",
+        MSL_APPROVAL_QUEUE_DB_PATH: dbPath,
+        MERCADOLIBRE_SOURCE_SELLER_ID: "plasticov-seller",
+        MERCADOLIBRE_TARGET_SELLER_ID: "maustian-seller",
+      });
+
+      try {
+        createMcpServer(runtime);
+        const cb = registeredTools.get("sync_product");
+        expect(cb).toBeDefined();
+
+        const result = (await cb!(
+          makeSyncProductPayload({
+            msl_api_key: "secret-key-42",
+            expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          }),
+        )) as { content: { text: string }[]; isError?: boolean };
+        const responseText = result.content[0]!.text;
+        const parsed = JSON.parse(responseText) as Record<string, unknown>;
+
+        expect(result.isError).toBeFalsy();
+        expect(parsed.metadata).toMatchObject({
+          approvalPersistence: "sqlite",
+          persistentApprovalStorage: true,
+          auditReplay: "not-available",
+          noMutationExecuted: true,
+        });
+        const data = parsed.data as { action?: { id?: string } };
+        expect(data.action?.id).toEqual(expect.any(String));
+        await expect(
+          runtime.prepareWrite!.repository.findAction(data.action!.id!),
+        ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
+        expect(responseText).not.toContain(dbPath);
+        expect(responseText).not.toContain("secret-key-42");
+      } finally {
+        runtime.close();
+      }
+    });
+  });
+
+  it("keeps durable sync_product storage inside the prepare-only no-mutation boundary", async () => {
+    await withTempDbPath((dbPath) => {
+      const runtime = createMcpRuntimeDependencies({
+        NODE_ENV: "test",
+        MSL_APPROVAL_QUEUE_DB_PATH: dbPath,
+      });
+
+      try {
+        createMcpServer(runtime);
+        const toolNames = [...registeredTools.keys()];
+        expect(toolNames).toContain("sync_product");
+        expect(toolNames).toContain("prepare_mercadolibre_write");
+        expect(toolNames).not.toContain("sync_all");
+        expect(toolNames).not.toContain("approve_prepared_action");
+        expect(toolNames).not.toContain("execute_mercadolibre_write");
+        expect(toolNames).not.toContain("executePreparedAction");
+        expect(toolNames).not.toContain("preview_product_sync");
+
+        const mcpSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+        expect(mcpSource).not.toContain("ProductSyncEngine");
+        expect(mcpSource).not.toContain("syncPreview");
+      } finally {
+        runtime.close();
+      }
+    });
   });
 
   it("builds configured OAuth-backed read tools plus prepare-only proposals", () => {
