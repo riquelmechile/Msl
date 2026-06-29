@@ -75,15 +75,16 @@ describe("direct MLC API client boundary", () => {
   });
 
   it("blocks crafted item IDs before item read path construction", async () => {
+    const request = vi.fn().mockResolvedValue({});
     const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue({}),
+      request,
     };
     const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
 
     await expect(client.getItem("seller-1", "MLC1001/visits?include=orders")).rejects.toThrow(
       /MLC item IDs/,
     );
-    expect(transport.request).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("fails item reads with incomplete source payloads instead of synthetic defaults", async () => {

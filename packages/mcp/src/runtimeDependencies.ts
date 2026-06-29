@@ -175,9 +175,7 @@ function createRuntimeStrategyProvider(env: RuntimeEnv): (() => Promise<Strategy
   const rawStrategies = nonEmpty(env.MSL_SYNC_PREVIEW_STRATEGIES_JSON);
   if (!rawStrategies) return undefined;
 
-  return async () => {
-    return parsePreviewStrategies(rawStrategies);
-  };
+  return () => Promise.resolve().then(() => parsePreviewStrategies(rawStrategies));
 }
 
 export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): RuntimeDependencies {
@@ -186,18 +184,19 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
   }
 
   const readRuntime = createRuntimeReadClient(env);
+  const runtimeClient = readRuntime.client;
   const accountRoles = getOptionalRoleConfig(env);
   const prepareWrite = createPrepareWriteDependencies(env);
   const getStrategies = createRuntimeStrategyProvider(env);
   let closed = false;
 
   return {
-    ...(readRuntime.client ? { mlcClient: readRuntime.client } : {}),
+    ...(runtimeClient ? { mlcClient: runtimeClient } : {}),
     ...(accountRoles ? { accountRoles } : {}),
-    ...(readRuntime.client && accountRoles && getStrategies
+    ...(runtimeClient && accountRoles && getStrategies
       ? {
           syncPreview: {
-            getSourceItem: readRuntime.client.getItem,
+            getSourceItem: (sellerId, itemId) => runtimeClient.getItem(sellerId, itemId),
             getStrategies,
           },
         }
