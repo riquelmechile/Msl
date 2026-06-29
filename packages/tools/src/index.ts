@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import {
   canExecutePreparedAction,
   createPreparedAction,
@@ -339,6 +340,8 @@ export type ApprovalQueueRepository = {
   listAudits(actionId: PreparedActionId): Promise<ReadonlyArray<AuditRecord>>;
 };
 
+export type CloseableApprovalQueueRepository = ApprovalQueueRepository & { close(): void };
+
 export type DirectWriteExecutor = {
   execute(action: PreparedAction): Promise<{ status: "executed"; resultMessage: string }>;
 };
@@ -374,6 +377,157 @@ export function createInMemoryApprovalQueueRepository(): ApprovalQueueRepository
     },
     listAudits: (actionId) => Promise.resolve(audits.get(actionId) ?? []),
   };
+}
+
+const APPROVAL_QUEUE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS approval_queue_entries (
+  action_id TEXT PRIMARY KEY,
+  action_json TEXT NOT NULL,
+  requested_at TEXT NOT NULL,
+  highlighted_risk TEXT NOT NULL,
+  status TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS approval_records (
+  action_id TEXT PRIMARY KEY,
+  approval_json TEXT NOT NULL,
+  approved_at TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_records (
+  id TEXT PRIMARY KEY,
+  action_id TEXT NOT NULL,
+  audit_json TEXT NOT NULL,
+  recorded_at TEXT NOT NULL
+);
+`;
+
+type QueueEntryRow = {
+  action_json: string;
+  requested_at: string;
+  highlighted_risk: RiskLevel;
+  status: ApprovalQueueEntry["status"];
+};
+
+type ApprovalRow = { approval_json: string };
+type AuditRow = { audit_json: string };
+
+export function createSqliteApprovalQueueRepository(
+  dbPath = ":memory:",
+): CloseableApprovalQueueRepository {
+  const db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  db.exec(APPROVAL_QUEUE_SCHEMA);
+
+  const saveEntry = db.prepare(`
+    INSERT OR REPLACE INTO approval_queue_entries
+      (action_id, action_json, requested_at, highlighted_risk, status, updated_at)
+    VALUES
+      (@action_id, @action_json, @requested_at, @highlighted_risk, @status, datetime('now'))
+  `);
+  const findEntry = db.prepare("SELECT * FROM approval_queue_entries WHERE action_id = ?");
+  const saveApproval = db.prepare(`
+    INSERT OR REPLACE INTO approval_records
+      (action_id, approval_json, approved_at, updated_at)
+    VALUES
+      (@action_id, @approval_json, @approved_at, datetime('now'))
+  `);
+  const findApproval = db.prepare("SELECT approval_json FROM approval_records WHERE action_id = ?");
+  const saveAudit = db.prepare(`
+    INSERT OR REPLACE INTO audit_records (id, action_id, audit_json, recorded_at)
+    VALUES (@id, @action_id, @audit_json, @recorded_at)
+  `);
+  const listAudits = db.prepare(
+    "SELECT audit_json FROM audit_records WHERE action_id = ? ORDER BY recorded_at ASC, id ASC",
+  );
+
+  return {
+    save: (entry) => {
+      saveEntry.run({
+        action_id: entry.action.id,
+        action_json: JSON.stringify(serializePreparedAction(entry.action)),
+        requested_at: entry.requestedAt.toISOString(),
+        highlighted_risk: entry.highlightedRisk,
+        status: entry.status,
+      });
+      return Promise.resolve();
+    },
+    findAction: (actionId) => {
+      const row = findEntry.get(actionId) as QueueEntryRow | undefined;
+      if (row === undefined) return Promise.resolve(null);
+
+      return Promise.resolve({
+        action: deserializePreparedAction(JSON.parse(row.action_json) as PreparedAction),
+        requestedAt: new Date(row.requested_at),
+        highlightedRisk: row.highlighted_risk,
+        status: row.status,
+      });
+    },
+    saveApproval: (approval) => {
+      saveApproval.run({
+        action_id: approval.actionId,
+        approval_json: JSON.stringify(serializeApprovalRecord(approval)),
+        approved_at: approval.approvedAt.toISOString(),
+      });
+      return Promise.resolve();
+    },
+    findApproval: (actionId) => {
+      const row = findApproval.get(actionId) as ApprovalRow | undefined;
+      return Promise.resolve(
+        row === undefined
+          ? null
+          : deserializeApprovalRecord(JSON.parse(row.approval_json) as ApprovalRecord),
+      );
+    },
+    saveAudit: (audit) => {
+      saveAudit.run({
+        id: audit.id,
+        action_id: audit.actionId,
+        audit_json: JSON.stringify(serializeAuditRecord(audit)),
+        recorded_at: audit.recordedAt.toISOString(),
+      });
+      return Promise.resolve();
+    },
+    listAudits: (actionId) => {
+      const rows = listAudits.all(actionId) as AuditRow[];
+      return Promise.resolve(
+        rows.map((row) => deserializeAuditRecord(JSON.parse(row.audit_json) as AuditRecord)),
+      );
+    },
+    close: () => db.close(),
+  };
+}
+
+function serializePreparedAction(action: PreparedAction): Omit<PreparedAction, "expiresAt"> & {
+  expiresAt: string;
+} {
+  return { ...action, expiresAt: action.expiresAt.toISOString() };
+}
+
+function deserializePreparedAction(action: PreparedAction): PreparedAction {
+  return { ...action, expiresAt: new Date(action.expiresAt) };
+}
+
+function serializeApprovalRecord(approval: ApprovalRecord): Omit<ApprovalRecord, "approvedAt"> & {
+  approvedAt: string;
+} {
+  return { ...approval, approvedAt: approval.approvedAt.toISOString() };
+}
+
+function deserializeApprovalRecord(approval: ApprovalRecord): ApprovalRecord {
+  return { ...approval, approvedAt: new Date(approval.approvedAt) };
+}
+
+function serializeAuditRecord(audit: AuditRecord): Omit<AuditRecord, "recordedAt"> & {
+  recordedAt: string;
+} {
+  return { ...audit, recordedAt: audit.recordedAt.toISOString() };
+}
+
+function deserializeAuditRecord(audit: AuditRecord): AuditRecord {
+  return { ...audit, recordedAt: new Date(audit.recordedAt) };
 }
 
 export function createPreparedActionTool(input: {
