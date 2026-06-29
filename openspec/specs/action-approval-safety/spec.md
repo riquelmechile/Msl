@@ -220,7 +220,7 @@ The system MUST treat seller-impacting MercadoLibre capabilities discovered duri
 
 ### Requirement: Product Sync Proposals Remain Pending
 
-Product sync business operations MUST remain pending prepared actions unless a future approved slice adds explicit execution, approval, and audit behavior. This slice MUST NOT execute sync mutations, persist approval state, replay audits, or calculate sync previews.
+Product sync business operations MUST remain pending prepared actions unless a future approved slice adds explicit execution, approval, and audit behavior. This slice MAY persist prepared proposal state when durable approval storage is configured, but it MUST NOT execute sync mutations, replay audits, calculate sync previews, persist credentials, or expand the approval/execution surface.
 
 #### Scenario: Prepared sync proposal is returned
 
@@ -236,9 +236,39 @@ Product sync business operations MUST remain pending prepared actions unless a f
 - THEN the system MUST return a controlled blocked response
 - AND it MUST NOT mutate MercadoLibre state or claim sync completion
 
-#### Scenario: Approval persistence is requested
+#### Scenario: Durable prepared proposal storage is configured
 
-- GIVEN a product sync proposal is prepared
-- WHEN the caller expects persistent approval storage or audit replay
-- THEN the system MUST disclose that this slice does not persist approvals
-- AND it MUST keep the proposal non-executing
+- GIVEN durable proposal storage is configured
+- WHEN a product sync proposal is prepared and the process restarts
+- THEN the pending proposal MUST remain available with equivalent proposal metadata
+- AND no OAuth token, API key, client secret, or raw credential MUST be persisted
+
+#### Scenario: Credential-like generic prepared proposal is requested
+
+- GIVEN the generic prepared write tool receives a target, exact change, or rationale containing API keys, OAuth tokens, client secrets, raw credentials, or database paths
+- WHEN the proposal is validated
+- THEN the system MUST block before repository save
+- AND it MUST NOT persist the credential-like payload in memory or durable storage
+- AND it MUST NOT echo the credential-like payload in the response
+
+#### Scenario: Durable storage is not configured
+
+- GIVEN durable proposal storage is not configured
+- WHEN a product sync proposal is prepared
+- THEN the system MUST keep default in-memory proposal behavior
+- AND it MUST disclose that proposals do not survive restart
+
+#### Scenario: Storage failure occurs during proposal preparation
+
+- GIVEN durable proposal storage is configured but unavailable
+- WHEN a product sync proposal is prepared
+- THEN the system MUST return a controlled blocked response with redacted error details
+- AND it MUST NOT execute mutation, replay audit, or calculate sync preview
+
+#### Scenario: Durable storage fails during MCP startup
+
+- GIVEN durable proposal storage is configured but cannot be opened during MCP runtime construction
+- WHEN the MCP runtime starts
+- THEN the runtime MUST recover with controlled degraded in-memory proposal storage
+- AND subsequent proposal responses MUST disclose that durable storage is unavailable
+- AND they MUST NOT expose database paths, credentials, or raw startup errors
