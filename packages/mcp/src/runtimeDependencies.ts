@@ -1,7 +1,9 @@
 import {
   createInMemoryApprovalQueueRepository,
+  createSqliteApprovalQueueRepository,
   type ApprovalQueueRepository,
   type Clock,
+  type CloseableApprovalQueueRepository,
 } from "@msl/tools";
 import {
   createMercadoLibreApiFetchTransport,
@@ -18,6 +20,8 @@ type RuntimeEnv = NodeJS.ProcessEnv;
 type RuntimeDependencies = McpServerConfig & {
   close(): void;
 };
+
+type ApprovalStorage = NonNullable<McpServerConfig["approvalStorage"]>;
 
 const OAUTH_ENV_KEYS = [
   "MERCADOLIBRE_CLIENT_ID",
@@ -49,6 +53,12 @@ function hasAnyOAuthConfig(env: RuntimeEnv): boolean {
   return missing.length < OAUTH_ENV_KEYS.length;
 }
 
+function isCloseableRepository(
+  repository: ApprovalQueueRepository | CloseableApprovalQueueRepository,
+): repository is CloseableApprovalQueueRepository {
+  return "close" in repository && typeof repository.close === "function";
+}
+
 function assertOAuthConfigPresentInProduction(env: RuntimeEnv): void {
   if (!hasAnyOAuthConfig(env) && isProduction(env)) {
     throw new Error(
@@ -75,10 +85,38 @@ function assertProductionSecrets(env: RuntimeEnv): void {
   }
 }
 
-function createPrepareWriteDependencies(): { repository: ApprovalQueueRepository; clock: Clock } {
+function createPrepareWriteDependencies(env: RuntimeEnv): {
+  repository: ApprovalQueueRepository;
+  clock: Clock;
+  approvalStorage: ApprovalStorage;
+  close(): void;
+} {
+  const dbPath = nonEmpty(env.MSL_APPROVAL_QUEUE_DB_PATH);
+  let repository: CloseableApprovalQueueRepository | ApprovalQueueRepository;
+  let approvalStorage: ApprovalStorage;
+
+  if (dbPath) {
+    try {
+      repository = createSqliteApprovalQueueRepository(dbPath);
+      approvalStorage = "sqlite";
+    } catch {
+      repository = createInMemoryApprovalQueueRepository();
+      approvalStorage = "sqlite-unavailable";
+    }
+  } else {
+    repository = createInMemoryApprovalQueueRepository();
+    approvalStorage = "memory";
+  }
+
   return {
-    repository: createInMemoryApprovalQueueRepository(),
+    repository,
     clock: { now: () => new Date() },
+    approvalStorage,
+    close: () => {
+      if (isCloseableRepository(repository)) {
+        repository.close();
+      }
+    },
   };
 }
 
@@ -130,11 +168,25 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
 
   const readRuntime = createRuntimeReadClient(env);
   const accountRoles = getOptionalRoleConfig(env);
+  const prepareWrite = createPrepareWriteDependencies(env);
+  let closed = false;
 
   return {
     ...(readRuntime.client ? { mlcClient: readRuntime.client } : {}),
     ...(accountRoles ? { accountRoles } : {}),
-    prepareWrite: createPrepareWriteDependencies(),
-    close: () => readRuntime.close(),
+    prepareWrite: {
+      repository: prepareWrite.repository,
+      clock: prepareWrite.clock,
+    },
+    approvalStorage: prepareWrite.approvalStorage,
+    close: () => {
+      if (closed) return;
+      closed = true;
+      try {
+        readRuntime.close();
+      } finally {
+        prepareWrite.close();
+      }
+    },
   };
 }

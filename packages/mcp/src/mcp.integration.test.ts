@@ -60,11 +60,13 @@ async function callSyncProductThroughSdk(
   options: {
     accountRoles?: { sourceSellerId: string; targetSellerId: string; site: "MLC" };
     save?: ReturnType<typeof vi.fn<ApprovalQueueRepository["save"]>>;
+    approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
   } = {},
 ) {
   const { save, prepareWrite } = makeApprovalDependencies(options.save);
   const server = createMcpServer({
     prepareWrite,
+    ...(options.approvalStorage ? { approvalStorage: options.approvalStorage } : {}),
     accountRoles: options.accountRoles ?? {
       sourceSellerId: "plasticov-seller",
       targetSellerId: "maustian-seller",
@@ -196,5 +198,28 @@ describe("MCP Server SDK integration", () => {
       status: "pending",
       action: { approvalStatus: "pending" },
     });
+  });
+
+  it("reports durable approval storage metadata through the MCP SDK when configured", async () => {
+    const { result, save } = await callSyncProductThroughSdk(makeSyncProductPayload(), {
+      approvalStorage: "sqlite",
+    });
+
+    const content = result.content[0];
+    if (!content || content.type !== "text" || content.text === undefined) {
+      throw new Error("Expected sync_product to return text content.");
+    }
+    const parsed = JSON.parse(content.text) as Record<string, unknown>;
+
+    expect(result.isError).toBeFalsy();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(parsed.metadata).toMatchObject({
+      approvalPersistence: "sqlite",
+      persistentApprovalStorage: true,
+      auditReplay: "not-available",
+      noMutationExecuted: true,
+    });
+    expect(content.text).not.toContain("sqlite:");
+    expect(content.text).not.toContain("clientSecret");
   });
 });

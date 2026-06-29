@@ -50,6 +50,7 @@ type SyncProductBlockedReason =
   | "unsafe-direction"
   | "missing-target"
   | "missing-rationale"
+  | "credential-like-payload"
   | "invalid-expires-at"
   | "expired-proposal"
   | "approval-required"
@@ -160,6 +161,67 @@ function validateApiKey(apiKey: string | undefined): boolean {
     return false;
   }
   return apiKey === expected;
+}
+
+function approvalStorageMetadata(storage: McpServerConfig["approvalStorage"]): {
+  approvalPersistence: "in-memory-only" | "sqlite" | "sqlite-unavailable";
+  persistentApprovalStorage: boolean;
+  approvalStorageDegraded?: true;
+} {
+  if (storage === "sqlite") {
+    return { approvalPersistence: "sqlite", persistentApprovalStorage: true };
+  }
+
+  if (storage === "sqlite-unavailable") {
+    return {
+      approvalPersistence: "sqlite-unavailable",
+      persistentApprovalStorage: false,
+      approvalStorageDegraded: true,
+    };
+  }
+
+  return { approvalPersistence: "in-memory-only", persistentApprovalStorage: false };
+}
+
+const CREDENTIAL_LIKE_KEY_PATTERN =
+  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth|client[_-]?secret|secret|password|passwd|credential|db[_-]?path|database[_-]?(?:path|url)|sqlite)/i;
+const CREDENTIAL_LIKE_VALUE_PATTERNS = [
+  /^(?:api[_-]?key|msl[_-]?api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|client[_-]?secret|password|passwd|credential|db[_-]?path|database[_-]?(?:path|url)|sqlite)$/i,
+  /\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|client[_-]?secret|password|credential|db\s*path|db[_-]?path|database\s*path|database[_-]?path)\s*[:=]/i,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/i,
+  /\b(?:sk|pk|xox[baprs]|gh[pousr])_[A-Za-z0-9_=-]{12,}\b/i,
+  /\b[A-Za-z0-9._%+-]+\.(?:sqlite|sqlite3|db)\b/i,
+  /(?:^|\s)(?:sqlite|file):\/\//i,
+  /(?:^|\s)(?:\/[^\s]+|[A-Za-z]:\\[^\s]+)\.(?:sqlite|sqlite3|db)\b/i,
+];
+
+function containsCredentialLikeContent(value: unknown): boolean {
+  if (typeof value === "string") {
+    return CREDENTIAL_LIKE_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => containsCredentialLikeContent(item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.entries(value).some(
+      ([key, child]) =>
+        CREDENTIAL_LIKE_KEY_PATTERN.test(key) || containsCredentialLikeContent(child),
+    );
+  }
+
+  return false;
+}
+
+function hasUnsafePrepareWritePayload(
+  input: Pick<PrepareWriteInput, "target" | "exactChange" | "rationale">,
+): boolean {
+  return (
+    containsCredentialLikeContent(input.target) ||
+    containsCredentialLikeContent(input.exactChange) ||
+    containsCredentialLikeContent(input.rationale)
+  );
 }
 
 /**
@@ -357,9 +419,8 @@ export function createMcpServer(config: McpServerConfig = {}) {
           site: roleConfig.site,
           risk: "high",
           expiresAt: parsedExpiresAt.toISOString(),
-          approvalPersistence: "in-memory-only",
+          ...approvalStorageMetadata(config.approvalStorage),
           auditReplay: "not-available",
-          persistentApprovalStorage: false,
           noMutationExecuted: true,
           operation: "sync_product",
         },
@@ -483,7 +544,21 @@ export function createMcpServer(config: McpServerConfig = {}) {
           expiresAt: parsedExpiresAt,
         };
 
-        return jsonResult(await prepareTool.execute(request));
+        if (hasUnsafePrepareWritePayload(request)) {
+          return blockedResult(
+            "credential-like-payload",
+            "Prepared write proposals must not include credentials, tokens, secrets, raw credential material, or database paths.",
+          );
+        }
+
+        try {
+          return jsonResult(await prepareTool.execute(request));
+        } catch {
+          return blockedResult(
+            "prepare-write-failed",
+            "Prepared write proposal could not be saved because approval storage is unavailable.",
+          );
+        }
       },
     );
   }
@@ -587,6 +662,7 @@ function registerMlcCategoryTechnicalSpecsReadTool(
 export type McpServerConfig = {
   mlcClient?: MlcApiClient;
   accountRoles?: MlAccountRoleConfig;
+  approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
   prepareWrite?: {
     repository: ApprovalQueueRepository;
     clock: Clock;
