@@ -136,6 +136,11 @@ const mcpApproveSyncProductProposalInputSchema = {
   msl_api_key: z.string().optional(),
 };
 
+const mcpReadSyncProductExecutionReadinessInputSchema = {
+  actionId: z.string(),
+  msl_api_key: z.string().optional(),
+};
+
 type SyncProductInput = {
   sourceSellerId?: unknown;
   targetSellerId?: unknown;
@@ -160,6 +165,45 @@ type ReadSyncProductStatusInput = {
 type ApproveSyncProductProposalInput = {
   actionId?: unknown;
   msl_api_key?: string;
+};
+
+type ReadSyncProductExecutionReadinessInput = {
+  actionId?: unknown;
+  msl_api_key?: string;
+};
+
+type SyncProductReadinessStatus = "eligible" | "blocked" | "degraded";
+
+type SyncProductReadinessReason =
+  | "approval-unavailable"
+  | "approval-expired"
+  | "approval-binding-mismatch"
+  | "proposal-not-sync-product"
+  | "source-read-failed"
+  | "source-evidence-incomplete"
+  | "preview-drift-detected"
+  | "seller-scope-mismatch"
+  | "target-account-unavailable"
+  | "api-capability-evidence-missing"
+  | "rollback-strategy-missing"
+  | "idempotency-conflict"
+  | "rate-limited"
+  | "upstream-temporary-failure"
+  | "reconnect-required"
+  | "storage-unavailable";
+
+type ReadSyncProductExecutionReadinessResponse = {
+  status: SyncProductReadinessStatus;
+  actionId: "redacted";
+  reasons: SyncProductReadinessReason[];
+  evidence: {
+    approvalBound: boolean;
+    preview: "matched" | "drifted" | "unavailable";
+    idempotencyCandidate?: string;
+    rollbackStrategyPresent: boolean;
+    apiCapabilityEvidence: "missing" | "present";
+  };
+  noMutationExecuted: true;
 };
 
 type ReadSyncProductStatusUnavailableResponse = {
@@ -393,6 +437,13 @@ function hasExactChange(
   return exactChange.some((change) => change.field === field && change.to === to);
 }
 
+function exactChangesMatch(
+  left: ReadonlyArray<ExactChange>,
+  right: ReadonlyArray<ExactChange>,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 const SYNC_PRODUCT_ACTION_ID_PREFIX = "sync-product:";
 
 function isSyncProductActionId(actionId: string, listingId: string): boolean {
@@ -419,6 +470,196 @@ function isSupportedSyncProductProposal(
     hasExactChange(entry.action.exactChange, "mutationExecuted", false)
   );
 }
+
+async function findExactSyncProductAction(input: {
+  repository: ApprovalQueueRepository;
+  actionId: string;
+}): Promise<ApprovalQueueEntry | null | "storage-unavailable"> {
+  try {
+    return await input.repository.findAction(input.actionId);
+  } catch {
+    return "storage-unavailable";
+  }
+}
+
+async function findExactApproval(input: {
+  repository: ApprovalQueueRepository;
+  actionId: string;
+}): Promise<ApprovalRecord | null | "storage-unavailable"> {
+  try {
+    return await input.repository.findApproval(input.actionId);
+  } catch {
+    return "storage-unavailable";
+  }
+}
+
+function approvalExpired(entry: ApprovalQueueEntry, now: Date): boolean {
+  return entry.action.expiresAt <= now;
+}
+
+function approvalBindingMatches(
+  entry: ApprovalQueueEntry,
+  approval: ApprovalRecord | null,
+): boolean {
+  return (
+    approval !== null &&
+    approval.actionId === entry.action.id &&
+    approval.sellerId === entry.action.sellerId &&
+    approval.riskAccepted === entry.action.riskLevel &&
+    approval.executionStatus === "not-executed" &&
+    exactChangesMatch(approval.exactChangeAccepted, entry.action.exactChange)
+  );
+}
+
+function uniqueReadinessReasons(
+  reasons: ReadonlyArray<SyncProductReadinessReason | null | undefined>,
+): SyncProductReadinessReason[] {
+  return [...new Set(reasons.filter((reason): reason is SyncProductReadinessReason => !!reason))];
+}
+
+function compareStoredPreview(input: {
+  entry: ApprovalQueueEntry;
+  preview: SyncProductPreview;
+}): "matched" | "drifted" | "unavailable" {
+  if (input.preview.status === "unavailable") return "unavailable";
+
+  const storedPreview = input.entry.action.exactChange.filter((change) =>
+    change.field.startsWith("preview."),
+  );
+  return exactChangesMatch(storedPreview, previewExactChanges(input.preview))
+    ? "matched"
+    : "drifted";
+}
+
+function validateSellerAccountScope(input: {
+  entry: ApprovalQueueEntry;
+  roleConfig: MlAccountRoleConfig;
+}): SyncProductReadinessReason | null {
+  const sourceSellerId = input.entry.action.exactChange.find(
+    (change) => change.field === "sourceSellerId",
+  )?.to;
+  const targetSellerId = input.entry.action.exactChange.find(
+    (change) => change.field === "targetSellerId",
+  )?.to;
+
+  return sourceSellerId === input.roleConfig.sourceSellerId &&
+    targetSellerId === input.roleConfig.targetSellerId &&
+    input.entry.action.sellerId === input.roleConfig.targetSellerId
+    ? null
+    : "seller-scope-mismatch";
+}
+
+function validateTargetAvailability(
+  entry: ApprovalQueueEntry & {
+    action: ApprovalQueueEntry["action"] & { target: { type: "listing"; listingId: string } };
+  },
+): SyncProductReadinessReason | null {
+  return normalizeMlcItemId(entry.action.target.listingId) ? null : "target-account-unavailable";
+}
+
+function idempotencyCandidateFor(entry: ApprovalQueueEntry): string | undefined {
+  const targetId =
+    entry.action.target.type === "listing"
+      ? normalizeMlcItemId(entry.action.target.listingId)
+      : undefined;
+  return targetId ? `sync-product:${entry.action.sellerId}:${targetId}` : undefined;
+}
+
+function detectIdempotencyConflict(input: {
+  existingActionId: string;
+  candidate?: string;
+  actionId: string;
+}): SyncProductReadinessReason | null {
+  return input.candidate &&
+    input.existingActionId.startsWith(input.candidate) &&
+    input.existingActionId !== input.actionId
+    ? "idempotency-conflict"
+    : null;
+}
+
+function rollbackStrategyPresent(entry: ApprovalQueueEntry): boolean {
+  return hasExactChange(entry.action.exactChange, "rollbackStrategyPresent", true);
+}
+
+function apiCapabilityEvidenceStatus(
+  evidence: "present" | "missing" | undefined,
+): "present" | "missing" {
+  return evidence === "present" ? "present" : "missing";
+}
+
+function mapReadinessError(error: unknown): SyncProductReadinessReason {
+  const message = error instanceof Error ? error.message : "";
+  if (/rate|429/i.test(message)) return "rate-limited";
+  if (/reconnect|oauth|authorization|token/i.test(message)) return "reconnect-required";
+  if (/storage|sqlite|database|db/i.test(message)) return "storage-unavailable";
+  return "upstream-temporary-failure";
+}
+
+function buildReadinessResponse(input: {
+  reasons: ReadonlyArray<SyncProductReadinessReason>;
+  approvalBound: boolean;
+  preview: "matched" | "drifted" | "unavailable";
+  idempotencyCandidate?: string;
+  rollbackStrategyPresent: boolean;
+  apiCapabilityEvidence: "missing" | "present";
+}): ReadSyncProductExecutionReadinessResponse {
+  const reasons = uniqueReadinessReasons(input.reasons);
+  const hardBlockReasons: ReadonlySet<SyncProductReadinessReason> = new Set([
+    "approval-unavailable",
+    "approval-expired",
+    "approval-binding-mismatch",
+    "proposal-not-sync-product",
+    "preview-drift-detected",
+    "seller-scope-mismatch",
+    "idempotency-conflict",
+    "storage-unavailable",
+  ]);
+  const status: SyncProductReadinessStatus = reasons.some((reason) => hardBlockReasons.has(reason))
+    ? "blocked"
+    : reasons.length > 0
+      ? "degraded"
+      : "eligible";
+
+  return {
+    status,
+    actionId: "redacted",
+    reasons,
+    evidence: {
+      approvalBound: input.approvalBound,
+      preview: input.preview,
+      ...(input.idempotencyCandidate ? { idempotencyCandidate: input.idempotencyCandidate } : {}),
+      rollbackStrategyPresent: input.rollbackStrategyPresent,
+      apiCapabilityEvidence: input.apiCapabilityEvidence,
+    },
+    noMutationExecuted: true,
+  };
+}
+
+function readinessActionId(request: ReadSyncProductExecutionReadinessInput): string | undefined {
+  return trimmedString(request.actionId);
+}
+
+const syncProductExecutionReadinessFoundation = {
+  inputSchema: mcpReadSyncProductExecutionReadinessInputSchema,
+  readinessActionId,
+  findExactSyncProductAction,
+  findExactApproval,
+  isSupportedSyncProductProposal,
+  approvalExpired,
+  approvalBindingMatches,
+  uniqueReadinessReasons,
+  compareStoredPreview,
+  validateSellerAccountScope,
+  validateTargetAvailability,
+  idempotencyCandidateFor,
+  detectIdempotencyConflict,
+  rollbackStrategyPresent,
+  apiCapabilityEvidenceStatus,
+  mapReadinessError,
+  buildReadinessResponse,
+};
+
+void syncProductExecutionReadinessFoundation;
 
 function summarizeSyncProductPreview(exactChange: ReadonlyArray<ExactChange>): {
   status: "available" | "unavailable";
