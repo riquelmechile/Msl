@@ -396,7 +396,8 @@ function summarizeSyncProductPreview(exactChange: ReadonlyArray<ExactChange>): {
   const reason = exactChange.find((change) => change.field === "preview.reason")?.to;
   return {
     status: "unavailable",
-    summary: typeof reason === "string" ? `Preview unavailable: ${reason}.` : "Preview unavailable.",
+    summary:
+      typeof reason === "string" ? `Preview unavailable: ${reason}.` : "Preview unavailable.",
   };
 }
 
@@ -651,7 +652,8 @@ export function createMcpServer(config: McpServerConfig = {}) {
   server.registerTool(
     "read_sync_product_status",
     {
-      description: "Reads sanitized status for one stored sync_product proposal by exact action ID.",
+      description:
+        "Reads sanitized status for one stored sync_product proposal by exact action ID.",
       inputSchema: mcpReadSyncProductStatusInputSchema,
     },
     async (request) => {

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
-import { PREPARED_WRITE_KINDS, type ApprovalQueueEntry, type ApprovalQueueRepository } from "@msl/tools";
+import {
+  PREPARED_WRITE_KINDS,
+  type ApprovalQueueEntry,
+  type ApprovalQueueRepository,
+} from "@msl/tools";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1162,7 +1166,10 @@ describe("MCP Server", () => {
     const cb = registeredTools.get("read_sync_product_status");
     expect(cb).toBeDefined();
 
-    const result = (await cb!({ actionId: "sync-product:MLC1001:stamp", msl_api_key: "wrong" })) as {
+    const result = (await cb!({
+      actionId: "sync-product:MLC1001:stamp",
+      msl_api_key: "wrong",
+    })) as {
       content: { text: string }[];
       isError?: boolean;
     };
@@ -1244,26 +1251,31 @@ describe("MCP Server", () => {
     ["non-sync proposal", makeSyncProductQueueEntry({ action: { kind: "price-change" } })],
     [
       "unsupported proposal",
-      makeSyncProductQueueEntry({ action: { exactChange: [{ field: "mutationExecuted", from: null, to: true }] } }),
+      makeSyncProductQueueEntry({
+        action: { exactChange: [{ field: "mutationExecuted", from: null, to: true }] },
+      }),
     ],
-  ])("read_sync_product_status returns the same redacted unavailable response for %s", async (_name, entry) => {
-    const { prepareWrite } = makeApprovalDependencies();
-    vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+  ])(
+    "read_sync_product_status returns the same redacted unavailable response for %s",
+    async (_name, entry) => {
+      const { prepareWrite } = makeApprovalDependencies();
+      vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
 
-    createMcpServer({ prepareWrite });
+      createMcpServer({ prepareWrite });
 
-    const cb = registeredTools.get("read_sync_product_status");
-    expect(cb).toBeDefined();
+      const cb = registeredTools.get("read_sync_product_status");
+      expect(cb).toBeDefined();
 
-    const result = (await cb!({ actionId: "candidate-id" })) as { content: { text: string }[] };
-    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      const result = (await cb!({ actionId: "candidate-id" })) as { content: { text: string }[] };
+      const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
 
-    expect(parsed).toEqual({
-      status: "unavailable",
-      reason: "not-found-or-unsupported",
-      noMutationExecuted: true,
-    });
-  });
+      expect(parsed).toEqual({
+        status: "unavailable",
+        reason: "not-found-or-unsupported",
+        noMutationExecuted: true,
+      });
+    },
+  );
 
   it("read_sync_product_status redacts malformed and unavailable repository cases", async () => {
     const { prepareWrite } = makeApprovalDependencies();
@@ -1281,7 +1293,9 @@ describe("MCP Server", () => {
       content: { text: string }[];
     };
 
-    expect(JSON.parse(malformed.content[0]!.text)).toEqual(JSON.parse(unavailable.content[0]!.text));
+    expect(JSON.parse(malformed.content[0]!.text)).toEqual(
+      JSON.parse(unavailable.content[0]!.text),
+    );
     expect(prepareWrite.repository.findAction).toHaveBeenCalledTimes(1);
     expect(unavailable.content[0]!.text).not.toContain("SQLITE_CANTOPEN");
     expect(unavailable.content[0]!.text).not.toContain("/tmp/msl/approval.sqlite");
