@@ -606,6 +606,7 @@ export async function approvePreparedAction(input: {
     approvedAt: input.clock.now(),
     exactChangeAccepted: approvedAction.exactChange,
     riskAccepted: approvedAction.riskLevel,
+    executionStatus: "not-executed",
   };
 
   await input.repository.save({ ...entry, action: approvedAction, status: "approved" });

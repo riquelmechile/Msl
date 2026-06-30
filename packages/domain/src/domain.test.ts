@@ -67,8 +67,10 @@ describe("approval-required writes", () => {
       approvedAt: now,
       exactChangeAccepted: action.exactChange,
       riskAccepted: action.riskLevel,
+      executionStatus: "not-executed",
     };
 
+    expect(approval.executionStatus).toBe("not-executed");
     expect(canExecutePreparedAction(action, now, approval)).toEqual({
       allowed: true,
       reason: "approved",
@@ -88,6 +90,7 @@ describe("approval-required writes", () => {
       approvedAt: now,
       exactChangeAccepted: action.exactChange,
       riskAccepted: action.riskLevel,
+      executionStatus: "not-executed",
     };
 
     expect(
@@ -126,6 +129,7 @@ describe("approval-required writes", () => {
       approvedAt: now,
       exactChangeAccepted: action.exactChange,
       riskAccepted: action.riskLevel,
+      executionStatus: "not-executed",
     };
 
     expect(
