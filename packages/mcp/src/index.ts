@@ -12,6 +12,7 @@ import {
 } from "@msl/tools";
 import { ACTION_TARGET_FIELD_BY_TYPE, type ExactChange } from "@msl/domain";
 import {
+  assertCompleteMlcItem,
   assertPlasticovToMaustianDirection,
   getMlAccountRoleConfig,
   normalizeMlcItemId,
@@ -23,7 +24,7 @@ import {
 } from "@msl/mercadolibre";
 import { z } from "zod";
 import { createMcpRuntimeDependencies } from "./runtimeDependencies.js";
-import { areStrategies, isFiniteNumber } from "./strategyValidation.js";
+import { areStrategies } from "./strategyValidation.js";
 
 type McpToolResult = {
   content: { type: "text"; text: string }[];
@@ -38,7 +39,7 @@ export type SyncProductPreview =
     };
 
 export type SyncPreviewDependency = {
-  getSourceItem(sellerId: string, itemId: string): Promise<MlItem>;
+  getSourceItem(sellerId: string, itemId: string): Promise<unknown>;
   getStrategies(): Promise<Strategy[]>;
 };
 
@@ -166,21 +167,6 @@ function validateMlcRoleConfig(roleConfig: MlAccountRoleConfig): SyncProductBloc
   return null;
 }
 
-function isCompletePreviewItem(item: MlItem): boolean {
-  return (
-    typeof item.id === "string" &&
-    normalizeMlcItemId(item.id) !== null &&
-    typeof item.title === "string" &&
-    item.title.length > 0 &&
-    isFiniteNumber(item.price) &&
-    isFiniteNumber(item.available_quantity) &&
-    typeof item.category_id === "string" &&
-    item.category_id.length > 0 &&
-    isFiniteNumber(item.seller_id) &&
-    (item.status === "active" || item.status === "paused" || item.status === "closed")
-  );
-}
-
 /**
  * Validates the MCP API key against the {@link MSL_MCP_API_KEY}
  * environment variable. Fails closed unless explicit local/demo mode is enabled.
@@ -268,12 +254,9 @@ async function buildSyncProductPreview(input: {
 
   let item: MlItem;
   try {
-    item = await input.dependency.getSourceItem(input.sourceSellerId, input.itemId);
+    const sourceItem = await input.dependency.getSourceItem(input.sourceSellerId, input.itemId);
+    item = assertCompleteMlcItem(sourceItem);
   } catch {
-    return { status: "unavailable", reason: "source-read-failed" };
-  }
-
-  if (!isCompletePreviewItem(item)) {
     return { status: "unavailable", reason: "source-read-failed" };
   }
 

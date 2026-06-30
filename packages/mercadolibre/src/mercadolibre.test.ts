@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CacheFreshness, ReadSnapshot } from "@msl/domain";
 
 import {
+  assertCompleteMlcItem,
   createMlcApiClient,
   createMlClient,
   createOAuthManager,
@@ -23,6 +24,21 @@ import {
 import { encrypt, decrypt } from "./oauth/tokenStore.js";
 
 const now = new Date("2026-06-25T12:00:00.000Z");
+
+function completeMlcItemPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "MLC1001",
+    title: "Source item",
+    price: 10000,
+    available_quantity: 10,
+    category_id: "MLC1000",
+    seller_id: 123,
+    status: "active",
+    pictures: [{ url: "https://example.test/item.jpg" }, { url: null }],
+    attributes: [{ id: "BRAND", value_name: "Generic" }, { value_name: "Ignored" }],
+    ...overrides,
+  };
+}
 
 function tokenState(status: OAuthTokenState["status"] = "connected"): OAuthTokenState {
   return {
@@ -57,6 +73,31 @@ describe("MercadoLibre OAuth access state", () => {
 });
 
 describe("direct MLC API client boundary", () => {
+  it("exports a shared MLC item completeness assertion for raw payloads", () => {
+    expect(assertCompleteMlcItem(completeMlcItemPayload())).toEqual({
+      id: "MLC1001",
+      title: "Source item",
+      price: 10000,
+      available_quantity: 10,
+      category_id: "MLC1000",
+      seller_id: 123,
+      status: "active",
+      pictures: [{ url: "https://example.test/item.jpg" }],
+      attributes: [{ id: "BRAND", value_name: "Generic" }],
+    });
+  });
+
+  it.each([
+    ["missing title", { title: undefined }],
+    ["invalid price", { price: Number.NaN }],
+    ["missing category", { category_id: "" }],
+    ["invalid seller", { seller_id: undefined }],
+    ["unsupported status", { status: "under_review" }],
+    ["non-MLC item id", { id: "MLA1001" }],
+  ])("rejects incomplete MLC item payloads without defaults for %s", (_name, overrides) => {
+    expect(() => assertCompleteMlcItem(completeMlcItemPayload(overrides))).toThrow(/Incomplete/);
+  });
+
   it("uses direct MercadoLibre API paths for operational seller data", async () => {
     const requests: string[] = [];
     const transport: MercadoLibreApiTransport = {
@@ -94,6 +135,17 @@ describe("direct MLC API client boundary", () => {
     const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
 
     await expect(client.getItem("seller-1", "MLC1001")).rejects.toThrow(/Incomplete/);
+  });
+
+  it("normalizes complete direct item reads through the shared assertion", async () => {
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue(completeMlcItemPayload()),
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(client.getItem("seller-1", "MLC1001")).resolves.toEqual(
+      assertCompleteMlcItem(completeMlcItemPayload()),
+    );
   });
 
   it("normalizes listing, order, message, and reputation snapshots with metadata", async () => {
@@ -902,6 +954,28 @@ describe("MlClient (stub mode)", () => {
     expect(item.title).toBe("Producto de prueba");
     expect(item.price).toBe(15000);
     expect(item.status).toBe("active");
+  });
+
+  it("getItem rejects incomplete fetch-backed item payloads", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(completeMlcItemPayload({ title: undefined })), {
+        status: 200,
+        statusText: "OK",
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const oauthManager = {
+      getStoredToken: vi.fn().mockReturnValue({ access_token: "access-token" }),
+      ensureValidToken: vi.fn().mockResolvedValue("access-token"),
+      isStubMode: () => false,
+    } as Pick<OAuthManager, "getStoredToken" | "ensureValidToken" | "isStubMode"> as OAuthManager;
+    const client = createMlClient({ oauthManager, now });
+
+    try {
+      await expect(client.getItem("seller-1", "MLC1001")).rejects.toThrow(/Incomplete/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("getOrders returns order snapshots in stub mode", async () => {

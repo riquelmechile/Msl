@@ -1,6 +1,6 @@
 import type { Strategy } from "@msl/mercadolibre";
 
-export function isFiniteNumber(value: unknown): value is number {
+function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 

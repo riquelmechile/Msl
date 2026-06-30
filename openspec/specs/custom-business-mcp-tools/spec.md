@@ -116,7 +116,7 @@ The system MUST map MercadoLibre capability classifications to runtime behavior 
 
 ### Requirement: Prepare-Only Product Sync Tool
 
-The `sync_product` MCP tool MUST create an approval-required proposal for one Plasticov-to-Maustian product sync intent and MUST NOT report fake execution success. It MAY include safe read-only preview metadata on the same pending proposal when available. When durable proposal storage is configured, responses MUST disclose durability metadata; otherwise the tool MUST preserve default in-memory behavior.
+The `sync_product` MCP tool MUST create an approval-required proposal for one Plasticov-to-Maustian product sync intent and MUST NOT report fake execution success. It MAY include safe read-only preview metadata on the same pending proposal when available. Preview source item evidence MUST pass the shared MercadoLibre item completeness boundary before strategy calculation; validation failure MUST degrade to preview-unavailable metadata instead of execution. When durable proposal storage is configured, responses MUST disclose durability metadata; otherwise the tool MUST preserve default in-memory behavior.
 
 #### Scenario: Valid product sync intent is prepared
 
@@ -127,10 +127,17 @@ The `sync_product` MCP tool MUST create an approval-required proposal for one Pl
 
 #### Scenario: Safe preview metadata is available
 
-- GIVEN the valid request can be evaluated with read-only source data and strategies
+- GIVEN the valid request has complete source item evidence and strategies
 - WHEN `sync_product` prepares the proposal
 - THEN the response MAY include proposed field-change preview evidence
 - AND it MUST keep `approvalStatus: "pending"`, `requiresApproval: true`, and `noMutationExecuted: true`
+
+#### Scenario: Incomplete source item evidence degrades preview
+
+- GIVEN source item evidence fails shared MercadoLibre completeness validation
+- WHEN `sync_product` prepares the proposal
+- THEN the response MUST include preview-unavailable metadata with reason `source-read-failed`
+- AND it MUST NOT execute mutation, expose raw validation details, or claim completion
 
 #### Scenario: Preview metadata is unavailable
 
