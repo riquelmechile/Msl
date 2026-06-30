@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { ApprovalQueueRepository } from "@msl/tools";
+import type { ApprovalQueueEntry, ApprovalQueueRepository } from "@msl/tools";
 import { describe, expect, it, vi } from "vitest";
 import { createMcpServer } from "./index.js";
 
@@ -19,13 +19,15 @@ function makeSyncProductPayload(overrides: Record<string, unknown> = {}) {
 
 function makeApprovalDependencies(
   save = vi.fn<ApprovalQueueRepository["save"]>().mockResolvedValue(undefined),
+  findAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(null),
 ) {
   return {
     save,
+    findAction,
     prepareWrite: {
       repository: {
         save,
-        findAction: vi.fn(),
+        findAction,
         saveApproval: vi.fn(),
         findApproval: vi.fn(),
         saveAudit: vi.fn(),
@@ -33,6 +35,41 @@ function makeApprovalDependencies(
       },
       clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
     },
+  };
+}
+
+function makeSyncProductQueueEntry(
+  overrides: Omit<Partial<ApprovalQueueEntry>, "action"> & {
+    action?: Partial<ApprovalQueueEntry["action"]>;
+  } = {},
+): ApprovalQueueEntry {
+  const { action: actionOverrides, ...entryOverrides } = overrides;
+  const action = {
+    id: "sync-product:MLC1001:2026-01-01T00:00:00.000Z",
+    sellerId: "maustian-seller",
+    kind: "listing-edit" as const,
+    target: { type: "listing" as const, listingId: "MLC1001" },
+    exactChange: [
+      { field: "sourceSellerId", from: null, to: "plasticov-seller" },
+      { field: "targetSellerId", from: null, to: "maustian-seller" },
+      { field: "syncIntent", from: null, to: "prepare-only product sync proposal" },
+      { field: "mutationExecuted", from: null, to: false },
+      { field: "preview.status", from: null, to: "available" },
+      { field: "preview.price", from: 10000, to: 15000 },
+    ],
+    rationale: "Prepare a seller-approved Plasticov to Maustian product sync proposal.",
+    expiresAt: new Date("2026-01-02T00:00:00.000Z"),
+    approvalStatus: "pending" as const,
+    riskLevel: "high" as const,
+    ...actionOverrides,
+  };
+
+  return {
+    action,
+    requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+    highlightedRisk: action.riskLevel,
+    status: action.approvalStatus,
+    ...entryOverrides,
   };
 }
 
@@ -115,7 +152,200 @@ async function callSyncProductThroughSdk(
   }
 }
 
+async function callReadSyncProductStatusThroughSdk(
+  arguments_: Record<string, unknown>,
+  options: {
+    findAction?: ReturnType<typeof vi.fn<ApprovalQueueRepository["findAction"]>>;
+    approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
+  } = {},
+) {
+  const { findAction, prepareWrite } = makeApprovalDependencies(undefined, options.findAction);
+  const server = createMcpServer({
+    prepareWrite,
+    ...(options.approvalStorage ? { approvalStorage: options.approvalStorage } : {}),
+  });
+  const client = new Client({ name: "msl-mcp-test-client", version: "0.1.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  let serverConnected = false;
+  let clientConnected = false;
+
+  try {
+    await withTimeout(server.connect(serverTransport), "MCP server connect");
+    serverConnected = true;
+    await withTimeout(client.connect(clientTransport), "MCP client connect");
+    clientConnected = true;
+
+    const result = (await withTimeout(
+      client.callTool(
+        {
+          name: "read_sync_product_status",
+          arguments: arguments_,
+        },
+        undefined,
+        { timeout: 1_000 },
+      ),
+      "read_sync_product_status SDK call",
+    )) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
+
+    return { result, findAction, prepareWrite };
+  } finally {
+    if (clientConnected) {
+      try {
+        await withTimeout(client.close(), "MCP client close");
+      } finally {
+        if (serverConnected) {
+          await withTimeout(server.close(), "MCP server close");
+        }
+      }
+    } else if (serverConnected) {
+      await withTimeout(server.close(), "MCP server close");
+    }
+  }
+}
+
+function parseTextResult(result: { content: Array<{ type: string; text?: string }> }) {
+  const content = result.content[0];
+  if (!content || content.type !== "text" || content.text === undefined) {
+    throw new Error("Expected MCP SDK call to return text content.");
+  }
+
+  return {
+    text: content.text,
+    parsed: JSON.parse(content.text) as Record<string, unknown>,
+  };
+}
+
 describe("MCP Server SDK integration", () => {
+  it("reads a durable stored sync_product status through the MCP SDK without mutating approvals", async () => {
+    const findAction = vi
+      .fn<ApprovalQueueRepository["findAction"]>()
+      .mockResolvedValue(makeSyncProductQueueEntry());
+
+    const { result, prepareWrite } = await callReadSyncProductStatusThroughSdk(
+      { actionId: "sync-product:MLC1001:2026-01-01T00:00:00.000Z" },
+      { findAction, approvalStorage: "sqlite" },
+    );
+    const { text, parsed } = parseTextResult(result);
+
+    expect(result.isError).toBeFalsy();
+    expect(findAction).toHaveBeenCalledWith("sync-product:MLC1001:2026-01-01T00:00:00.000Z");
+    expect(prepareWrite.repository.save).not.toHaveBeenCalled();
+    expect(prepareWrite.repository.saveApproval).not.toHaveBeenCalled();
+    expect(prepareWrite.repository.saveAudit).not.toHaveBeenCalled();
+    expect(prepareWrite.repository.listAudits).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({
+      status: "available",
+      actionId: "redacted",
+      effectiveStatus: "pending",
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      risk: "high",
+      target: { type: "listing", listingId: "MLC1001" },
+      preview: { status: "available", summary: "Preview available for price." },
+      metadata: {
+        requiresApproval: true,
+        noMutationExecuted: true,
+        auditReplay: "not-available",
+        approvalPersistence: "sqlite",
+        persistentApprovalStorage: true,
+      },
+    });
+    expect(text).not.toContain("plasticov-seller");
+    expect(text).not.toContain("maustian-seller");
+    expect(text).not.toContain("sqlite:");
+    expect(text).not.toContain("ProductSyncEngine");
+    expect(text).not.toContain("sync_all");
+  });
+
+  it("rejects unauthenticated status SDK calls before repository lookup", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const findAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(null);
+
+    try {
+      const { result } = await callReadSyncProductStatusThroughSdk(
+        { actionId: "sync-product:MLC1001:2026-01-01T00:00:00.000Z", msl_api_key: "wrong" },
+        { findAction },
+      );
+      const { parsed } = parseTextResult(result);
+
+      expect(result.isError).toBe(true);
+      expect(findAction).not.toHaveBeenCalled();
+      expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([
+    ["missing action", null],
+    [
+      "unsupported non-sync proposal",
+      makeSyncProductQueueEntry({ action: { kind: "price-change" } }),
+    ],
+    [
+      "malformed unsupported proposal",
+      makeSyncProductQueueEntry({
+        action: { exactChange: [{ field: "mutationExecuted", from: null, to: true }] },
+      }),
+    ],
+  ])("returns a controlled redacted status SDK response for %s", async (_name, entry) => {
+    const findAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(entry);
+
+    const { result } = await callReadSyncProductStatusThroughSdk(
+      { actionId: "candidate-id" },
+      { findAction, approvalStorage: "sqlite-unavailable" },
+    );
+    const { text, parsed } = parseTextResult(result);
+
+    expect(result.isError).toBeFalsy();
+    expect(parsed).toEqual({
+      status: "unavailable",
+      reason: "not-found-or-unsupported",
+      noMutationExecuted: true,
+    });
+    expect(text).not.toContain("plasticov-seller");
+    expect(text).not.toContain("maustian-seller");
+    expect(text).not.toContain("sqlite-unavailable");
+  });
+
+  it("redacts repository failures and derives expired status through SDK without saving", async () => {
+    const expiredFindAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(
+      makeSyncProductQueueEntry({
+        action: { expiresAt: new Date("2025-12-31T23:59:59.000Z") },
+      }),
+    );
+    const failingFindAction = vi
+      .fn<ApprovalQueueRepository["findAction"]>()
+      .mockRejectedValue(new Error("SQLITE_CANTOPEN /tmp/msl/approval.sqlite secret-key-42"));
+
+    const expired = await callReadSyncProductStatusThroughSdk(
+      { actionId: "sync-product:MLC1001:2026-01-01T00:00:00.000Z" },
+      { findAction: expiredFindAction },
+    );
+    const unavailable = await callReadSyncProductStatusThroughSdk(
+      { actionId: "sync-product:MLC1001:2026-01-01T00:00:00.000Z" },
+      { findAction: failingFindAction },
+    );
+
+    expect(parseTextResult(expired.result).parsed).toMatchObject({
+      status: "available",
+      effectiveStatus: "expired",
+    });
+    expect(expired.prepareWrite.repository.save).not.toHaveBeenCalled();
+    expect(expired.prepareWrite.repository.saveApproval).not.toHaveBeenCalled();
+    expect(expired.prepareWrite.repository.saveAudit).not.toHaveBeenCalled();
+
+    const { text, parsed } = parseTextResult(unavailable.result);
+    expect(parsed).toEqual({
+      status: "unavailable",
+      reason: "not-found-or-unsupported",
+      noMutationExecuted: true,
+    });
+    expect(text).not.toContain("SQLITE_CANTOPEN");
+    expect(text).not.toContain("/tmp/msl/approval.sqlite");
+    expect(text).not.toContain("secret-key-42");
+  });
+
   it.each([
     ["missing approval metadata", { requiresApproval: undefined }, "approval-required"],
     ["invalid approval metadata", { requiresApproval: false }, "approval-required"],
