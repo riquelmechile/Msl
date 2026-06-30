@@ -204,6 +204,58 @@ async function callReadSyncProductStatusThroughSdk(
   }
 }
 
+async function callApproveSyncProductProposalThroughSdk(
+  arguments_: Record<string, unknown>,
+  options: {
+    findAction?: ReturnType<typeof vi.fn<ApprovalQueueRepository["findAction"]>>;
+    approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
+  } = {},
+) {
+  const { findAction, prepareWrite } = makeApprovalDependencies(undefined, options.findAction);
+  const server = createMcpServer({
+    prepareWrite,
+    ...(options.approvalStorage ? { approvalStorage: options.approvalStorage } : {}),
+  });
+  const client = new Client({ name: "msl-mcp-test-client", version: "0.1.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  let serverConnected = false;
+  let clientConnected = false;
+
+  try {
+    await withTimeout(server.connect(serverTransport), "MCP server connect");
+    serverConnected = true;
+    await withTimeout(client.connect(clientTransport), "MCP client connect");
+    clientConnected = true;
+
+    const result = (await withTimeout(
+      client.callTool(
+        {
+          name: "approve_sync_product_proposal",
+          arguments: arguments_,
+        },
+        undefined,
+        { timeout: 1_000 },
+      ),
+      "approve_sync_product_proposal SDK call",
+    )) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
+
+    return { result, findAction, prepareWrite };
+  } finally {
+    if (clientConnected) {
+      try {
+        await withTimeout(client.close(), "MCP client close");
+      } finally {
+        if (serverConnected) {
+          await withTimeout(server.close(), "MCP server close");
+        }
+      }
+    } else if (serverConnected) {
+      await withTimeout(server.close(), "MCP server close");
+    }
+  }
+}
+
 function parseTextResult(result: { content: Array<{ type: string; text?: string }> }) {
   const content = result.content[0];
   if (!content || content.type !== "text" || content.text === undefined) {
@@ -217,6 +269,47 @@ function parseTextResult(result: { content: Array<{ type: string; text?: string 
 }
 
 describe("MCP Server SDK integration", () => {
+  it("records sync_product approval through the MCP SDK without execution or audit replay", async () => {
+    const entry = makeSyncProductQueueEntry();
+    const findAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(entry);
+
+    const { result, prepareWrite } = await callApproveSyncProductProposalThroughSdk(
+      { actionId: "sync-product:MLC1001:2026-01-01T00:00:00.000Z" },
+      { findAction, approvalStorage: "sqlite" },
+    );
+    const { text, parsed } = parseTextResult(result);
+
+    expect(result.isError).toBeFalsy();
+    expect(findAction).toHaveBeenCalledWith("sync-product:MLC1001:2026-01-01T00:00:00.000Z");
+    expect(parsed).toEqual({
+      status: "approved",
+      actionId: "redacted",
+      noMutationExecuted: true,
+    });
+    expect(prepareWrite.repository.save).toHaveBeenCalledWith({
+      ...entry,
+      status: "approved",
+      action: { ...entry.action, approvalStatus: "approved" },
+    });
+    expect(prepareWrite.repository.saveApproval).toHaveBeenCalledWith({
+      id: "approval:sync-product:MLC1001:2026-01-01T00:00:00.000Z:2026-01-01T00:00:00.000Z",
+      actionId: "sync-product:MLC1001:2026-01-01T00:00:00.000Z",
+      sellerId: "maustian-seller",
+      approvedBy: "seller",
+      approvedAt: new Date("2026-01-01T00:00:00.000Z"),
+      exactChangeAccepted: entry.action.exactChange,
+      riskAccepted: "high",
+      executionStatus: "not-executed",
+    });
+    expect(prepareWrite.repository.saveAudit).not.toHaveBeenCalled();
+    expect(prepareWrite.repository.listAudits).not.toHaveBeenCalled();
+    expect(text).not.toContain("plasticov-seller");
+    expect(text).not.toContain("maustian-seller");
+    expect(text).not.toContain("ProductSyncEngine");
+    expect(text).not.toContain("sync_all");
+    expect(text).not.toContain("execute_mercadolibre_write");
+  });
+
   it("reads a durable stored sync_product status through the MCP SDK without mutating approvals", async () => {
     const findAction = vi
       .fn<ApprovalQueueRepository["findAction"]>()
