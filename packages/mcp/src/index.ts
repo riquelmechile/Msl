@@ -44,6 +44,13 @@ export type SyncPreviewDependency = {
   getStrategies(): Promise<Strategy[]>;
 };
 
+export type SyncProductReadinessEvidenceProviders = {
+  readRollbackStrategyPresent?(entry: ApprovalQueueEntry): boolean | Promise<boolean>;
+  readApiCapabilityEvidence?(
+    entry: ApprovalQueueEntry,
+  ): "missing" | "present" | Promise<"missing" | "present">;
+};
+
 function jsonResult(value: unknown, isError = false): McpToolResult {
   return {
     content: [
@@ -517,6 +524,15 @@ function uniqueReadinessReasons(
   return [...new Set(reasons.filter((reason): reason is SyncProductReadinessReason => !!reason))];
 }
 
+function addReadinessReason(
+  reasons: SyncProductReadinessReason[],
+  reason: SyncProductReadinessReason | null | undefined,
+): void {
+  if (reason) {
+    reasons.push(reason);
+  }
+}
+
 function compareStoredPreview(input: {
   entry: ApprovalQueueEntry;
   preview: SyncProductPreview;
@@ -635,8 +651,186 @@ function buildReadinessResponse(input: {
   };
 }
 
+async function readRollbackStrategyEvidence(input: {
+  entry: ApprovalQueueEntry;
+  providers?: SyncProductReadinessEvidenceProviders;
+}): Promise<boolean | SyncProductReadinessReason> {
+  if (!input.providers?.readRollbackStrategyPresent) {
+    return rollbackStrategyPresent(input.entry);
+  }
+
+  try {
+    return await input.providers.readRollbackStrategyPresent(input.entry);
+  } catch (error) {
+    return mapReadinessError(error);
+  }
+}
+
+async function readApiCapabilityEvidence(input: {
+  entry: ApprovalQueueEntry;
+  providers?: SyncProductReadinessEvidenceProviders;
+}): Promise<"missing" | "present" | SyncProductReadinessReason> {
+  if (!input.providers?.readApiCapabilityEvidence) {
+    return "missing";
+  }
+
+  try {
+    return apiCapabilityEvidenceStatus(
+      await input.providers.readApiCapabilityEvidence(input.entry),
+    );
+  } catch (error) {
+    return mapReadinessError(error);
+  }
+}
+
 function readinessActionId(request: ReadSyncProductExecutionReadinessInput): string | undefined {
   return trimmedString(request.actionId);
+}
+
+async function readSyncProductExecutionReadiness(input: {
+  request: ReadSyncProductExecutionReadinessInput;
+  config: McpServerConfig;
+}): Promise<ReadSyncProductExecutionReadinessResponse> {
+  const actionId = readinessActionId(input.request);
+  const unavailable = () =>
+    buildReadinessResponse({
+      reasons: ["approval-unavailable"],
+      approvalBound: false,
+      preview: "unavailable",
+      rollbackStrategyPresent: false,
+      apiCapabilityEvidence: "missing",
+    });
+
+  if (!actionId || !input.config.prepareWrite) {
+    return unavailable();
+  }
+
+  const repository = input.config.prepareWrite.repository;
+  const foundAction = await findExactSyncProductAction({ repository, actionId });
+  if (foundAction === "storage-unavailable") {
+    return buildReadinessResponse({
+      reasons: ["storage-unavailable"],
+      approvalBound: false,
+      preview: "unavailable",
+      rollbackStrategyPresent: false,
+      apiCapabilityEvidence: "missing",
+    });
+  }
+
+  if (!isSupportedSyncProductProposal(foundAction)) {
+    return buildReadinessResponse({
+      reasons: [foundAction ? "proposal-not-sync-product" : "approval-unavailable"],
+      approvalBound: false,
+      preview: "unavailable",
+      rollbackStrategyPresent: false,
+      apiCapabilityEvidence: "missing",
+    });
+  }
+
+  const foundApproval = await findExactApproval({ repository, actionId });
+  if (foundApproval === "storage-unavailable") {
+    return buildReadinessResponse({
+      reasons: ["storage-unavailable"],
+      approvalBound: false,
+      preview: "unavailable",
+      rollbackStrategyPresent: false,
+      apiCapabilityEvidence: "missing",
+    });
+  }
+
+  const now = input.config.prepareWrite.clock.now();
+  const approvalBound = approvalBindingMatches(foundAction, foundApproval);
+  const reasons: SyncProductReadinessReason[] = [];
+
+  if (foundAction.action.approvalStatus !== "approved" || foundAction.status !== "approved") {
+    reasons.push("approval-unavailable");
+  }
+  if (approvalExpired(foundAction, now)) {
+    reasons.push("approval-expired");
+  }
+  if (!approvalBound) {
+    reasons.push(foundApproval ? "approval-binding-mismatch" : "approval-unavailable");
+  }
+
+  let roleConfig: MlAccountRoleConfig | undefined;
+  try {
+    roleConfig = input.config.accountRoles ?? getMlAccountRoleConfig();
+  } catch {
+    reasons.push("seller-scope-mismatch");
+  }
+
+  if (roleConfig) {
+    const roleFailure = validateMlcRoleConfig(roleConfig);
+    addReadinessReason(
+      reasons,
+      roleFailure
+        ? "seller-scope-mismatch"
+        : validateSellerAccountScope({ entry: foundAction, roleConfig }),
+    );
+  }
+
+  addReadinessReason(reasons, validateTargetAvailability(foundAction));
+
+  const sourceSellerId = foundAction.action.exactChange.find(
+    (change) => change.field === "sourceSellerId",
+  )?.to;
+  let previewState: "matched" | "drifted" | "unavailable" = "unavailable";
+  if (typeof sourceSellerId !== "string") {
+    reasons.push("source-evidence-incomplete");
+  } else {
+    const preview = await buildSyncProductPreview({
+      dependency: input.config.syncPreview,
+      sourceSellerId,
+      itemId: foundAction.action.target.listingId,
+    });
+    previewState = compareStoredPreview({ entry: foundAction, preview });
+    if (preview.status === "unavailable") {
+      reasons.push(
+        preview.reason === "source-read-failed"
+          ? "source-read-failed"
+          : "source-evidence-incomplete",
+      );
+    } else if (previewState === "drifted") {
+      reasons.push("preview-drift-detected");
+    }
+  }
+
+  const idempotencyCandidate = idempotencyCandidateFor(foundAction);
+  addReadinessReason(
+    reasons,
+    detectIdempotencyConflict({
+      existingActionId: actionId,
+      ...(idempotencyCandidate ? { candidate: idempotencyCandidate } : {}),
+      actionId,
+    }),
+  );
+
+  const rollbackEvidence = await readRollbackStrategyEvidence({
+    entry: foundAction,
+    ...(input.config.readinessEvidence ? { providers: input.config.readinessEvidence } : {}),
+  });
+  const hasRollbackStrategy = rollbackEvidence === true;
+  if (rollbackEvidence !== true) {
+    reasons.push(rollbackEvidence === false ? "rollback-strategy-missing" : rollbackEvidence);
+  }
+
+  const apiEvidence = await readApiCapabilityEvidence({
+    entry: foundAction,
+    ...(input.config.readinessEvidence ? { providers: input.config.readinessEvidence } : {}),
+  });
+  const apiCapabilityEvidence = apiEvidence === "present" ? "present" : "missing";
+  if (apiEvidence !== "present") {
+    reasons.push(apiEvidence === "missing" ? "api-capability-evidence-missing" : apiEvidence);
+  }
+
+  return buildReadinessResponse({
+    reasons,
+    approvalBound,
+    preview: previewState,
+    ...(idempotencyCandidate ? { idempotencyCandidate } : {}),
+    rollbackStrategyPresent: hasRollbackStrategy,
+    apiCapabilityEvidence,
+  });
 }
 
 const syncProductExecutionReadinessFoundation = {
@@ -1027,6 +1221,29 @@ export function createMcpServer(config: McpServerConfig = {}) {
     },
   );
 
+  // ── read_sync_product_execution_readiness ─────────────────────────
+  server.registerTool(
+    "read_sync_product_execution_readiness",
+    {
+      description:
+        "Reads non-mutating execution readiness for one exact approved sync_product proposal.",
+      inputSchema: mcpReadSyncProductExecutionReadinessInputSchema,
+    },
+    async (request) => {
+      const readinessRequest = request as ReadSyncProductExecutionReadinessInput;
+      if (!validateApiKey(readinessRequest.msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      return jsonResult(
+        (await readSyncProductExecutionReadiness({
+          request: readinessRequest,
+          config,
+        })) satisfies ReadSyncProductExecutionReadinessResponse,
+      );
+    },
+  );
+
   // ── approve_sync_product_proposal ─────────────────────────────────
   server.registerTool(
     "approve_sync_product_proposal",
@@ -1291,6 +1508,7 @@ function registerMlcCategoryTechnicalSpecsReadTool(
 export type McpServerConfig = {
   mlcClient?: MlcApiClient;
   syncPreview?: SyncPreviewDependency;
+  readinessEvidence?: SyncProductReadinessEvidenceProviders;
   accountRoles?: MlAccountRoleConfig;
   approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
   prepareWrite?: {
