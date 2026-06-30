@@ -178,12 +178,76 @@ function approveSyncProductProposalInputSchema() {
   return (approvalCall![1] as { inputSchema: Record<string, z.ZodType> }).inputSchema;
 }
 
+function readSyncProductExecutionReadinessInputSchema() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const calls = mockMcpServer.registerTool.mock.calls as any[][];
+  const readinessCall = calls.find((call) => call[0] === "read_sync_product_execution_readiness");
+  expect(readinessCall).toBeDefined();
+  return (readinessCall![1] as { inputSchema: Record<string, z.ZodType> }).inputSchema;
+}
+
 function parseToolResult(result: { content: { text: string }[] }) {
   return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
 }
 
 function unavailableApprovalResponse() {
   return { status: "unavailable", reason: "not-found-or-unsupported", noMutationExecuted: true };
+}
+
+function makeApprovedSyncProductQueueEntry(
+  overrides: Parameters<typeof makeSyncProductQueueEntry>[0] = {},
+) {
+  return makeSyncProductQueueEntry({
+    status: "approved",
+    action: { approvalStatus: "approved", ...overrides.action },
+    ...overrides,
+  });
+}
+
+function makeApprovalRecord(entry: ApprovalQueueEntry, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `approval:${entry.action.id}:2026-01-01T00:00:00.000Z`,
+    actionId: entry.action.id,
+    sellerId: entry.action.sellerId,
+    approvedBy: "seller",
+    approvedAt: new Date("2026-01-01T00:00:00.000Z"),
+    exactChangeAccepted: entry.action.exactChange,
+    riskAccepted: entry.action.riskLevel,
+    executionStatus: "not-executed",
+    ...overrides,
+  };
+}
+
+function makeReadinessDependencies(entry = makeApprovedSyncProductQueueEntry()) {
+  const { prepareWrite } = makeApprovalDependencies();
+  vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+  vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(makeApprovalRecord(entry));
+  return {
+    prepareWrite,
+    config: {
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "maustian-seller",
+        site: "MLC" as const,
+      },
+      syncPreview: {
+        getSourceItem: vi.fn().mockResolvedValue(makeSourceItem({ price: 10000 })),
+        getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+      },
+      readinessEvidence: {
+        readRollbackStrategyPresent: vi.fn().mockResolvedValue(true),
+        readApiCapabilityEvidence: vi.fn().mockResolvedValue("present"),
+      },
+    },
+  };
+}
+
+function expectReadinessDidNotMutate(repository: ApprovalQueueRepository) {
+  expect(repository["save"]).not.toHaveBeenCalled();
+  expect(repository["saveApproval"]).not.toHaveBeenCalled();
+  expect(repository["saveAudit"]).not.toHaveBeenCalled();
+  expect(repository["listAudits"]).not.toHaveBeenCalled();
 }
 
 async function withTempDbPath(run: (dbPath: string) => void | Promise<void>): Promise<void> {
@@ -1193,6 +1257,20 @@ describe("MCP Server", () => {
     expect(inputSchema.msl_api_key!.safeParse(undefined).success).toBe(true);
   });
 
+  it("registers read_sync_product_execution_readiness with exact action ID input only", () => {
+    createMcpServer();
+
+    const inputSchema = readSyncProductExecutionReadinessInputSchema();
+    expect(Object.keys(inputSchema).sort()).toEqual(["actionId", "msl_api_key"]);
+    expect(inputSchema.actionId!.safeParse("sync-product:MLC1001:stamp").success).toBe(true);
+    expect(inputSchema.msl_api_key!.safeParse(undefined).success).toBe(true);
+
+    const toolNames = [...registeredTools.keys()];
+    expect(toolNames).toContain("read_sync_product_execution_readiness");
+    expect(toolNames).not.toContain("execute_sync_product");
+    expect(toolNames).not.toContain("rollback_sync_product");
+  });
+
   it("registers approve_sync_product_proposal with exact action ID input only", () => {
     createMcpServer();
 
@@ -1345,6 +1423,282 @@ describe("MCP Server", () => {
     expect(mcpSource).not.toContain("sync_all");
     expect(mcpSource).not.toContain("multi_product_sync");
     expect(mcpSource).not.toContain("rollback automation");
+  });
+
+  it("read_sync_product_execution_readiness rejects unauthenticated requests before repository lookup", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const { prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+
+    const cb = registeredTools.get("read_sync_product_execution_readiness");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      actionId: "sync-product:MLC1001:stamp",
+      msl_api_key: "wrong",
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(prepareWrite.repository.findAction).not.toHaveBeenCalled();
+    expect(prepareWrite.repository.findApproval).not.toHaveBeenCalled();
+    expectReadinessDidNotMutate(prepareWrite.repository);
+    expect(parseToolResult(result)).toMatchObject({ status: "blocked", reason: "unauthorized" });
+  });
+
+  it.each([
+    ["eligible", {}, { status: "eligible", reasons: [], preview: "matched" }],
+    [
+      "degraded by missing API evidence",
+      { readinessEvidence: { readRollbackStrategyPresent: vi.fn().mockResolvedValue(true) } },
+      {
+        status: "degraded",
+        reasons: ["api-capability-evidence-missing"],
+        preview: "matched",
+      },
+    ],
+    [
+      "blocked by missing approval",
+      { approval: null },
+      { status: "blocked", reasons: ["approval-unavailable"], preview: "matched" },
+    ],
+  ])(
+    "read_sync_product_execution_readiness returns %s readiness without mutations",
+    async (_name, overrides, expected) => {
+      const entry = makeApprovedSyncProductQueueEntry();
+      const { prepareWrite, config } = makeReadinessDependencies(entry);
+      if ("approval" in overrides) {
+        vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(overrides.approval);
+      }
+      if ("readinessEvidence" in overrides) {
+        (config as { readinessEvidence?: unknown }).readinessEvidence = overrides.readinessEvidence;
+      }
+
+      createMcpServer(config);
+
+      const cb = registeredTools.get("read_sync_product_execution_readiness");
+      expect(cb).toBeDefined();
+
+      const result = (await cb!({ actionId: entry.action.id })) as { content: { text: string }[] };
+      const parsed = parseToolResult(result);
+
+      expect(prepareWrite.repository.findAction).toHaveBeenCalledWith(entry.action.id);
+      expect(parsed).toMatchObject({
+        status: expected.status,
+        actionId: "redacted",
+        reasons: expected.reasons,
+        evidence: {
+          preview: expected.preview,
+          idempotencyCandidate: "sync-product:MLC1001:",
+          rollbackStrategyPresent: true,
+        },
+        noMutationExecuted: true,
+      });
+      expectReadinessDidNotMutate(prepareWrite.repository);
+    },
+  );
+
+  it.each([
+    ["unknown exact action", null, ["approval-unavailable"]],
+    [
+      "proposal type",
+      makeApprovedSyncProductQueueEntry({ action: { kind: "price-change" } }),
+      ["proposal-not-sync-product"],
+    ],
+    [
+      "expired proposal",
+      makeApprovedSyncProductQueueEntry({
+        action: { expiresAt: new Date("2025-12-31T23:59:59.000Z") },
+      }),
+      ["approval-expired"],
+    ],
+    [
+      "approval mismatch",
+      makeApprovedSyncProductQueueEntry(),
+      ["approval-binding-mismatch"],
+      { sellerId: "other-seller" },
+    ],
+    [
+      "preview drift",
+      makeApprovedSyncProductQueueEntry(),
+      ["preview-drift-detected"],
+      undefined,
+      {
+        syncPreview: {
+          getSourceItem: vi.fn().mockResolvedValue(makeSourceItem({ price: 20000 })),
+          getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+        },
+      },
+    ],
+  ] as Array<
+    [
+      string,
+      ApprovalQueueEntry | null,
+      string[],
+      Record<string, unknown>?,
+      Record<string, unknown>?,
+    ]
+  >)(
+    "read_sync_product_execution_readiness blocks %s with redacted reasons",
+    async (_name, entry, reasons, approvalOverrides, configOverrides) => {
+      const baseEntry = entry ?? makeApprovedSyncProductQueueEntry();
+      const { prepareWrite, config } = makeReadinessDependencies(baseEntry);
+      vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+      vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(
+        entry ? makeApprovalRecord(entry, approvalOverrides) : null,
+      );
+      Object.assign(config, configOverrides ?? {});
+
+      createMcpServer(config);
+
+      const cb = registeredTools.get("read_sync_product_execution_readiness");
+      expect(cb).toBeDefined();
+      const result = (await cb!({
+        actionId: configOverrides?.requestActionId ?? baseEntry.action.id,
+      })) as {
+        content: { text: string }[];
+      };
+      const parsed = parseToolResult(result);
+
+      expect(parsed).toMatchObject({
+        status: "blocked",
+        actionId: "redacted",
+        noMutationExecuted: true,
+      });
+      expect(parsed.reasons).toEqual(expect.arrayContaining(reasons));
+      expect(JSON.stringify(parsed)).not.toContain(baseEntry.action.id);
+      expectReadinessDidNotMutate(prepareWrite.repository);
+    },
+  );
+
+  it.each([
+    [
+      "seller/account roles",
+      {
+        accountRoles: {
+          sourceSellerId: "other",
+          targetSellerId: "maustian-seller",
+          site: "MLC" as const,
+        },
+      },
+      ["seller-scope-mismatch"],
+    ],
+    [
+      "target unavailable",
+      {
+        entry: makeApprovedSyncProductQueueEntry({
+          action: {
+            id: "sync-product:invalid/path:2026-01-01T00:00:00.000Z",
+            target: { type: "listing", listingId: "invalid/path" },
+          },
+        }),
+      },
+      ["target-account-unavailable"],
+    ],
+    [
+      "rollback missing",
+      { readinessEvidence: { readApiCapabilityEvidence: vi.fn().mockResolvedValue("present") } },
+      ["rollback-strategy-missing"],
+    ],
+    [
+      "source/API evidence missing",
+      {
+        syncPreview: undefined,
+        readinessEvidence: { readRollbackStrategyPresent: vi.fn().mockResolvedValue(true) },
+      },
+      ["source-evidence-incomplete", "api-capability-evidence-missing"],
+    ],
+    [
+      "rate mapping",
+      {
+        readinessEvidence: {
+          readRollbackStrategyPresent: vi.fn().mockRejectedValue(new Error("429 rate limit")),
+          readApiCapabilityEvidence: vi.fn().mockResolvedValue("present"),
+        },
+      },
+      ["rate-limited"],
+    ],
+    [
+      "upstream mapping",
+      {
+        readinessEvidence: {
+          readRollbackStrategyPresent: vi.fn().mockRejectedValue(new Error("raw upstream detail")),
+          readApiCapabilityEvidence: vi.fn().mockResolvedValue("present"),
+        },
+      },
+      ["upstream-temporary-failure"],
+    ],
+    [
+      "reconnect mapping",
+      {
+        readinessEvidence: {
+          readRollbackStrategyPresent: vi
+            .fn()
+            .mockRejectedValue(new Error("oauth token expired raw-secret")),
+          readApiCapabilityEvidence: vi.fn().mockResolvedValue("present"),
+        },
+      },
+      ["reconnect-required"],
+    ],
+    [
+      "storage mapping",
+      { repositoryError: new Error("SQLITE_CANTOPEN /tmp/msl/approval.sqlite") },
+      ["storage-unavailable"],
+    ],
+  ] as Array<[string, Record<string, unknown>, string[]]>)(
+    "read_sync_product_execution_readiness covers %s without leaking raw details",
+    async (_name, overrides, reasons) => {
+      const entry =
+        (overrides.entry as ApprovalQueueEntry | undefined) ?? makeApprovedSyncProductQueueEntry();
+      const { prepareWrite, config } = makeReadinessDependencies(entry);
+      if (overrides.repositoryError) {
+        vi.mocked(prepareWrite.repository.findAction).mockRejectedValue(overrides.repositoryError);
+      }
+      Object.assign(config, overrides);
+      delete (config as Record<string, unknown>).entry;
+      delete (config as Record<string, unknown>).repositoryError;
+
+      createMcpServer(config);
+
+      const cb = registeredTools.get("read_sync_product_execution_readiness");
+      expect(cb).toBeDefined();
+      const result = (await cb!({ actionId: entry.action.id })) as { content: { text: string }[] };
+      const responseText = result.content[0]!.text;
+      const parsed = JSON.parse(responseText) as Record<string, unknown>;
+
+      expect(parsed).toMatchObject({ actionId: "redacted", noMutationExecuted: true });
+      expect(parsed.reasons).toEqual(expect.arrayContaining(reasons));
+      expect(responseText).not.toContain("raw-secret");
+      expect(responseText).not.toContain("raw upstream detail");
+      expect(responseText).not.toContain("SQLITE_CANTOPEN");
+      expect(responseText).not.toContain("/tmp/msl/approval.sqlite");
+      expect(responseText).not.toContain("ProductSyncEngine");
+      expect(responseText).not.toContain("sync_all");
+      expectReadinessDidNotMutate(prepareWrite.repository);
+    },
+  );
+
+  it("read_sync_product_execution_readiness exposes no forbidden execution surfaces", async () => {
+    const entry = makeApprovedSyncProductQueueEntry();
+    const { prepareWrite, config } = makeReadinessDependencies(entry);
+
+    createMcpServer(config);
+
+    const toolNames = [...registeredTools.keys()];
+    expect(toolNames).not.toContain("sync_all");
+    expect(toolNames).not.toContain("execute_mercadolibre_write");
+    expect(toolNames).not.toContain("executePreparedAction");
+    expect(toolNames).not.toContain("rollback_sync_product");
+
+    const result = (await registeredTools.get("read_sync_product_execution_readiness")!({
+      actionId: entry.action.id,
+    })) as { content: { text: string }[] };
+    expect(parseToolResult(result)).toMatchObject({ noMutationExecuted: true });
+    expectReadinessDidNotMutate(prepareWrite.repository);
+
+    const mcpSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    expect(mcpSource).not.toContain("ProductSyncEngine");
+    expect(mcpSource).not.toContain("sync_all");
   });
 
   it("read_sync_product_status rejects unauthenticated requests before repository lookup", async () => {

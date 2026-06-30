@@ -193,7 +193,6 @@ type SyncProductReadinessReason =
   | "target-account-unavailable"
   | "api-capability-evidence-missing"
   | "rollback-strategy-missing"
-  | "idempotency-conflict"
   | "rate-limited"
   | "upstream-temporary-failure"
   | "reconnect-required"
@@ -578,19 +577,7 @@ function idempotencyCandidateFor(entry: ApprovalQueueEntry): string | undefined 
     entry.action.target.type === "listing"
       ? normalizeMlcItemId(entry.action.target.listingId)
       : undefined;
-  return targetId ? `sync-product:${entry.action.sellerId}:${targetId}` : undefined;
-}
-
-function detectIdempotencyConflict(input: {
-  existingActionId: string;
-  candidate?: string;
-  actionId: string;
-}): SyncProductReadinessReason | null {
-  return input.candidate &&
-    input.existingActionId.startsWith(input.candidate) &&
-    input.existingActionId !== input.actionId
-    ? "idempotency-conflict"
-    : null;
+  return targetId ? `sync-product:${targetId}:` : undefined;
 }
 
 function rollbackStrategyPresent(entry: ApprovalQueueEntry): boolean {
@@ -627,7 +614,6 @@ function buildReadinessResponse(input: {
     "proposal-not-sync-product",
     "preview-drift-detected",
     "seller-scope-mismatch",
-    "idempotency-conflict",
     "storage-unavailable",
   ]);
   const status: SyncProductReadinessStatus = reasons.some((reason) => hardBlockReasons.has(reason))
@@ -796,14 +782,6 @@ async function readSyncProductExecutionReadiness(input: {
   }
 
   const idempotencyCandidate = idempotencyCandidateFor(foundAction);
-  addReadinessReason(
-    reasons,
-    detectIdempotencyConflict({
-      existingActionId: actionId,
-      ...(idempotencyCandidate ? { candidate: idempotencyCandidate } : {}),
-      actionId,
-    }),
-  );
 
   const rollbackEvidence = await readRollbackStrategyEvidence({
     entry: foundAction,
@@ -846,7 +824,6 @@ const syncProductExecutionReadinessFoundation = {
   validateSellerAccountScope,
   validateTargetAvailability,
   idempotencyCandidateFor,
-  detectIdempotencyConflict,
   rollbackStrategyPresent,
   apiCapabilityEvidenceStatus,
   mapReadinessError,
