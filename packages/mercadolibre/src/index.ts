@@ -425,9 +425,9 @@ function normalizeListings(input: {
   };
 }
 
-function normalizeItem(payload: unknown): MlItem {
+export function assertCompleteMlcItem(payload: unknown): MlItem {
   const record = asRecord(payload);
-  const id = stringValue(record?.id);
+  const id = normalizeMlcItemId(stringValue(record?.id) ?? "");
   const title = stringValue(record?.title);
   const price = numberValue(record?.price);
   const available_quantity = numberValue(record?.available_quantity);
@@ -438,7 +438,7 @@ function normalizeItem(payload: unknown): MlItem {
   if (
     !record ||
     !id ||
-    !normalizeMlcItemId(id) ||
+    !id ||
     !title ||
     price === undefined ||
     available_quantity === undefined ||
@@ -799,7 +799,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
     getItem: async (sellerId, itemId) => {
       const safeItemId = assertMlcItemId(itemId);
       const payload = await input.request(sellerId, `/items/${safeItemId}`);
-      return normalizeItem(payload);
+      return assertCompleteMlcItem(payload);
     },
     getOrders: (sellerId) =>
       readMlcSnapshot({
@@ -1410,7 +1410,7 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
 
     getItem: async (sellerId, itemId) => {
       const payload = await apiRequestJson(sellerId, "GET", `/items/${itemId}`);
-      return (payload ?? {}) as MlItem;
+      return assertCompleteMlcItem(payload);
     },
 
     getOrders: async (sellerId) => {

@@ -220,7 +220,7 @@ The system MUST treat seller-impacting MercadoLibre capabilities discovered duri
 
 ### Requirement: Product Sync Proposals Remain Pending
 
-Product sync business operations MUST remain pending prepared actions unless a future approved slice adds explicit execution, approval, and audit behavior. This slice MAY persist prepared proposal state and non-sensitive preview evidence when durable approval storage is configured, and MAY calculate read-only preview evidence. It MUST NOT execute sync mutations, replay audits, persist credentials, or expand the approval/execution surface.
+Product sync business operations MUST remain pending prepared actions unless a future approved slice adds explicit execution, approval, and audit behavior. This slice MAY persist prepared proposal state and non-sensitive preview evidence when durable approval storage is configured, and MAY calculate read-only preview evidence only from source items that pass shared MercadoLibre completeness validation. Validation failure MUST degrade preview evidence without mutation. It MUST NOT execute sync mutations, replay audits, persist credentials, or expand the approval/execution surface.
 
 #### Scenario: Prepared sync proposal is returned
 
@@ -231,10 +231,17 @@ Product sync business operations MUST remain pending prepared actions unless a f
 
 #### Scenario: Read-only preview evidence is attached
 
-- GIVEN read-only item evidence and applicable strategies are available
+- GIVEN complete read-only item evidence and applicable strategies are available
 - WHEN a product sync proposal is prepared
 - THEN the proposal MAY include non-sensitive preview evidence for proposed field changes
 - AND it MUST still disclose that no mutation, approval execution, or audit replay occurred
+
+#### Scenario: Incomplete preview source evidence degrades safely
+
+- GIVEN source item evidence fails shared completeness validation
+- WHEN a product sync proposal is prepared
+- THEN the proposal MUST remain pending with preview-unavailable evidence
+- AND it MUST NOT mutate MercadoLibre state, replay audits, or expose raw validation details
 
 #### Scenario: Execution is attempted from a prepared proposal
 
