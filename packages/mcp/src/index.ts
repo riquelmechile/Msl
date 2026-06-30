@@ -11,7 +11,7 @@ import {
   type MlcReadTools,
   type PrepareWriteInput,
 } from "@msl/tools";
-import { ACTION_TARGET_FIELD_BY_TYPE, type ExactChange } from "@msl/domain";
+import { ACTION_TARGET_FIELD_BY_TYPE, type ApprovalRecord, type ExactChange } from "@msl/domain";
 import {
   assertCompleteMlcItem,
   assertPlasticovToMaustianDirection,
@@ -77,6 +77,7 @@ type SyncProductBlockedReason =
   | "invalid-risk"
   | "unsupported-sync-intent"
   | "unsupported-site"
+  | "reserved-action-id"
   | "prepare-write-unavailable"
   | "prepare-write-failed";
 
@@ -130,6 +131,11 @@ const mcpReadSyncProductStatusInputSchema = {
   msl_api_key: z.string().optional(),
 };
 
+const mcpApproveSyncProductProposalInputSchema = {
+  actionId: z.string(),
+  msl_api_key: z.string().optional(),
+};
+
 type SyncProductInput = {
   sourceSellerId?: unknown;
   targetSellerId?: unknown;
@@ -147,6 +153,11 @@ type SyncProductInput = {
 };
 
 type ReadSyncProductStatusInput = {
+  actionId?: unknown;
+  msl_api_key?: string;
+};
+
+type ApproveSyncProductProposalInput = {
   actionId?: unknown;
   msl_api_key?: string;
 };
@@ -179,6 +190,22 @@ type ReadSyncProductStatusAvailableResponse = {
 type ReadSyncProductStatusResponse =
   | ReadSyncProductStatusAvailableResponse
   | ReadSyncProductStatusUnavailableResponse;
+
+type ApproveSyncProductProposalUnavailableResponse = {
+  status: "unavailable";
+  reason: "not-found-or-unsupported";
+  noMutationExecuted: true;
+};
+
+type ApproveSyncProductProposalApprovedResponse = {
+  status: "approved";
+  actionId: "redacted";
+  noMutationExecuted: true;
+};
+
+type ApproveSyncProductProposalResponse =
+  | ApproveSyncProductProposalApprovedResponse
+  | ApproveSyncProductProposalUnavailableResponse;
 
 function trimmedString(value: unknown): string | undefined {
   return typeof value === "string" ? value.trim() : undefined;
@@ -350,12 +377,30 @@ function unavailableSyncProductStatus(): ReadSyncProductStatusUnavailableRespons
   };
 }
 
+function unavailableSyncProductApproval(): ApproveSyncProductProposalUnavailableResponse {
+  return {
+    status: "unavailable",
+    reason: "not-found-or-unsupported",
+    noMutationExecuted: true,
+  };
+}
+
 function hasExactChange(
   exactChange: ReadonlyArray<ExactChange>,
   field: string,
   to: ExactChange["to"],
 ): boolean {
   return exactChange.some((change) => change.field === field && change.to === to);
+}
+
+const SYNC_PRODUCT_ACTION_ID_PREFIX = "sync-product:";
+
+function isSyncProductActionId(actionId: string, listingId: string): boolean {
+  const suffix = actionId.slice(SYNC_PRODUCT_ACTION_ID_PREFIX.length + listingId.length + 1);
+  return (
+    actionId.startsWith(`${SYNC_PRODUCT_ACTION_ID_PREFIX}${listingId}:`) &&
+    parseStrictIsoTimestamp(suffix) !== null
+  );
 }
 
 function isSupportedSyncProductProposal(
@@ -368,6 +413,7 @@ function isSupportedSyncProductProposal(
   return (
     entry.action.kind === "listing-edit" &&
     entry.action.target.type === "listing" &&
+    isSyncProductActionId(entry.action.id, entry.action.target.listingId) &&
     entry.action.riskLevel === "high" &&
     hasExactChange(entry.action.exactChange, "syncIntent", "prepare-only product sync proposal") &&
     hasExactChange(entry.action.exactChange, "mutationExecuted", false)
@@ -427,6 +473,58 @@ function buildSyncProductStatusResponse(input: {
       ...approvalStorageMetadata(input.storage),
     },
   };
+}
+
+async function approveSyncProductProposal(input: {
+  request: ApproveSyncProductProposalInput;
+  prepareWrite: NonNullable<McpServerConfig["prepareWrite"]> | undefined;
+}): Promise<ApproveSyncProductProposalResponse> {
+  const actionId = trimmedString(input.request.actionId);
+  if (!actionId || !input.prepareWrite) {
+    return unavailableSyncProductApproval();
+  }
+
+  let entry: ApprovalQueueEntry | null;
+  try {
+    entry = await input.prepareWrite.repository.findAction(actionId);
+  } catch {
+    return unavailableSyncProductApproval();
+  }
+
+  const now = input.prepareWrite.clock.now();
+  if (
+    !isSupportedSyncProductProposal(entry) ||
+    entry.action.approvalStatus !== "pending" ||
+    entry.status !== "pending" ||
+    entry.action.expiresAt <= now
+  ) {
+    return unavailableSyncProductApproval();
+  }
+
+  const approvedEntry: ApprovalQueueEntry = {
+    ...entry,
+    status: "approved",
+    action: { ...entry.action, approvalStatus: "approved" },
+  };
+  const approval: ApprovalRecord = {
+    id: `approval:${actionId}:${now.toISOString()}`,
+    actionId,
+    sellerId: entry.action.sellerId,
+    approvedBy: "seller",
+    approvedAt: now,
+    exactChangeAccepted: entry.action.exactChange,
+    riskAccepted: entry.action.riskLevel,
+    executionStatus: "not-executed",
+  };
+
+  try {
+    await input.prepareWrite.repository.save(approvedEntry);
+    await input.prepareWrite.repository.saveApproval(approval);
+  } catch {
+    return unavailableSyncProductApproval();
+  }
+
+  return { status: "approved", actionId: "redacted", noMutationExecuted: true };
 }
 
 /**
@@ -688,6 +786,29 @@ export function createMcpServer(config: McpServerConfig = {}) {
     },
   );
 
+  // ── approve_sync_product_proposal ─────────────────────────────────
+  server.registerTool(
+    "approve_sync_product_proposal",
+    {
+      description:
+        "Records seller approval for one exact stored pending sync_product proposal without executing mutations.",
+      inputSchema: mcpApproveSyncProductProposalInputSchema,
+    },
+    async (request) => {
+      const approvalRequest = request as ApproveSyncProductProposalInput;
+      if (!validateApiKey(approvalRequest.msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      return jsonResult(
+        (await approveSyncProductProposal({
+          request: approvalRequest,
+          prepareWrite: config.prepareWrite,
+        })) satisfies ApproveSyncProductProposalResponse,
+      );
+    },
+  );
+
   // ── check_account ─────────────────────────────────────────────────
   server.registerTool(
     "check_account",
@@ -791,6 +912,13 @@ export function createMcpServer(config: McpServerConfig = {}) {
           return jsonResult(
             { error: "Invalid expiresAt — expected a valid ISO 8601 timestamp" },
             true,
+          );
+        }
+
+        if (id.startsWith(SYNC_PRODUCT_ACTION_ID_PREFIX)) {
+          return blockedResult(
+            "reserved-action-id",
+            "Prepared write action IDs with the sync_product namespace are reserved for the sync_product tool.",
           );
         }
 
