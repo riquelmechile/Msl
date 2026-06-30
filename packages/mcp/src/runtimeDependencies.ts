@@ -205,6 +205,10 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
       repository: prepareWrite.repository,
       clock: prepareWrite.clock,
     },
+    readinessEvidence: {
+      readRollbackStrategyPresent: () => false,
+      readApiCapabilityEvidence: () => "missing",
+    },
     approvalStorage: prepareWrite.approvalStorage,
     close: () => {
       if (closed) return;

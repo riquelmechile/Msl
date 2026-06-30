@@ -213,10 +213,10 @@ describe("MCP Server", () => {
     );
   });
 
-  it("registers exactly 8 tools", () => {
+  it("registers exactly 9 tools", () => {
     createMcpServer();
-    expect(mockMcpServer.registerTool).toHaveBeenCalledTimes(8);
-    expect(registeredTools.size).toBe(8);
+    expect(mockMcpServer.registerTool).toHaveBeenCalledTimes(9);
+    expect(registeredTools.size).toBe(9);
 
     // Verify tool names via the registerTool mock arguments.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -226,6 +226,7 @@ describe("MCP Server", () => {
     expect(toolNames).toContain("detect_probes");
     expect(toolNames).toContain("sync_product");
     expect(toolNames).toContain("read_sync_product_status");
+    expect(toolNames).toContain("read_sync_product_execution_readiness");
     expect(toolNames).toContain("approve_sync_product_proposal");
     expect(toolNames).toContain("check_account");
     expect(toolNames).toContain("list_strategies");
@@ -354,7 +355,7 @@ describe("MCP Server", () => {
       },
     });
 
-    expect(registeredTools.size).toBe(14);
+    expect(registeredTools.size).toBe(15);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
