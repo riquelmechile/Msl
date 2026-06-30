@@ -1326,7 +1326,7 @@ describe("MCP Server", () => {
     },
   );
 
-  it("approve_sync_product_proposal exposes no forbidden execution surfaces", async () => {
+  it("approve_sync_product_proposal exposes no forbidden execution surfaces", () => {
     const { prepareWrite } = makeApprovalDependencies();
     vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(makeSyncProductQueueEntry());
 
