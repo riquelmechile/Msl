@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { MlcApiClient, MlcReadSnapshot } from "@msl/mercadolibre";
 
 import {
+  approvePreparedAction,
   createMlcReadTools,
   createSqliteApprovalQueueRepository,
   PREPARED_WRITE_KINDS,
@@ -285,6 +286,7 @@ describe("SQLite approval queue repository", () => {
         approvedAt: new Date("2026-06-25T12:05:00.000Z"),
         exactChangeAccepted: entry.action.exactChange,
         riskAccepted: entry.action.riskLevel,
+        executionStatus: "not-executed" as const,
       };
       const audit = {
         id: "audit-1",
@@ -310,9 +312,30 @@ describe("SQLite approval queue repository", () => {
       expect(await reopened.listAudits(entry.action.id)).toEqual([audit]);
       reopened.close();
 
+      expect(readPersistedApprovalJson(dbPath)).toContain('"executionStatus":"not-executed"');
       const persistedJson = readPersistedJson(dbPath);
       expect(persistedJson).not.toMatch(/oauth|api[_-]?key|client[_-]?secret|credential|token/i);
     });
+  });
+
+  it("records approved prepared actions as not executed", async () => {
+    const repository = createSqliteApprovalQueueRepository();
+    const entry = approvalEntry();
+    const clock = { now: () => new Date("2026-06-25T12:05:00.000Z") };
+
+    await repository.save(entry);
+    const response = await approvePreparedAction({
+      repository,
+      clock,
+      idGenerator: { nextId: () => "approval-1" },
+      request: { actionId: entry.action.id, approvedBy: "seller" },
+    });
+
+    expect(response.data.executionStatus).toBe("not-executed");
+    await expect(repository.findApproval(entry.action.id)).resolves.toMatchObject({
+      executionStatus: "not-executed",
+    });
+    repository.close();
   });
 });
 
@@ -394,6 +417,18 @@ function readPersistedJson(dbPath: string): string {
     const approvalRows = db.prepare("SELECT approval_json FROM approval_records").all();
     const auditRows = db.prepare("SELECT audit_json FROM audit_records").all();
     return JSON.stringify([...entryRows, ...approvalRows, ...auditRows]);
+  } finally {
+    db.close();
+  }
+}
+
+function readPersistedApprovalJson(dbPath: string): string {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const row = db.prepare("SELECT approval_json FROM approval_records").get() as
+      | { approval_json: string }
+      | undefined;
+    return row?.approval_json ?? "";
   } finally {
     db.close();
   }
