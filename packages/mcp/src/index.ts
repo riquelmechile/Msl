@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   createMlcReadTools,
   createPreparedActionTool,
+  type ApprovalQueueEntry,
   PREPARED_WRITE_KINDS,
   type ApprovalQueueRepository,
   type Clock,
@@ -124,6 +125,11 @@ const mcpSyncProductInputSchema = {
   msl_api_key: z.string().optional(),
 };
 
+const mcpReadSyncProductStatusInputSchema = {
+  actionId: z.string(),
+  msl_api_key: z.string().optional(),
+};
+
 type SyncProductInput = {
   sourceSellerId?: unknown;
   targetSellerId?: unknown;
@@ -139,6 +145,40 @@ type SyncProductInput = {
   risk?: unknown;
   msl_api_key?: string;
 };
+
+type ReadSyncProductStatusInput = {
+  actionId?: unknown;
+  msl_api_key?: string;
+};
+
+type ReadSyncProductStatusUnavailableResponse = {
+  status: "unavailable";
+  reason: "not-found-or-unsupported";
+  noMutationExecuted: true;
+};
+
+type ReadSyncProductStatusAvailableResponse = {
+  status: "available";
+  actionId: "redacted";
+  effectiveStatus: "pending" | "approved" | "rejected" | "expired";
+  expiresAt: string;
+  risk: "high";
+  target: { type: "listing"; listingId: string };
+  rationale: string;
+  preview: { status: "available" | "unavailable"; summary: string };
+  metadata: {
+    requiresApproval: true;
+    noMutationExecuted: true;
+    auditReplay: "not-available";
+    approvalPersistence: "in-memory-only" | "sqlite" | "sqlite-unavailable";
+    persistentApprovalStorage: boolean;
+    approvalStorageDegraded?: true;
+  };
+};
+
+type ReadSyncProductStatusResponse =
+  | ReadSyncProductStatusAvailableResponse
+  | ReadSyncProductStatusUnavailableResponse;
 
 function trimmedString(value: unknown): string | undefined {
   return typeof value === "string" ? value.trim() : undefined;
@@ -300,6 +340,93 @@ function previewExactChanges(preview: SyncProductPreview): ExactChange[] {
       to: change.to,
     })),
   ];
+}
+
+function unavailableSyncProductStatus(): ReadSyncProductStatusUnavailableResponse {
+  return {
+    status: "unavailable",
+    reason: "not-found-or-unsupported",
+    noMutationExecuted: true,
+  };
+}
+
+function hasExactChange(
+  exactChange: ReadonlyArray<ExactChange>,
+  field: string,
+  to: ExactChange["to"],
+): boolean {
+  return exactChange.some((change) => change.field === field && change.to === to);
+}
+
+function isSupportedSyncProductProposal(
+  entry: ApprovalQueueEntry | null,
+): entry is ApprovalQueueEntry & {
+  action: ApprovalQueueEntry["action"] & { target: { type: "listing"; listingId: string } };
+} {
+  if (!entry) return false;
+
+  return (
+    entry.action.kind === "listing-edit" &&
+    entry.action.target.type === "listing" &&
+    entry.action.riskLevel === "high" &&
+    hasExactChange(entry.action.exactChange, "syncIntent", "prepare-only product sync proposal") &&
+    hasExactChange(entry.action.exactChange, "mutationExecuted", false)
+  );
+}
+
+function summarizeSyncProductPreview(exactChange: ReadonlyArray<ExactChange>): {
+  status: "available" | "unavailable";
+  summary: string;
+} {
+  const previewStatus = exactChange.find((change) => change.field === "preview.status")?.to;
+  if (previewStatus === "available") {
+    const changedFields = exactChange
+      .filter((change) => change.field.startsWith("preview.") && change.field !== "preview.status")
+      .map((change) => change.field.replace(/^preview\./, ""));
+
+    return {
+      status: "available",
+      summary:
+        changedFields.length > 0
+          ? `Preview available for ${changedFields.join(", ")}.`
+          : "Preview available.",
+    };
+  }
+
+  const reason = exactChange.find((change) => change.field === "preview.reason")?.to;
+  return {
+    status: "unavailable",
+    summary:
+      typeof reason === "string" ? `Preview unavailable: ${reason}.` : "Preview unavailable.",
+  };
+}
+
+function buildSyncProductStatusResponse(input: {
+  entry: ApprovalQueueEntry & {
+    action: ApprovalQueueEntry["action"] & { target: { type: "listing"; listingId: string } };
+  };
+  now: Date;
+  storage: McpServerConfig["approvalStorage"];
+}): ReadSyncProductStatusAvailableResponse {
+  const effectiveStatus =
+    input.entry.action.expiresAt <= input.now ? "expired" : input.entry.action.approvalStatus;
+
+  return {
+    status: "available",
+    actionId: "redacted",
+    effectiveStatus,
+    expiresAt: input.entry.action.expiresAt.toISOString(),
+    risk: "high",
+    target: input.entry.action.target,
+    rationale: input.entry.action.rationale,
+    preview: summarizeSyncProductPreview(input.entry.action.exactChange),
+    metadata: {
+      requiresApproval: true,
+      noMutationExecuted: true,
+      auditReplay: "not-available",
+      ...approvalStorageMetadata(input.storage),
+    },
+  };
 }
 
 /**
@@ -518,6 +645,46 @@ export function createMcpServer(config: McpServerConfig = {}) {
           preview,
         },
       });
+    },
+  );
+
+  // ── read_sync_product_status ──────────────────────────────────────
+  server.registerTool(
+    "read_sync_product_status",
+    {
+      description:
+        "Reads sanitized status for one stored sync_product proposal by exact action ID.",
+      inputSchema: mcpReadSyncProductStatusInputSchema,
+    },
+    async (request) => {
+      const statusRequest = request as ReadSyncProductStatusInput;
+      if (!validateApiKey(statusRequest.msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      const actionId = trimmedString(statusRequest.actionId);
+      if (!actionId || !config.prepareWrite) {
+        return jsonResult(unavailableSyncProductStatus() satisfies ReadSyncProductStatusResponse);
+      }
+
+      let entry: ApprovalQueueEntry | null;
+      try {
+        entry = await config.prepareWrite.repository.findAction(actionId);
+      } catch {
+        return jsonResult(unavailableSyncProductStatus() satisfies ReadSyncProductStatusResponse);
+      }
+
+      if (!isSupportedSyncProductProposal(entry)) {
+        return jsonResult(unavailableSyncProductStatus() satisfies ReadSyncProductStatusResponse);
+      }
+
+      return jsonResult(
+        buildSyncProductStatusResponse({
+          entry,
+          now: config.prepareWrite.clock.now(),
+          storage: config.approvalStorage,
+        }) satisfies ReadSyncProductStatusResponse,
+      );
     },
   );
 
