@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <code>836 tests</code> ·
+  <code>870+ tests</code> ·
   <code>TypeScript 5.8</code> ·
   <code>Node ≥22</code> ·
   <code>DeepSeek v4</code> ·
@@ -15,9 +15,7 @@
 
 ## What it does
 
-MSL is an AI agent that **manages your MercadoLibre Chile business through natural conversation in Spanish**. No commands, no menus, no dashboards. You talk to it like a business partner.
-
-It understands your intent, proposes concrete actions, simulates buyer/seller/competitor behavior, learns from every interaction via a neural graph memory (Cortex), and protects your business with invisible safety gates — every action requires your explicit "dale" before execution.
+MSL is a proactive AI agent that manages your MercadoLibre Chile business through natural conversation in Spanish. It reads real-time data from the MercadoLibre API (listings, fees, visits, orders, ads), persists historical business data in a neural graph memory (Cortex), runs background ingestion every 6 hours, detects anomalies and seasonal patterns, compares cross-account performance (Plasticov ↔ Maustian), uses DeepSeek to infer business insights, and proposes concrete profit-maximizing actions — all through natural conversation. Every action requires your explicit "dale" before execution.
 
 **Business context:** Plasticov and Maustian are separate MercadoLibre Chile seller accounts used as parallel commercial channels. Each account can carry independent prices, listing types, titles, and exposure strategies for the same or similar products. Fulfillment is product-level: some products use owned stock and others are supplier-sourced/arbitrage.
 
@@ -27,7 +25,7 @@ It understands your intent, proposes concrete actions, simulates buyer/seller/co
 git clone https://github.com/riquelmechile/Msl.git
 cd Msl
 npm install
-npm test          # 836 tests in 36 files
+npm test          # 870+ tests in 38 files
 npm run dev       # http://127.0.0.1:3000
 ```
 
@@ -76,7 +74,8 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                  | Secret values in Git, or mutation execution without approval gates.        |
 | MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                | Manual raw token setup or account role guessing.                           |
 | Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary. | Business hierarchy between accounts or general-purpose bidirectional sync. |
-| MCP tools          | MCP exposes a stubbed compatible surface for clients.                                                                                | Production business-operation execution through MCP.                       |
+| MCP tools          | MCP exposes 7 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices).          | Production business-operation execution through MCP.                       |
+| ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram. | Real-time MercadoLibre data without OAuth tokens for every role.                   |
 | CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                         | Secrets in CI; use GitHub Secrets/platform secrets.                        |
 
 ## Architecture
@@ -89,28 +88,43 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
                  └────────────────┬─────────────────────┘
                                   │
                                   ▼
- ┌────────────────────────────────────────────────────────────────┐
- │                      @msl/agent (DeepSeek)                      │
- │  ┌───────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
- │  │ Intent Engine  │  │ Guardrails   │  │  Actor Simulator     │ │
- │  │ (no commands)  │  │ (6 gates)    │  │  (comprador/vendor)  │ │
- │  └───────┬───────┘  └──────┬───────┘  └──────────┬───────────┘ │
- │          │                 │                      │             │
- │  ┌───────┴─────────────────┴──────────────────────┴───────────┐ │
- │  │              Cache Strategy (3-block prefix-anchored)       │ │
- │  │  A: System prompt (5K, eternal)  │ B: Aggregates (15K/24h) │ │
- │  │  C: Cortex context injection (per query, 0.3-2K)           │ │
- │  └─────────────────────────────────────────────────────────────┘ │
- └──────────┬───────────────┬───────────────┬───────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      @msl/agent (DeepSeek)                           │
+│  ┌───────────────┐  ┌──────────────┐  ┌───────────────────────────┐ │
+│  │ Intent Engine  │  │ Guardrails   │  │  Actor Simulator          │ │
+│  │ (no commands)  │  │ (6 gates)    │  │  (comprador/vendor)       │ │
+│  └───────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘ │
+│          │                 │                      │                  │
+│  ┌───────┴─────────────────┴──────────────────────┴────────────────┐ │
+│  │              6 ML Business Tools                                │ │
+│  │  calculate_listing_fees · read_my_listings · find_paused_listings│ │
+│  │  check_listing_visits · read_product_ads_insights · read_orders │ │
+│  └──────────────────────────┬─────────────────────────────────────┘ │
+│          ┌──────────────────┴──────────────────┐                     │
+│          │  Background Ingestion Worker (6h)   │  DeepSeek Inference │
+│          │  Multi-seller snapshots → Cortex    │  Daily insights     │
+│          └─────────────────────────────────────┘                     │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │              Cache Strategy (3-block prefix-anchored)           │ │
+│  │  A: System prompt (5K, eternal)  │ B: Aggregates (15K/24h)     │ │
+│  │  C: Cortex context injection (per query, 0.3-2K)               │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└──────────┬───────────────┬───────────────┬──────────────────────────┘
             │               │               │
             ▼               ▼               ▼
- ┌────────────────┐  ┌──────────────┐  ┌─────────────────────┐
- │  @msl/memory   │  │  @msl/tools  │  │  @msl/mercadolibre   │
- │  Cortex (SQLite)│  │  Approval Q  │  │  ML API (OAuth+HTTP) │
- │  · Hebbian      │  │  Audit trail │  │  · Product sync      │
- │  · CTE spread   │  │  Risk gates  │  │  · Orders/messages   │
- │  · Darwinian    │  │  Execute     │  │  · Reputation        │
- └────────┬───────┘  └──────┬───────┘  └──────────┬──────────┘
+┌────────────────┐  ┌──────────────┐  ┌───────────────────────────┐
+│  @msl/memory   │  │  @msl/tools  │  │  @msl/mercadolibre         │
+│  Cortex (SQLite)│  │  Approval Q  │  │  ML API (OAuth+HTTP)       │
+│  · Hebbian      │  │  Audit trail │  │  · Product sync            │
+│  · CTE spread   │  │  Risk gates  │  │  · Orders/messages         │
+│  · Darwinian    │  │  Execute     │  │  · Reputation              │
+│  · Business node│  │              │  │  · Listing prices (fees)   │
+│    protection   │  │              │  │  · Visits API              │
+│  · queryBy      │  │              │  │  · Status-filtered search  │
+│    Metadata     │  │              │  │                            │
+│  · Historical   │  │              │  │                            │
+│    snapshots    │  │              │  │                            │
+└────────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘
           │                 │                      │
           └─────────┬───────┴──────────────────────┘
                     │
@@ -124,13 +138,16 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
                    │
      ┌─────────────┼─────────────┐
      ▼             ▼             ▼
- ┌────────┐  ┌──────────┐  ┌──────────┐
- │@msl/bot│  │ @msl/mcp │  │@msl/     │
- │Telegram│  │ Stdio    │  │workers   │
- │stub    │  │ MCP srv  │  │Insights  │
- │        │  │6 tools   │  │Creative  │
- └────────┘  └──────────┘  │Sync jobs │
-                           └──────────┘
+┌────────────┐  ┌──────────┐  ┌──────────┐
+│  @msl/bot  │  │ @msl/mcp │  │@msl/     │
+│  Telegram  │  │ Stdio    │  │workers   │
+│  grammY    │  │ MCP srv  │  │Insights  │
+│  Proactive │  │7 tools   │  │Creative  │
+│  alerts    │  │          │  │Sync jobs │
+│  Multi-    │  │          │  │Ingestion │
+│  seller    │  │          │  │worker    │
+└────────────┘  └──────────┘  │(6h)      │
+                             └──────────┘
 ```
 
 ## Capabilities
@@ -149,6 +166,13 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 10  | **Autonomy Engine**    | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                      |
 | 11  | **Product Sync**       | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary   |
 | 12  | **Approval Queue**     | Every write action goes through prepare → approve → execute → audit                                             |
+| 13  | **ML Business Tools**  | 6 tools for real MercadoLibre data (listings, fees, visits, orders, ads, paused detection)                       |
+| 14  | **Background Ingestion** | 6h worker that snapshots ALL listings/visits/orders into Cortex, detects anomalies, cross-account comparison    |
+| 15  | **Seasonal Detection** | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts               |
+| 16  | **Cross-Account Intelligence** | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                    |
+| 17  | **Proactive Alerts**   | Push notifications for visit anomalies, paused listing reuse, seasonal preparation, cross-account gaps           |
+| 18  | **DeepSeek Inference** | Daily business intelligence: feeds Cortex data to DeepSeek for insight generation                               |
+| 19  | **Actionable Proposals** | prepare_action with 10 action kinds, data-driven proposals with estimated profit impact                       |
 
 ## Stack
 
@@ -158,9 +182,9 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | **LLM**      | DeepSeek v4 Flash/Pro                        | 1M context window, ~98% cache discount, OpenAI-compatible |
 | **Memory**   | SQLite (better-sqlite3) + recursive CTEs     | Zero external services, ~400 lines TS                     |
 | **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction          |
-| **Bot**      | Telegram (stub)                              | Natural language interface, no UI needed                  |
+| **Bot**      | Telegram (grammY, proactive messaging) | Natural language interface, no UI needed                  |
 | **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Stubbed project tool surface for compatible clients       |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 659 tests, guarded platform support                       |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 870+ tests, guarded platform support                        |
 | **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                              |
 
 ## Philosophy
@@ -170,6 +194,8 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 **2. Safety gates are invisible infrastructure, not the product.** The seller never thinks about guardrails, approval queues, or audit trails. They just say "dale" when they agree. Everything else happens automatically behind the scenes.
 
 **3. Organic growth: cell → tissue → organ → organism.** Start with ONE agent, ONE memory system, ONE LLM. No plugin architectures, no multi-backend complexity, no premature framework scaffolding. Each new capability (actors, probes, autonomy) grows from the previous stable core.
+
+**4. Profit maximization is the ONLY KPI.** Every tool, every insight, every proposal serves one goal: more net profit for the seller. The agent doesn't optimize for clicks, views, or sales volume — only for utilidad neta. Data infra exists to surface the highest-margin opportunities first.
 
 ## What the old El Sindicato projects taught us
 
@@ -183,7 +209,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 ## Verification
 
 ```bash
-npm test              # 659 Vitest tests in 33 files (unit + integration)
+npm test              # 870+ Vitest tests in 38 files (unit + integration)
 npm run test:e2e      # Playwright E2E (auto-skipped on unsupported platforms)
 npm run typecheck     # TypeScript strict mode — zero tolerance
 npm run lint          # ESLint with typed rules
