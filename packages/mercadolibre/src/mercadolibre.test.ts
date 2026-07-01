@@ -624,6 +624,163 @@ describe("direct MLC API client boundary", () => {
     );
   });
 
+  it("reads safe price intelligence endpoints without mutations", async () => {
+    const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        requests.push(request);
+        if (request.path.endsWith("/sale_price")) {
+          return Promise.resolve({
+            amount: 10990,
+            regular_amount: 12990,
+            currency_id: "CLP",
+            type: "standard",
+            metadata: {
+              promotion_id: "promo-1",
+              promotion_type: "deal",
+              raw_secret: "must-not-leak",
+            },
+          });
+        }
+        if (request.path.endsWith("/prices")) {
+          return Promise.resolve({
+            prices: [
+              {
+                id: "1",
+                type: "standard",
+                amount: 10990,
+                currency_id: "CLP",
+                conditions: {
+                  context_restrictions: ["channel_marketplace"],
+                  eligible: true,
+                  raw_secret: "must-not-leak",
+                },
+              },
+            ],
+          });
+        }
+        if (request.path.endsWith("/price_to_win")) {
+          return Promise.resolve({
+            current_price: 10990,
+            price_to_win: 9990,
+            status: "competing",
+            visit_share: "medium",
+            catalog_product_id: "MLC123",
+            winner: { item_id: "MLC999", price: 9900, raw_secret: "must-not-leak" },
+            boosts: [{ id: "boost-1", type: "fulfillment", raw_secret: "must-not-leak" }],
+          });
+        }
+        return Promise.resolve({
+          item_id: "MLC1001",
+          status: "ACTIVE",
+          item_rule: {
+            rule_id: "rule-1",
+            min_price: 9000,
+            max_price: 13000,
+          },
+        });
+      },
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(
+      client.getItemSalePrice!("seller-1", "MLC1001", {
+        context: "channel_marketplace,buyer_loyalty_3",
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        itemId: "MLC1001",
+        amount: 10990,
+        currencyId: "CLP",
+        metadata: { promotionId: "promo-1", promotionType: "deal" },
+      },
+    });
+    await expect(client.getItemPrices!("seller-1", "MLC1001")).resolves.toMatchObject({
+      data: {
+        itemId: "MLC1001",
+        prices: [
+          {
+            type: "standard",
+            amount: 10990,
+            conditions: { contextRestrictions: ["channel_marketplace"], eligible: true },
+          },
+        ],
+      },
+    });
+    await expect(client.getItemPriceToWin!("seller-1", "MLC1001")).resolves.toMatchObject({
+      data: {
+        itemId: "MLC1001",
+        status: "competing",
+        priceToWin: 9990,
+        winner: { itemId: "MLC999", price: 9900 },
+        boosts: [{ id: "boost-1", type: "fulfillment" }],
+      },
+    });
+    const automation = await client.getPricingAutomation!("seller-1", "MLC1001");
+    expect(automation).toMatchObject({
+      data: { itemId: "MLC1001", active: true, ruleId: "rule-1" },
+    });
+    expect(automation).not.toHaveProperty("data.raw");
+
+    expect(requests.map(({ method, path, query }) => ({ method, path, query }))).toEqual([
+      {
+        method: "GET",
+        path: "/items/MLC1001/sale_price",
+        query: { context: "channel_marketplace,buyer_loyalty_3" },
+      },
+      { method: "GET", path: "/items/MLC1001/prices", query: undefined },
+      { method: "GET", path: "/items/MLC1001/price_to_win", query: { version: "v2" } },
+      { method: "GET", path: "/pricing-automation/items/MLC1001/automation", query: undefined },
+    ]);
+  });
+
+  it("lists automated price items with capped pagination", async () => {
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      paging: { total: 1, offset: 0, limit: 100 },
+      items: ["MLC1001"],
+    });
+    const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });
+
+    await expect(
+      client.getPricingAutomationItems!("seller-1", { offset: -5, limit: 500 }),
+    ).resolves.toMatchObject({
+      data: {
+        paging: { total: 1, offset: 0, limit: 100 },
+        items: [{ itemId: "MLC1001" }],
+      },
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/pricing-automation/users/seller-1/items",
+        query: { offset: "0", limit: "100" },
+      }),
+    );
+  });
+
+  it("sanitizes non-finite automated price item pagination", async () => {
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      paging: { total: 0, offset: 0, limit: 100 },
+      results: [],
+    });
+    const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });
+
+    await expect(
+      client.getPricingAutomationItems!("seller-1", { offset: Number.NaN, limit: Infinity }),
+    ).resolves.toMatchObject({
+      data: { paging: { total: 0, offset: 0, limit: 100 }, items: [] },
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/pricing-automation/users/seller-1/items",
+        query: { offset: "0", limit: "50" },
+      }),
+    );
+  });
+
   it("requires MLA billable weight when logistics-aware listing price params are present", async () => {
     const request = vi.fn().mockResolvedValue([]);
     const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });

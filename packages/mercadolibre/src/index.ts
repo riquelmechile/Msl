@@ -280,6 +280,83 @@ export type MlcListingPriceSummary = {
   saleFeeDetails: MlcSaleFeeDetails;
 };
 
+export type MlcItemSalePriceSummary = {
+  itemId: string;
+  amount?: number;
+  currencyId?: string;
+  regularAmount?: number;
+  type?: string;
+  metadata?: {
+    campaignId?: string;
+    promotionId?: string;
+    promotionType?: string;
+  };
+};
+
+export type MlcItemPriceConditionsSummary = {
+  contextRestrictions?: ReadonlyArray<string>;
+  startTime?: string;
+  endTime?: string;
+  eligible?: boolean;
+};
+
+export type MlcItemPricesSummary = {
+  itemId: string;
+  prices: ReadonlyArray<{
+    id?: string;
+    type?: string;
+    amount?: number;
+    regularAmount?: number;
+    currencyId?: string;
+    conditions?: MlcItemPriceConditionsSummary;
+  }>;
+};
+
+export type MlcPriceToWinWinnerSummary = {
+  itemId?: string;
+  price?: number;
+  currencyId?: string;
+};
+
+export type MlcPriceToWinBoostSummary = {
+  id?: string;
+  type?: string;
+  status?: string;
+  value?: number;
+};
+
+export type MlcPriceToWinSummary = {
+  itemId: string;
+  currentPrice?: number;
+  priceToWin?: number;
+  status?: "winning" | "competing" | "sharing_first_place" | "listed" | string;
+  reason?: string;
+  visitShare?: string;
+  catalogProductId?: string;
+  winner?: MlcPriceToWinWinnerSummary;
+  boosts: ReadonlyArray<MlcPriceToWinBoostSummary>;
+};
+
+export type MlcPricingAutomationSummary = {
+  itemId: string;
+  active: boolean;
+  status?: string;
+  ruleId?: string;
+  minPrice?: number;
+  maxPrice?: number;
+};
+
+export type MlcAutomatedPriceItemsSummary = {
+  paging: { total?: number; offset: number; limit: number };
+  items: ReadonlyArray<{
+    itemId: string;
+    status?: string;
+    ruleId?: string;
+    minPrice?: number;
+    maxPrice?: number;
+  }>;
+};
+
 export type MlcListingsSnapshot = MlcReadSnapshot<MlcListingSummary>;
 export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary>;
 export type MlcMessagesSnapshot = MlcReadSnapshot<MlcMessageSummary>;
@@ -290,6 +367,14 @@ export type MlcProductAdsInsightsSnapshot = MlcReadSnapshot<MlcProductAdsInsight
 export type MlcListingPricesSnapshot = MlcReadSnapshot<MlcListingPriceSummary>;
 export type MlcVisitsSnapshot = MlcReadSnapshot<MlcVisitsSummary>;
 export type MlcVisitsTimeWindowSnapshot = MlcReadSnapshot<MlcVisitsTimeWindowSummary>;
+export type MlcItemSalePriceSnapshot = MlcReadSnapshot<MlcItemSalePriceSummary>;
+export type MlcItemPricesSnapshot = MlcReadSnapshot<MlcItemPricesSummary>;
+export type MlcPriceToWinSnapshot = MlcReadSnapshot<MlcPriceToWinSummary>;
+export type MlcPricingAutomationSnapshot = MlcReadSnapshot<MlcPricingAutomationSummary>;
+export type MlcAutomatedPriceItemsSnapshot = Omit<
+  MlcReadSnapshot<MlcAutomatedPriceItemsSummary>,
+  "data"
+> & { data: MlcAutomatedPriceItemsSummary };
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -380,6 +465,18 @@ export type MlcApiClient = {
     sellerId: string,
     input: MlcListingPricesInput,
   ): Promise<MlcListingPricesSnapshot>;
+  getItemSalePrice?(
+    sellerId: string,
+    itemId: string,
+    options?: { context?: string },
+  ): Promise<MlcItemSalePriceSnapshot>;
+  getItemPrices?(sellerId: string, itemId: string): Promise<MlcItemPricesSnapshot>;
+  getItemPriceToWin?(sellerId: string, itemId: string): Promise<MlcPriceToWinSnapshot>;
+  getPricingAutomation?(sellerId: string, itemId: string): Promise<MlcPricingAutomationSnapshot>;
+  getPricingAutomationItems?(
+    sellerId: string,
+    options?: { offset?: number; limit?: number },
+  ): Promise<MlcAutomatedPriceItemsSnapshot>;
   getItemVisits?(sellerId: string, itemId: string): Promise<MlcVisitsSnapshot>;
   getItemVisitsTimeWindow?(
     sellerId: string,
@@ -1460,6 +1557,236 @@ function normalizeListingPrices(input: {
   };
 }
 
+function normalizeItemSalePrice(input: {
+  sellerId: string;
+  itemId: string;
+  payload: unknown;
+  now: Date;
+}): MlcItemSalePriceSnapshot {
+  const record = asRecord(input.payload);
+  const metadataRecord = asRecord(record?.metadata);
+  const metadata: MlcItemSalePriceSummary["metadata"] = {};
+  pushOptional(metadata, "campaignId", stringValue(metadataRecord?.campaign_id));
+  pushOptional(metadata, "promotionId", stringValue(metadataRecord?.promotion_id));
+  pushOptional(metadata, "promotionType", stringValue(metadataRecord?.promotion_type));
+  const data: MlcItemSalePriceSummary = { itemId: input.itemId };
+  pushOptional(data, "amount", numberValue(record?.amount));
+  pushOptional(data, "currencyId", stringValue(record?.currency_id));
+  pushOptional(data, "regularAmount", numberValue(record?.regular_amount));
+  pushOptional(data, "type", stringValue(record?.type));
+  if (Object.keys(metadata).length > 0) data.metadata = metadata;
+  const completeness = record !== undefined && data.amount !== undefined ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, data.amount !== undefined ? 1 : 0),
+  };
+}
+
+function normalizeItemPrices(input: {
+  sellerId: string;
+  itemId: string;
+  payload: unknown;
+  now: Date;
+}): MlcItemPricesSnapshot {
+  const root = asRecord(input.payload);
+  const prices = asArray(root?.prices ?? root?.results ?? input.payload).flatMap((raw) => {
+    const record = asRecord(raw);
+    if (record === undefined) return [];
+    const price: MlcItemPricesSummary["prices"][number] = {};
+    pushOptional(price, "id", stringValue(record.id));
+    pushOptional(price, "type", stringValue(record.type));
+    pushOptional(price, "amount", numberValue(record.amount));
+    pushOptional(price, "regularAmount", numberValue(record.regular_amount));
+    pushOptional(price, "currencyId", stringValue(record.currency_id));
+    const conditionRecord = asRecord(record.conditions);
+    const conditions: MlcItemPriceConditionsSummary = {};
+    const contextRestrictions = asArray(conditionRecord?.context_restrictions).flatMap((entry) => {
+      const value = stringValue(entry);
+      return value === undefined ? [] : [value];
+    });
+    if (contextRestrictions.length > 0) conditions.contextRestrictions = contextRestrictions;
+    pushOptional(conditions, "startTime", stringValue(conditionRecord?.start_time));
+    pushOptional(conditions, "endTime", stringValue(conditionRecord?.end_time));
+    pushOptional(conditions, "eligible", booleanValue(conditionRecord?.eligible));
+    if (Object.keys(conditions).length > 0) price.conditions = conditions;
+    return [price];
+  });
+  const completeness = root !== undefined && prices.length > 0 ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: { itemId: input.itemId, prices },
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, prices.length),
+  };
+}
+
+function normalizePriceToWin(input: {
+  sellerId: string;
+  itemId: string;
+  payload: unknown;
+  now: Date;
+}): MlcPriceToWinSnapshot {
+  const record = asRecord(input.payload);
+  const boosts = asArray(record?.boosts).flatMap((boost) => {
+    const boostRecord = asRecord(boost);
+    if (boostRecord === undefined) return [];
+    const summary: MlcPriceToWinBoostSummary = {};
+    pushOptional(summary, "id", stringValue(boostRecord.id));
+    pushOptional(summary, "type", stringValue(boostRecord.type));
+    pushOptional(summary, "status", stringValue(boostRecord.status));
+    pushOptional(summary, "value", numberValue(boostRecord.value));
+    return Object.keys(summary).length > 0 ? [summary] : [];
+  });
+  const data: MlcPriceToWinSummary = { itemId: input.itemId, boosts };
+  pushOptional(data, "currentPrice", numberValue(record?.current_price));
+  pushOptional(data, "priceToWin", numberValue(record?.price_to_win));
+  pushOptional(data, "status", stringValue(record?.status));
+  pushOptional(data, "reason", stringValue(record?.reason));
+  pushOptional(data, "visitShare", stringValue(record?.visit_share));
+  pushOptional(data, "catalogProductId", stringValue(record?.catalog_product_id));
+  const winnerRecord = asRecord(record?.winner);
+  const winner: MlcPriceToWinWinnerSummary = {};
+  pushOptional(winner, "itemId", stringValue(winnerRecord?.item_id));
+  pushOptional(winner, "price", numberValue(winnerRecord?.price));
+  pushOptional(winner, "currencyId", stringValue(winnerRecord?.currency_id));
+  if (Object.keys(winner).length > 0) data.winner = winner;
+  const completeness = record !== undefined && data.status !== undefined ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, data.status !== undefined ? 1 : 0),
+  };
+}
+
+function normalizePricingAutomation(input: {
+  sellerId: string;
+  itemId: string;
+  payload: unknown;
+  now: Date;
+}): MlcPricingAutomationSnapshot {
+  const record = asRecord(input.payload);
+  const itemRule = asRecord(record?.item_rule) ?? asRecord(record?.itemRule);
+  const status = stringValue(record?.status);
+  const active = booleanValue(record?.active) ?? status?.toLowerCase() === "active";
+  const data: MlcPricingAutomationSummary = { itemId: input.itemId, active };
+  pushOptional(data, "status", status);
+  pushOptional(
+    data,
+    "ruleId",
+    stringValue(itemRule?.rule_id) ??
+      stringValue(itemRule?.ruleId) ??
+      stringValue(record?.rule_id) ??
+      stringValue(record?.ruleId),
+  );
+  pushOptional(
+    data,
+    "minPrice",
+    numberValue(itemRule?.min_price) ??
+      numberValue(itemRule?.minPrice) ??
+      numberValue(record?.min_price) ??
+      numberValue(record?.minPrice),
+  );
+  pushOptional(
+    data,
+    "maxPrice",
+    numberValue(itemRule?.max_price) ??
+      numberValue(itemRule?.maxPrice) ??
+      numberValue(record?.max_price) ??
+      numberValue(record?.maxPrice),
+  );
+  const completeness = record !== undefined ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, record !== undefined ? 1 : 0),
+  };
+}
+
+function normalizeAutomatedPriceItems(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+  options: { offset: number; limit: number };
+}): MlcAutomatedPriceItemsSnapshot {
+  const root = asRecord(input.payload);
+  const pagingRecord = asRecord(root?.paging) ?? root;
+  const items = asArray(root?.results ?? root?.items).flatMap((raw) => {
+    const stringItemId = stringValue(raw);
+    if (stringItemId !== undefined) return [{ itemId: stringItemId }];
+
+    const record = asRecord(raw);
+    const itemId =
+      stringValue(record?.item_id) ?? stringValue(record?.itemId) ?? stringValue(record?.id);
+    if (record === undefined || itemId === undefined) return [];
+    const summary: MlcAutomatedPriceItemsSummary["items"][number] = { itemId };
+    pushOptional(summary, "status", stringValue(record.status));
+    pushOptional(summary, "ruleId", stringValue(record.rule_id) ?? stringValue(record.ruleId));
+    pushOptional(
+      summary,
+      "minPrice",
+      numberValue(record.min_price) ?? numberValue(record.minPrice),
+    );
+    pushOptional(
+      summary,
+      "maxPrice",
+      numberValue(record.max_price) ?? numberValue(record.maxPrice),
+    );
+    return [summary];
+  });
+  const paging: MlcAutomatedPriceItemsSummary["paging"] = {
+    offset: numberValue(pagingRecord?.offset) ?? input.options.offset,
+    limit: numberValue(pagingRecord?.limit) ?? input.options.limit,
+  };
+  pushOptional(paging, "total", numberValue(pagingRecord?.total));
+  const completeness =
+    root !== undefined && Array.isArray(root.results ?? root.items) ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: { paging, items },
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, items.length),
+  };
+}
+
+export const PRICING_AUTOMATION_ITEMS_DEFAULT_LIMIT = 50;
+export const PRICING_AUTOMATION_ITEMS_MAX_LIMIT = 100;
+
+function normalizePaginationNumber(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max?: number,
+): number {
+  const candidate =
+    typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : fallback;
+  const bounded = Math.max(min, candidate);
+  return max === undefined ? bounded : Math.min(max, bounded);
+}
+
 const MLC_READ_ENDPOINTS = {
   listings: {
     path: (sellerId: string) => `/users/${sellerId}/items/search`,
@@ -1584,6 +1911,63 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         listingPricesQuery(listingPricesInput),
       );
       return normalizeListingPrices({ sellerId, payload, now: input.now() });
+    },
+    getItemSalePrice: async (sellerId, itemId, options) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const query: Record<string, string> = {};
+      pushOptional(query, "context", options?.context);
+      const payload = await input.request(
+        sellerId,
+        `/items/${safeItemId}/sale_price`,
+        Object.keys(query).length > 0 ? query : undefined,
+      );
+      return normalizeItemSalePrice({ sellerId, itemId: safeItemId, payload, now: input.now() });
+    },
+    getItemPrices: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(sellerId, `/items/${safeItemId}/prices`);
+      return normalizeItemPrices({ sellerId, itemId: safeItemId, payload, now: input.now() });
+    },
+    getItemPriceToWin: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(sellerId, `/items/${safeItemId}/price_to_win`, {
+        version: "v2",
+      });
+      return normalizePriceToWin({ sellerId, itemId: safeItemId, payload, now: input.now() });
+    },
+    getPricingAutomation: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(
+        sellerId,
+        `/pricing-automation/items/${safeItemId}/automation`,
+      );
+      return normalizePricingAutomation({
+        sellerId,
+        itemId: safeItemId,
+        payload,
+        now: input.now(),
+      });
+    },
+    getPricingAutomationItems: async (sellerId, options = {}) => {
+      const normalized = {
+        offset: normalizePaginationNumber(options.offset, 0, 0),
+        limit: normalizePaginationNumber(
+          options.limit,
+          PRICING_AUTOMATION_ITEMS_DEFAULT_LIMIT,
+          1,
+          PRICING_AUTOMATION_ITEMS_MAX_LIMIT,
+        ),
+      };
+      const payload = await input.request(sellerId, `/pricing-automation/users/${sellerId}/items`, {
+        offset: String(normalized.offset),
+        limit: String(normalized.limit),
+      });
+      return normalizeAutomatedPriceItems({
+        sellerId,
+        payload,
+        now: input.now(),
+        options: normalized,
+      });
     },
     getItemVisits: async (sellerId, itemId) => {
       const safeItemId = assertMlcItemId(itemId);
