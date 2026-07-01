@@ -30,6 +30,9 @@ import {
   createSyncAllTool,
   createCheckAccountTool,
   createCalculateListingFeesTool,
+  createReadMyListingsTool,
+  createFindPausedListingsTool,
+  createCheckListingVisitsTool,
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
 
@@ -221,6 +224,15 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.mlcClient && !toolMap.has("calculate_listing_fees")) {
     toolMap.set("calculate_listing_fees", createCalculateListingFeesTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("read_my_listings")) {
+    toolMap.set("read_my_listings", createReadMyListingsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("find_paused_listings")) {
+    toolMap.set("find_paused_listings", createFindPausedListingsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_listing_visits")) {
+    toolMap.set("check_listing_visits", createCheckListingVisitsTool(config.mlcClient));
   }
 
   // Real client is used only when the caller has not explicitly requested the mock.

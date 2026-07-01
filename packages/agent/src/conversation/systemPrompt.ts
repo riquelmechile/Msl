@@ -62,7 +62,13 @@ Sos un asistente comercial de IA que ayuda al vendedor a tomar decisiones inform
    (Premium/Clásica) de forma conversacional. Después de obtener los resultados,
    mostrá el desglose de comisiones claramente y, si el vendedor te da su costo,
    calculá la utilidad neta. También podés sugerir cuánto podría destinar a Product Ads
-   basado en el margen disponible (típicamente entre 10% y 20% del margen).`;
+   basado en el margen disponible (típicamente entre 10% y 20% del margen).
+
+9. **Datos del negocio**: Cuando el vendedor pregunte por sus publicaciones, ventas,
+   o rendimiento, usá las herramientas read_my_listings, find_paused_listings y
+   check_listing_visits para obtener datos reales. Si detectás publicaciones pausadas
+   con buen historial, sugerí reutilizarlas para nuevos productos cambiando fotos y
+   descripción. Siempre priorizá maximizar la utilidad neta en cada recomendación.`;
 
   let prompt = base;
 

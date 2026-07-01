@@ -78,6 +78,31 @@ export type MlcReputationSummary = {
   metricPeriodDays?: 60 | 365;
 };
 
+export type MlcVisitsDetail = {
+  company: string;
+  quantity: number;
+};
+
+export type MlcVisitsSummary = {
+  itemId: string;
+  totalVisits: number;
+  visitsDetail?: MlcVisitsDetail[];
+};
+
+export type MlcVisitsTimeWindowSummary = {
+  itemId: string;
+  dateFrom: string;
+  dateTo: string;
+  totalVisits: number;
+  last: number;
+  unit: string;
+  results: Array<{
+    date: string;
+    total: number;
+    visitsDetail: MlcVisitsDetail[];
+  }>;
+};
+
 const MLC_REPUTATION_RULES = {
   establishedSellerCompletedTransactions: 40,
   establishedSellerMetricPeriodDays: 60,
@@ -175,6 +200,8 @@ export type MlcCategoryAttributesSnapshot = MlcReadSnapshot<MlcCategoryAttribute
 export type MlcCategoryTechnicalSpecsSnapshot = MlcReadSnapshot<MlcCategoryTechnicalSpecSummary>;
 export type MlcProductAdsInsightsSnapshot = MlcReadSnapshot<MlcProductAdsInsights>;
 export type MlcListingPricesSnapshot = MlcReadSnapshot<MlcListingPriceSummary>;
+export type MlcVisitsSnapshot = MlcReadSnapshot<MlcVisitsSummary>;
+export type MlcVisitsTimeWindowSnapshot = MlcReadSnapshot<MlcVisitsTimeWindowSummary>;
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -241,7 +268,10 @@ export type MlcCategoryIdentifierFailure = {
 };
 
 export type MlcApiClient = {
-  getListings(sellerId: string): Promise<MlcListingsSnapshot>;
+  getListings(
+    sellerId: string,
+    options?: { status?: "active" | "paused" | "closed"; listingTypeId?: string },
+  ): Promise<MlcListingsSnapshot>;
   getItem(sellerId: string, itemId: string): Promise<MlItem>;
   getOrders(sellerId: string): Promise<MlcOrdersSnapshot>;
   getMessages(sellerId: string): Promise<MlcMessagesSnapshot>;
@@ -262,6 +292,12 @@ export type MlcApiClient = {
     sellerId: string,
     input: MlcListingPricesInput,
   ): Promise<MlcListingPricesSnapshot>;
+  getItemVisits?(sellerId: string, itemId: string): Promise<MlcVisitsSnapshot>;
+  getItemVisitsTimeWindow?(
+    sellerId: string,
+    itemId: string,
+    options: { last: number; unit: "day"; ending?: string },
+  ): Promise<MlcVisitsTimeWindowSnapshot>;
 };
 
 export type MlcProductAdsInsightsOptions = {
@@ -550,6 +586,7 @@ function normalizeListings(input: {
   sellerId: string;
   payload: unknown;
   now: Date;
+  filters?: { status?: "active" | "paused" | "closed"; listingTypeId?: string };
 }): MlcListingsSnapshot {
   const root = asRecord(input.payload);
   const results = asArray(root?.results ?? root?.items);
@@ -593,6 +630,113 @@ function normalizeListings(input: {
     completeness,
     freshness: createFreshness("listing", input.now),
     confidence: snapshotConfidence(completeness, data.length),
+  };
+}
+
+function normalizeItemVisits(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcVisitsSnapshot {
+  const record = asRecord(input.payload);
+  let complete = record !== undefined;
+  const data: MlcVisitsSummary[] = [];
+
+  if (record) {
+    for (const [itemId, rawValue] of Object.entries(record)) {
+      const totalVisits = numberValue(rawValue) ?? 0;
+      if (totalVisits === 0 && rawValue !== 0 && rawValue !== "0") {
+        complete = false;
+      }
+
+      const summary: MlcVisitsSummary = { itemId, totalVisits };
+      data.push(summary);
+    }
+  }
+
+  const completeness = complete && data.length > 0 ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, data.length),
+  };
+}
+
+function normalizeItemVisitsTimeWindow(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+  options: { last: number; unit: "day"; ending?: string };
+}): MlcVisitsTimeWindowSnapshot {
+  const record = asRecord(input.payload);
+  const itemId = stringValue(record?.item_id) ?? "";
+  const results = asArray(record?.results);
+  const { last, unit, ending } = input.options;
+
+  let complete = record !== undefined && itemId.length > 0;
+
+  const parsedResults = results.flatMap(
+    (
+      result,
+    ): Array<{
+      date: string;
+      total: number;
+      visitsDetail: MlcVisitsDetail[];
+    }> => {
+      const row = asRecord(result);
+      const date = stringValue(row?.date);
+      const total = numberValue(row?.total);
+      if (row === undefined || date === undefined || total === undefined) {
+        complete = false;
+        return [];
+      }
+
+      const detail = asArray(row?.visits_detail ?? row?.visitsDetail ?? row?.visits);
+      const visitsDetail: MlcVisitsDetail[] = detail.flatMap((d) => {
+        const dr = asRecord(d);
+        const company = stringValue(dr?.company) ?? stringValue(dr?.name) ?? "";
+        const quantity = numberValue(dr?.quantity) ?? numberValue(dr?.count) ?? 0;
+        return company ? [{ company, quantity }] : [];
+      });
+
+      return [{ date, total, visitsDetail }];
+    },
+  );
+
+  const totalVisits = parsedResults.reduce((sum, r) => sum + r.total, 0);
+  const dates = parsedResults.map((r) => r.date).sort();
+  const dateFrom = dates[0] ?? "";
+  const dateTo = dates[dates.length - 1] ?? "";
+
+  const data: MlcVisitsTimeWindowSummary = {
+    itemId,
+    dateFrom,
+    dateTo,
+    totalVisits,
+    last,
+    unit,
+    results: parsedResults,
+  };
+
+  if (ending !== undefined) {
+    (data as Record<string, unknown>).ending = ending;
+  }
+
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, parsedResults.length),
   };
 }
 
@@ -1075,13 +1219,22 @@ async function readMlcSnapshot<TSnapshot>(input: {
 
 function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): MlcApiClient {
   return {
-    getListings: (sellerId) =>
-      readMlcSnapshot({
+    getListings: async (sellerId, options) => {
+      const query: Record<string, string> = { site: "MLC" };
+      if (options?.status) query.status = options.status;
+      if (options?.listingTypeId) query.listing_type_id = options.listingTypeId;
+      const payload = await input.request(sellerId, `/users/${sellerId}/items/search`, query);
+      const filters: { status?: "active" | "paused" | "closed"; listingTypeId?: string } = {};
+      pushOptional(filters, "status", options?.status);
+      pushOptional(filters, "listingTypeId", options?.listingTypeId);
+      const hasFilters = filters.status !== undefined || filters.listingTypeId !== undefined;
+      return normalizeListings({
         sellerId,
-        endpoint: MLC_READ_ENDPOINTS.listings,
-        request: input.request,
+        payload,
         now: input.now(),
-      }),
+        ...(hasFilters ? { filters } : {}),
+      });
+    },
     getItem: async (sellerId, itemId) => {
       const safeItemId = assertMlcItemId(itemId);
       const payload = await input.request(sellerId, `/items/${safeItemId}`);
@@ -1150,6 +1303,32 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         listingPricesQuery(listingPricesInput),
       );
       return normalizeListingPrices({ sellerId, payload, now: input.now() });
+    },
+    getItemVisits: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(sellerId, "/visits/items", { ids: safeItemId });
+      return normalizeItemVisits({ sellerId, payload, now: input.now() });
+    },
+    getItemVisitsTimeWindow: async (sellerId, itemId, options) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const query: Record<string, string> = {
+        last: String(options.last),
+        unit: options.unit,
+      };
+      if (options.ending) {
+        query.ending = options.ending;
+      }
+      const payload = await input.request(
+        sellerId,
+        `/items/${safeItemId}/visits/time_window`,
+        query,
+      );
+      return normalizeItemVisitsTimeWindow({
+        sellerId,
+        payload,
+        now: input.now(),
+        options,
+      });
     },
   };
 }

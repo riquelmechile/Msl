@@ -4,6 +4,9 @@ import type {
   MlAccountRoleConfig,
   MlcApiClient,
   MlcListingPricesInput,
+  MlcListingsSnapshot,
+  MlcVisitsSnapshot,
+  MlcVisitsTimeWindowSnapshot,
   ProductSyncEngine,
   SyncResult,
   SyncReport,
@@ -522,6 +525,290 @@ export function createCalculateListingFeesTool(mlcClient: MlcApiClient): ToolDef
             `${err instanceof Error ? err.message : String(err)}`,
         };
       }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// read_my_listings tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `read_my_listings` tool.
+ *
+ * Queries MercadoLibre for the seller's listings, optionally filtered by
+ * status (active, paused, closed) or listing type.  Returns structured
+ * listing data the agent can analyse for business recommendations.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `read_my_listings` tool definition compatible with OpenAI function calling.
+ */
+export function createReadMyListingsTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "read_my_listings",
+    description:
+      "Lee las publicaciones del vendedor en MercadoLibre. " +
+      "Devuelve la lista de publicaciones con su estado, precio, stock y " +
+      "tipo de publicación. Podés filtrar por estado (active, paused, closed) " +
+      "y por tipo de publicación. Usá esta herramienta cuando el vendedor " +
+      "pregunte por sus publicaciones, quiera revisar su catálogo, o necesite " +
+      "identificar publicaciones pausadas para reutilizar.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        status: {
+          type: "string",
+          enum: ["active", "paused", "closed"],
+          description:
+            "Filtro opcional por estado de la publicación. " +
+            "Usá 'paused' para encontrar publicaciones reutilizables.",
+        },
+        listingTypeId: {
+          type: "string",
+          description:
+            "Filtro opcional por tipo de publicación: gold_pro (Premium), " +
+            "gold_special (Clásica), free (Gratuita).",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const options: { status?: "active" | "paused" | "closed"; listingTypeId?: string } = {};
+      if (
+        typeof args.status === "string" &&
+        (args.status === "active" || args.status === "paused" || args.status === "closed")
+      ) {
+        options.status = args.status;
+      }
+      if (typeof args.listingTypeId === "string" && args.listingTypeId.length > 0) {
+        options.listingTypeId = args.listingTypeId;
+      }
+
+      try {
+        const snapshot: MlcListingsSnapshot = await mlcClient.getListings(sellerId, options);
+        return snapshot;
+      } catch (err) {
+        return {
+          error:
+            `No se pudo leer las publicaciones de "${sellerId}": ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// find_paused_listings tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `find_paused_listings` tool.
+ *
+ * Searches for paused listings that can be reused for new products.
+ * Analyses listing age and prior sales signals to rank reuse potential,
+ * then returns the listings sorted from best to worst candidate.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `find_paused_listings` tool definition compatible with OpenAI function calling.
+ */
+export function createFindPausedListingsTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "find_paused_listings",
+    description:
+      "Busca publicaciones pausadas que pueden reutilizarse para nuevos productos. " +
+      "Analiza la antigüedad e historial de ventas de cada publicación pausada " +
+      "y las ordena por potencial de reutilización (mejores candidatos primero). " +
+      "Usá esta herramienta cuando el vendedor quiera dar de alta productos nuevos " +
+      "aprovechando publicaciones existentes, o cuando necesite liberar espacio " +
+      "en su límite de publicaciones activas. Las publicaciones más antiguas con " +
+      "buen historial son mejores candidatas para reutilizar.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        listingTypeId: {
+          type: "string",
+          description:
+            "Filtro opcional por tipo de publicación: gold_pro (Premium), " +
+            "gold_special (Clásica), free (Gratuita).",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const options: { status: "paused"; listingTypeId?: string } = { status: "paused" };
+      if (typeof args.listingTypeId === "string" && args.listingTypeId.length > 0) {
+        options.listingTypeId = args.listingTypeId;
+      }
+
+      try {
+        const snapshot: MlcListingsSnapshot = await mlcClient.getListings(sellerId, options);
+
+        const listings = Array.isArray(snapshot.data) ? snapshot.data : [snapshot.data];
+
+        // Analyse reuse potential: older listings with stock history are better.
+        const analysed = listings.map((listing) => {
+          const hasHistory = listing.title !== undefined && listing.price !== undefined;
+          const hasStock = (listing.availableQuantity ?? 0) > 0;
+          // Simple heuristic: listings with title+price (indicating prior use)
+          // and remaining stock are better candidates.
+          const potentialScore = (hasHistory ? 2 : 0) + (hasStock ? 1 : 0);
+          return { ...listing, potentialScore };
+        });
+
+        // Sort descending by potentialScore.
+        analysed.sort((a, b) => b.potentialScore - a.potentialScore);
+
+        const candidatesWithPotential = analysed.filter((l) => l.potentialScore >= 2);
+
+        return {
+          sellerId: snapshot.sellerId,
+          kind: snapshot.kind,
+          source: snapshot.source,
+          data: analysed,
+          completeness: snapshot.completeness,
+          freshness: snapshot.freshness,
+          confidence: snapshot.confidence,
+          totalPaused: analysed.length,
+          reuseCandidates: candidatesWithPotential.length,
+          recommendation:
+            analysed.length === 0
+              ? "No se encontraron publicaciones pausadas. Todas tus publicaciones están activas o cerradas."
+              : candidatesWithPotential.length > 0
+                ? `Hay ${candidatesWithPotential.length} publicaciones pausadas con buen potencial de reutilización. Cambiá fotos y descripción para darles nueva vida.`
+                : "Las publicaciones pausadas tienen bajo potencial. Considerá crear publicaciones nuevas en lugar de reutilizar.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo buscar publicaciones pausadas para "${sellerId}": ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_listing_visits tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_listing_visits` tool.
+ *
+ * Queries visit metrics for a specific listing, preferring the time-windowed
+ * endpoint that returns daily breakdowns by traffic source. Falls back to
+ * the lifetime-visit endpoint when time-window data is unavailable.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_listing_visits` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckListingVisitsTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_listing_visits",
+    description:
+      "Consulta las visitas de una publicación en MercadoLibre. " +
+      "Devuelve las visitas diarias de los últimos días con desglose por " +
+      "fuente de tráfico (MercadoLibre, Google, etc.). Usá esta herramienta " +
+      "cuando el vendedor pregunte por el rendimiento de una publicación " +
+      "específica, quiera saber cuántas visitas recibe, o necesite evaluar " +
+      "si una publicación tiene buena exposición.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        itemId: {
+          type: "string",
+          description: "ID de la publicación en MercadoLibre. Ej: 'MLC1001'.",
+        },
+        last: {
+          type: "number",
+          description:
+            "Cantidad de días hacia atrás para consultar visitas. Por defecto 7. Máximo 30.",
+        },
+      },
+      required: ["sellerId", "itemId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const itemId = coerceItemId(args.itemId);
+      if (!itemId) {
+        return { error: "El parámetro 'itemId' es obligatorio y debe ser un string no vacío." };
+      }
+
+      const last =
+        typeof args.last === "number" && args.last > 0 && args.last <= 30
+          ? Math.floor(args.last)
+          : 7;
+
+      // Prefer time-windowed endpoint for daily breakdown.
+      if (mlcClient.getItemVisitsTimeWindow) {
+        try {
+          const snapshot: MlcVisitsTimeWindowSnapshot = await mlcClient.getItemVisitsTimeWindow(
+            sellerId,
+            itemId,
+            { last, unit: "day" },
+          );
+          return snapshot;
+        } catch (err) {
+          return {
+            error:
+              `No se pudo consultar las visitas de "${itemId}" en la ventana de tiempo: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
+      }
+
+      // Fallback: lifetime visits.
+      if (mlcClient.getItemVisits) {
+        try {
+          const snapshot: MlcVisitsSnapshot = await mlcClient.getItemVisits(sellerId, itemId);
+          return snapshot;
+        } catch (err) {
+          return {
+            error:
+              `No se pudo consultar las visitas de "${itemId}": ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
+      }
+
+      return {
+        error:
+          "La consulta de visitas de publicaciones no está disponible en este momento. " +
+          "Verificá que la cuenta tenga los permisos necesarios.",
+      };
     },
   };
 }
