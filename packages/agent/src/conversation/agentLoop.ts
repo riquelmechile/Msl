@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { GraphEngine } from "@msl/memory";
-import type { MlClient, ProductSyncEngine } from "@msl/mercadolibre";
+import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
   AgentProposal,
   ConversationMessage,
@@ -25,7 +25,12 @@ import { parseStrategy } from "./strategyParser.js";
 import type { ToolDefinition } from "./tools.js";
 import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
-import { createSyncProductTool, createSyncAllTool, createCheckAccountTool } from "./syncTools.js";
+import {
+  createSyncProductTool,
+  createSyncAllTool,
+  createCheckAccountTool,
+  createCalculateListingFeesTool,
+} from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
@@ -124,6 +129,12 @@ export type AgentLoopConfig = {
    */
   mlClient?: MlClient;
   /**
+   * Optional MercadoLibre API client for listing fees. When provided,
+   * registers the `calculate_listing_fees` tool so the agent can query
+   * MercadoLibre's sale fee calculation for a given product.
+   */
+  mlcClient?: MlcApiClient;
+  /**
    * Optional Escribano memory scribe observer. When provided, the agent
    * loop calls `observeTurn()` after each `converse()` return to apply
    * Hebbian learning to the Cortex graph based on conversation outcomes.
@@ -207,6 +218,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.mlClient && !toolMap.has("check_account")) {
     toolMap.set("check_account", createCheckAccountTool(config.mlClient));
+  }
+  if (config.mlcClient && !toolMap.has("calculate_listing_fees")) {
+    toolMap.set("calculate_listing_fees", createCalculateListingFeesTool(config.mlcClient));
   }
 
   // Real client is used only when the caller has not explicitly requested the mock.

@@ -14,6 +14,11 @@ import {
   type SessionStore,
 } from "@msl/agent";
 import { createGraphEngine } from "@msl/memory";
+import {
+  createMlcApiClient,
+  createMercadoLibreApiFetchTransport,
+  type OAuthTokenState,
+} from "@msl/mercadolibre";
 
 export type BotConfig = {
   token: string;
@@ -48,6 +53,9 @@ export type TelegramBotEnv = Partial<
     | "MSL_CHAT_SELLER_ID"
     | "MSL_CHAT_SELLER_NAME"
     | "MERCADOLIBRE_TARGET_SELLER_ID"
+    | "MERCADOLIBRE_ACCESS_TOKEN"
+    | "MERCADOLIBRE_REFRESH_TOKEN"
+    | "MERCADOLIBRE_SELLER_ID"
   >
 >;
 
@@ -123,6 +131,30 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const engine = cortexPath ? createGraphEngine(cortexPath) : undefined;
   const escribano = engine ? new EscribanoObserver({ engine }) : undefined;
 
+  // ── MLC listing-fees client ───────────────────────────────
+  const mlcAccessToken = env.MERCADOLIBRE_ACCESS_TOKEN?.trim();
+  const mlcRefreshToken = env.MERCADOLIBRE_REFRESH_TOKEN?.trim();
+  const mlcSellerId = env.MERCADOLIBRE_SELLER_ID?.trim();
+
+  let mlcClient: ReturnType<typeof createMlcApiClient> | undefined;
+  if (mlcAccessToken && mlcSellerId) {
+    const tokenState: OAuthTokenState = {
+      sellerId: mlcSellerId,
+      site: "MLC",
+      accessToken: mlcAccessToken,
+      ...(mlcRefreshToken !== undefined && { refreshToken: mlcRefreshToken }),
+      scopes: ["read", "write"],
+      status: "connected",
+      connectedAt: new Date(),
+      expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000), // 180 days
+    };
+    mlcClient = createMlcApiClient({
+      tokenState,
+      transport: createMercadoLibreApiFetchTransport(),
+      now: new Date(),
+    });
+  }
+
   const agentConfig: BotConfig["agentConfig"] = {
     systemPrompt: buildSystemPrompt(sellerName),
     mockClient: !env.DEEPSEEK_API_KEY?.trim(),
@@ -131,6 +163,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   if (autonomyEngine) agentConfig.autonomyEngine = autonomyEngine;
   if (engine) agentConfig.engine = engine;
   if (escribano) agentConfig.escribano = escribano;
+  if (mlcClient) agentConfig.mlcClient = mlcClient;
 
   const botConfig: BotConfig = {
     token,

@@ -2,6 +2,8 @@ import type { GraphEngine } from "@msl/memory";
 import type {
   MlClient,
   MlAccountRoleConfig,
+  MlcApiClient,
+  MlcListingPricesInput,
   ProductSyncEngine,
   SyncResult,
   SyncReport,
@@ -440,4 +442,86 @@ function ensureEdge(cortex: GraphEngine, source: number, target: number): void {
   } catch {
     // Edge already exists — idempotent, nothing to do.
   }
+}
+
+// ---------------------------------------------------------------------------
+// calculate_listing_fees tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `calculate_listing_fees` tool.
+ *
+ * Queries MercadoLibre's listing prices API to compute sale fees for a
+ * product. Returns the sale fee amount and a detailed fee breakdown.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `calculate_listing_fees` tool definition compatible with OpenAI function calling.
+ */
+export function createCalculateListingFeesTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "calculate_listing_fees",
+    description:
+      "Calcula las tarifas de venta de MercadoLibre para un producto. " +
+      "Devuelve el costo de comisión (saleFeeAmount) y el desglose detallado " +
+      "de tarifas (fixedFee, percentageFee, meliPercentageFee, grossAmount, " +
+      "financingAddOnFee). Usá esta herramienta cuando el vendedor pregunte " +
+      "por costos de venta, comisiones, márgenes o quiera saber cuánto pagaría " +
+      "por publicar un producto. Antes de llamarla, asegurate de tener el precio, " +
+      "la categoría y el tipo de publicación del producto.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: { type: "string", description: "ID del vendedor en MercadoLibre" },
+        price: { type: "number", description: "Precio de venta del producto" },
+        categoryId: {
+          type: "string",
+          description: "ID de la categoría de MercadoLibre (ej. MLC1743)",
+        },
+        siteId: {
+          type: "string",
+          description: "ID del sitio de MercadoLibre. Por defecto MLC (Chile).",
+        },
+        listingTypeId: {
+          type: "string",
+          description:
+            "Tipo de publicación: gold_pro (Premium), gold_special (Clásica), free (Gratuita)",
+        },
+        currencyId: { type: "string", description: "ID de moneda. Por defecto CLP para Chile." },
+        quantity: { type: "number", description: "Cantidad de unidades vendidas (opcional)" },
+      },
+      required: ["sellerId", "price", "categoryId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      if (!mlcClient.getListingPrices) {
+        return { error: "El cálculo de comisiones no está disponible en este momento." };
+      }
+
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const input: MlcListingPricesInput = {
+        siteId: (args.siteId as string) || "MLC",
+        price: args.price as number,
+        categoryId: args.categoryId as string,
+        ...(args.listingTypeId !== undefined && { listingTypeId: args.listingTypeId as string }),
+        ...(args.currencyId !== undefined && { currencyId: args.currencyId as string }),
+        ...(args.quantity !== undefined && { quantity: args.quantity as number }),
+      };
+
+      try {
+        const snapshot = await mlcClient.getListingPrices(sellerId, input);
+        return snapshot;
+      } catch (err) {
+        return {
+          error:
+            `No se pudo calcular las tarifas para el producto: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
 }

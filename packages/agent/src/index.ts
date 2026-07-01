@@ -85,6 +85,7 @@ export {
   createSyncProductTool,
   createSyncAllTool,
   createCheckAccountTool,
+  createCalculateListingFeesTool,
 } from "./conversation/syncTools.js";
 
 // ── Actor simulation ────────────────────────────────────────────────
