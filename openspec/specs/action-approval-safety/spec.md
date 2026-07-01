@@ -109,25 +109,20 @@ The system MUST require explicit seller approval before price changes, stock cha
 
 ### Requirement: Risk Audit Trail
 
-The system MUST record who approved, what changed, why it was recommended, when it was approved, and the expected business risk. Audit records MUST distinguish deterministic vs conversational proposer.
+Audit MUST record who approved, what changed, why, when, business risk, and proposer type (deterministic/conversational). For executed `sync_product` proposals, records MUST additionally capture pre-execution snapshot, ML API evidence (endpoint, payload, itemId/permalink), post-execution status, and rollback path.
+(Previously: no execution audit record contract.)
 
-#### Scenario: Approved action is executed
+#### Scenario: Approved action audited
 
-- GIVEN the seller approves a prepared action
-- WHEN the system executes it
-- THEN it MUST store an audit record with rationale and resulting status
+- GIVEN seller approves a prepared action
+- WHEN executed
+- THEN it MUST store audit record with rationale and status
 
-#### Scenario: Conversational proposal recorded
+#### Scenario: Execution audit captures ML evidence
 
-- GIVEN an LLM proposal is approved and executed
-- WHEN the audit trail is written
-- THEN it MUST include the original proposal text and confirmation phrase
-
-#### Scenario: High-risk action is proposed
-
-- GIVEN an action may affect claims, refunds, cancellations, reputation, or public content
-- WHEN approval is requested
-- THEN the system MUST highlight the risk before approval can be accepted
+- GIVEN a `sync_product` proposal is executed
+- WHEN audit is written
+- THEN it MUST include pre-snapshot, ML API evidence, post-status, and rollback path
 
 ### Requirement: Strategy-Based Action Validation
 
@@ -218,73 +213,64 @@ The system MUST treat seller-impacting MercadoLibre capabilities discovered duri
 - THEN the system MUST block execution
 - AND it MUST preserve existing approval, autonomy, and audit safeguards
 
-### Requirement: Product Sync Proposals Remain Pending
+### Requirement: Sync Product Execution Eligibility Model
 
-Product sync business operations MUST remain pending prepared actions unless a future approved slice adds explicit execution, approval, and audit behavior. This slice MAY persist prepared proposal state and non-sensitive preview evidence when durable approval storage is configured, and MAY calculate read-only preview evidence only from source items that pass shared MercadoLibre completeness validation. Validation failure MUST degrade preview evidence without mutation. It MUST NOT execute sync mutations, replay audits, persist credentials, or expand the approval/execution surface.
+Product sync business operations MUST remain pending prepared actions by default. Proposals that pass approval recording, readiness eligibility, idempotency checks, and `canExecuteSyncProduct` MAY reach execution per the `sync-product-execution` contract. Execution eligibility is contract-only; future implementation slice required for runtime. This slice MAY persist proposal state and non-sensitive preview evidence. It MUST NOT execute mutations, replay audits, or persist credentials without passing execution gates.
+(Previously: "Product Sync Proposals Remain Pending" blocked all execution; renamed and replaced with eligibility model.)
 
-#### Scenario: Prepared sync proposal is returned
+#### Scenario: Prepared sync proposal returned
 
-- GIVEN a valid single-product sync request passes safety validation
+- GIVEN a valid sync request passes safety validation
 - WHEN the proposal is created
-- THEN it MUST have pending approval status and `requiresApproval: true`
-- AND it MUST include intended target, rationale, risk, and expiry metadata
+- THEN it MUST have pending status and `requiresApproval: true`
 
-#### Scenario: Read-only preview evidence is attached
+#### Scenario: Read-only preview evidence attached
 
-- GIVEN complete read-only item evidence and applicable strategies are available
-- WHEN a product sync proposal is prepared
-- THEN the proposal MAY include non-sensitive preview evidence for proposed field changes
-- AND it MUST still disclose that no mutation, approval execution, or audit replay occurred
+- GIVEN complete item evidence and strategies are available
+- WHEN a proposal is prepared
+- THEN it MAY include non-sensitive preview evidence with `noMutationExecuted: true`
 
-#### Scenario: Incomplete preview source evidence degrades safely
+#### Scenario: Incomplete preview degrades safely
 
-- GIVEN source item evidence fails shared completeness validation
-- WHEN a product sync proposal is prepared
-- THEN the proposal MUST remain pending with preview-unavailable evidence
-- AND it MUST NOT mutate MercadoLibre state, replay audits, or expose raw validation details
+- GIVEN source evidence fails completeness validation
+- WHEN a proposal is prepared
+- THEN it MUST remain pending with preview-unavailable and MUST NOT mutate state
 
-#### Scenario: Execution is attempted from a prepared proposal
+#### Scenario: Execution without eligibility gates blocked
 
-- GIVEN a pending product sync proposal exists
-- WHEN execution is requested before an approved execution slice exists
-- THEN the system MUST return a controlled blocked response
-- AND it MUST NOT mutate MercadoLibre state or claim sync completion
+- GIVEN a pending proposal exists
+- WHEN execution is attempted before approval, readiness, idempotency, and guard pass
+- THEN the system MUST return controlled blocked response
 
-#### Scenario: Durable prepared proposal storage is configured
+#### Scenario: Durable storage preserves proposals
 
-- GIVEN durable proposal storage is configured
-- WHEN a product sync proposal is prepared and the process restarts
-- THEN the pending proposal MUST remain available with equivalent proposal metadata
-- AND no OAuth token, API key, client secret, or raw credential MUST be persisted
+- GIVEN durable storage is configured
+- WHEN a proposal is prepared and process restarts
+- THEN the proposal MUST remain available without persisting credentials
 
-#### Scenario: Credential-like generic prepared proposal is requested
+#### Scenario: Credential-like payload blocked
 
-- GIVEN the generic prepared write tool receives a target, exact change, or rationale containing API keys, OAuth tokens, client secrets, raw credentials, or database paths
-- WHEN the proposal is validated
-- THEN the system MUST block before repository save
-- AND it MUST NOT persist or echo the credential-like payload
+- GIVEN a prepared write target contains credentials or db paths
+- WHEN validated
+- THEN the system MUST block before save and MUST NOT echo the payload
 
-#### Scenario: Durable storage is not configured
+#### Scenario: Durable storage not configured
 
-- GIVEN durable proposal storage is not configured
-- WHEN a product sync proposal is prepared
-- THEN the system MUST keep default in-memory proposal behavior
-- AND it MUST disclose that proposals do not survive restart
+- GIVEN durable storage is not configured
+- WHEN a proposal is prepared
+- THEN the system MUST disclose in-memory behavior and non-surviving-restart
 
-#### Scenario: Storage failure occurs during proposal preparation
+#### Scenario: Storage failure handled safely
 
-- GIVEN durable proposal storage is configured but unavailable
-- WHEN a product sync proposal is prepared
-- THEN the system MUST return a controlled blocked response with redacted error details
-- AND it MUST NOT execute mutation, replay audit, persist credentials, or expose raw errors
+- GIVEN durable storage is configured but unavailable
+- WHEN a proposal is prepared
+- THEN the system MUST return controlled blocked response with redacted details
 
-#### Scenario: Durable storage fails during MCP startup
+#### Scenario: Storage unavailable at MCP startup
 
-- GIVEN durable proposal storage is configured but cannot be opened during MCP runtime construction
-- WHEN the MCP runtime starts
-- THEN the runtime MUST recover with controlled degraded in-memory proposal storage
-- AND subsequent proposal responses MUST disclose that durable storage is unavailable
-- AND they MUST NOT expose database paths, credentials, or raw startup errors
+- GIVEN storage is configured but cannot open at startup
+- WHEN MCP runtime constructs
+- THEN it MUST recover with degraded in-memory storage without exposing raw errors
 
 ### Requirement: Non-Mutating Product Sync Proposal Retrieval
 
@@ -354,25 +340,24 @@ The approval safety boundary MUST allow recording seller approval for an exact s
 
 ### Requirement: Sync Product Readiness Approval Boundary
 
-The approval boundary MUST treat approved `sync_product` proposals as execution candidates only after a non-mutating readiness gate revalidates approval binding, dry-run/preview drift, seller/account safeguards, idempotency candidate, rollback plan, audit semantics, rate/error handling, and redaction. Approval alone MUST NOT authorize execution.
+The approval boundary MUST treat approved `sync_product` proposals as execution candidates only after readiness revalidates approval binding, preview drift, seller/account safeguards, idempotency, rollback plan, audit semantics, rate/error handling, and redaction. Approval alone MUST NOT authorize execution. Readiness `eligible` MUST feed the execution eligibility gate defined in `sync-product-execution`.
+(Previously: readiness standalone; now explicitly feeds execution eligibility.)
 
-#### Scenario: Approval binding is revalidated
+#### Scenario: Approval binding revalidated
 
-- GIVEN a stored approved `sync_product` proposal exists
+- GIVEN a stored approved proposal exists
 - WHEN readiness evaluates it
-- THEN approval MUST bind to the exact action ID, proposal kind, target, expiry, approver, rationale, and risk evidence
-- AND mismatch MUST return `blocked` with `approval-binding-mismatch` or `approval-expired` and `noMutationExecuted: true`.
+- THEN approval MUST bind to exact actionId, kind, target, expiry, approver, rationale, risk
+- AND mismatch MUST return `blocked` with `approval-binding-mismatch` or `approval-expired`
 
-#### Scenario: Readiness records no execution audit
+#### Scenario: Prerequisites incomplete
 
-- GIVEN readiness returns `eligible`, `blocked`, or `degraded`
-- WHEN audit semantics are derived
-- THEN the system MAY record/read readiness review metadata only if it cannot imply execution
-- AND it MUST NOT write completion audit records, replay audits, trigger rollback automation, or claim sync success.
+- GIVEN readiness checks are incomplete
+- WHEN evaluating approved proposal
+- THEN response MUST be `blocked` or `degraded` with redacted reason codes
 
-#### Scenario: Execution prerequisites are incomplete
+#### Scenario: Eligible readiness feeds execution gate
 
-- GIVEN rollback, idempotency, seller/account, dry-run, rate/error, source evidence, or redaction checks are incomplete
-- WHEN readiness evaluates the approved proposal
-- THEN the response MUST be `blocked` or `degraded` using allowed redacted reason codes
-- AND raw credentials, database paths, upstream errors, and validation internals MUST remain hidden.
+- GIVEN readiness returns `eligible`
+- WHEN execution eligibility is evaluated per `sync-product-execution`
+- THEN `eligible` MUST be consumed as required gate input

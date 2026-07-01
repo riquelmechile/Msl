@@ -268,9 +268,20 @@ The MCP tool surface MUST expose a narrow approval-recording operation for one e
 
 ---
 
+### Requirement: Sync Product Execution Tool Contract
+
+The MCP surface MUST define a future execution tool contract for approved `sync_product` proposals. The tool MUST sequence: readiness check → idempotency audit check → create/update resolution → ML API call → audit record. It MUST NOT execute bulk sync, call `ProductSyncEngine`, or bypass execution eligibility gates. The contract is specification-only until a future implementation slice adds runtime behavior.
+
+#### Scenario: Execution tool contract defined
+
+- GIVEN the MCP tool surface is evaluated
+- WHEN the execution tool contract is referenced
+- THEN it MUST declare the sequenced flow without implementing runtime mutations
+
 ### Requirement: Sync Product Execution Readiness Tool
 
-The MCP surface MUST expose readiness-only evaluation for one exact approved, unexpired `sync_product` proposal and MUST return `status: "eligible" | "blocked" | "degraded"`, `noMutationExecuted: true`, stable idempotency candidate evidence when derivable, and redacted reason codes only: `approval-unavailable`, `approval-expired`, `approval-binding-mismatch`, `proposal-not-sync-product`, `source-read-failed`, `source-evidence-incomplete`, `preview-drift-detected`, `seller-scope-mismatch`, `target-account-unavailable`, `api-capability-evidence-missing`, `rollback-strategy-missing`, `rate-limited`, `upstream-temporary-failure`, `reconnect-required`, `storage-unavailable`.
+The MCP surface MUST expose readiness-only evaluation for one exact approved, unexpired `sync_product` proposal and MUST return `status: "eligible" | "blocked" | "degraded"`, `noMutationExecuted: true`, stable idempotency candidate evidence when derivable, and redacted reason codes only: `approval-unavailable`, `approval-expired`, `approval-binding-mismatch`, `proposal-not-sync-product`, `source-read-failed`, `source-evidence-incomplete`, `preview-drift-detected`, `seller-scope-mismatch`, `target-account-unavailable`, `api-capability-evidence-missing`, `rollback-strategy-missing`, `rate-limited`, `upstream-temporary-failure`, `reconnect-required`, `storage-unavailable`. Readiness `eligible` MUST feed the execution eligibility gate defined in `sync-product-execution`.
+(Previously: readiness was standalone; now `eligible` feeds execution eligibility contract.)
 
 #### Scenario: Approved proposal is eligible
 
@@ -279,12 +290,11 @@ The MCP surface MUST expose readiness-only evaluation for one exact approved, un
 - THEN the response MUST be `eligible` with `noMutationExecuted: true`
 - AND it MUST include only sanitized prerequisite evidence.
 
-#### Scenario: Proposal is blocked or degraded
+#### Scenario: Eligible status feeds execution contract
 
-- GIVEN approval, proposal type, preview, seller/account, API evidence, rollback, rate, upstream, reconnect, or storage checks fail
-- WHEN readiness is requested
-- THEN the response MUST be `blocked` or `degraded` with one or more allowed reason codes
-- AND it MUST NOT expose raw storage, credential, validation, or upstream details.
+- GIVEN readiness returns `eligible` for an approved proposal
+- WHEN the execution contract evaluates eligibility per `sync-product-execution`
+- THEN `eligible` MUST be consumed as a required gate input
 
 #### Scenario: Readiness cannot execute
 
