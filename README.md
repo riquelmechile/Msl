@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <code>870+ tests</code> ·
+  <code>905+ tests</code> ·
   <code>TypeScript 5.8</code> ·
   <code>Node ≥22</code> ·
   <code>DeepSeek v4</code> ·
@@ -25,7 +25,7 @@ MSL is a proactive AI agent that manages your MercadoLibre Chile business throug
 git clone https://github.com/riquelmechile/Msl.git
 cd Msl
 npm install
-npm test          # 870+ tests in 38 files
+npm test          # 905+ tests in 36 files
 npm run dev       # http://127.0.0.1:3000
 ```
 
@@ -96,10 +96,12 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  └───────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘ │
 │          │                 │                      │                  │
 │  ┌───────┴─────────────────┴──────────────────────┴────────────────┐ │
-│  │              10 ML Business Tools                               │ │
+│  │              16 ML Business Tools                               │ │
 │  │  calculate_listing_fees · read_my_listings · find_paused_listings│ │
 │  │  check_listing_visits · read_product_ads_insights · read_orders  │ │
 │  │  check_listing_quality · relist_listing · diagnose_image · upload│ │
+│  │  check_price_intelligence · find_automated_price_items           │ │
+│  │  read_seller_promotions · read_item_promotions                   │ │
 │  └──────────────────────────┬─────────────────────────────────────┘ │
 │          ┌──────────────────┴──────────────────┐                     │
 │          │  Background Ingestion Worker (6h)   │  DeepSeek Inference │
@@ -167,7 +169,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 10  | **Autonomy Engine**    | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                      |
 | 11  | **Product Sync**       | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary   |
 | 12  | **Approval Queue**     | Every write action goes through prepare → approve → execute → audit                                             |
-| 13  | **ML Business Tools**  | 10 tools for real MercadoLibre data (listings, fees, visits, orders, ads, paused detection, quality, relist, images) |
+| 13  | **ML Business Tools**  | 16 tools for real MercadoLibre data (listings, fees, visits, orders, ads, pricing automation, promotions, quality, relist, images) |
 | 14  | **Background Ingestion** | 6h worker that snapshots ALL listings/visits/orders into Cortex, detects anomalies, cross-account comparison    |
 | 15  | **Seasonal Detection** | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts               |
 | 16  | **Cross-Account Intelligence** | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                    |
@@ -177,6 +179,8 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 20  | **Listing Quality**   | Audits listing score (0-100) via /performance API, surfaces OPPORTUNITY/WARNING rules by variable              |
 | 21  | **Relist Intelligence** | Detects closed/paused listings eligible for relist (<60 days), preserves visits/questions/sales history         |
 | 22  | **Image Pipeline**    | Pre-publish image diagnostic (white_background, text_logo, watermark) + upload to ML CDN via API                |
+| 23  | **Pricing Intelligence** | Read-only pricing automation rules, history, and competitive price suggestions per item/catalog               |
+| 24  | **Promotions Intelligence** | Read-only seller campaign discovery, item promotion participation, boosted offers, coupon budgets, pre-negotiated offers |
 
 ## Stack
 
@@ -188,7 +192,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction          |
 | **Bot**      | Telegram (grammY, proactive messaging) | Natural language interface, no UI needed                  |
 | **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Stubbed project tool surface for compatible clients       |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 870+ tests, guarded platform support                        |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 905+ tests, guarded platform support                        |
 | **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                              |
 
 ## Philosophy
@@ -213,7 +217,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 ## Verification
 
 ```bash
-npm test              # 870+ Vitest tests in 38 files (unit + integration)
+npm test              # 905+ Vitest tests in 36 files (unit + integration)
 npm run test:e2e      # Playwright E2E (auto-skipped on unsupported platforms)
 npm run typecheck     # TypeScript strict mode — zero tolerance
 npm run lint          # ESLint with typed rules
