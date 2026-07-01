@@ -1,4 +1,4 @@
-import type { GraphEngine, TraversalResult } from "@msl/memory";
+import type { GraphEngine } from "@msl/memory";
 import { riskLevelForAction } from "@msl/domain";
 
 import type {
@@ -33,11 +33,164 @@ export type ToolDefinition = {
 };
 
 /**
+ * Metadata nodes returned by {@link GraphEngine.queryByMetadata}.
+ */
+type MetadataNode = {
+  id: number;
+  label: string;
+  metadata: Record<string, unknown>;
+};
+
+/** Valid types for the `dataType` parameter. */
+const BUSINESS_DATA_TYPES = [
+  "listings",
+  "visits",
+  "orders",
+  "seasonal",
+  "cross_account",
+  "all",
+] as const;
+
+// ── Cortex query helpers ───────────────────────────────────────────────
+
+function buildQueryFilters(args: Record<string, unknown>): {
+  status?: string;
+  categoryId?: string;
+  sellerId?: string;
+  itemId?: string;
+} {
+  const filters: {
+    status?: string;
+    categoryId?: string;
+    sellerId?: string;
+    itemId?: string;
+  } = {};
+
+  const rawStatus = args.status;
+  if (typeof rawStatus === "string" && rawStatus.length > 0) {
+    filters.status = rawStatus;
+  }
+  const rawCategoryId = args.categoryId;
+  if (typeof rawCategoryId === "string" && rawCategoryId.length > 0) {
+    filters.categoryId = rawCategoryId;
+  }
+  const rawSellerId = args.sellerId;
+  if (typeof rawSellerId === "string" && rawSellerId.length > 0) {
+    filters.sellerId = rawSellerId;
+  }
+  const rawItemId = args.itemId;
+  if (typeof rawItemId === "string" && rawItemId.length > 0) {
+    filters.itemId = rawItemId;
+  }
+
+  return filters;
+}
+
+function aggregateVisitTrends(nodes: MetadataNode[]): Record<string, unknown> {
+  const byItem = new Map<string, Array<{ date: string; totalVisits: number }>>();
+  for (const node of nodes) {
+    const itemId = String(node.metadata.itemId ?? "unknown");
+    const capturedAt = String(node.metadata.capturedAt ?? "");
+    const totalVisits = Number(node.metadata.totalVisits ?? 0);
+    let entries = byItem.get(itemId);
+    if (!entries) {
+      entries = [];
+      byItem.set(itemId, entries);
+    }
+    entries.push({ date: capturedAt, totalVisits });
+  }
+
+  const items: Array<Record<string, unknown>> = [];
+  for (const [itemId, entries] of byItem) {
+    entries.sort((a, b) => a.date.localeCompare(b.date));
+    const latest = entries[entries.length - 1];
+    const oldest = entries[0];
+    const trend =
+      entries.length >= 2 && oldest && latest && oldest.totalVisits > 0
+        ? (latest.totalVisits - oldest.totalVisits) / oldest.totalVisits
+        : 0;
+    items.push({
+      itemId,
+      latestVisits: latest?.totalVisits ?? 0,
+      trend: trend > 0.1 ? "up" : trend < -0.1 ? "down" : "stable",
+      changePct: Math.round(trend * 100),
+      snapshots: entries.length,
+    });
+  }
+
+  return { items, total: items.length };
+}
+
+function aggregateListingStats(nodes: MetadataNode[]): Record<string, unknown> {
+  const byStatus: Record<string, number> = {};
+  const byCategory: Record<string, number> = {};
+  let totalPrice = 0;
+  let priceCount = 0;
+
+  for (const node of nodes) {
+    const status = String(node.metadata.status ?? "unknown");
+    byStatus[status] = (byStatus[status] ?? 0) + 1;
+
+    const catId = String(node.metadata.categoryId ?? "");
+    if (catId && catId !== "" && catId !== "unknown") {
+      byCategory[catId] = (byCategory[catId] ?? 0) + 1;
+    }
+
+    const price = Number(node.metadata.price ?? 0);
+    if (price > 0) {
+      totalPrice += price;
+      priceCount++;
+    }
+  }
+
+  return {
+    total: nodes.length,
+    byStatus,
+    byCategory,
+    avgPrice: priceCount > 0 ? Math.round(totalPrice / priceCount) : 0,
+  };
+}
+
+function summarizeOrderHistory(nodes: MetadataNode[]): Record<string, unknown> {
+  let totalOrders = 0;
+  let totalAmount = 0;
+  const byCategory: Record<string, { orderCount: number; totalAmount: number }> = {};
+
+  for (const node of nodes) {
+    totalOrders += Number(node.metadata.totalOrders ?? 0);
+    totalAmount += Number(node.metadata.totalAmount ?? 0);
+
+    const catBreakdown = node.metadata.categoryBreakdown as
+      | Array<{ categoryId: string; orderCount: number; totalAmount: number }>
+      | undefined;
+    if (catBreakdown) {
+      for (const cat of catBreakdown) {
+        const existing = byCategory[cat.categoryId];
+        if (existing) {
+          existing.orderCount += cat.orderCount;
+          existing.totalAmount += cat.totalAmount;
+        } else {
+          byCategory[cat.categoryId] = {
+            orderCount: cat.orderCount,
+            totalAmount: cat.totalAmount,
+          };
+        }
+      }
+    }
+  }
+
+  return { totalOrders, totalAmount, byCategory };
+}
+
+// ── Tool factory ────────────────────────────────────────────────────────
+
+/**
  * Creates the `get_business_context` tool.
  *
- * This tool calls the Cortex graph engine on demand: the LLM decides
- * when to query context, keeping Cortex calls fresh (traversal snapshot
- * per-tool-invocation) and independently testable.
+ * Queries the Cortex graph engine for structured business data using
+ * {@link GraphEngine.queryByMetadata}. The LLM picks a `dataType` and
+ * optional filters (status, category, seller, item) to retrieve real
+ * operational data instead of label-based substring matching.
  *
  * @param engine — an initialized Cortex GraphEngine instance.
  * @returns a tool definition compatible with OpenAI function calling.
@@ -46,56 +199,148 @@ export function createGetBusinessContextTool(engine: GraphEngine): ToolDefinitio
   return {
     name: "get_business_context",
     description:
-      "Obtiene contexto del negocio desde la memoria Cortex. " +
-      "Usa esta herramienta cuando necesites datos sobre ventas, " +
-      "márgenes, inventario, reputación, reclamos o cualquier " +
-      "información operativa del negocio Plasticov/Maustian.",
+      "Consulta la memoria Cortex del negocio para obtener datos reales sobre " +
+      "publicaciones, visitas, ventas, patrones estacionales y rendimiento entre cuentas. " +
+      "Usá esta herramienta para entender el estado actual e histórico del negocio " +
+      "antes de hacer recomendaciones. Podés consultar por tipo de dato, período, " +
+      "categoría, o cuenta específica.",
     parameters: {
       type: "object",
       properties: {
-        query: {
+        dataType: {
           type: "string",
+          enum: [...BUSINESS_DATA_TYPES],
           description:
-            "La consulta en lenguaje natural sobre lo que necesitás saber del negocio. " +
-            "Ej: 'ventas de hoy', 'reclamos abiertos', 'margen de la categoría Hogar'.",
+            "Tipo de datos a consultar: listings (catálogo), visits (tráfico), " +
+            "orders (ventas), seasonal (estacionalidad), cross_account (comparación " +
+            "entre cuentas), all (todo)",
+        },
+        status: {
+          type: "string",
+          enum: ["active", "paused", "closed"],
+          description: "Filtrar listings por estado (active, paused, closed)",
+        },
+        categoryId: {
+          type: "string",
+          description: "Filtrar por categoría de MercadoLibre (ej: MLC1743)",
+        },
+        sellerId: {
+          type: "string",
+          description: "Filtrar por vendedor (plasticov o maustian)",
+        },
+        itemId: {
+          type: "string",
+          description: "Consultar una publicación específica por su ID de MercadoLibre",
+        },
+        months: {
+          type: "number",
+          description: "Período de análisis en meses (default: 3)",
         },
       },
-      required: ["query"],
+      required: [],
     },
     execute: (args: Record<string, unknown>): Record<string, unknown> => {
-      const query = typeof args.query === "string" ? args.query : "";
+      try {
+        const dataType =
+          typeof args.dataType === "string" &&
+          (BUSINESS_DATA_TYPES as readonly string[]).includes(args.dataType)
+            ? args.dataType
+            : "all";
+        const months = typeof args.months === "number" && args.months > 0 ? args.months : 3;
+        const after = new Date(
+          Date.now() - months * 30 * 24 * 60 * 60 * 1000,
+        ).toISOString();
 
-      if (!query) {
-        return { error: "El parámetro 'query' es obligatorio." };
+        const context: Record<string, unknown> = {};
+        const userFilters = buildQueryFilters(args);
+
+        // ── Listings ──────────────────────────────────────────
+        if (dataType === "listings" || dataType === "all") {
+          const filters: Record<string, unknown> = {
+            type: "listing_snapshot",
+            limit: 50,
+          };
+          if (userFilters.status) filters.status = userFilters.status;
+          if (userFilters.categoryId) filters.categoryId = userFilters.categoryId;
+          if (userFilters.sellerId) filters.sellerId = userFilters.sellerId;
+          if (userFilters.itemId) filters.itemId = userFilters.itemId;
+
+          const nodes = engine.queryByMetadata(filters);
+          context.listings = aggregateListingStats(nodes);
+          if (context.listings && (context.listings as Record<string, unknown>).total === 0) {
+            context.listings = { ...(context.listings as Record<string, unknown>), items: [] };
+          }
+        }
+
+        // ── Visits ────────────────────────────────────────────
+        if (dataType === "visits" || dataType === "all") {
+          const filters: Record<string, unknown> = {
+            type: "visit_snapshot",
+            after,
+            limit: 100,
+          };
+          if (userFilters.sellerId) filters.sellerId = userFilters.sellerId;
+          if (userFilters.itemId) filters.itemId = userFilters.itemId;
+
+          const nodes = engine.queryByMetadata(filters);
+          context.visits = aggregateVisitTrends(nodes);
+        }
+
+        // ── Orders ────────────────────────────────────────────
+        if (dataType === "orders" || dataType === "all") {
+          const filters: Record<string, unknown> = {
+            type: "order_snapshot",
+            after,
+            limit: 30,
+          };
+          if (userFilters.sellerId) filters.sellerId = userFilters.sellerId;
+
+          const nodes = engine.queryByMetadata(filters);
+          context.orders = summarizeOrderHistory(nodes);
+        }
+
+        // ── Seasonal patterns ─────────────────────────────────
+        if (dataType === "seasonal" || dataType === "all") {
+          const filters: Record<string, unknown> = {
+            type: "seasonal_pattern",
+            limit: 50,
+          };
+          if (userFilters.categoryId) filters.categoryId = userFilters.categoryId;
+
+          const nodes = engine.queryByMetadata(filters);
+          context.seasonal = nodes.map((n) => n.metadata);
+        }
+
+        // ── Cross-account comparison ──────────────────────────
+        if (dataType === "cross_account" || dataType === "all") {
+          const plasticovNodes = engine.queryByMetadata({
+            type: "listing_snapshot",
+            sellerId: "plasticov",
+            limit: 100,
+          });
+          const maustianNodes = engine.queryByMetadata({
+            type: "listing_snapshot",
+            sellerId: "maustian",
+            limit: 100,
+          });
+
+          context.cross_account = {
+            plasticov: aggregateListingStats(plasticovNodes),
+            maustian: aggregateListingStats(maustianNodes),
+          };
+        }
+
+        return {
+          context,
+          metadata: {
+            dataType,
+            months,
+            queriedAt: new Date().toISOString(),
+          },
+        };
+      } catch {
+        return { error: "Cortex no está disponible en este momento." };
       }
-
-      // Seed nodes by matching query terms against node labels.
-      const terms = query
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((t) => t.length >= 3);
-
-      if (terms.length === 0) {
-        return { context: {}, node_count: 0 };
-      }
-
-      // Build parameterized query matching any term in node labels.
-      const placeholders = terms.map(() => "label LIKE ?").join(" OR ");
-      const matchers = terms.map((t) => `%${t}%`);
-
-      const seedRows = engine.db
-        .prepare(`SELECT id, label FROM nodes WHERE ${placeholders} LIMIT 20`)
-        .all(...matchers) as Array<{ id: number; label: string }>;
-
-      if (seedRows.length === 0) {
-        return { context: {}, node_count: 0 };
-      }
-
-      const seedIds = seedRows.map((r) => r.id);
-      engine.spreadActivation(seedIds);
-
-      const result: TraversalResult = engine.traverse();
-      return result.context;
     },
   };
 }

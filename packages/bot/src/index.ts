@@ -198,6 +198,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     // Build multi-seller config: include source + target when both are configured.
     const sourceSellerId = env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
     const targetSellerId = env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+    const deepseekApiKey = env.DEEPSEEK_API_KEY?.trim();
 
     const allSellerIds: string[] = [mlcSellerId];
     const sellerNames: Record<string, string> = { [mlcSellerId]: sellerName };
@@ -211,16 +212,22 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
       sellerNames[targetSellerId] = "Maustian";
     }
 
-    ingestionHandle = startBackgroundIngestion({
+    const baseConfig = {
       mlcClient,
       engine,
-      sendProactiveMessage: (chatId, text) =>
+      sendProactiveMessage: (chatId: number, text: string) =>
         botHandle.sendProactiveMessage(chatId, text),
       listActiveChats: () => botHandle.listActiveChats(),
       sellerIds: allSellerIds,
       sellerNames,
       intervalMs: 6 * 60 * 60 * 1000, // 6 hours
-    });
+    };
+
+    ingestionHandle = startBackgroundIngestion(
+      deepseekApiKey
+        ? { ...baseConfig, deepseekApiKey }
+        : baseConfig,
+    );
   }
 
   return {

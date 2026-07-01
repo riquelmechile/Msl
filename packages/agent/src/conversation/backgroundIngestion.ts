@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 import type { GraphEngine } from "@msl/memory";
 import type { MlcApiClient, MlcListingSummary, MlcVisitsDetail } from "@msl/mercadolibre";
 
@@ -13,6 +14,12 @@ export type BackgroundIngestionConfig = {
   sellerNames?: Record<string, string>;
   /** Interval in milliseconds between ingestion runs. Default: 6 hours. */
   intervalMs?: number;
+  /**
+   * DeepSeek API key for generating daily business insights.
+   * When provided, a DeepSeek inference pass runs after each ingestion cycle.
+   * When absent, insight generation is silently skipped.
+   */
+  deepseekApiKey?: string;
 };
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -830,6 +837,246 @@ async function pruneSnapshots(config: BackgroundIngestionConfig): Promise<void> 
   ).run();
 }
 
+// ── DeepSeek daily insights ────────────────────────────────────────────
+
+/**
+ * Structured business context assembled after an ingestion cycle,
+ * used as input for the DeepSeek inference pass.
+ */
+export type DailyBusinessContext = {
+  capturedAt: string;
+  listings: {
+    total: number;
+    byStatus: Record<string, number>;
+    byCategory: Record<string, number>;
+    avgPrice: number;
+  };
+  visits: {
+    trendingUp: string[];
+    trendingDown: string[];
+    totalSnapshots: number;
+  };
+  orders: {
+    totalOrders: number;
+    totalAmount: number;
+    byCategory: Record<string, { orderCount: number; totalAmount: number }>;
+  };
+  seasonal: Array<Record<string, unknown>>;
+  crossAccount: {
+    plasticov: { total: number; byStatus: Record<string, number> };
+    maustian: { total: number; byStatus: Record<string, number> };
+  };
+  alerts: string[];
+};
+
+/**
+ * Generates 3–5 actionable business insights in Spanish using DeepSeek.
+ *
+ * Sends a structured prompt to the DeepSeek API with post-ingestion Cortex data
+ * and returns a formatted natural-language summary the agent can push to chats.
+ *
+ * @param context — assembled business data from the current ingestion cycle.
+ * @param openai — OpenAI client pointed at DeepSeek's API.
+ * @returns Spanish-language insight summary with emoji markers.
+ */
+export async function generateDailyInsights(
+  context: DailyBusinessContext,
+  openai: OpenAI,
+): Promise<string> {
+  const prompt = `Sos un analista de negocio experto en MercadoLibre. Analizá estos datos del negocio
+Plasticov/Maustian y generá 3-5 insights accionables en español. Cada insight debe:
+- Identificar un patrón o anomalía concreta
+- Explicar por qué importa para la utilidad neta
+- Recomendar una acción específica
+
+DATOS DEL NEGOCIO:
+${JSON.stringify(context, null, 2)}
+
+Respondé en este formato:
+🔍 [Insight 1]
+💰 [Insight 2 - relacionado con margen/utilidad]
+📈 [Insight 3 - tendencia]
+⚠️ [Insight 4 - riesgo]
+🎯 [Insight 5 - oportunidad]`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [{ role: "user", content: prompt }],
+      stream: false,
+    });
+
+    return completion.choices[0]?.message?.content?.trim() ?? "";
+  } catch (err) {
+    console.error(
+      "[background-ingestion] DeepSeek insight generation failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return "";
+  }
+}
+
+/**
+ * Builds a {@link DailyBusinessContext} from the Cortex graph after ingestion.
+ *
+ * Queries listing, visit, order, and seasonal snapshots to produce a compact
+ * structured summary suitable for the DeepSeek insight prompt.
+ */
+function buildDailyContext(
+  engine: GraphEngine,
+  sellerNames: Record<string, string>,
+  alerts: string[],
+): DailyBusinessContext {
+  const capturedAt = new Date().toISOString();
+
+  // ── Listings ────────────────────────────────────────────────
+  const listingNodes = engine.queryByMetadata({
+    type: "listing_snapshot",
+    limit: 200,
+  });
+
+  const byStatus: Record<string, number> = {};
+  const byCategory: Record<string, number> = {};
+  let totalPrice = 0;
+  let priceCount = 0;
+
+  for (const n of listingNodes) {
+    const m = n.metadata;
+    const status = String(m.status ?? "unknown");
+    byStatus[status] = (byStatus[status] ?? 0) + 1;
+    const cat = String(m.categoryId ?? "");
+    if (cat && cat !== "unknown") {
+      byCategory[cat] = (byCategory[cat] ?? 0) + 1;
+    }
+    const price = Number(m.price ?? 0);
+    if (price > 0) {
+      totalPrice += price;
+      priceCount++;
+    }
+  }
+
+  // ── Visits ──────────────────────────────────────────────────
+  const visitNodes = engine.queryByMetadata({
+    type: "visit_snapshot",
+    limit: 100,
+  });
+
+  const byVisitItem = new Map<string, number[]>();
+  for (const n of visitNodes) {
+    const m = n.metadata;
+    const itemId = String(m.itemId ?? "unknown");
+    const visits = Number(m.totalVisits ?? 0);
+    let values = byVisitItem.get(itemId);
+    if (!values) {
+      values = [];
+      byVisitItem.set(itemId, values);
+    }
+    values.push(visits);
+  }
+
+  const trendingUp: string[] = [];
+  const trendingDown: string[] = [];
+  for (const [itemId, values] of byVisitItem) {
+    if (values.length < 2) continue;
+    const first = values[0];
+    const last = values[values.length - 1];
+    if (first === undefined || last === undefined || first === 0) continue;
+    const change = (last - first) / first;
+    if (change > 0.1) trendingUp.push(itemId);
+    else if (change < -0.1) trendingDown.push(itemId);
+  }
+
+  // ── Orders ──────────────────────────────────────────────────
+  const orderNodes = engine.queryByMetadata({
+    type: "order_snapshot",
+    limit: 30,
+  });
+
+  let totalOrders = 0;
+  let totalAmount = 0;
+  const byOrderCategory: Record<string, { orderCount: number; totalAmount: number }> = {};
+
+  for (const n of orderNodes) {
+    const m = n.metadata;
+    totalOrders += Number(m.totalOrders ?? 0);
+    totalAmount += Number(m.totalAmount ?? 0);
+
+    const breakdown = m.categoryBreakdown as
+      | Array<{ categoryId: string; orderCount: number; totalAmount: number }>
+      | undefined;
+    if (breakdown) {
+      for (const cat of breakdown) {
+        const existing = byOrderCategory[cat.categoryId];
+        if (existing) {
+          existing.orderCount += cat.orderCount;
+          existing.totalAmount += cat.totalAmount;
+        } else {
+          byOrderCategory[cat.categoryId] = {
+            orderCount: cat.orderCount,
+            totalAmount: cat.totalAmount,
+          };
+        }
+      }
+    }
+  }
+
+  // ── Seasonal ────────────────────────────────────────────────
+  const seasonalNodes = engine.queryByMetadata({
+    type: "seasonal_pattern",
+    limit: 50,
+  });
+  const seasonal = seasonalNodes.map((n) => n.metadata);
+
+  // ── Cross-account ───────────────────────────────────────────
+  const plasticovListings = engine.queryByMetadata({
+    type: "listing_snapshot",
+    sellerId: "plasticov",
+    limit: 200,
+  });
+  const maustianListings = engine.queryByMetadata({
+    type: "listing_snapshot",
+    sellerId: "maustian",
+    limit: 200,
+  });
+
+  const pByStatus: Record<string, number> = {};
+  for (const n of plasticovListings) {
+    const s = String(n.metadata.status ?? "unknown");
+    pByStatus[s] = (pByStatus[s] ?? 0) + 1;
+  }
+  const mByStatus: Record<string, number> = {};
+  for (const n of maustianListings) {
+    const s = String(n.metadata.status ?? "unknown");
+    mByStatus[s] = (mByStatus[s] ?? 0) + 1;
+  }
+
+  return {
+    capturedAt,
+    listings: {
+      total: listingNodes.length,
+      byStatus,
+      byCategory,
+      avgPrice: priceCount > 0 ? Math.round(totalPrice / priceCount) : 0,
+    },
+    visits: {
+      trendingUp,
+      trendingDown,
+      totalSnapshots: visitNodes.length,
+    },
+    orders: {
+      totalOrders,
+      totalAmount,
+      byCategory: byOrderCategory,
+    },
+    seasonal,
+    crossAccount: {
+      plasticov: { total: plasticovListings.length, byStatus: pByStatus },
+      maustian: { total: maustianListings.length, byStatus: mByStatus },
+    },
+    alerts,
+  };
+}
+
 // ── Worker ─────────────────────────────────────────────────────────────
 
 /**
@@ -844,6 +1091,14 @@ export function startBackgroundIngestion(
 ): { stop: () => void } {
   const intervalMs = config.intervalMs ?? 6 * 60 * 60 * 1000; // 6 hours
   const sellerNames = config.sellerNames ?? {};
+
+  // ── DeepSeek client (optional) ──────────────────────────────
+  const openai = config.deepseekApiKey
+    ? new OpenAI({
+        baseURL: "https://api.deepseek.com",
+        apiKey: config.deepseekApiKey,
+      })
+    : undefined;
 
   const run = async () => {
     const runStart = Date.now();
@@ -969,6 +1224,36 @@ export function startBackgroundIngestion(
       `[background-ingestion] Ingestion complete: ${totalListings} listings, ` +
         `${totalOrders} orders, ${alerts.length} alerts (${duration}ms)`,
     );
+
+    // ── Phase 6: DeepSeek daily insights ─────────────────────
+    if (openai) {
+      try {
+        const dailyContext = buildDailyContext(config.engine, sellerNames, alerts);
+        const insights = await generateDailyInsights(dailyContext, openai);
+
+        if (insights) {
+          const chatIds = await config.listActiveChats();
+          const insightMessage =
+            `🧠 <b>Análisis DeepSeek del negocio</b>\n\n${insights}`;
+
+          for (const chatId of chatIds) {
+            try {
+              await config.sendProactiveMessage(chatId, insightMessage);
+            } catch (err) {
+              console.error(
+                `[background-ingestion] Failed to send insights to chat ${chatId}:`,
+                err instanceof Error ? err.message : String(err),
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.error(
+          "[background-ingestion] DeepSeek insight phase failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
   };
 
   // Run immediately on start, then on interval

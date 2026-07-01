@@ -28,43 +28,199 @@ describe("createGetBusinessContextTool", () => {
 
   it("has correct name and description", () => {
     expect(tool.name).toBe("get_business_context");
-    expect(tool.description).toMatch(/contexto del negocio/i);
+    expect(tool.description).toMatch(/negocio/i);
   });
 
-  it("has valid parameters schema with required 'query'", () => {
+  it("has valid parameters schema with dataType enum and no required fields", () => {
     const params = tool.parameters;
     expect(params.type).toBe("object");
     const props = params.properties as Record<string, unknown>;
-    expect(props).toHaveProperty("query");
-    const required = params.required as string[];
-    expect(required).toContain("query");
+    expect(props).toHaveProperty("dataType");
+    expect(props).toHaveProperty("status");
+    expect(props).toHaveProperty("categoryId");
+    expect(props).toHaveProperty("sellerId");
+    expect(props).toHaveProperty("itemId");
+    expect(props).toHaveProperty("months");
+
+    const dataTypeProp = props.dataType as Record<string, unknown>;
+    expect(dataTypeProp.enum).toEqual([
+      "listings",
+      "visits",
+      "orders",
+      "seasonal",
+      "cross_account",
+      "all",
+    ]);
+
+    const statusProp = props.status as Record<string, unknown>;
+    expect(statusProp.enum).toEqual(["active", "paused", "closed"]);
+
+    // required is explicitly an empty array (all fields are optional).
+    const required = params.required as string[] | undefined;
+    expect(required).toEqual([]);
   });
 
   it("returns empty context when graph has no matching nodes", async () => {
-    const result = await tool.execute({ query: "ventas" });
+    const result = await tool.execute({ dataType: "all" });
     expect(result).toHaveProperty("context");
-    expect(result).toHaveProperty("node_count", 0);
+    expect(result).toHaveProperty("metadata");
+    const ctx = result.context as Record<string, unknown>;
+    expect(ctx).toHaveProperty("listings");
+    expect(ctx).toHaveProperty("visits");
+    expect(ctx).toHaveProperty("orders");
+    expect(ctx).toHaveProperty("seasonal");
+    expect(ctx).toHaveProperty("cross_account");
+    const listings = ctx.listings as Record<string, unknown>;
+    expect(listings.total).toBe(0);
   });
 
-  it("returns error when query is missing or empty", async () => {
+  it("returns structured listings data when Cortex has listing snapshots", async () => {
+    const item1 = engine.createNode("listing_snapshot_MLC1_2026-07-01", {
+      type: "listing_snapshot",
+      itemId: "MLC1",
+      sellerId: "plasticov",
+      status: "active",
+      categoryId: "MLC1743",
+      price: 15000,
+      capturedAt: new Date().toISOString(),
+    });
+    engine.createNode("listing_snapshot_MLC2_2026-07-01", {
+      type: "listing_snapshot",
+      itemId: "MLC2",
+      sellerId: "plasticov",
+      status: "paused",
+      categoryId: "MLC1743",
+      price: 25000,
+      capturedAt: new Date().toISOString(),
+    });
+
+    const result = await tool.execute({ dataType: "listings" });
+    expect(result).toHaveProperty("context");
+    expect(result).toHaveProperty("metadata");
+
+    const ctx = result.context as Record<string, unknown>;
+    const listings = ctx.listings as Record<string, unknown>;
+    expect(listings.total).toBe(2);
+    expect(listings.byStatus).toEqual({ active: 1, paused: 1 });
+    expect(listings.byCategory).toEqual({ MLC1743: 2 });
+    expect(listings.avgPrice).toBe(20000);
+  });
+
+  it("filters listings by sellerId", async () => {
+    engine.createNode("listing_snapshot_p_2026-07-01", {
+      type: "listing_snapshot",
+      itemId: "MLC1",
+      sellerId: "plasticov",
+      status: "active",
+      capturedAt: new Date().toISOString(),
+    });
+    engine.createNode("listing_snapshot_m_2026-07-01", {
+      type: "listing_snapshot",
+      itemId: "MLC2",
+      sellerId: "maustian",
+      status: "active",
+      capturedAt: new Date().toISOString(),
+    });
+
+    const result = await tool.execute({ dataType: "listings", sellerId: "plasticov" });
+    const ctx = result.context as Record<string, unknown>;
+    const listings = ctx.listings as Record<string, unknown>;
+    expect(listings.total).toBe(1);
+  });
+
+  it("returns structured visits data when Cortex has visit snapshots", async () => {
+    engine.createNode("visit_snapshot_MLC1_2026-07-01", {
+      type: "visit_snapshot",
+      itemId: "MLC1",
+      sellerId: "plasticov",
+      totalVisits: 100,
+      capturedAt: "2026-06-30T00:00:00.000Z",
+    });
+    engine.createNode("visit_snapshot_MLC1_2026-07-02", {
+      type: "visit_snapshot",
+      itemId: "MLC1",
+      sellerId: "plasticov",
+      totalVisits: 150,
+      capturedAt: "2026-07-01T00:00:00.000Z",
+    });
+
+    const result = await tool.execute({ dataType: "visits" });
+    const ctx = result.context as Record<string, unknown>;
+    const visits = ctx.visits as Record<string, unknown>;
+    expect(visits.total).toBe(1);
+    const items = visits.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(items[0]!.itemId).toBe("MLC1");
+    expect(items[0]!.trend).toBe("up");
+  });
+
+  it("returns structured orders data when Cortex has order snapshots", async () => {
+    engine.createNode("order_snapshot_plasticov_2026-07-01", {
+      type: "order_snapshot",
+      sellerId: "plasticov",
+      totalOrders: 5,
+      totalAmount: 50000,
+      categoryBreakdown: [
+        { categoryId: "MLC1743", orderCount: 3, totalAmount: 30000 },
+        { categoryId: "MLC1234", orderCount: 2, totalAmount: 20000 },
+      ],
+      capturedAt: new Date().toISOString(),
+    });
+
+    const result = await tool.execute({ dataType: "orders" });
+    const ctx = result.context as Record<string, unknown>;
+    const orders = ctx.orders as Record<string, unknown>;
+    expect(orders.totalOrders).toBe(5);
+    expect(orders.totalAmount).toBe(50000);
+
+    const byCategory = orders.byCategory as Record<string, { orderCount: number; totalAmount: number }>;
+    expect(byCategory.MLC1743).toBeDefined();
+    expect(byCategory.MLC1743!.orderCount).toBe(3);
+  });
+
+  it("returns cross-account comparison with both sellers", async () => {
+    engine.createNode("listing_snapshot_p_2026-07-01", {
+      type: "listing_snapshot",
+      itemId: "MLC1",
+      sellerId: "plasticov",
+      status: "active",
+      categoryId: "MLC1743",
+      price: 15000,
+      capturedAt: new Date().toISOString(),
+    });
+    engine.createNode("listing_snapshot_m_2026-07-01", {
+      type: "listing_snapshot",
+      itemId: "MLC2",
+      sellerId: "maustian",
+      status: "active",
+      categoryId: "MLC1743",
+      price: 20000,
+      capturedAt: new Date().toISOString(),
+    });
+
+    const result = await tool.execute({ dataType: "cross_account" });
+    const ctx = result.context as Record<string, unknown>;
+    const cross = ctx.cross_account as Record<string, unknown>;
+
+    const plasticov = cross.plasticov as Record<string, unknown>;
+    const maustian = cross.maustian as Record<string, unknown>;
+
+    expect(plasticov.total).toBe(1);
+    expect(maustian.total).toBe(1);
+  });
+
+  it("defaults to dataType 'all' when dataType is missing", async () => {
     const result = await tool.execute({});
-    expect(result).toHaveProperty("error");
-    expect(result.error).toMatch(/obligatorio|query/i);
+    expect(result).toHaveProperty("context");
+    expect(result).toHaveProperty("metadata");
+    const meta = result.metadata as Record<string, unknown>;
+    expect(meta.dataType).toBe("all");
   });
 
-  it("returns TraversalResult.context when graph has matching nodes", async () => {
-    engine.createNode("ventas_diarias", { total: 500000 });
-    engine.createNode("margen", { valor: 32 });
-    const a = engine.createNode("a", {});
-    const b = engine.createNode("b", {});
-    engine.createEdge(a.id, b.id);
-
-    const result = await tool.execute({ query: "ventas margen" });
-
-    // TraversalResult.context is a flat Record<string, unknown>.
-    expect(result).toHaveProperty("activated_nodes");
-    expect(result).toHaveProperty("node_count");
-    expect(result.node_count).toBeGreaterThan(0);
+  it("respects the months parameter for time window", async () => {
+    const result = await tool.execute({ dataType: "orders", months: 1 });
+    const meta = result.metadata as Record<string, unknown>;
+    expect(meta.months).toBe(1);
   });
 });
 
