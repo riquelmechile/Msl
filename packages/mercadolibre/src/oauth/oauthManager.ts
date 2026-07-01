@@ -104,6 +104,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
       user_id: (data.user_id as string) ?? "",
       nickname: (data.nickname as string) ?? sellerId,
       account_level: (data.account_level as OAuthTokens["account_level"]) ?? "classic",
+      ...(typeof data.scope === "string" ? { scope: data.scope } : {}),
     };
 
     store.saveToken(sellerId, tokens);
@@ -137,17 +138,58 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
     });
 
     if (!response.ok) {
-      throw new Error(`OAuth token refresh failed: ${response.status} ${response.statusText}`);
+      const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      const errorCode = (body.error as string) ?? "";
+      const errorDesc = (body.error_description as string) ?? "";
+
+      // Per official docs: invalid_grant means the refresh_token was already
+      // consumed (single-use), expired (6 months), or user revoked authorization.
+      if (errorCode === "invalid_grant") {
+        throw new Error(
+          `OAuth token refresh failed (invalid_grant) for seller ${sellerId}. ` +
+            `${errorDesc} The refresh_token may have expired, already been consumed, ` +
+            "or the seller may have revoked authorization. Re-authorization through the OAuth flow is required.",
+        );
+      }
+
+      throw new Error(
+        `OAuth token refresh failed for seller ${sellerId}: ${response.status} ${errorCode} - ${errorDesc}`,
+      );
     }
 
     const data = (await response.json()) as Record<string, unknown>;
+
+    // Per official docs: refresh_token is SINGLE-USE.
+    // The API MUST return a new refresh_token on every refresh.
+    // If it doesn't, the old token was likely already consumed — do NOT reuse it.
+    const newRefreshToken = data.refresh_token as string | undefined;
+    if (!newRefreshToken) {
+      throw new Error(
+        `OAuth token refresh did not return a new refresh_token for seller ${sellerId}. ` +
+          "The previous refresh_token may have already been consumed (single-use) or is invalid. " +
+          "Re-authorization is required.",
+      );
+    }
+
+    const userIdFromRefresh = data.user_id as string | number | undefined;
+    assertOAuthAccountMatchesRole(sellerId, userIdFromRefresh);
+
+    const scope = data.scope as string | undefined;
+    if (scope && !scope.includes("offline_access")) {
+      throw new Error(
+        `OAuth token for seller ${sellerId} lacks offline_access scope. Received: "${scope}". ` +
+          "Re-authorize the application with offline_access to receive refresh tokens.",
+      );
+    }
+
     const tokens: OAuthTokens = {
       access_token: data.access_token as string,
-      refresh_token: (data.refresh_token as string) ?? stored.refresh_token,
+      refresh_token: newRefreshToken,
       expires_in: (data.expires_in as number) ?? 21600,
       user_id: stored.user_id,
       nickname: stored.nickname,
       account_level: stored.account_level as OAuthTokens["account_level"],
+      ...(scope ? { scope } : {}),
     };
 
     store.saveToken(sellerId, tokens);

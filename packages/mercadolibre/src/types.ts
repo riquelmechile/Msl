@@ -57,6 +57,8 @@ export type OAuthTokens = {
   user_id: string;
   nickname: string;
   account_level: "classic" | "premium" | "platinum";
+  /** OAuth scopes granted (e.g. "offline_access read write"). Must include offline_access for refresh tokens. */
+  scope?: string;
 };
 
 export type StoredToken = {
