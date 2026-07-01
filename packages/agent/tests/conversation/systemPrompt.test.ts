@@ -96,6 +96,13 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/automatización de precio activa/i);
     expect(prompt).toMatch(/rechazar o ignorar cambios de precio vía \/items/i);
   });
+
+  it("contains read-only promotions intelligence guidance", () => {
+    expect(prompt).toContain("read_seller_promotions");
+    expect(prompt).toContain("read_item_promotions");
+    expect(prompt).toMatch(/no crean campañas/i);
+    expect(prompt).toMatch(/utilidad neta/i);
+  });
 });
 
 describe("buildSystemPrompt — CEO strategies injection", () => {

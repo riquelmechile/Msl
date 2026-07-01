@@ -38,6 +38,8 @@ import {
   createCheckListingQualityTool,
   createCheckPriceIntelligenceTool,
   createFindAutomatedPriceItemsTool,
+  createReadSellerPromotionsTool,
+  createReadItemPromotionsTool,
   createAuditAllQualityTool,
   createRelistListingTool,
   createFindRelistOpportunitiesTool,
@@ -258,6 +260,12 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.mlcClient && !toolMap.has("find_automated_price_items")) {
     toolMap.set("find_automated_price_items", createFindAutomatedPriceItemsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("read_seller_promotions")) {
+    toolMap.set("read_seller_promotions", createReadSellerPromotionsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("read_item_promotions")) {
+    toolMap.set("read_item_promotions", createReadItemPromotionsTool(config.mlcClient));
   }
   if (config.mlcClient && !toolMap.has("relist_listing")) {
     toolMap.set("relist_listing", createRelistListingTool(config.mlcClient));

@@ -21,6 +21,8 @@ import {
   createFindRelistOpportunitiesTool,
   createCheckPriceIntelligenceTool,
   createFindAutomatedPriceItemsTool,
+  createReadSellerPromotionsTool,
+  createReadItemPromotionsTool,
 } from "../../src/conversation/syncTools.js";
 import { createAgentLoop } from "../../src/conversation/agentLoop.js";
 import { createGraphEngine } from "@msl/memory";
@@ -413,6 +415,80 @@ function createStubMlcPriceClient(): MlcApiClient {
       data: {
         paging: { total: 1, offset: 0, limit: 50 },
         items: [{ itemId: "MLC1001", status: "active", ruleId: "rule-1" }],
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getSellerPromotions: async (sellerId) => ({
+      sellerId,
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        paging: { offset: 0, limit: 50, total: 1 },
+        promotions: [
+          {
+            id: "P-MLC1806015",
+            type: "MARKETPLACE_CAMPAIGN",
+            status: "started",
+            name: "Campaña de prueba",
+            benefits: { type: "REBATE", meliPercent: 5, sellerPercent: 25 },
+          },
+        ],
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getPromotionDetail: async (sellerId, promotionId, promotionType) => ({
+      sellerId,
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        id: promotionId,
+        type: promotionType,
+        subType: "FLEXIBLE_PERCENTAGE",
+        status: "started",
+        name: "camp del seller",
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getPromotionItems: async (sellerId, promotionId, promotionType) => ({
+      sellerId,
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        promotionId,
+        promotionType,
+        paging: { limit: 50, searchAfter: "next-cursor" },
+        items: [{ id: "MLC1001", status: "started", price: 23968, originalPrice: 28549 }],
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getItemPromotions: async (sellerId, itemId) => ({
+      sellerId,
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        itemId,
+        promotions: [
+          {
+            id: "P-MLC1806015",
+            type: "LIGHTNING",
+            status: "started",
+            suggestedDiscountedPrice: 19990,
+            meliPercentage: 5,
+            sellerPercentage: 20,
+            stock: { remainingStock: 8 },
+            boostedOffer: true,
+            discountMeliBoostedPercentage: 7,
+            totalPriceForBoostedOffer: 18990,
+          },
+        ],
       },
       completeness: "complete",
       freshness: {} as never,
@@ -837,6 +913,113 @@ describe("price intelligence tools — unit", () => {
     });
     expect(result.automationGuard).toMatch(/antes de editar un precio/i);
     expect(result.summary).toMatch(/1 publicaciones/i);
+  });
+
+  it("reads seller promotions with optional detail and items without mutations", async () => {
+    const tool = createReadSellerPromotionsTool(createStubMlcPriceClient());
+
+    const result = await tool.execute({
+      sellerId: "plasticov",
+      promotionId: "P-MLC1806015",
+      promotionType: "MARKETPLACE_CAMPAIGN",
+      includeDetail: true,
+      includeItems: true,
+      status: "started",
+      statusItem: "active",
+      limit: 50,
+    });
+
+    expect(result).toMatchObject({
+      sellerId: "plasticov",
+      kind: "promotion-intelligence",
+      source: "mercadolibre-api",
+      noMutationExecuted: true,
+      promotions: {
+        data: {
+          promotions: [
+            {
+              id: "P-MLC1806015",
+              type: "MARKETPLACE_CAMPAIGN",
+              benefits: { meliPercent: 5, sellerPercent: 25 },
+            },
+          ],
+        },
+      },
+      detail: { data: { subType: "FLEXIBLE_PERCENTAGE" } },
+      items: { data: { items: [{ id: "MLC1001", price: 23968, originalPrice: 28549 }] } },
+    });
+  });
+
+  it("returns sanitized partial errors for optional promotion reads", async () => {
+    const tool = createReadSellerPromotionsTool({
+      ...createStubMlcPriceClient(),
+      getPromotionItems: async () => {
+        throw new Error("items failed Bearer promotion-secret");
+      },
+    });
+
+    const result = await tool.execute({
+      sellerId: "plasticov",
+      promotionId: "P-MLC1806015",
+      promotionType: "MARKETPLACE_CAMPAIGN",
+      includeItems: true,
+    });
+
+    expect(result.promotions).toMatchObject({ data: { paging: { total: 1 } } });
+    expect(result.partialErrors).toEqual([
+      { endpoint: "promotion_items", message: "items failed Bearer [REDACTED]" },
+    ]);
+  });
+
+  it("emits partialErrors when optional promotion methods are unavailable", async () => {
+    const clientWithoutPromotionReads = createStubMlcPriceClient();
+    delete (clientWithoutPromotionReads as Record<string, unknown>).getPromotionDetail;
+    delete (clientWithoutPromotionReads as Record<string, unknown>).getPromotionItems;
+    const tool = createReadSellerPromotionsTool(clientWithoutPromotionReads);
+
+    const result = await tool.execute({
+      sellerId: "plasticov",
+      promotionId: "P-MLC1806015",
+      promotionType: "MARKETPLACE_CAMPAIGN",
+      includeDetail: true,
+      includeItems: true,
+    });
+
+    expect(result.promotions).toMatchObject({ data: { paging: { total: 1 } } });
+    expect(result.partialErrors).toEqual([
+      {
+        endpoint: "promotion_detail",
+        message:
+          "MlcApiClient does not support promotion detail reads for this token/client version.",
+      },
+      {
+        endpoint: "promotion_items",
+        message:
+          "MlcApiClient does not support promotion item reads for this token/client version.",
+      },
+    ]);
+  });
+
+  it("reads item promotions with suggested discount and boost fields", async () => {
+    const tool = createReadItemPromotionsTool(createStubMlcPriceClient());
+
+    const result = await tool.execute({ sellerId: "plasticov", itemId: "MLC1001" });
+
+    expect(result).toMatchObject({
+      sellerId: "plasticov",
+      noMutationExecuted: true,
+      data: {
+        itemId: "MLC1001",
+        promotions: [
+          {
+            id: "P-MLC1806015",
+            suggestedDiscountedPrice: 19990,
+            boostedOffer: true,
+            totalPriceForBoostedOffer: 18990,
+          },
+        ],
+      },
+    });
   });
 });
 
