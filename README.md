@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <code>659 tests</code> ·
+  <code>836 tests</code> ·
   <code>TypeScript 5.8</code> ·
   <code>Node ≥22</code> ·
   <code>DeepSeek v4</code> ·
@@ -27,11 +27,11 @@ It understands your intent, proposes concrete actions, simulates buyer/seller/co
 git clone https://github.com/riquelmechile/Msl.git
 cd Msl
 npm install
-npm test          # 659 tests in 33 files
+npm test          # 836 tests in 36 files
 npm run dev       # http://127.0.0.1:3000
 ```
 
-> **Current demo boundary:** the Next.js `/api/chat` route is a deterministic demo path. It uses in-memory demo stores and `mockClient: true`; production chat persistence, auth, and real LLM wiring are still future work.
+> **Current runtime boundary:** the Next.js `/api/chat` and Telegram bot stay safe by default with local/mock behavior. When the required env vars are configured, `/api/chat` can persist durable SQLite chat state and use DeepSeek; Telegram can persist per-chat sessions/strategy/autonomy state and optionally write Cortex memory through Escribano.
 
 > **Verification:** CI and release readiness should keep the durable gates green: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, and `npm run build`.
 
@@ -53,15 +53,31 @@ Naming matters here: **MSL** is the project/app name; **ML** means MercadoLibre;
 - Set `MSL_ENCRYPTION_KEY` before storing real OAuth tokens. Changing it can make existing encrypted local tokens unreadable; missing keys are only acceptable in explicit local/demo/test mode.
 - If a real secret is accidentally committed or pushed, rotate/revoke it immediately and remove it from history before trusting the repository again.
 
+### Runtime secrets checklist
+
+Fill only the values you are ready to enable in `.env.local` or your deployment secret store:
+
+| Enables             | Variables                                                                                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telegram bot        | `BOT_TOKEN`, optional `MSL_TELEGRAM_SQLITE_PATH`, optional `MSL_TELEGRAM_CORTEX_SQLITE_PATH` or `MSL_CORTEX_SQLITE_PATH`, `MSL_CHAT_SELLER_ID`, `MSL_CHAT_SELLER_NAME` |
+| Real LLM responses  | `DEEPSEEK_API_KEY`                                                                                                                                                     |
+| Durable web chat    | `MSL_API_KEY`, `MSL_CHAT_SQLITE_PATH`, `MSL_CHAT_SELLER_ID`, `MSL_CHAT_SELLER_NAME`                                                                                    |
+| MCP auth/runtime    | `MSL_MCP_API_KEY`, `MSL_APPROVAL_QUEUE_DB_PATH`                                                                                                                        |
+| OAuth token storage | `MSL_ENCRYPTION_KEY`, `MERCADOLIBRE_CLIENT_ID`, `MERCADOLIBRE_CLIENT_SECRET`, `MERCADOLIBRE_REDIRECT_URI`, `MSL_MERCADOLIBRE_OAUTH_DB_PATH`                            |
+| Dual-account sync   | `MERCADOLIBRE_SOURCE_SELLER_ID`, `MERCADOLIBRE_TARGET_SELLER_ID` (optional aliases: `PLASTICOV_SELLER_ID`, `MAUSTIAN_SELLER_ID`)                                       |
+
+Telegram durable session keys include the configured seller id (`telegram:<sellerId>:<chatId>`), so reusing a SQLite file after changing `MSL_CHAT_SELLER_ID` does not load a previous seller's chat state. Telegram Cortex/Escribano memory also opens a seller-scoped SQLite filename derived from `MSL_TELEGRAM_CORTEX_SQLITE_PATH` or, if unset, `MSL_CORTEX_SQLITE_PATH`.
+
 ## Production boundary today
 
-| Area               | Current state                                                                                             | Do not assume yet                                                   |
-| ------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Web chat           | `/api/chat` is demo-backed with in-memory stores and `mockClient: true`.                                  | Durable production chat auth, persistence, or real DeepSeek wiring. |
-| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.     | Manual raw token setup or account role guessing.                    |
-| Product sync       | Sync direction is Plasticov source → Maustian target on `MLC`; reverse/arbitrary seller IDs are rejected. | General-purpose bidirectional sync.                                 |
-| MCP tools          | MCP exposes a stubbed compatible surface for clients.                                                     | Production business-operation execution through MCP.                |
-| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                              | Secrets in CI; use GitHub Secrets/platform secrets.                 |
+| Area               | Current state                                                                                               | Do not assume yet                                                   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek. | Public unauthenticated production chat.                             |
+| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                         | Secret values in Git, or mutation execution without approval gates. |
+| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.       | Manual raw token setup or account role guessing.                    |
+| Product sync       | Sync direction is Plasticov source → Maustian target on `MLC`; reverse/arbitrary seller IDs are rejected.   | General-purpose bidirectional sync.                                 |
+| MCP tools          | MCP exposes a stubbed compatible surface for clients.                                                       | Production business-operation execution through MCP.                |
+| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                | Secrets in CI; use GitHub Secrets/platform secrets.                 |
 
 ## Architecture
 

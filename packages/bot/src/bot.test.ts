@@ -3,26 +3,74 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // We import grammy normally but vitest mocks it
 import type { Api } from "grammy";
 
-// Mock grammY
-const mockCommand = vi.fn().mockReturnThis();
-const mockOn = vi.fn().mockReturnThis();
-const mockCatch = vi.fn().mockReturnThis();
-const mockSetMyCommands = vi.fn().mockResolvedValue(undefined);
-const mockStart = vi.fn().mockResolvedValue(undefined);
-const mockStop = vi.fn().mockResolvedValue(undefined);
+// Mock grammY and runtime dependencies.
+const mocks = vi.hoisted(() => {
+  const mockCommand = vi.fn().mockReturnThis();
+  const mockOn = vi.fn().mockReturnThis();
+  const mockCatch = vi.fn().mockReturnThis();
+  const mockSetMyCommands = vi.fn().mockResolvedValue(undefined);
+  const mockStart = vi.fn().mockResolvedValue(undefined);
+  const mockStop = vi.fn().mockResolvedValue(undefined);
+  const mockConverse = vi.fn().mockResolvedValue({
+    response: "Hola, tu margen actual es del 35%.",
+    updatedState: {
+      messages: [{ role: "assistant", content: "Hola", timestamp: new Date() }],
+      contextWindowLimit: 20,
+      sessionMetadata: {
+        sellerId: "seller-test",
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+      },
+    },
+  });
+  const mockCreateStrategyStore = vi.fn(() => ({ listActive: vi.fn(() => []) }));
+  const mockCreateSessionStore = vi.fn(() => ({
+    load: vi.fn(() => null),
+    save: vi.fn(),
+    delete: vi.fn(),
+    listActive: vi.fn(() => []),
+  }));
+  const mockCreateAutonomyEngine = vi.fn(() => ({
+    getCurrentLevel: vi.fn(() => 1),
+    setLevel: vi.fn(),
+    recordKpi: vi.fn(),
+    evaluateDegradation: vi.fn(() => null),
+    evaluatePromotion: vi.fn(() => ({ recommend: false, to: 1 })),
+    canAutoApprove: vi.fn(() => false),
+  }));
+  const mockBuildSystemPrompt = vi.fn((sellerName: string) => `Prompt for ${sellerName}`);
+  const mockEscribanoObserver = vi.fn();
+  const mockCreateGraphEngine = vi.fn(() => ({ engine: true }));
+
+  return {
+    mockCommand,
+    mockOn,
+    mockCatch,
+    mockSetMyCommands,
+    mockStart,
+    mockStop,
+    mockConverse,
+    mockCreateStrategyStore,
+    mockCreateSessionStore,
+    mockCreateAutonomyEngine,
+    mockBuildSystemPrompt,
+    mockEscribanoObserver,
+    mockCreateGraphEngine,
+  };
+});
 
 const mockApi: Partial<Api> = {
-  setMyCommands: mockSetMyCommands,
+  setMyCommands: mocks.mockSetMyCommands,
   sendMessage: vi.fn().mockResolvedValue({ message_id: 1 }),
 };
 
 const mockBotInstance = {
-  command: mockCommand,
-  on: mockOn,
-  catch: mockCatch,
+  command: mocks.mockCommand,
+  on: mocks.mockOn,
+  catch: mocks.mockCatch,
   api: mockApi,
-  start: mockStart,
-  stop: mockStop,
+  start: mocks.mockStart,
+  stop: mocks.mockStop,
 };
 
 vi.mock("grammy", () => ({
@@ -32,14 +80,22 @@ vi.mock("grammy", () => ({
 // Mock agent
 vi.mock("@msl/agent", () => ({
   createAgentLoop: vi.fn(() => ({
-    converse: vi.fn().mockResolvedValue({
-      response: "Hola, tu margen actual es del 35%.",
-    }),
+    converse: mocks.mockConverse,
   })),
+  buildSystemPrompt: mocks.mockBuildSystemPrompt,
+  createStrategyStore: mocks.mockCreateStrategyStore,
+  createSessionStore: mocks.mockCreateSessionStore,
+  createAutonomyEngine: mocks.mockCreateAutonomyEngine,
+  EscribanoObserver: mocks.mockEscribanoObserver,
 }));
 
-import { createTelegramBot } from "./index.js";
+vi.mock("@msl/memory", () => ({
+  createGraphEngine: mocks.mockCreateGraphEngine,
+}));
+
+import { createTelegramBot, createTelegramBotFromEnv } from "./index.js";
 import { Bot } from "grammy";
+import type { ConversationState } from "@msl/agent";
 
 describe("createTelegramBot (grammY)", () => {
   const config = {
@@ -52,6 +108,7 @@ describe("createTelegramBot (grammY)", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.mockConverse.mockClear();
   });
 
   it("creates a bot with start and stop methods", () => {
@@ -75,22 +132,22 @@ describe("createTelegramBot (grammY)", () => {
 
   it("registers /start command", () => {
     createTelegramBot(config);
-    expect(mockCommand).toHaveBeenCalledWith("start", expect.any(Function));
+    expect(mocks.mockCommand).toHaveBeenCalledWith("start", expect.any(Function));
   });
 
   it("registers /help command", () => {
     createTelegramBot(config);
-    expect(mockCommand).toHaveBeenCalledWith("help", expect.any(Function));
+    expect(mocks.mockCommand).toHaveBeenCalledWith("help", expect.any(Function));
   });
 
   it("registers text message handler", () => {
     createTelegramBot(config);
-    expect(mockOn).toHaveBeenCalledWith("message:text", expect.any(Function));
+    expect(mocks.mockOn).toHaveBeenCalledWith("message:text", expect.any(Function));
   });
 
   it("registers commands in Telegram UI", () => {
     createTelegramBot(config);
-    expect(mockSetMyCommands).toHaveBeenCalledWith(
+    expect(mocks.mockSetMyCommands).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({ command: "start" }),
         expect.objectContaining({ command: "help" }),
@@ -101,13 +158,13 @@ describe("createTelegramBot (grammY)", () => {
   it("start calls bot.start", async () => {
     const bot = createTelegramBot(config);
     await bot.start();
-    expect(mockStart).toHaveBeenCalled();
+    expect(mocks.mockStart).toHaveBeenCalled();
   });
 
   it("stop calls bot.stop", async () => {
     const bot = createTelegramBot(config);
     await bot.stop();
-    expect(mockStop).toHaveBeenCalled();
+    expect(mocks.mockStop).toHaveBeenCalled();
   });
 
   it("accepts optional grammY client options", () => {
@@ -120,6 +177,176 @@ describe("createTelegramBot (grammY)", () => {
     expect(Bot).toHaveBeenCalledWith(
       "test-token-123",
       expect.objectContaining({ client: { environment: "test" } }),
+    );
+  });
+
+  it("loads and saves durable per-seller Telegram session state when a session store is provided", async () => {
+    const savedState = {
+      messages: [{ role: "user" as const, content: "hola", timestamp: new Date() }],
+      contextWindowLimit: 20,
+      sessionMetadata: {
+        sellerId: "seller-a",
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+      },
+    };
+    const sessionStore = {
+      load: vi.fn(() => savedState),
+      save: vi.fn(),
+      delete: vi.fn(),
+      listActive: vi.fn(() => []),
+    };
+    createTelegramBot({ ...config, sellerId: "seller-a", sessionStore });
+
+    const handler = mocks.mockOn.mock.calls.find(([event]) => event === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+
+    await handler!({
+      message: { text: "¿qué margen tengo?" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(sessionStore.load).toHaveBeenCalledWith("telegram:seller-a:123");
+    expect(mocks.mockConverse).toHaveBeenCalledWith("¿qué margen tengo?", savedState);
+    const saveCalls = vi.mocked(sessionStore.save).mock.calls;
+    const savedConversationState = saveCalls[0]?.[1] as ConversationState | undefined;
+    expect(saveCalls[0]?.[0]).toBe("telegram:seller-a:123");
+    expect(savedConversationState?.messages).toHaveLength(1);
+  });
+
+  it("does not load another seller's durable Telegram state for the same chat", async () => {
+    const sellerAState = {
+      messages: [{ role: "user" as const, content: "seller-a state", timestamp: new Date() }],
+      contextWindowLimit: 20,
+      sessionMetadata: {
+        sellerId: "seller-a",
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+      },
+    };
+    const sessionStore = {
+      load: vi.fn((sessionId: string) =>
+        sessionId === "telegram:seller-a:123" ? sellerAState : null,
+      ),
+      save: vi.fn(),
+      delete: vi.fn(),
+      listActive: vi.fn(() => []),
+    };
+    createTelegramBot({ ...config, sellerId: "seller-b", sessionStore });
+
+    const handler = mocks.mockOn.mock.calls.find(([event]) => event === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+
+    await handler!({
+      message: { text: "¿qué margen tengo?" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(sessionStore.load).toHaveBeenCalledWith("telegram:seller-b:123");
+    expect(mocks.mockConverse).not.toHaveBeenCalledWith("¿qué margen tengo?", sellerAState);
+    const state = mocks.mockConverse.mock.calls[0]?.[1] as ConversationState | undefined;
+    expect(state?.sessionMetadata.sellerId).toBe("seller-b");
+    expect(state?.messages).toEqual([]);
+    expect(sessionStore.save).toHaveBeenCalledWith("telegram:seller-b:123", expect.any(Object));
+  });
+
+  it("fails closed when a durable Telegram state has mismatched seller metadata", async () => {
+    const mismatchedState = {
+      messages: [{ role: "user" as const, content: "seller-a state", timestamp: new Date() }],
+      contextWindowLimit: 20,
+      sessionMetadata: {
+        sellerId: "seller-a",
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+      },
+    };
+    const sessionStore = {
+      load: vi.fn(() => mismatchedState),
+      save: vi.fn(),
+      delete: vi.fn(),
+      listActive: vi.fn(() => []),
+    };
+    createTelegramBot({ ...config, sellerId: "seller-b", sessionStore });
+
+    const handler = mocks.mockOn.mock.calls.find(([event]) => event === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+
+    await handler!({
+      message: { text: "¿qué margen tengo?" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const state = mocks.mockConverse.mock.calls[0]?.[1] as ConversationState | undefined;
+    expect(state).not.toBe(mismatchedState);
+    expect(state?.sessionMetadata.sellerId).toBe("seller-b");
+    expect(state?.messages).toEqual([]);
+  });
+
+  it("creates env-backed runtime wiring without inventing secrets", () => {
+    const bot = createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_SQLITE_PATH: ":memory:",
+      MSL_TELEGRAM_CORTEX_SQLITE_PATH: ":memory:",
+      MSL_CHAT_SELLER_ID: "seller-a",
+      MSL_CHAT_SELLER_NAME: "Maustian",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    expect(bot).toBeDefined();
+    expect(Bot).toHaveBeenCalledWith("test-token-123", undefined);
+    expect(mocks.mockCreateSessionStore).toHaveBeenCalled();
+    expect(mocks.mockCreateStrategyStore).toHaveBeenCalled();
+    expect(mocks.mockCreateAutonomyEngine).toHaveBeenCalled();
+    expect(mocks.mockCreateGraphEngine).toHaveBeenCalledWith(":memory:");
+    expect(mocks.mockBuildSystemPrompt).toHaveBeenCalledWith("Maustian");
+  });
+
+  it("derives a seller-scoped Telegram Cortex path by default", () => {
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_CORTEX_SQLITE_PATH: "/tmp/msl/cortex.sqlite",
+      MSL_CHAT_SELLER_ID: "seller:a",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    expect(mocks.mockCreateGraphEngine).toHaveBeenCalledWith(
+      "/tmp/msl/cortex.telegram-seller_a.sqlite",
+    );
+  });
+
+  it("fails closed when env runtime has no Telegram token", () => {
+    expect(() => createTelegramBotFromEnv({ BOT_TOKEN: "" })).toThrow(
+      "BOT_TOKEN is required to start the Telegram bot.",
     );
   });
 });

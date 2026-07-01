@@ -1,6 +1,6 @@
 # ARCHITECTURE — MSL AI Agent
 
-> **Lead with the answer:** MSL is a hexagonal-architecture TypeScript monorepo. The domain core is pure logic (no I/O). Six satellite packages — memory, mercadolibre, tools, agent, workers, and mcp — surround it. A Next.js demo app and a Telegram bot stub form the presentation layer. The agent package can orchestrate conversation through DeepSeek's LLM, using Cortex (SQLite neural graph) for persistent memory and learning; the current web `/api/chat` route is still demo-only.
+> **Lead with the answer:** MSL is a hexagonal-architecture TypeScript monorepo. The domain core is pure logic (no I/O). Six satellite packages — memory, mercadolibre, tools, agent, workers, and mcp — surround it. A Next.js app and a Telegram bot form the presentation layer. The agent package can orchestrate conversation through DeepSeek's LLM, using Cortex (SQLite neural graph) for persistent memory and learning; production capabilities are enabled explicitly through environment-backed secrets and SQLite paths.
 
 ---
 
@@ -16,7 +16,7 @@
 ┌──────────┐     ┌──────────────────────────────────────────────┐
 │@msl/bot  │────▶│              @msl/agent                      │
 │Telegram  │     │  Agent loop, guardrails, actors, autonomy    │
-│stub      │     │  DeepSeek client, strategy CRUD, Escribano   │
+│runtime   │     │  DeepSeek client, strategy CRUD, Escribano   │
 └──────────┘     └───┬───────────┬──────────┬──────────────────┘
                      │           │          │
           ┌──────────┘           │          └──────────┐
@@ -53,7 +53,8 @@
 
 | Boundary          | Current implementation                                                                                                   | Safety rule                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `/api/chat`       | Demo-only Next.js route with in-memory stores and `mockClient: true`.                                                    | Do not treat it as production chat persistence, production auth, or real LLM wiring.                |
+| `/api/chat`       | Safe-by-default Next.js route; env can enable API-key auth, seller-bound SQLite state, and real DeepSeek.                | Do not run public production chat without setting the auth and durable chat env vars.               |
+| Telegram bot      | grammY runtime; env can enable durable per-chat SQLite state and optional Cortex/Escribano memory writes.                | Do not commit `BOT_TOKEN`; keep mutation execution behind explicit approval gates.                  |
 | Auth defaults     | Web chat auth, MCP auth, token encryption, and account role config fail closed.                                          | Local/demo/test bypasses must be explicit through env flags.                                        |
 | OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`. | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth. |
 | Dual-account sync | Product sync is Plasticov source → Maustian target, both on MercadoLibre Chile (`MLC`).                                  | Reverse or arbitrary source/target seller IDs are rejected.                                         |

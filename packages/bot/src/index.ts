@@ -1,12 +1,33 @@
 import { Bot } from "grammy";
 import type { ApiClientOptions } from "grammy";
-import { createAgentLoop, type AgentLoopConfig } from "@msl/agent";
+import Database from "better-sqlite3";
+import path from "node:path";
+import {
+  buildSystemPrompt,
+  createAgentLoop,
+  createAutonomyEngine,
+  createSessionStore,
+  createStrategyStore,
+  EscribanoObserver,
+  type AgentLoopConfig,
+  type ConversationState,
+  type SessionStore,
+} from "@msl/agent";
+import { createGraphEngine } from "@msl/memory";
 
 export type BotConfig = {
   token: string;
   agentConfig: Omit<AgentLoopConfig, "systemPrompt"> & {
     systemPrompt?: string;
   };
+  /** Optional durable per-chat session storage. Defaults to in-memory per message. */
+  sessionStore?: SessionStore;
+  /** Seller id stored in Telegram conversation metadata. */
+  sellerId?: string;
+  /** Agent context window for newly-created Telegram chat sessions. */
+  contextWindowLimit?: number;
+  /** Optional cleanup hook for env-backed resources. */
+  cleanup?: () => void;
   /** Optional grammY client options (e.g. for test/stub mode). */
   client?: ApiClientOptions;
 };
@@ -16,6 +37,112 @@ export type TelegramBot = {
   stop(): Promise<void>;
 };
 
+export type TelegramBotEnv = Partial<
+  Pick<
+    NodeJS.ProcessEnv,
+    | "BOT_TOKEN"
+    | "DEEPSEEK_API_KEY"
+    | "MSL_TELEGRAM_SQLITE_PATH"
+    | "MSL_TELEGRAM_CORTEX_SQLITE_PATH"
+    | "MSL_CORTEX_SQLITE_PATH"
+    | "MSL_CHAT_SELLER_ID"
+    | "MSL_CHAT_SELLER_NAME"
+    | "MERCADOLIBRE_TARGET_SELLER_ID"
+  >
+>;
+
+const DEFAULT_SYSTEM_PROMPT = "Eres un asistente para vendedores de Mercado Libre.";
+const DEFAULT_CONTEXT_WINDOW_LIMIT = 20;
+
+function createInitialState(
+  sellerId: string,
+  contextWindowLimit = DEFAULT_CONTEXT_WINDOW_LIMIT,
+): ConversationState {
+  const now = new Date();
+  return {
+    messages: [],
+    contextWindowLimit,
+    sessionMetadata: {
+      sellerId,
+      startedAt: now,
+      lastActivityAt: now,
+    },
+  };
+}
+
+function createTelegramSessionId(sellerId: string, chatId: string): string {
+  return `telegram:${sellerId}:${chatId}`;
+}
+
+function stateBelongsToSeller(state: ConversationState, sellerId: string): boolean {
+  return state.sessionMetadata.sellerId === sellerId;
+}
+
+function sanitizePathSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function createSellerScopedSqlitePath(sqlitePath: string, sellerId: string): string {
+  if (sqlitePath === ":memory:") return sqlitePath;
+
+  const parsed = path.parse(sqlitePath);
+  return path.join(
+    parsed.dir,
+    `${parsed.name}.telegram-${sanitizePathSegment(sellerId)}${parsed.ext || ".sqlite"}`,
+  );
+}
+
+/**
+ * Creates the production-oriented Telegram runtime from environment variables.
+ *
+ * This helper intentionally reads only paths and API keys from env. It never
+ * ships defaults for secret values: `BOT_TOKEN` is required, while SQLite paths
+ * and DeepSeek/Cortex wiring are opt-in.
+ */
+export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): TelegramBot {
+  const token = env.BOT_TOKEN?.trim();
+  if (!token) {
+    throw new Error("BOT_TOKEN is required to start the Telegram bot.");
+  }
+
+  const sellerId =
+    env.MSL_CHAT_SELLER_ID?.trim() || env.MERCADOLIBRE_TARGET_SELLER_ID?.trim() || "telegram-demo";
+  const sellerName = env.MSL_CHAT_SELLER_NAME?.trim() || "Plasticov";
+
+  const sqlitePath = env.MSL_TELEGRAM_SQLITE_PATH?.trim();
+  const db = sqlitePath ? new Database(sqlitePath) : null;
+  const store = db ? createStrategyStore(db) : undefined;
+  const sessionStore = db ? createSessionStore(db) : undefined;
+  const autonomyEngine = db ? createAutonomyEngine(db) : undefined;
+
+  const configuredCortexPath =
+    env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() || env.MSL_CORTEX_SQLITE_PATH?.trim();
+  const cortexPath = configuredCortexPath
+    ? createSellerScopedSqlitePath(configuredCortexPath, sellerId)
+    : undefined;
+  const engine = cortexPath ? createGraphEngine(cortexPath) : undefined;
+  const escribano = engine ? new EscribanoObserver({ engine }) : undefined;
+
+  const agentConfig: BotConfig["agentConfig"] = {
+    systemPrompt: buildSystemPrompt(sellerName),
+    mockClient: !env.DEEPSEEK_API_KEY?.trim(),
+  };
+  if (store) agentConfig.store = store;
+  if (autonomyEngine) agentConfig.autonomyEngine = autonomyEngine;
+  if (engine) agentConfig.engine = engine;
+  if (escribano) agentConfig.escribano = escribano;
+
+  const botConfig: BotConfig = {
+    token,
+    sellerId,
+    agentConfig,
+  };
+  if (sessionStore) botConfig.sessionStore = sessionStore;
+  if (db) botConfig.cleanup = () => db.close();
+
+  return createTelegramBot(botConfig);
+}
+
 /**
  * Creates a real Telegram bot backed by grammY + the MSL agent loop.
  *
@@ -24,6 +151,10 @@ export type TelegramBot = {
  *
  * Required environment or config:
  * - `BOT_TOKEN` (or `config.token`) — from @BotFather
+ *
+ * Optional production persistence:
+ * - pass `config.sessionStore`, or use `createTelegramBotFromEnv()` with
+ *   `MSL_TELEGRAM_SQLITE_PATH`, to keep per-chat state across messages/restarts.
  *
  * ## Commands
  *
@@ -37,8 +168,7 @@ export function createTelegramBot(config: BotConfig): TelegramBot {
   const bot = new Bot(config.token, config.client ? { client: config.client } : undefined);
 
   const agentConfig: AgentLoopConfig = {
-    systemPrompt:
-      config.agentConfig.systemPrompt ?? "Eres un asistente para vendedores de Mercado Libre.",
+    systemPrompt: config.agentConfig.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     ...config.agentConfig,
   };
 
@@ -81,22 +211,21 @@ export function createTelegramBot(config: BotConfig): TelegramBot {
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text;
     const chatId = String(ctx.chat.id);
-    const sellerId = String(ctx.from?.id ?? chatId);
+    const sellerId = config.sellerId ?? String(ctx.from?.id ?? chatId);
+    const sessionId = createTelegramSessionId(sellerId, chatId);
 
     // Typing indicator
     await ctx.replyWithChatAction("typing");
 
     // Create agent with session-scoped metadata
     const agent = createAgentLoop(agentConfig);
-    const result = await agent.converse(text, {
-      messages: [],
-      contextWindowLimit: 20,
-      sessionMetadata: {
-        sellerId,
-        startedAt: new Date(),
-        lastActivityAt: new Date(),
-      },
-    });
+    const loadedState = config.sessionStore?.load(sessionId);
+    const state =
+      loadedState && stateBelongsToSeller(loadedState, sellerId)
+        ? loadedState
+        : createInitialState(sellerId, config.contextWindowLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT);
+    const result = await agent.converse(text, state);
+    config.sessionStore?.save(sessionId, result.updatedState);
 
     await ctx.reply(result.response);
   });
@@ -130,6 +259,7 @@ export function createTelegramBot(config: BotConfig): TelegramBot {
 
     async stop(): Promise<void> {
       await bot.stop();
+      config.cleanup?.();
       console.log("🛑 Bot detenido");
     },
   };

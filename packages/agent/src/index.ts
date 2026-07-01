@@ -67,6 +67,9 @@ export type { SessionStore } from "./conversation/sessionStore.js";
 export { createAutonomyEngine } from "./conversation/autonomyEngine.js";
 export type { AutonomyEngine } from "./conversation/autonomyEngine.js";
 
+export { EscribanoObserver } from "./conversation/escribano.js";
+export type { EscribanoConfig } from "./conversation/types.js";
+
 // ── Tools (function-calling) ────────────────────────────────────────
 export type { ToolDefinition } from "./conversation/tools.js";
 export {
