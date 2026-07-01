@@ -10,6 +10,7 @@ import {
   createOAuthMlcApiClient,
   createTokenStore,
   evaluateOAuthAccess,
+  PRICING_AUTOMATION_HISTORY_MAX_SIZE,
   type MlcCategoryAttributeSummary,
   type MlcCategoryTechnicalSpecSummary,
   type MlcListingSummary,
@@ -732,6 +733,164 @@ describe("direct MLC API client boundary", () => {
       { method: "GET", path: "/items/MLC1001/price_to_win", query: { version: "v2" } },
       { method: "GET", path: "/pricing-automation/items/MLC1001/automation", query: undefined },
     ]);
+  });
+
+  it("reads documented pricing automation rules and price history without leaking raw fields", async () => {
+    const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        requests.push(request);
+        if (request.path.endsWith("/products/MLC123456/rules")) {
+          return Promise.resolve({
+            product_id: "MLC123456",
+            rules: [{ rule_id: "INT_EXT", secret: "ignore" }, { rule_id: "INT" }],
+          });
+        }
+        if (request.path.endsWith("/rules")) {
+          return Promise.resolve({
+            item_id: "MLC1001",
+            rules: [{ rule_id: "INT_EXT", secret: "ignore" }, { rule_id: "INT" }],
+          });
+        }
+        return Promise.resolve({
+          result_code: 200,
+          result: {
+            content: [
+              {
+                date_time: "2024-07-12T15:26:15Z",
+                percent_change: 0,
+                usd_price: 0,
+                deal_id: "68719c01-0566-4728-adef-2701750be2d0",
+                price: 120,
+                event: "CurrentStrategyConfirmed",
+                strategy_type: "automation_min_price",
+                raw_secret: "must-not-leak",
+              },
+            ],
+            pageable: { offset: 0, page_number: 0, page_size: 1 },
+            total_elements: 9,
+            total_pages: 9,
+            size: 1,
+            number_of_elements: 1,
+            empty: false,
+          },
+          result_message: "OK",
+        });
+      },
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(
+      client.getPricingAutomationItemRules!("seller-1", "MLC1001"),
+    ).resolves.toMatchObject({
+      data: {
+        targetType: "item",
+        targetId: "MLC1001",
+        rules: [{ ruleId: "INT_EXT" }, { ruleId: "INT" }],
+      },
+    });
+    await expect(
+      client.getPricingAutomationProductRules!("seller-1", "MLC123456"),
+    ).resolves.toMatchObject({
+      data: {
+        targetType: "product",
+        targetId: "MLC123456",
+        rules: [{ ruleId: "INT_EXT" }, { ruleId: "INT" }],
+      },
+    });
+    const history = await client.getPricingAutomationPriceHistory!("seller-1", "MLC1001", {
+      days: 7,
+      page: 0,
+      size: 1,
+    });
+    expect(history).toMatchObject({
+      data: {
+        itemId: "MLC1001",
+        resultCode: 200,
+        resultMessage: "OK",
+        content: [
+          {
+            dateTime: "2024-07-12T15:26:15Z",
+            percentChange: 0,
+            usdPrice: 0,
+            price: 120,
+            event: "CurrentStrategyConfirmed",
+            strategyType: "automation_min_price",
+          },
+        ],
+        pageable: { offset: 0, pageNumber: 0, pageSize: 1 },
+        totalElements: 9,
+        totalPages: 9,
+        empty: false,
+      },
+    });
+    expect(JSON.stringify(history)).not.toContain("raw_secret");
+    expect(JSON.stringify(history)).not.toContain("68719c01-0566-4728-adef-2701750be2d0");
+    expect(JSON.stringify(history)).not.toContain("dealId");
+    expect(requests.map(({ method, path, query }) => ({ method, path, query }))).toEqual([
+      { method: "GET", path: "/pricing-automation/items/MLC1001/rules", query: undefined },
+      { method: "GET", path: "/pricing-automation/products/MLC123456/rules", query: undefined },
+      {
+        method: "GET",
+        path: "/pricing-automation/items/MLC1001/price/history",
+        query: { days: "7", page: "0", size: "1" },
+      },
+    ]);
+  });
+
+  it("caps automation history page size to the documented maximum", async () => {
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      result_code: 200,
+      result: {
+        content: [],
+        pageable: { offset: 0, page_number: 0, page_size: PRICING_AUTOMATION_HISTORY_MAX_SIZE },
+      },
+      result_message: "OK",
+    });
+    const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });
+
+    await expect(
+      client.getPricingAutomationPriceHistory!("seller-1", "MLC1001", {
+        size: PRICING_AUTOMATION_HISTORY_MAX_SIZE + 100,
+      }),
+    ).resolves.toMatchObject({
+      data: { pageable: { pageNumber: 0, pageSize: PRICING_AUTOMATION_HISTORY_MAX_SIZE } },
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/pricing-automation/items/MLC1001/price/history",
+        query: { days: "30", page: "0", size: String(PRICING_AUTOMATION_HISTORY_MAX_SIZE) },
+      }),
+    );
+  });
+
+  it("sanitizes non-finite automation history pagination to documented defaults", async () => {
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      result_code: 200,
+      result: { content: [], pageable: { offset: 0, page_number: 0, page_size: 10 } },
+      result_message: "OK",
+    });
+    const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });
+
+    await expect(
+      client.getPricingAutomationPriceHistory!("seller-1", "MLC1001", {
+        days: Number.NaN,
+        page: -5,
+        size: Infinity,
+      }),
+    ).resolves.toMatchObject({
+      data: { pageable: { offset: 0, pageNumber: 0, pageSize: 10 } },
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/pricing-automation/items/MLC1001/price/history",
+        query: { days: "30", page: "0", size: "10" },
+      }),
+    );
   });
 
   it("lists automated price items with capped pagination", async () => {

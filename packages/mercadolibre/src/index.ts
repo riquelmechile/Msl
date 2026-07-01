@@ -346,6 +346,42 @@ export type MlcPricingAutomationSummary = {
   maxPrice?: number;
 };
 
+export const MLC_PRICING_AUTOMATION_KNOWN_RULE_IDS = {
+  competitive: "INT_EXT",
+  internal: "INT",
+} as const;
+
+export type MlcPricingAutomationKnownRuleId =
+  (typeof MLC_PRICING_AUTOMATION_KNOWN_RULE_IDS)[keyof typeof MLC_PRICING_AUTOMATION_KNOWN_RULE_IDS];
+
+export type MlcPricingAutomationRuleId = string;
+
+export type MlcPricingAutomationRulesSummary = {
+  targetType: "item" | "product";
+  targetId: string;
+  rules: ReadonlyArray<{ ruleId: MlcPricingAutomationRuleId }>;
+};
+
+export type MlcPricingAutomationHistorySummary = {
+  itemId: string;
+  resultCode?: number;
+  resultMessage?: string;
+  content: ReadonlyArray<{
+    dateTime?: string;
+    percentChange?: number;
+    usdPrice?: number;
+    price?: number;
+    event?: string;
+    strategyType?: string;
+  }>;
+  pageable: { offset?: number; pageNumber: number; pageSize: number };
+  totalElements?: number;
+  totalPages?: number;
+  size?: number;
+  numberOfElements?: number;
+  empty?: boolean;
+};
+
 export type MlcAutomatedPriceItemsSummary = {
   paging: { total?: number; offset: number; limit: number };
   items: ReadonlyArray<{
@@ -371,6 +407,9 @@ export type MlcItemSalePriceSnapshot = MlcReadSnapshot<MlcItemSalePriceSummary>;
 export type MlcItemPricesSnapshot = MlcReadSnapshot<MlcItemPricesSummary>;
 export type MlcPriceToWinSnapshot = MlcReadSnapshot<MlcPriceToWinSummary>;
 export type MlcPricingAutomationSnapshot = MlcReadSnapshot<MlcPricingAutomationSummary>;
+export type MlcPricingAutomationRulesSnapshot = MlcReadSnapshot<MlcPricingAutomationRulesSummary>;
+export type MlcPricingAutomationHistorySnapshot =
+  MlcReadSnapshot<MlcPricingAutomationHistorySummary>;
 export type MlcAutomatedPriceItemsSnapshot = Omit<
   MlcReadSnapshot<MlcAutomatedPriceItemsSummary>,
   "data"
@@ -473,6 +512,19 @@ export type MlcApiClient = {
   getItemPrices?(sellerId: string, itemId: string): Promise<MlcItemPricesSnapshot>;
   getItemPriceToWin?(sellerId: string, itemId: string): Promise<MlcPriceToWinSnapshot>;
   getPricingAutomation?(sellerId: string, itemId: string): Promise<MlcPricingAutomationSnapshot>;
+  getPricingAutomationItemRules?(
+    sellerId: string,
+    itemId: string,
+  ): Promise<MlcPricingAutomationRulesSnapshot>;
+  getPricingAutomationProductRules?(
+    sellerId: string,
+    catalogProductId: string,
+  ): Promise<MlcPricingAutomationRulesSnapshot>;
+  getPricingAutomationPriceHistory?(
+    sellerId: string,
+    itemId: string,
+    options?: { days?: number; page?: number; size?: number },
+  ): Promise<MlcPricingAutomationHistorySnapshot>;
   getPricingAutomationItems?(
     sellerId: string,
     options?: { offset?: number; limit?: number },
@@ -769,6 +821,15 @@ function assertMlcItemId(itemId: string): string {
   }
 
   return normalized;
+}
+
+function assertMlcCatalogProductId(catalogProductId: string): string {
+  const trimmed = catalogProductId.trim();
+  if (!/^MLC\d+$/.test(trimmed)) {
+    throw new Error("Only MLC catalog product IDs are supported for pricing automation reads.");
+  }
+
+  return trimmed;
 }
 
 function assertMlcDomainId(domainId: string): void {
@@ -1722,6 +1783,87 @@ function normalizePricingAutomation(input: {
   };
 }
 
+function normalizePricingAutomationRules(input: {
+  sellerId: string;
+  targetType: "item" | "product";
+  targetId: string;
+  payload: unknown;
+  now: Date;
+}): MlcPricingAutomationRulesSnapshot {
+  const record = asRecord(input.payload);
+  const rules = asArray(record?.rules).flatMap((raw) => {
+    const ruleRecord = asRecord(raw);
+    const ruleId = stringValue(ruleRecord?.rule_id) ?? stringValue(ruleRecord?.ruleId);
+    return ruleId === undefined ? [] : [{ ruleId }];
+  });
+  const responseTargetId =
+    input.targetType === "item"
+      ? (stringValue(record?.item_id) ?? stringValue(record?.itemId))
+      : (stringValue(record?.product_id) ?? stringValue(record?.productId));
+  const completeness = record !== undefined && rules.length > 0 ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: {
+      targetType: input.targetType,
+      targetId: responseTargetId ?? input.targetId,
+      rules,
+    },
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, rules.length),
+  };
+}
+
+function normalizePricingAutomationPriceHistory(input: {
+  sellerId: string;
+  itemId: string;
+  payload: unknown;
+  now: Date;
+  options: { days: number; page: number; size: number };
+}): MlcPricingAutomationHistorySnapshot {
+  const root = asRecord(input.payload);
+  const result = asRecord(root?.result);
+  const pageableRecord = asRecord(result?.pageable);
+  const content = asArray(result?.content).flatMap((raw) => {
+    const record = asRecord(raw);
+    if (record === undefined) return [];
+    const entry: MlcPricingAutomationHistorySummary["content"][number] = {};
+    pushOptional(entry, "dateTime", stringValue(record.date_time));
+    pushOptional(entry, "percentChange", numberValue(record.percent_change));
+    pushOptional(entry, "usdPrice", numberValue(record.usd_price));
+    pushOptional(entry, "price", numberValue(record.price));
+    pushOptional(entry, "event", stringValue(record.event));
+    pushOptional(entry, "strategyType", stringValue(record.strategy_type));
+    return Object.keys(entry).length > 0 ? [entry] : [];
+  });
+  const pageNumber = numberValue(pageableRecord?.page_number) ?? input.options.page;
+  const pageSize = numberValue(pageableRecord?.page_size) ?? input.options.size;
+  const pageable: MlcPricingAutomationHistorySummary["pageable"] = { pageNumber, pageSize };
+  pushOptional(pageable, "offset", numberValue(pageableRecord?.offset));
+  const data: MlcPricingAutomationHistorySummary = { itemId: input.itemId, content, pageable };
+  pushOptional(data, "resultCode", numberValue(root?.result_code));
+  pushOptional(data, "resultMessage", stringValue(root?.result_message));
+  pushOptional(data, "totalElements", numberValue(result?.total_elements));
+  pushOptional(data, "totalPages", numberValue(result?.total_pages));
+  pushOptional(data, "size", numberValue(result?.size));
+  pushOptional(data, "numberOfElements", numberValue(result?.number_of_elements));
+  pushOptional(data, "empty", booleanValue(result?.empty));
+  const completeness = root !== undefined && result !== undefined ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, content.length),
+  };
+}
+
 function normalizeAutomatedPriceItems(input: {
   sellerId: string;
   payload: unknown;
@@ -1774,6 +1916,10 @@ function normalizeAutomatedPriceItems(input: {
 
 export const PRICING_AUTOMATION_ITEMS_DEFAULT_LIMIT = 50;
 export const PRICING_AUTOMATION_ITEMS_MAX_LIMIT = 100;
+export const PRICING_AUTOMATION_HISTORY_DEFAULT_DAYS = 30;
+export const PRICING_AUTOMATION_HISTORY_DEFAULT_PAGE = 0;
+export const PRICING_AUTOMATION_HISTORY_DEFAULT_SIZE = 10;
+export const PRICING_AUTOMATION_HISTORY_MAX_SIZE = 50;
 
 function normalizePaginationNumber(
   value: number | undefined,
@@ -1946,6 +2092,63 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         itemId: safeItemId,
         payload,
         now: input.now(),
+      });
+    },
+    getPricingAutomationItemRules: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(
+        sellerId,
+        `/pricing-automation/items/${safeItemId}/rules`,
+      );
+      return normalizePricingAutomationRules({
+        sellerId,
+        targetType: "item",
+        targetId: safeItemId,
+        payload,
+        now: input.now(),
+      });
+    },
+    getPricingAutomationProductRules: async (sellerId, catalogProductId) => {
+      const safeProductId = assertMlcCatalogProductId(catalogProductId);
+      const payload = await input.request(
+        sellerId,
+        `/pricing-automation/products/${safeProductId}/rules`,
+      );
+      return normalizePricingAutomationRules({
+        sellerId,
+        targetType: "product",
+        targetId: safeProductId,
+        payload,
+        now: input.now(),
+      });
+    },
+    getPricingAutomationPriceHistory: async (sellerId, itemId, options = {}) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const normalized = {
+        days: normalizePaginationNumber(options.days, PRICING_AUTOMATION_HISTORY_DEFAULT_DAYS, 1),
+        page: normalizePaginationNumber(options.page, PRICING_AUTOMATION_HISTORY_DEFAULT_PAGE, 0),
+        size: normalizePaginationNumber(
+          options.size,
+          PRICING_AUTOMATION_HISTORY_DEFAULT_SIZE,
+          1,
+          PRICING_AUTOMATION_HISTORY_MAX_SIZE,
+        ),
+      };
+      const payload = await input.request(
+        sellerId,
+        `/pricing-automation/items/${safeItemId}/price/history`,
+        {
+          days: String(normalized.days),
+          page: String(normalized.page),
+          size: String(normalized.size),
+        },
+      );
+      return normalizePricingAutomationPriceHistory({
+        sellerId,
+        itemId: safeItemId,
+        payload,
+        now: input.now(),
+        options: normalized,
       });
     },
     getPricingAutomationItems: async (sellerId, options = {}) => {
