@@ -433,10 +433,16 @@ describe("MCP Server", () => {
         getReputation: vi.fn(),
         getCategoryAttributes: vi.fn(),
         getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
       },
     });
 
-    expect(registeredTools.size).toBe(17);
+    expect(registeredTools.size).toBe(28);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_listing_prices")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
@@ -445,6 +451,12 @@ describe("MCP Server", () => {
     expect(registeredTools.has("read_product_ads_insights")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_category_attributes")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_category_technical_specs")).toBe(true);
+    expect(registeredTools.has("read_moderation_status")).toBe(true);
+    expect(registeredTools.has("read_notices")).toBe(true);
+    expect(registeredTools.has("prepare_answer")).toBe(true);
+    expect(registeredTools.has("read_claims")).toBe(true);
+    expect(registeredTools.has("read_claim_detail")).toBe(true);
+    expect(registeredTools.has("read_shipment_status")).toBe(true);
 
     const cb = registeredTools.get("read_mercadolibre_listings");
     expect(cb).toBeDefined();
@@ -859,6 +871,340 @@ describe("MCP Server", () => {
     expect(getListings).not.toHaveBeenCalled();
     const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
     expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
+  });
+
+  it("read_moderation_status tool calls getModerationStatus with seller and item scoping", async () => {
+    const getModerationStatus = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      data: { itemId: "MLC1001", blocked: false, wordings: [], evidence: [] },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus,
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_moderation_status");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", itemId: "MLC1001" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getModerationStatus).toHaveBeenCalledWith("ML-test", "MLC1001");
+    expect(parsed.data).toMatchObject({ itemId: "MLC1001", blocked: false });
+    expect(parsed.completeness).toBe("complete");
+  });
+
+  it("read_moderation_status auth gate blocks invalid API key", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const getModerationStatus = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus,
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_moderation_status");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", itemId: "MLC1001", msl_api_key: "wrong" })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+
+    expect(result.isError).toBe(true);
+    expect(getModerationStatus).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
+
+    vi.unstubAllEnvs();
+  });
+
+  it("read_notices tool calls getNotices with pagination options", async () => {
+    const getNotices = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      data: {
+        notices: [{ id: "notice-1", title: "Test notice", actions: [] }],
+        pagination: { total: 1, limit: 5, offset: 10 },
+      },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices,
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_notices");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", limit: 5, offset: 10 })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getNotices).toHaveBeenCalledWith("ML-test", { limit: 5, offset: 10 });
+    expect(parsed.data).toMatchObject({
+      pagination: { total: 1, limit: 5, offset: 10 },
+    });
+  });
+
+  it("prepare_answer tool returns pending answer snapshot", async () => {
+    const prepareAnswer = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "partial",
+      confidence: "low",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      data: {
+        questionId: "Q-9876",
+        status: "pending",
+        requiresApproval: true,
+        noMutationExecuted: true,
+        textLength: 30,
+      },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer,
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("prepare_answer");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      questionId: "Q-9876",
+      text: "Thank you for your question!",
+    })) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(prepareAnswer).toHaveBeenCalledWith("ML-test", {
+      questionId: "Q-9876",
+      text: "Thank you for your question!",
+    });
+    expect(parsed.data).toMatchObject({
+      status: "pending",
+      requiresApproval: true,
+      noMutationExecuted: true,
+    });
+  });
+
+  it("prepare_answer tool handles empty questionId gracefully", async () => {
+    const prepareAnswer = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "partial",
+      confidence: "low",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      data: {
+        questionId: "",
+        status: "pending",
+        requiresApproval: true,
+        noMutationExecuted: true,
+        textLength: 0,
+      },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer,
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("prepare_answer");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      questionId: "   ",
+      text: "   ",
+    })) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(parsed.data).toMatchObject({
+      questionId: "",
+      textLength: 0,
+      status: "pending",
+    });
+  });
+
+  it("read_claims tool calls searchClaims with filters", async () => {
+    const searchClaims = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      data: {
+        paging: { total: 1, offset: 0, limit: 10 },
+        results: [{ id: "C-1001", status: "open" }],
+      },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims,
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_claims");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      status: "open",
+      limit: 5,
+    })) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(searchClaims).toHaveBeenCalledWith("ML-test", {
+      status: "open",
+      limit: 5,
+    });
+    expect(parsed.data).toMatchObject({
+      results: [{ id: "C-1001", status: "open" }],
+    });
+  });
+
+  it("read_shipment_status tool calls getShipmentStatus with shipment id", async () => {
+    const getShipmentStatus = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      data: {
+        id: "41567890123",
+        status: "delivered",
+        trackingNumber: "TRACK-001",
+      },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus,
+      },
+    });
+
+    const cb = registeredTools.get("read_shipment_status");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      shipmentId: "41567890123",
+    })) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getShipmentStatus).toHaveBeenCalledWith("ML-test", "41567890123");
+    expect(parsed.data).toMatchObject({
+      id: "41567890123",
+      status: "delivered",
+    });
   });
 
   it("registers a prepare-only write proposal tool when approval dependencies are injected", async () => {

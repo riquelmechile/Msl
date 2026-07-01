@@ -101,6 +101,17 @@ export {
   createFindRelistOpportunitiesTool,
   createDiagnoseImageTool,
   createUploadImageTool,
+  createReadSellerNoticesTool,
+  createCheckImageModerationTool,
+  createCheckClaimsTool,
+  createCheckClaimDetailTool,
+  createCheckShipmentStatusTool,
+  createCheckClaimMessagesTool,
+  createCheckClaimResolutionsTool,
+  createCheckClaimReputationTool,
+  createCheckClaimHistoryTool,
+  createPrepareAnswerTool,
+  createPrepareImageFlowTool,
 } from "./conversation/syncTools.js";
 
 // ── Actor simulation ────────────────────────────────────────────────

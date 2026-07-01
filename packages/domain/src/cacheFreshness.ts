@@ -11,7 +11,8 @@ export type BusinessSignalKind =
   | "category-attributes"
   | "category-technical-specs"
   | "pricing"
-  | "historical-summary";
+  | "historical-summary"
+  | "business-signal";
 
 export type BusinessRisk = "low" | "medium" | "critical";
 

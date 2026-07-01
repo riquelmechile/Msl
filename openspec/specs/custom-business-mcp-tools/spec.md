@@ -335,3 +335,39 @@ The MCP surface MUST expose readiness-only evaluation for one exact approved, un
 - WHEN the MCP operation completes
 - THEN it MUST NOT call real MercadoLibre publish/update/status mutations, `ProductSyncEngine`, `sync_all`, execution replay, audit replay, rollback automation, or bulk sync
 - AND it MUST always return `noMutationExecuted: true`.
+
+---
+
+## ADDED: Slice 2 MCP Tools (2026-07-01)
+
+### Requirement: Slice 2 Read-Only MCP Tools
+
+The MCP tool surface MUST expose project-owned read tools for Slice 2 capabilities: `read_claims` (claim search), `read_claim_detail` (single claim), and `read_shipment_status` (shipment tracking). Each tool SHALL require MCP API-key authentication, resolve seller OAuth, call the corresponding `MlcApiClient` method, and return a typed snapshot with source, freshness, confidence, and `noMutationExecuted: true`.
+
+#### Scenario: Claims search tool returns paginated snapshot
+
+- GIVEN MCP API-key auth is valid and a connected MLC seller
+- WHEN `read_claims` is called with `{ sellerId, status?, limit?, offset? }`
+- THEN the tool MUST call `mlcClient.searchClaims(sellerId, options)`
+- AND MUST return the typed `MlcClaimsSearchSnapshot`
+
+#### Scenario: Claim detail tool returns full claim
+
+- GIVEN MCP API-key auth is valid and a connected MLC seller
+- WHEN `read_claim_detail` is called with `{ sellerId, claimId }`
+- THEN the tool MUST call `mlcClient.getClaimDetail(sellerId, claimId)`
+- AND MUST return the typed `MlcClaimDetailSnapshot` with players and actions
+
+#### Scenario: Shipment status tool returns tracking info
+
+- GIVEN MCP API-key auth is valid and a connected MLC seller
+- WHEN `read_shipment_status` is called with `{ sellerId, shipmentId }`
+- THEN the tool MUST call `mlcClient.getShipmentStatus(sellerId, shipmentId)`
+- AND MUST return the typed `MlcShipmentStatusSnapshot`
+
+#### Scenario: All Slice 2 tools follow custom registration pattern
+
+- GIVEN the MCP server is created with `mlcClient` configured
+- WHEN the 3 new tools are registered
+- THEN each MUST follow the `server.registerTool()` pattern
+- AND input schemas MUST validate required fields before client calls

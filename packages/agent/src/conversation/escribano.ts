@@ -130,6 +130,8 @@ export class EscribanoObserver {
         this.#handleListingResult(result);
       } else if (toolName === "check_listing_visits") {
         this.#handleVisitsResult(result);
+      } else if (toolName === "check_claims" || toolName === "check_claim_detail") {
+        this.#handleClaimResult(result);
       }
     } catch {
       // Cortex save failure must not break the conversation loop.
@@ -339,6 +341,72 @@ export class EscribanoObserver {
       this.#ensureEdge(listingNode.id, visitsNode.id);
     } catch {
       // Individual visits write failure is non-fatal.
+    }
+  }
+
+  /**
+   * Persist claim data from check_claims / check_claim_detail results.
+   *
+   * Creates/updates `claim_{claimId}` nodes and edges from seller to claim
+   * for use in reputation and dispute-resolution reasoning.
+   */
+  #handleClaimResult(result: Record<string, unknown>): void {
+    const sellerId = typeof result.sellerId === "string" ? result.sellerId : "";
+    const data = result.data;
+
+    // check_claims returns { paging, results: [...] }
+    // check_claim_detail returns { claim: {...}, messages, ... }
+    const claims: Record<string, unknown>[] = [];
+    if (Array.isArray(data?.results)) {
+      // check_claims result
+      for (const c of data.results as Record<string, unknown>[]) {
+        claims.push(c);
+      }
+    } else if (typeof data?.claim === "object" && data.claim !== null) {
+      // check_claim_detail result — single claim
+      claims.push(data.claim as Record<string, unknown>);
+    }
+
+    if (claims.length === 0) return;
+
+    const now = new Date().toISOString();
+
+    for (const claim of claims) {
+      const claimId = typeof claim.id === "string" ? claim.id : undefined;
+      if (!claimId) continue;
+
+      try {
+        const metadata: Record<string, unknown> = {
+          type: "claim",
+          claimId,
+          source: "ml-api",
+          updatedAt: now,
+        };
+        if (typeof claim.status === "string") metadata.status = claim.status;
+        if (typeof claim.type === "string") metadata.claimType = claim.type;
+        if (typeof claim.stage === "string") metadata.stage = claim.stage;
+        if (typeof claim.dateCreated === "string") metadata.dateCreated = claim.dateCreated;
+        if (typeof claim.reasonId === "string") metadata.reasonId = claim.reasonId;
+        if (typeof claim.resourceId === "string") metadata.resourceId = claim.resourceId;
+
+        const claimNode = this.#engine.getOrCreateNode(`claim_${claimId}`, metadata);
+        this.#businessNodeIds.add(claimNode.id);
+
+        // Edge: seller → claim
+        if (sellerId) {
+          const sellerNode = this.#getOrCreateConcept(`seller_${sellerId}`);
+          this.#ensureEdge(sellerNode, claimNode.id);
+        }
+
+        // Edge: claim → claim_status concept
+        if (typeof claim.status === "string" && claim.status.length > 0) {
+          const statusLabel = `claim_status_${claim.status}`;
+          const statusNode = this.#getOrCreateConcept(statusLabel);
+          this.#ensureEdge(claimNode.id, statusNode);
+        }
+      } catch {
+        // Individual claim write failure is non-fatal.
+      }
     }
   }
 

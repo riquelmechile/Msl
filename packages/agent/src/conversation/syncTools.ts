@@ -20,6 +20,16 @@ import type {
   SyncResult,
   SyncReport,
   MlUserSnapshot,
+  type MlcModerationStatusSummary,
+  type MlcNoticesSummary,
+  type MlcClaimsSearchResult,
+  type MlcClaimDetailSummary,
+  type MlcClaimMessagesSummary,
+  type MlcClaimResolutionsSummary,
+  type MlcClaimReputationSummary,
+  type MlcClaimStatusHistorySummary,
+  type MlcShipmentStatusSummary,
+  type MlcImageOrchestrationSummary,
 } from "@msl/mercadolibre";
 import {
   assertPlasticovToMaustianDirection,
@@ -31,6 +41,7 @@ import {
   PRICING_AUTOMATION_ITEMS_MAX_LIMIT,
   MLC_PROMOTIONS_ITEMS_DEFAULT_LIMIT,
   MLC_PROMOTIONS_ITEMS_MAX_LIMIT,
+  normalizeImageOrchestration,
 } from "@msl/mercadolibre";
 import type { Strategy as SyncStrategy } from "@msl/mercadolibre";
 
@@ -2090,6 +2101,960 @@ export function createUploadImageTool(mlcClient: MlcApiClient): ToolDefinition {
           error:
             `No se pudo subir la imagen a MercadoLibre: ` +
             `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// read_seller_notices tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `read_seller_notices` tool.
+ *
+ * Reads MercadoLibre communications, notifications, and alerts for a seller.
+ * Returns notices with pagination metadata.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `read_seller_notices` tool definition compatible with OpenAI function calling.
+ */
+export function createReadSellerNoticesTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "read_seller_notices",
+    description:
+      "Lee las comunicaciones, notificaciones y alertas de MercadoLibre para un vendedor. " +
+      "Devuelve avisos con fechas, acciones disponibles, categorías y paginación. " +
+      "Usá esta herramienta cuando el vendedor pregunte por novedades, comunicaciones, " +
+      "campañas informativas o actualizaciones de MercadoLibre.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        limit: {
+          type: "number",
+          description: "Cantidad máxima de avisos a retornar (opcional).",
+        },
+        offset: {
+          type: "number",
+          description: "Offset para paginación (opcional).",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getNotices) {
+        return {
+          error: "La lectura de comunicaciones no está disponible en este momento.",
+        };
+      }
+
+      const opts: { limit?: number; offset?: number } = {};
+      if (typeof args.limit === "number") opts.limit = args.limit;
+      if (typeof args.offset === "number") opts.offset = args.offset;
+
+      try {
+        const snapshot = await mlcClient.getNotices(sellerId, opts);
+        const data = snapshot.data as MlcNoticesSummary;
+        const titles = data.notices
+          .slice(0, 5)
+          .map((n) => n.title ?? "(sin título)")
+          .join("; ");
+        return {
+          ...snapshot,
+          noticeCount: data.notices.length,
+          highlightedCount: data.notices.filter((n) => n.highlighted).length,
+          summary:
+            data.notices.length > 0
+              ? `${data.notices.length} avisos encontrados. Destacados: ${titles || "ninguno"}`
+              : "No hay avisos pendientes.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo leer los avisos del vendedor: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_image_moderation tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_image_moderation` tool.
+ *
+ * Checks moderation status for a MercadoLibre listing's images.
+ * Detects watermarks, text overlays, and other moderation issues.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_image_moderation` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckImageModerationTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_image_moderation",
+    description:
+      "Verifica el estado de moderación de imágenes de una publicación de MercadoLibre. " +
+      "Detecta si las imágenes tienen marcas de agua, texto superpuesto, o problemas " +
+      "que pueden causar moderación o rechazo. Usá esta herramienta cuando el vendedor " +
+      "pregunte por el estado de sus imágenes, sospeche problemas de moderación, o " +
+      "quiera verificar que una publicación cumple con los requisitos de ML.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        itemId: {
+          type: "string",
+          description: "ID de la publicación en MercadoLibre. Ej: MLC123456789.",
+        },
+      },
+      required: ["sellerId", "itemId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const itemId = typeof args.itemId === "string" && args.itemId.length > 0 ? args.itemId : null;
+      if (!itemId) {
+        return {
+          error: "El parámetro 'itemId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getModerationStatus) {
+        return {
+          error: "La verificación de moderación no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.getModerationStatus(sellerId, itemId);
+        const data = snapshot.data as MlcModerationStatusSummary;
+        return {
+          ...snapshot,
+          hasIssues: data.blocked || data.wordings.length > 0,
+          recommendation: data.blocked
+            ? `La publicación ${itemId} tiene imágenes bloqueadas por moderación. Revisar y corregir.`
+            : data.wordings.length > 0
+              ? `La publicación ${itemId} tiene ${data.wordings.length} advertencias de moderación. Se recomienda corregir antes de que escalen.`
+              : `La publicación ${itemId} no tiene problemas de moderación detectados.`,
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo verificar la moderación de imágenes: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_claims tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_claims` tool.
+ *
+ * Searches post-purchase claims/mediations for a MercadoLibre seller.
+ * Returns claim summaries with status, type, dates, and involved parties.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_claims` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckClaimsTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_claims",
+    description:
+      "Busca reclamos y mediaciones de posventa de un vendedor en MercadoLibre. " +
+      "Devuelve lista de reclamos con estado, tipo, fechas y partes involucradas. " +
+      "Permite filtrar por estado y paginar resultados. Usá esta herramienta " +
+      "cuando el vendedor pregunte por reclamos, quiera hacer un seguimiento, " +
+      "o necesite identificar reclamos abiertos que requieren atención.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        status: {
+          type: "string",
+          description: "Filtrar por estado de reclamo: open, closed, under_review, etc. (opcional).",
+        },
+        limit: {
+          type: "number",
+          description: "Cantidad máxima de reclamos a retornar (opcional).",
+        },
+        offset: {
+          type: "number",
+          description: "Offset para paginación (opcional).",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.searchClaims) {
+        return {
+          error: "La búsqueda de reclamos no está disponible en este momento.",
+        };
+      }
+
+      const opts: { limit?: number; offset?: number; status?: string } = {};
+      if (typeof args.limit === "number") opts.limit = args.limit;
+      if (typeof args.offset === "number") opts.offset = args.offset;
+      if (typeof args.status === "string" && args.status.length > 0) opts.status = args.status;
+
+      try {
+        const snapshot = await mlcClient.searchClaims(sellerId, opts);
+        const data = snapshot.data as MlcClaimsSearchResult;
+        const openCount = data.results.filter(
+          (c) => c.status === "open" || c.status === "under_review",
+        ).length;
+        return {
+          ...snapshot,
+          totalClaims: data.paging.total,
+          openClaims: openCount,
+          summary:
+            data.results.length > 0
+              ? `${data.paging.total} reclamos encontrados, ${openCount} abiertos/en revisión.`
+              : "No se encontraron reclamos.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo buscar reclamos: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_claim_detail tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_claim_detail` tool.
+ *
+ * Gets full detail for a specific MercadoLibre post-purchase claim,
+ * including messages, players, and available actions.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_claim_detail` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckClaimDetailTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_claim_detail",
+    description:
+      "Obtiene el detalle completo de un reclamo de MercadoLibre, incluyendo " +
+      "mensajes, partes involucradas y acciones disponibles. Usá esta herramienta " +
+      "después de check_claims cuando el vendedor quiera ver un reclamo específico " +
+      "en profundidad para decidir cómo resolverlo.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        claimId: {
+          type: "string",
+          description: "ID del reclamo en MercadoLibre. Ej: C-123456789.",
+        },
+      },
+      required: ["sellerId", "claimId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const claimId =
+        typeof args.claimId === "string" && args.claimId.length > 0 ? args.claimId : null;
+      if (!claimId) {
+        return {
+          error: "El parámetro 'claimId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getClaimDetail) {
+        return {
+          error: "La consulta de detalle de reclamo no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.getClaimDetail(sellerId, claimId);
+        const data = snapshot.data as MlcClaimDetailSummary;
+        return {
+          ...snapshot,
+          messageCount: data.messages?.length ?? 0,
+          availableActionCount: data.availableActions?.length ?? 0,
+          summary: `Reclamo ${data.claim.id}: estado "${data.claim.status ?? "desconocido"}", ` +
+            `tipo "${data.claim.type ?? "desconocido"}", ` +
+            `${data.messages?.length ?? 0} mensajes, ` +
+            `${data.availableActions?.length ?? 0} acciones disponibles.`,
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo obtener el detalle del reclamo: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_shipment_status tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_shipment_status` tool.
+ *
+ * Gets shipment tracking status for a MercadoLibre order.
+ * Returns delivery status, tracking number, dates, and logistic type.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_shipment_status` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckShipmentStatusTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_shipment_status",
+    description:
+      "Consulta el estado de envío de una orden de MercadoLibre. Devuelve " +
+      "estado actual, subestado, número de seguimiento, fechas y tipo logístico. " +
+      "Usá esta herramienta cuando el vendedor pregunte por el estado de un envío, " +
+      "necesite verificar si llegó a destino, o quiera hacer seguimiento de una entrega.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        shipmentId: {
+          type: "string",
+          description: "ID del envío en MercadoLibre. Ej: 41567890123.",
+        },
+      },
+      required: ["sellerId", "shipmentId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const shipmentId =
+        typeof args.shipmentId === "string" && args.shipmentId.length > 0
+          ? args.shipmentId
+          : null;
+      if (!shipmentId) {
+        return {
+          error: "El parámetro 'shipmentId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getShipmentStatus) {
+        return {
+          error: "La consulta de estado de envío no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.getShipmentStatus(sellerId, shipmentId);
+        const data = snapshot.data as MlcShipmentStatusSummary;
+        return {
+          ...snapshot,
+          friendlyStatus: data.status ? `Estado: ${data.status}${data.substatus ? ` (${data.substatus})` : ""}` : "Estado desconocido",
+          tracking: data.trackingNumber
+            ? `Seguimiento: ${data.trackingNumber} (${data.trackingMethod ?? "método desconocido"})`
+            : "Sin número de seguimiento",
+          summary:
+            `Envío ${data.id}: ${data.status ?? "estado desconocido"}. ` +
+            `${data.trackingNumber ? `Tracking: ${data.trackingNumber}. ` : ""}` +
+            `Logística: ${data.logisticType ?? "no especificada"}.`,
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo consultar el estado del envío: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_claim_messages tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_claim_messages` tool.
+ *
+ * Reads the message history for a specific MercadoLibre post-purchase claim.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_claim_messages` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckClaimMessagesTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_claim_messages",
+    description:
+      "Lee el historial de mensajes de un reclamo de MercadoLibre. " +
+      "Devuelve los mensajes entre el vendedor, comprador y Mediador de ML " +
+      "con fechas y adjuntos. Usá esta herramienta para revisar la conversación " +
+      "completa de un reclamo antes de decidir cómo responder.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        claimId: {
+          type: "string",
+          description: "ID del reclamo en MercadoLibre. Ej: C-123456789.",
+        },
+      },
+      required: ["sellerId", "claimId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const claimId =
+        typeof args.claimId === "string" && args.claimId.length > 0 ? args.claimId : null;
+      if (!claimId) {
+        return {
+          error: "El parámetro 'claimId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getClaimMessages) {
+        return {
+          error: "La consulta de mensajes del reclamo no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.getClaimMessages(sellerId, claimId);
+        const data = snapshot.data as MlcClaimMessagesSummary;
+        return {
+          ...snapshot,
+          messageCount: data.messages.length,
+          summary:
+            data.messages.length > 0
+              ? `${data.messages.length} mensajes en el historial del reclamo.`
+              : "No hay mensajes en este reclamo.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo leer los mensajes del reclamo: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_claim_resolutions tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_claim_resolutions` tool.
+ *
+ * Reads the expected resolution options available for a MercadoLibre claim.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_claim_resolutions` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckClaimResolutionsTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_claim_resolutions",
+    description:
+      "Lee las opciones de resolución disponibles para un reclamo de MercadoLibre. " +
+      "Devuelve las resoluciones esperadas con su estado y descripción. Usá esta " +
+      "herramienta ANTES de decidir cómo resolver un reclamo, para conocer las " +
+      "opciones que MercadoLibre ofrece y elegir la más conveniente para el vendedor.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        claimId: {
+          type: "string",
+          description: "ID del reclamo en MercadoLibre. Ej: C-123456789.",
+        },
+      },
+      required: ["sellerId", "claimId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const claimId =
+        typeof args.claimId === "string" && args.claimId.length > 0 ? args.claimId : null;
+      if (!claimId) {
+        return {
+          error: "El parámetro 'claimId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getClaimExpectedResolutions) {
+        return {
+          error: "La consulta de resoluciones esperadas no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.getClaimExpectedResolutions(sellerId, claimId);
+        const data = snapshot.data as MlcClaimResolutionsSummary;
+        const resolutionDescs = data.expected_resolutions
+          .map((r) => `${r.status ?? "?"}: ${r.description ?? "sin descripción"}`)
+          .join(" | ");
+        return {
+          ...snapshot,
+          resolutionCount: data.expected_resolutions.length,
+          summary:
+            data.expected_resolutions.length > 0
+              ? `${data.expected_resolutions.length} resoluciones disponibles: ${resolutionDescs}`
+              : "No hay resoluciones esperadas para este reclamo.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo leer las resoluciones del reclamo: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_claim_reputation tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_claim_reputation` tool.
+ *
+ * Checks whether a MercadoLibre claim affects the seller's reputation score.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_claim_reputation` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckClaimReputationTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_claim_reputation",
+    description:
+      "Verifica si un reclamo de MercadoLibre afecta la reputación del vendedor. " +
+      "Devuelve si el reclamo impacta en el score de reputación y el motivo. " +
+      "Usá esta herramienta ANTES de decidir cómo resolver un reclamo, para evaluar " +
+      "el impacto reputacional de cada opción y priorizar los reclamos que más afectan.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        claimId: {
+          type: "string",
+          description: "ID del reclamo en MercadoLibre. Ej: C-123456789.",
+        },
+      },
+      required: ["sellerId", "claimId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const claimId =
+        typeof args.claimId === "string" && args.claimId.length > 0 ? args.claimId : null;
+      if (!claimId) {
+        return {
+          error: "El parámetro 'claimId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getClaimAffectsReputation) {
+        return {
+          error: "La consulta de impacto reputacional no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.getClaimAffectsReputation(sellerId, claimId);
+        const data = snapshot.data as MlcClaimReputationSummary;
+        return {
+          ...snapshot,
+          recommendation: data.affects_reputation
+            ? `⚠️ Este reclamo AFECTA la reputación del vendedor. Motivo: ${data.reason ?? "no especificado"}. Resolverlo rápido minimiza el impacto.`
+            : "✅ Este reclamo NO afecta la reputación del vendedor.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo verificar el impacto reputacional: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_claim_history tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_claim_history` tool.
+ *
+ * Reads the chronological status change history for a MercadoLibre claim.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_claim_history` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckClaimHistoryTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_claim_history",
+    description:
+      "Lee el historial cronológico de cambios de estado de un reclamo de MercadoLibre. " +
+      "Devuelve cada cambio de estado con su fecha. Usá esta herramienta para " +
+      "entender la evolución de un reclamo, detectar demoras, y tomar decisiones " +
+      "informadas sobre los próximos pasos.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        claimId: {
+          type: "string",
+          description: "ID del reclamo en MercadoLibre. Ej: C-123456789.",
+        },
+      },
+      required: ["sellerId", "claimId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const claimId =
+        typeof args.claimId === "string" && args.claimId.length > 0 ? args.claimId : null;
+      if (!claimId) {
+        return {
+          error: "El parámetro 'claimId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.getClaimStatusHistory) {
+        return {
+          error: "La consulta del historial de estados no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.getClaimStatusHistory(sellerId, claimId);
+        const data = snapshot.data as MlcClaimStatusHistorySummary;
+        const timeline = data.history
+          .map((h) => `${h.status ?? "?"} (${h.date ?? "sin fecha"})`)
+          .join(" → ");
+        return {
+          ...snapshot,
+          eventCount: data.history.length,
+          timeline,
+          summary:
+            data.history.length > 0
+              ? `${data.history.length} cambios de estado: ${timeline}`
+              : "No hay historial de cambios de estado para este reclamo.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo leer el historial del reclamo: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// prepare_answer tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `prepare_answer` tool.
+ *
+ * Prepares an answer to a buyer question on MercadoLibre for seller approval.
+ * This tool does NOT post the answer — it only prepares it for approval.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `prepare_answer` tool definition compatible with OpenAI function calling.
+ */
+export function createPrepareAnswerTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "prepare_answer",
+    description:
+      "Prepara una respuesta a una pregunta de comprador en MercadoLibre. " +
+      "Esta herramienta NO publica la respuesta — solo la prepara para que el " +
+      "vendedor la revise y apruebe. requiresApproval: true. noMutationExecuted: true. " +
+      "Usá esta herramienta cuando el vendedor te pida responder una pregunta " +
+      "de un comprador, pero NUNCA publiques sin confirmación explícita.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        questionId: {
+          type: "string",
+          description: "ID de la pregunta en MercadoLibre. Ej: 123456789.",
+        },
+        text: {
+          type: "string",
+          description: "Texto de la respuesta a publicar. Debe ser profesional y útil.",
+        },
+      },
+      required: ["sellerId", "questionId", "text"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const questionId =
+        typeof args.questionId === "string" && args.questionId.length > 0
+          ? args.questionId
+          : null;
+      if (!questionId) {
+        return {
+          error: "El parámetro 'questionId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const text = typeof args.text === "string" && args.text.length > 0 ? args.text : null;
+      if (!text) {
+        return {
+          error: "El parámetro 'text' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      if (!mlcClient.prepareAnswer) {
+        return {
+          error: "La preparación de respuestas no está disponible en este momento.",
+        };
+      }
+
+      try {
+        const snapshot = await mlcClient.prepareAnswer(sellerId, { questionId, text });
+        return {
+          ...snapshot,
+          warning:
+            "⚠️ Esta respuesta NO fue publicada. El vendedor debe aprobarla explícitamente.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo preparar la respuesta: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// prepare_image_flow tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `prepare_image_flow` tool.
+ *
+ * Prepares a complete 4-step image orchestration flow for a MercadoLibre listing:
+ * 1. Diagnose the image for moderation issues
+ * 2. Upload to MercadoLibre CDN
+ * 3. Associate the image with the listing item
+ * 4. Check the final association status
+ *
+ * This tool runs the diagnosis step immediately (if available) but does NOT
+ * execute any mutations. The remaining steps are returned as pending.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `prepare_image_flow` tool definition compatible with OpenAI function calling.
+ */
+export function createPrepareImageFlowTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "prepare_image_flow",
+    description:
+      "Prepara un flujo completo de imágenes para una publicación de MercadoLibre " +
+      "en 4 pasos: diagnóstico → subida → asociación → verificación. " +
+      "requiresApproval: true. noMutationExecuted: true. " +
+      "Ejecuta el diagnóstico de inmediato para detectar problemas, " +
+      "pero NO realiza la subida, asociación ni verificación sin aprobación. " +
+      "Usá esta herramienta cuando el vendedor necesite preparar imágenes para " +
+      "una publicación nueva, combinando diagnóstico, subida y asociación en un solo flujo.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        itemId: {
+          type: "string",
+          description: "ID de la publicación en MercadoLibre. Ej: MLC123456789.",
+        },
+        pictureUrl: {
+          type: "string",
+          description: "URL de la imagen a procesar (pública o base64).",
+        },
+        categoryId: {
+          type: "string",
+          description: "ID de la categoría de MercadoLibre. Ej: MLC1743.",
+        },
+        title: {
+          type: "string",
+          description: "Título del producto (opcional, ayuda al diagnóstico contextual).",
+        },
+      },
+      required: ["sellerId", "itemId", "pictureUrl", "categoryId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const itemId =
+        typeof args.itemId === "string" && args.itemId.length > 0 ? args.itemId : null;
+      if (!itemId) {
+        return {
+          error: "El parámetro 'itemId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+      const pictureUrl =
+        typeof args.pictureUrl === "string" && args.pictureUrl.length > 0
+          ? args.pictureUrl
+          : null;
+      if (!pictureUrl) {
+        return {
+          error: "El parámetro 'pictureUrl' es obligatorio y debe ser una URL válida.",
+        };
+      }
+      const categoryId =
+        typeof args.categoryId === "string" && args.categoryId.length > 0
+          ? args.categoryId
+          : null;
+      if (!categoryId) {
+        return {
+          error: "El parámetro 'categoryId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      if (!mlcClient.diagnoseImage) {
+        return {
+          error:
+            "El flujo de imágenes no está disponible: el diagnóstico de imágenes " +
+            "no está habilitado en este momento. Se requiere diagnose_image para continuar.",
+        };
+      }
+
+      try {
+        // Step 1: Run diagnosis immediately.
+        const diagInput: MlcImageDiagnosticInput = { pictureUrl, categoryId };
+        if (typeof args.title === "string" && args.title.length > 0) {
+          diagInput.title = args.title;
+        }
+        const diagSnapshot = await mlcClient.diagnoseImage(sellerId, diagInput);
+
+        // Step 2: Build the orchestration summary with diagnose completed.
+        const orchestration = normalizeImageOrchestration({
+          sellerId,
+          itemId,
+          pictureUrl,
+          categoryId,
+          title: typeof args.title === "string" ? args.title : undefined,
+          now: new Date(),
+        });
+        const summary = orchestration.data as MlcImageOrchestrationSummary;
+
+        // Mark the diagnose step as completed.
+        const updatedSteps = summary.steps.map((s) =>
+          s.step === "diagnose"
+            ? { ...s, status: "completed" as const, result: diagSnapshot }
+            : s,
+        );
+
+        return {
+          ...orchestration,
+          data: {
+            ...summary,
+            steps: updatedSteps,
+          },
+          diagnoseResult: diagSnapshot,
+          nextStep: "upload",
+          instructions:
+            "Paso 1 (diagnóstico) completado. Pasos pendientes: upload, associate, check. " +
+            "El vendedor debe aprobar antes de continuar con la subida de imagen.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo preparar el flujo de imágenes: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+          failedStep: "diagnose",
+          instructions:
+            "El diagnóstico falló. Verificá que la URL de la imagen y la categoría " +
+            "sean correctas antes de reintentar.",
         };
       }
     },

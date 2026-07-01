@@ -45,6 +45,17 @@ import {
   createFindRelistOpportunitiesTool,
   createDiagnoseImageTool,
   createUploadImageTool,
+  createReadSellerNoticesTool,
+  createCheckImageModerationTool,
+  createCheckClaimsTool,
+  createCheckClaimDetailTool,
+  createCheckShipmentStatusTool,
+  createCheckClaimMessagesTool,
+  createCheckClaimResolutionsTool,
+  createCheckClaimReputationTool,
+  createCheckClaimHistoryTool,
+  createPrepareAnswerTool,
+  createPrepareImageFlowTool,
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
 
@@ -281,6 +292,39 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.mlcClient && !toolMap.has("upload_image")) {
     toolMap.set("upload_image", createUploadImageTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("read_seller_notices")) {
+    toolMap.set("read_seller_notices", createReadSellerNoticesTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_image_moderation")) {
+    toolMap.set("check_image_moderation", createCheckImageModerationTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_claims")) {
+    toolMap.set("check_claims", createCheckClaimsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_claim_detail")) {
+    toolMap.set("check_claim_detail", createCheckClaimDetailTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_shipment_status")) {
+    toolMap.set("check_shipment_status", createCheckShipmentStatusTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_claim_messages")) {
+    toolMap.set("check_claim_messages", createCheckClaimMessagesTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_claim_resolutions")) {
+    toolMap.set("check_claim_resolutions", createCheckClaimResolutionsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_claim_reputation")) {
+    toolMap.set("check_claim_reputation", createCheckClaimReputationTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_claim_history")) {
+    toolMap.set("check_claim_history", createCheckClaimHistoryTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("prepare_answer")) {
+    toolMap.set("prepare_answer", createPrepareAnswerTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("prepare_image_flow")) {
+    toolMap.set("prepare_image_flow", createPrepareImageFlowTool(config.mlcClient));
   }
 
   // Real client is used only when the caller has not explicitly requested the mock.

@@ -1920,3 +1920,1146 @@ describe("MlClient (stub mode)", () => {
     await expect(client.getItems("unknown-seller")).rejects.toThrow("No stored token");
   });
 });
+
+// ---------------------------------------------------------------------------
+// MercadoLibre API Gaps 2026 — Slice 1 Tests
+// ---------------------------------------------------------------------------
+
+describe("normalizeModerationStatus", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses a successful moderation result with wordings and evidence", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        moderations: [
+          {
+            id: "MLC1001",
+            blocked: false,
+            date: "2026-06-30T10:00:00Z",
+            wordings: [
+              { kind: "REASON", value: "product photography" },
+              { kind: "REMEDY", value: "use white background" },
+            ],
+            evidence: [
+              { text_matched: "used product", section_name: "title" },
+            ],
+          },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getModerationStatus!("seller-1", "MLC1001");
+
+    expect(result.kind).toBe("listing");
+    expect(result.source).toBe("mercadolibre-api");
+    expect(result.completeness).toBe("complete");
+    expect(result.data.itemId).toBe("MLC1001");
+    expect(result.data.blocked).toBe(false);
+    expect(result.data.date).toBe("2026-06-30T10:00:00Z");
+    expect(result.data.wordings).toEqual([
+      { kind: "REASON", value: "product photography" },
+      { kind: "REMEDY", value: "use white background" },
+    ]);
+    expect(result.data.evidence).toEqual([
+      { textMatched: "used product", sectionName: "title" },
+    ]);
+  });
+
+  it("returns partial completeness when payload is empty", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({ moderations: [] }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getModerationStatus!("seller-1", "MLC1001");
+
+    expect(result.completeness).toBe("partial");
+    expect(result.data.itemId).toBe("");
+    expect(result.data.blocked).toBe(false);
+    expect(result.data.wordings).toEqual([]);
+  });
+
+  it("handles a blocked moderation result", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        moderations: [
+          {
+            id: "MLC2002",
+            blocked: true,
+            date: "2026-06-30T10:00:00Z",
+            wordings: [{ kind: "REASON", value: "prohibited content" }],
+            evidence: [],
+          },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getModerationStatus!("seller-1", "MLC2002");
+
+    expect(result.data.itemId).toBe("MLC2002");
+    expect(result.data.blocked).toBe(true);
+    expect(result.data.evidence).toEqual([]);
+  });
+
+  it("correctly constructs the API request path", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      moderations: [{ id: "MLC1001", blocked: false, wordings: [], evidence: [] }],
+    });
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    await client.getModerationStatus!("seller-1", "MLC1001");
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/moderations/last_moderation/MLC1001",
+      }),
+    );
+  });
+});
+
+describe("normalizeNotices", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses seller-scoped notices with dismiss_key and pagination", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        paging: { total: 25, limit: 10, offset: 0 },
+        results: [
+          {
+            id: "notice-1",
+            from_date: "2026-06-28",
+            tags: ["billing", "urgent"],
+            highlighted: false,
+            dismiss_key: "dismiss-abc",
+            actions: [
+              { label: "Ver factura", url: "https://mla.com/billing" },
+              { label: "Pagar ahora" },
+            ],
+          },
+          {
+            id: "notice-2",
+            from_date: "2026-06-29",
+            tags: ["promotions"],
+            highlighted: true,
+            dismiss_key: "dismiss-def",
+            actions: [],
+          },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getNotices!("seller-1");
+
+    expect(result.kind).toBe("message");
+    expect(result.completeness).toBe("complete");
+    expect(result.data.pagination).toEqual({ total: 25, limit: 10, offset: 0 });
+    expect(result.data.notices).toHaveLength(2);
+    expect(result.data.notices[0].id).toBe("notice-1");
+    expect(result.data.notices[0].dismissKey).toBe("dismiss-abc");
+    expect(result.data.notices[0].tags).toEqual(["billing", "urgent"]);
+    expect(result.data.notices[0].actions).toHaveLength(2);
+    expect(result.data.notices[0].actions[0]).toEqual({
+      label: "Ver factura",
+      url: "https://mla.com/billing",
+    });
+    expect(result.data.notices[1].highlighted).toBe(true);
+    expect(result.data.notices[1].tags).toEqual(["promotions"]);
+  });
+
+  it("returns empty notices with full pagination metadata", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({ paging: { total: 0, limit: 10, offset: 0 }, results: [] }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getNotices!("seller-1");
+
+    expect(result.data.notices).toEqual([]);
+    expect(result.data.pagination.limit).toBe(10);
+    expect(result.data.pagination.offset).toBe(0);
+  });
+
+  it("passes limit and offset as query params", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      paging: { total: 0, limit: 5, offset: 10 },
+      results: [],
+    });
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    await client.getNotices!("seller-1", { limit: 5, offset: 10 });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/communications/notices",
+        query: { limit: "5", offset: "10" },
+      }),
+    );
+  });
+
+  it("handles integrator-scoped notices with title field", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        paging: { total: 1, limit: 10, offset: 0 },
+        results: [
+          {
+            id: "notice-int-1",
+            title: "Integrator weekly digest",
+            highlighted: true,
+            actions: [],
+          },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getNotices!("seller-1");
+
+    expect(result.data.notices[0].title).toBe("Integrator weekly digest");
+    expect(result.data.notices[0].dismissKey).toBeUndefined();
+  });
+});
+
+describe("normalizeAnswer (prepare-only)", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("constructs a pending answer snapshot without calling transport", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({});
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    const result = await client.prepareAnswer!("seller-1", {
+      questionId: "Q-9876",
+      text: "Gracias por tu consulta, tenemos stock disponible.",
+    });
+
+    expect(result.kind).toBe("message");
+    expect(result.source).toBe("mercadolibre-api");
+    expect(result.completeness).toBe("partial");
+    expect(result.confidence).toBe("low");
+    expect(result.data).toEqual({
+      questionId: "Q-9876",
+      status: "pending",
+      requiresApproval: true,
+      noMutationExecuted: true,
+      textLength: 50,
+    });
+    // prepareAnswer MUST NOT call transport
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("handles empty questionId gracefully", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({});
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    const result = await client.prepareAnswer!("seller-1", {
+      questionId: "   ",
+      text: "We have stock.",
+    });
+
+    expect(result.data.questionId).toBe("");
+    expect(result.data.textLength).toBe(0);
+    expect(result.confidence).toBe("low");
+  });
+
+  it("handles empty text gracefully", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({});
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    const result = await client.prepareAnswer!("seller-1", {
+      questionId: "Q-9876",
+      text: "   ",
+    });
+
+    expect(result.data.questionId).toBe("");
+    expect(result.data.textLength).toBe(0);
+    expect(result.confidence).toBe("low");
+  });
+});
+
+describe("getNotices pagination integration", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("omits undefined limit/offset from query", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      paging: { total: 0, limit: 10, offset: 0 },
+      results: [],
+    });
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    await client.getNotices!("seller-1");
+
+    // When no options are passed, query should be undefined
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/communications/notices",
+      }),
+    );
+    const callArgs = request.mock.calls[0][0];
+    expect(callArgs.query).toBeUndefined();
+  });
+});
+
+describe("normalizeClaimsSearch", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses claim search results with players and resolution", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        paging: { total: 3, offset: 0, limit: 10 },
+        results: [
+          {
+            id: "C-1001",
+            status: "open",
+            type: "damaged_product",
+            stage: "mediation",
+            date_created: "2026-06-28T10:00:00Z",
+            last_updated: "2026-06-30T15:00:00Z",
+            resource: "order",
+            resource_id: "O-5001",
+            site_id: "MLC",
+            players: [
+              { id: "player-1", role: "complainant", nickname: "buyer1" },
+              { id: "player-2", role: "respondent", nickname: "seller1" },
+            ],
+            resolution: {
+              id: "res-1",
+              status: "pending",
+              reason: "product_not_received",
+            },
+          },
+          {
+            id: "C-1002",
+            status: "closed",
+            type: "return",
+            date_created: "2026-06-29T08:00:00Z",
+            players: [],
+          },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.searchClaims!("seller-1");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.source).toBe("mercadolibre-api");
+    expect(result.completeness).toBe("complete");
+    expect(result.data.paging).toEqual({ total: 3, offset: 0, limit: 10 });
+    expect(result.data.results).toHaveLength(2);
+    expect(result.data.results[0].id).toBe("C-1001");
+    expect(result.data.results[0].status).toBe("open");
+    expect(result.data.results[0].type).toBe("damaged_product");
+    expect(result.data.results[0].stage).toBe("mediation");
+    expect(result.data.results[0].resource).toBe("order");
+    expect(result.data.results[0].players).toHaveLength(2);
+    expect(result.data.results[0].players![0].role).toBe("complainant");
+    expect(result.data.results[0].resolution).toBeDefined();
+    expect(result.data.results[0].resolution!.reason).toBe("product_not_received");
+    expect(result.data.results[1].players).toBeUndefined();
+  });
+
+  it("returns empty results with pagination metadata", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        paging: { total: 0, offset: 0, limit: 10 },
+        results: [],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.searchClaims!("seller-1");
+
+    expect(result.data.results).toEqual([]);
+    expect(result.data.paging.total).toBe(0);
+    expect(result.completeness).toBe("complete");
+    expect(result.confidence).toBe("medium");
+  });
+
+  it("handles missing results field as partial", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({ paging: { total: 0, offset: 0, limit: 10 } }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.searchClaims!("seller-1");
+
+    expect(result.completeness).toBe("partial");
+    expect(result.data.results).toEqual([]);
+  });
+
+  it("handles partial data with incomplete claim entries", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        paging: { total: 2, offset: 0, limit: 10 },
+        results: [
+          { id: "C-2001", status: "open" },
+          null,
+          "not-an-object",
+          {},
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.searchClaims!("seller-1");
+
+    expect(result.completeness).toBe("partial");
+    expect(result.data.results).toHaveLength(1);
+    expect(result.data.results[0].id).toBe("C-2001");
+    expect(result.confidence).toBe("low");
+  });
+});
+
+describe("getClaimDetail", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses claim detail with messages and available actions", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        claim: {
+          id: "C-3001",
+          status: "open",
+          type: "undelivered",
+          stage: "mediation",
+          players: [{ id: "p-1", role: "complainant" }],
+        },
+        messages: [
+          {
+            id: "msg-1",
+            from: "buyer",
+            to: "seller",
+            message: "Where is my package?",
+            date_created: "2026-06-28T10:00:00Z",
+          },
+        ],
+        players: [
+          { id: "p-1", role: "complainant", nickname: "buyer1" },
+          { id: "p-2", role: "respondent", nickname: "seller1" },
+        ],
+        available_actions: [
+          { id: "act-1", type: "resolve", status: "available", reason: "claim open" },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimDetail!("seller-1", "C-3001");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.completeness).toBe("complete");
+    expect(result.data.claim.id).toBe("C-3001");
+    expect(result.data.claim.status).toBe("open");
+    expect(result.data.messages).toHaveLength(1);
+    expect(result.data.messages![0].message).toBe("Where is my package?");
+    expect(result.data.players).toHaveLength(2);
+    expect(result.data.availableActions).toHaveLength(1);
+    expect(result.data.availableActions![0].type).toBe("resolve");
+  });
+
+  it("correctly constructs the API request path", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      claim: { id: "C-3001", status: "open", players: [] },
+    });
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    await client.getClaimDetail!("seller-1", "C-3001");
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/post-purchase/v1/claims/C-3001",
+      }),
+    );
+  });
+});
+
+describe("normalizeShipmentStatus", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses delivered shipment status", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        id: "41567890123",
+        status: "delivered",
+        substatus: "delivered_to_receiver",
+        date_created: "2026-06-28T10:00:00Z",
+        last_updated: "2026-06-30T14:00:00Z",
+        tracking_number: "TRACK-001",
+        tracking_method: "carrier",
+        logistic_type: "cross_docking",
+        sender_id: "12345",
+        receiver_id: "67890",
+        site_id: "MLC",
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getShipmentStatus!("seller-1", "41567890123");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.source).toBe("mercadolibre-api");
+    expect(result.completeness).toBe("complete");
+    expect(result.data.id).toBe("41567890123");
+    expect(result.data.status).toBe("delivered");
+    expect(result.data.substatus).toBe("delivered_to_receiver");
+    expect(result.data.trackingNumber).toBe("TRACK-001");
+    expect(result.data.trackingMethod).toBe("carrier");
+    expect(result.data.logisticType).toBe("cross_docking");
+    expect(result.data.senderId).toBe("12345");
+    expect(result.data.receiverId).toBe("67890");
+    expect(result.data.siteId).toBe("MLC");
+  });
+
+  it("parses in-transit shipment with minimal fields", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        id: "41567890999",
+        status: "in_transit",
+        date_created: "2026-07-01T08:00:00Z",
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getShipmentStatus!("seller-1", "41567890999");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.data.id).toBe("41567890999");
+    expect(result.data.status).toBe("in_transit");
+    expect(result.data.substatus).toBeUndefined();
+    expect(result.data.trackingNumber).toBeUndefined();
+    expect(result.data.lastUpdated).toBeUndefined();
+  });
+
+  it("returns partial completeness when payload is not an object", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue("not-an-object"),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getShipmentStatus!("seller-1", "any-id");
+
+    expect(result.completeness).toBe("partial");
+    expect(result.data.id).toBe("");
+    expect(result.confidence).toBe("low");
+  });
+});
+
+describe("getShipmentStatus", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("sends x-format-new header on the request", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      id: "41567890123",
+      status: "delivered",
+    });
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    await client.getShipmentStatus!("seller-1", "41567890123");
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/marketplace/shipments/41567890123",
+        headers: { "x-format-new": "true" },
+      }),
+    );
+  });
+
+  it("passes search claims with status filter", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      paging: { total: 0, offset: 0, limit: 10 },
+      results: [],
+    });
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    await client.searchClaims!("seller-1", { status: "open", limit: 5 });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/post-purchase/v1/claims/search",
+        query: { status: "open", limit: "5" },
+      }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MercadoLibre API Gaps 2026 — Slice 3 Tests
+// ---------------------------------------------------------------------------
+
+describe("getClaimMessages", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses claim messages with sender/receiver roles", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        messages: [
+          {
+            id: "msg-1",
+            from: "buyer",
+            to: "seller",
+            message: "Where is my package?",
+            date_created: "2026-06-28T10:00:00Z",
+          },
+          {
+            id: "msg-2",
+            from: "seller",
+            to: "buyer",
+            message: "Shipped yesterday",
+            date_created: "2026-06-29T14:00:00Z",
+            attachments: ["invoice.pdf"],
+          },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimMessages!("seller-1", "C-1001");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.source).toBe("mercadolibre-api");
+    expect(result.completeness).toBe("complete");
+    expect(result.data.messages).toHaveLength(2);
+    expect(result.data.messages[0].id).toBe("msg-1");
+    expect(result.data.messages[0].from).toBe("buyer");
+    expect(result.data.messages[0].to).toBe("seller");
+    expect(result.data.messages[0].message).toBe("Where is my package?");
+    expect(result.data.messages[1].attachments).toEqual(["invoice.pdf"]);
+  });
+
+  it("returns empty messages with complete confidence", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({ messages: [] }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimMessages!("seller-1", "C-1002");
+
+    expect(result.completeness).toBe("complete");
+    expect(result.data.messages).toEqual([]);
+    expect(result.confidence).toBe("medium");
+  });
+
+  it("resiliently parses direct array payload for messages", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue([
+        { id: "msg-3", from: "buyer", to: "seller", message: "Hello" },
+      ]),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimMessages!("seller-1", "C-1003");
+
+    expect(result.data.messages).toHaveLength(1);
+    expect(result.data.messages[0].message).toBe("Hello");
+    expect(result.completeness).toBe("complete");
+  });
+});
+
+describe("getClaimExpectedResolutions", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses expected resolution proposals with id, status, reason", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        expected_resolutions: [
+          { id: "res-1", status: "available", reason: "product_not_received", description: "Provide proof of delivery" },
+          { id: "res-2", status: "pending", reason: "damaged_product", description: "Accept return" },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimExpectedResolutions!("seller-1", "C-2001");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.completeness).toBe("complete");
+    expect(result.data.expected_resolutions).toHaveLength(2);
+    expect(result.data.expected_resolutions[0].id).toBe("res-1");
+    expect(result.data.expected_resolutions[0].status).toBe("available");
+    expect(result.data.expected_resolutions[0].reason).toBe("product_not_received");
+    expect(result.data.expected_resolutions[0].description).toBe("Provide proof of delivery");
+  });
+});
+
+describe("getClaimAffectsReputation", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("returns reputation impact when claim affects reputation", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        affects_reputation: true,
+        reason: "mediator completed review",
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimAffectsReputation!("seller-1", "C-3001");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.completeness).toBe("complete");
+    expect(result.confidence).toBe("high");
+    expect(result.data.affects_reputation).toBe(true);
+    expect(result.data.reason).toBe("mediator completed review");
+  });
+});
+
+describe("getClaimStatusHistory", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("parses chronological status/date entries", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        history: [
+          { status: "open", date: "2026-06-28T10:00:00Z" },
+          { status: "under_review", date: "2026-06-29T14:00:00Z" },
+          { status: "resolved", date: "2026-07-01T08:00:00Z" },
+        ],
+      }),
+    };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimStatusHistory!("seller-1", "C-4001");
+
+    expect(result.kind).toBe("business-signal");
+    expect(result.completeness).toBe("complete");
+    expect(result.confidence).toBe("high");
+    expect(result.data.history).toHaveLength(3);
+    expect(result.data.history[0].status).toBe("open");
+    expect(result.data.history[1].status).toBe("under_review");
+    expect(result.data.history[2].status).toBe("resolved");
+    expect(result.data.history[0].date).toBe("2026-06-28T10:00:00Z");
+  });
+});
+
+describe("associateImageToItem", () => {
+  const sellerId = "seller-1";
+  const now = new Date("2026-07-01T12:00:00.000Z");
+
+  it("returns associative summary after reading item", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue(
+      completeMlcItemPayload(),
+    );
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    const result = await client.associateImageToItem!("seller-1", {
+      itemId: "MLC1001",
+      pictureId: "pic-9876",
+    });
+
+    expect(result.data).toEqual({
+      itemId: "MLC1001",
+      pictureId: "pic-9876",
+      status: "associated",
+    });
+    expect(result.kind).toBe("listing");
+    expect(result.completeness).toBe("complete");
+    expect(result.confidence).toBe("medium");
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/items/MLC1001",
+      }),
+    );
+  });
+
+  it("blocks non-MLC item IDs before path construction", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({});
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    await expect(
+      client.associateImageToItem!("seller-1", {
+        itemId: "MLA1001",
+        pictureId: "pic-1",
+      }),
+    ).rejects.toThrow(/MLC item IDs/);
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe("normalizeImageOrchestration", () => {
+  it("returns 4-step orchestration with requiresApproval and noMutationExecuted", async () => {
+    const { normalizeImageOrchestration } = await import("./index.js");
+    const now = new Date("2026-07-01T12:00:00.000Z");
+
+    const result = normalizeImageOrchestration({
+      sellerId: "seller-1",
+      itemId: "MLC1001",
+      pictureUrl: "https://example.com/image.jpg",
+      categoryId: "MLC1000",
+      title: "Test Item",
+      now,
+    });
+
+    expect(result.data.itemId).toBe("MLC1001");
+    expect(result.data.requiresApproval).toBe(true);
+    expect(result.data.noMutationExecuted).toBe(true);
+    expect(result.data.steps).toHaveLength(4);
+    expect(result.data.steps[0]).toEqual({ step: "diagnose", status: "pending" });
+    expect(result.data.steps[1]).toEqual({ step: "upload", status: "pending" });
+    expect(result.data.steps[2]).toEqual({ step: "associate", status: "pending" });
+    expect(result.data.steps[3]).toEqual({ step: "check", status: "pending" });
+    expect(result.kind).toBe("listing");
+    expect(result.completeness).toBe("complete");
+    expect(result.confidence).toBe("high");
+  });
+});
+

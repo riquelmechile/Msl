@@ -191,6 +191,150 @@ export type MlcImageUploadResult = {
 
 export type MlcImageUploadSnapshot = MlcReadSnapshot<MlcImageUploadResult>;
 
+export type MlcImageAssociateInput = { itemId: string; pictureId: string };
+
+export type MlcImageAssociateSummary = { itemId: string; pictureId: string; status: "associated" };
+
+export type MlcImageAssociateSnapshot = MlcReadSnapshot<MlcImageAssociateSummary>;
+
+export type MlcImageOrchestrationInput = {
+  itemId: string; pictureUrl: string; categoryId: string; title?: string;
+};
+
+export type MlcImageOrchestrationStep = {
+  step: "diagnose" | "upload" | "associate" | "check";
+  status: "pending" | "completed" | "failed";
+  result?: unknown;
+};
+
+export type MlcImageOrchestrationSummary = {
+  itemId: string;
+  steps: ReadonlyArray<MlcImageOrchestrationStep>;
+  requiresApproval: true;
+  noMutationExecuted: true;
+};
+
+export type MlcModerationStatusSummary = {
+  itemId: string;
+  blocked: boolean;
+  date?: string;
+  wordings: ReadonlyArray<{ kind: string; value: string }>;
+  evidence: ReadonlyArray<{ textMatched?: string; sectionName?: string }>;
+};
+
+export type MlcNoticesSummary = {
+  notices: ReadonlyArray<{
+    id: string;
+    fromDate?: string;
+    tags?: ReadonlyArray<string>;
+    highlighted?: boolean;
+    dismissKey?: string;
+    title?: string;
+    actions: ReadonlyArray<{ label?: string; url?: string }>;
+  }>;
+  pagination: { total?: number; limit: number; offset: number };
+  category?: string;
+};
+
+export type MlcClaimPlayer = {
+  id?: string;
+  role?: string;
+  nickname?: string;
+};
+
+export type MlcClaimPlayerAction = {
+  id?: string;
+  status?: string;
+  type?: string;
+  created?: string;
+  reason?: string;
+  description?: string;
+};
+
+export type MlcClaimResolution = {
+  id?: string;
+  status?: string;
+  reason?: string;
+  description?: string;
+};
+
+export type MlcClaimMessage = {
+  id?: string;
+  from?: string;
+  to?: string;
+  message?: string;
+  date_created?: string;
+  attachments?: ReadonlyArray<string>;
+};
+
+export type MlcClaimSummary = {
+  id: string;
+  status?: string;
+  type?: string;
+  reasonId?: string;
+  stage?: string;
+  dateCreated?: string;
+  lastUpdated?: string;
+  resource?: string;
+  resourceId?: string;
+  siteId?: string;
+  players?: ReadonlyArray<MlcClaimPlayer>;
+  resolution?: MlcClaimResolution;
+};
+
+export type MlcClaimsSearchResult = {
+  paging: { total: number; offset: number; limit: number };
+  results: ReadonlyArray<MlcClaimSummary>;
+};
+
+export type MlcClaimDetailSummary = {
+  claim: MlcClaimSummary;
+  messages?: ReadonlyArray<MlcClaimMessage>;
+  players?: ReadonlyArray<MlcClaimPlayer>;
+  availableActions?: ReadonlyArray<MlcClaimPlayerAction>;
+};
+
+export type MlcClaimMessagesSummary = { messages: ReadonlyArray<MlcClaimMessage> };
+
+export type MlcClaimResolutionsSummary = {
+  expected_resolutions: ReadonlyArray<{
+    id?: string; status?: string; reason?: string; description?: string;
+  }>;
+};
+
+export type MlcClaimReputationSummary = {
+  affects_reputation: boolean;
+  reason?: string;
+};
+
+export type MlcClaimStatusHistorySummary = {
+  history: ReadonlyArray<{ status?: string; date?: string }>;
+};
+
+export type MlcShipmentStatusSummary = {
+  id: string;
+  status?: string;
+  substatus?: string;
+  dateCreated?: string;
+  lastUpdated?: string;
+  trackingNumber?: string;
+  trackingMethod?: string;
+  logisticType?: string;
+  senderId?: string;
+  receiverId?: string;
+  siteId?: string;
+};
+
+export type MlcAnswerInput = { questionId: string; text: string };
+
+export type MlcAnswerSummary = {
+  questionId: string;
+  status: "pending";
+  requiresApproval: true;
+  noMutationExecuted: true;
+  textLength: number;
+};
+
 const MLC_REPUTATION_RULES = {
   establishedSellerCompletedTransactions: 40,
   establishedSellerMetricPeriodDays: 60,
@@ -547,6 +691,17 @@ export type MlcSellerPromotionsSnapshot = MlcReadSnapshot<MlcSellerPromotionsSum
 export type MlcPromotionDetailSnapshot = MlcReadSnapshot<MlcPromotionSummary>;
 export type MlcPromotionItemsSnapshot = MlcReadSnapshot<MlcPromotionItemsSummary>;
 export type MlcItemPromotionsSnapshot = MlcReadSnapshot<MlcItemPromotionsSummary>;
+export type MlcModerationStatusSnapshot = MlcReadSnapshot<MlcModerationStatusSummary>;
+export type MlcNoticesSnapshot = MlcReadSnapshot<MlcNoticesSummary>;
+export type MlcAnswerSnapshot = MlcReadSnapshot<MlcAnswerSummary>;
+
+export type MlcClaimsSearchSnapshot = MlcReadSnapshot<MlcClaimsSearchResult>;
+export type MlcClaimDetailSnapshot = MlcReadSnapshot<MlcClaimDetailSummary>;
+export type MlcClaimMessagesSnapshot = MlcReadSnapshot<MlcClaimMessagesSummary>;
+export type MlcClaimResolutionsSnapshot = MlcReadSnapshot<MlcClaimResolutionsSummary>;
+export type MlcClaimReputationSnapshot = MlcReadSnapshot<MlcClaimReputationSummary>;
+export type MlcClaimStatusHistorySnapshot = MlcReadSnapshot<MlcClaimStatusHistorySummary>;
+export type MlcShipmentStatusSnapshot = MlcReadSnapshot<MlcShipmentStatusSummary>;
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -698,6 +853,23 @@ export type MlcApiClient = {
     imageBuffer: Buffer,
     filename: string,
   ): Promise<MlcImageUploadSnapshot>;
+  getModerationStatus?(sellerId: string, itemId: string): Promise<MlcModerationStatusSnapshot>;
+  getNotices?(
+    sellerId: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<MlcNoticesSnapshot>;
+  prepareAnswer?(sellerId: string, input: MlcAnswerInput): Promise<MlcAnswerSnapshot>;
+  searchClaims?(
+    sellerId: string,
+    options?: { limit?: number; offset?: number; status?: string; sort?: string },
+  ): Promise<MlcClaimsSearchSnapshot>;
+  getClaimDetail?(sellerId: string, claimId: string): Promise<MlcClaimDetailSnapshot>;
+  getClaimMessages?(sellerId: string, claimId: string): Promise<MlcClaimMessagesSnapshot>;
+  getClaimExpectedResolutions?(sellerId: string, claimId: string): Promise<MlcClaimResolutionsSnapshot>;
+  getClaimAffectsReputation?(sellerId: string, claimId: string): Promise<MlcClaimReputationSnapshot>;
+  getClaimStatusHistory?(sellerId: string, claimId: string): Promise<MlcClaimStatusHistorySnapshot>;
+  associateImageToItem?(sellerId: string, input: MlcImageAssociateInput): Promise<MlcImageAssociateSnapshot>;
+  getShipmentStatus?(sellerId: string, shipmentId: string): Promise<MlcShipmentStatusSnapshot>;
 };
 
 export type MlcProductAdsInsightsOptions = {
@@ -1328,6 +1500,484 @@ function normalizeImageUpload(input: {
     completeness,
     freshness: createFreshness("listing", input.now),
     confidence: snapshotConfidence(completeness, variations.length),
+  };
+}
+
+function normalizeModerationStatus(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcModerationStatusSnapshot {
+  const root = asRecord(input.payload);
+  const moderations = asArray(root?.moderations ?? input.payload);
+  const mod = asRecord(moderations[0]);
+
+  const itemId = stringValue(mod?.id) ?? "";
+  const blocked = booleanValue(mod?.blocked) ?? false;
+
+  const wordings: MlcModerationStatusSummary["wordings"] = asArray(mod?.wordings).flatMap((w) => {
+    const wr = asRecord(w);
+    const kind = stringValue(wr?.kind);
+    const value = stringValue(wr?.value);
+    return kind !== undefined && value !== undefined ? [{ kind, value }] : [];
+  });
+
+  const evidence: MlcModerationStatusSummary["evidence"] = asArray(mod?.evidence).flatMap((e) => {
+    const er = asRecord(e);
+    if (er === undefined) return [];
+    const item: { textMatched?: string; sectionName?: string } = {};
+    pushOptional(item, "textMatched", stringValue(er.text_matched));
+    pushOptional(item, "sectionName", stringValue(er.section_name));
+    return Object.keys(item).length > 0 ? [item] : [];
+  });
+
+  const data: MlcModerationStatusSummary = { itemId, blocked, wordings, evidence };
+  pushOptional(data, "date", stringValue(mod?.date));
+
+  const completeness = itemId.length > 0 ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, wordings.length + evidence.length),
+  };
+}
+
+function normalizeNotices(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcNoticesSnapshot {
+  const root = asRecord(input.payload);
+  const results = asArray(root?.results);
+  let complete = root !== undefined && Array.isArray(root.results);
+
+  const notices: MlcNoticesSummary["notices"] = results.flatMap((item) => {
+    const record = asRecord(item);
+    const id = stringValue(record?.id);
+    if (record === undefined || id === undefined) {
+      complete = false;
+      return [];
+    }
+
+    const actions: MlcNoticesSummary["notices"][number]["actions"] = asArray(
+      record.actions,
+    ).flatMap((a) => {
+      const ar = asRecord(a);
+      if (ar === undefined) return [];
+      const action: { label?: string; url?: string } = {};
+      pushOptional(action, "label", stringValue(ar.label));
+      pushOptional(action, "url", stringValue(ar.url));
+      return Object.keys(action).length > 0 ? [action] : [];
+    });
+
+    const notice: MlcNoticesSummary["notices"][number] = { id, actions };
+    pushOptional(notice, "fromDate", stringValue(record.from_date));
+    pushOptional(notice, "highlighted", booleanValue(record.highlighted));
+    pushOptional(notice, "dismissKey", stringValue(record.dismiss_key));
+    pushOptional(notice, "title", stringValue(record.title));
+
+    const tags: ReadonlyArray<string> = asArray(record.tags).flatMap((t) => {
+      const str = stringValue(t);
+      return str !== undefined ? [str] : [];
+    });
+    if (tags.length > 0) notice.tags = tags;
+
+    return [notice];
+  });
+
+  const pagingRecord = asRecord(root?.paging);
+  const pagination: MlcNoticesSummary["pagination"] = {
+    limit: numberValue(pagingRecord?.limit) ?? 0,
+    offset: numberValue(pagingRecord?.offset) ?? 0,
+  };
+  pushOptional(pagination, "total", numberValue(pagingRecord?.total));
+
+  const data: MlcNoticesSummary = { notices, pagination };
+  pushOptional(data, "category", stringValue(root?.category));
+
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "message",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("message", input.now),
+    confidence: snapshotConfidence(completeness, notices.length),
+  };
+}
+
+function normalizeAnswer(input: {
+  sellerId: string;
+  questionId: string;
+  text: string;
+  now: Date;
+}): MlcAnswerSnapshot {
+  const textLength = input.text.length;
+  const data: MlcAnswerSummary = {
+    questionId: input.questionId,
+    status: "pending",
+    requiresApproval: true,
+    noMutationExecuted: true,
+    textLength,
+  };
+
+  return {
+    sellerId: input.sellerId,
+    kind: "message",
+    source: "mercadolibre-api",
+    data,
+    completeness: "partial",
+    freshness: createFreshness("message", input.now),
+    confidence: "low",
+  };
+}
+
+function normalizeClaimPlayers(players: ReadonlyArray<unknown>): ReadonlyArray<MlcClaimPlayer> {
+  return players.flatMap((p) => {
+    const pr = asRecord(p);
+    if (pr === undefined) return [];
+    const player: MlcClaimPlayer = {};
+    pushOptional(player, "id", stringValue(pr.id));
+    pushOptional(player, "role", stringValue(pr.role));
+    pushOptional(player, "nickname", stringValue(pr.nickname));
+    return Object.keys(player).length > 0 ? [player] : [];
+  });
+}
+
+function normalizeSingleClaim(record: Readonly<Record<string, unknown>>): MlcClaimSummary {
+  const claim: MlcClaimSummary = { id: stringValue(record.id) ?? "" };
+  pushOptional(claim, "status", stringValue(record.status));
+  pushOptional(claim, "type", stringValue(record.type));
+  pushOptional(claim, "reasonId", stringValue(record.reason_id));
+  pushOptional(claim, "stage", stringValue(record.stage));
+  pushOptional(claim, "dateCreated", stringValue(record.date_created));
+  pushOptional(claim, "lastUpdated", stringValue(record.last_updated));
+  pushOptional(claim, "resource", stringValue(record.resource));
+  pushOptional(claim, "resourceId", stringValue(record.resource_id));
+  pushOptional(claim, "siteId", stringValue(record.site_id));
+
+  const players = normalizeClaimPlayers(asArray(record.players));
+  if (players.length > 0) claim.players = players;
+
+  const resolutionRaw = asRecord(record.resolution);
+  if (resolutionRaw) {
+    const resolution: MlcClaimResolution = {};
+    pushOptional(resolution, "id", stringValue(resolutionRaw.id));
+    pushOptional(resolution, "status", stringValue(resolutionRaw.status));
+    pushOptional(resolution, "reason", stringValue(resolutionRaw.reason));
+    pushOptional(resolution, "description", stringValue(resolutionRaw.description));
+    if (Object.keys(resolution).length > 0) claim.resolution = resolution;
+  }
+
+  return claim;
+}
+
+function normalizeClaimActions(actions: ReadonlyArray<unknown>): ReadonlyArray<MlcClaimPlayerAction> {
+  return actions.flatMap((a) => {
+    const ar = asRecord(a);
+    if (ar === undefined) return [];
+    const action: MlcClaimPlayerAction = {};
+    pushOptional(action, "id", stringValue(ar.id));
+    pushOptional(action, "status", stringValue(ar.status));
+    pushOptional(action, "type", stringValue(ar.type));
+    pushOptional(action, "created", stringValue(ar.created));
+    pushOptional(action, "reason", stringValue(ar.reason));
+    pushOptional(action, "description", stringValue(ar.description));
+    return Object.keys(action).length > 0 ? [action] : [];
+  });
+}
+
+function normalizeClaimMessageArray(messages: ReadonlyArray<unknown>): ReadonlyArray<MlcClaimMessage> {
+  return messages.flatMap((m) => {
+    const mr = asRecord(m);
+    if (mr === undefined) return [];
+    const msg: MlcClaimMessage = {};
+    pushOptional(msg, "id", stringValue(mr.id));
+    pushOptional(msg, "from", stringValue(mr.from));
+    pushOptional(msg, "to", stringValue(mr.to));
+    pushOptional(msg, "message", stringValue(mr.message));
+    pushOptional(msg, "date_created", stringValue(mr.date_created));
+    const atts = asArray(mr.attachments).flatMap((a) => {
+      const s = stringValue(a);
+      return s !== undefined ? [s] : [];
+    });
+    if (atts.length > 0) msg.attachments = atts;
+    return Object.keys(msg).length > 0 ? [msg] : [];
+  });
+}
+
+function normalizeClaimsSearch(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimsSearchSnapshot {
+  const root = asRecord(input.payload);
+  const results = asArray(root?.results);
+  let complete = root !== undefined && Array.isArray(root.results);
+
+  const claims = results.flatMap((item): MlcClaimSummary[] => {
+    const record = asRecord(item);
+    const id = stringValue(record?.id);
+    if (record === undefined || id === undefined) {
+      complete = false;
+      return [];
+    }
+    return [normalizeSingleClaim(record)];
+  });
+
+  const pagingRecord = asRecord(root?.paging);
+  const paging: MlcClaimsSearchResult["paging"] = {
+    total: numberValue(pagingRecord?.total) ?? 0,
+    offset: numberValue(pagingRecord?.offset) ?? 0,
+    limit: numberValue(pagingRecord?.limit) ?? 0,
+  };
+
+  const data: MlcClaimsSearchResult = { paging, results: claims };
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, claims.length),
+  };
+}
+
+function normalizeClaimDetail(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimDetailSnapshot {
+  const root = asRecord(input.payload);
+  let complete = root !== undefined;
+
+  const claimRecord = asRecord(root?.claim);
+  let claim: MlcClaimSummary;
+  if (claimRecord) {
+    claim = normalizeSingleClaim(claimRecord);
+  } else {
+    complete = false;
+    claim = { id: "" };
+  }
+
+  const messages = normalizeClaimMessageArray(asArray(root?.messages));
+  const players = normalizeClaimPlayers(asArray(root?.players));
+  const availableActions = normalizeClaimActions(asArray(root?.available_actions));
+
+  const data: MlcClaimDetailSummary = { claim };
+  if (messages.length > 0) data.messages = messages;
+  if (players.length > 0) data.players = players;
+  if (availableActions.length > 0) data.availableActions = availableActions;
+
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, claim.id.length > 0 ? 1 : 0),
+  };
+}
+
+function normalizeClaimMessages(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimMessagesSnapshot {
+  const root = asRecord(input.payload);
+  const messages = normalizeClaimMessageArray(
+    Array.isArray(input.payload) ? input.payload : asArray(root?.messages ?? root),
+  );
+  const completeness = (Array.isArray(input.payload) || root !== undefined) ? "complete" : "partial";
+  const data: MlcClaimMessagesSummary = { messages };
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, messages.length),
+  };
+}
+
+function normalizeClaimExpectedResolutions(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimResolutionsSnapshot {
+  const root = asRecord(input.payload);
+  const results = asArray(root?.expected_resolutions ?? root?.results ?? root);
+  let complete = root !== undefined;
+
+  const expected_resolutions = results.flatMap((item) => {
+    const record = asRecord(item);
+    if (record === undefined) {
+      complete = false;
+      return [];
+    }
+    const resolution: MlcClaimResolutionsSummary["expected_resolutions"][number] = {};
+    pushOptional(resolution, "id", stringValue(record.id));
+    pushOptional(resolution, "status", stringValue(record.status));
+    pushOptional(resolution, "reason", stringValue(record.reason));
+    pushOptional(resolution, "description", stringValue(record.description));
+    return [resolution];
+  });
+
+  const data: MlcClaimResolutionsSummary = { expected_resolutions };
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, expected_resolutions.length),
+  };
+}
+
+function normalizeClaimAffectsReputation(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimReputationSnapshot {
+  const record = asRecord(input.payload);
+  const affects_reputation = booleanValue(record?.affects_reputation ?? record?.affectsReputation) ?? false;
+  const completeness = record !== undefined ? "complete" : "partial";
+
+  const data: MlcClaimReputationSummary = { affects_reputation };
+  pushOptional(data, "reason", stringValue(record?.reason));
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: completeness === "complete" ? "high" : "low",
+  };
+}
+
+function normalizeClaimStatusHistory(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimStatusHistorySnapshot {
+  const root = asRecord(input.payload);
+  const results = asArray(root?.history ?? root);
+  let complete = root !== undefined;
+
+  const history = results.flatMap((item) => {
+    const record = asRecord(item);
+    if (record === undefined) {
+      complete = false;
+      return [];
+    }
+    const entry: MlcClaimStatusHistorySummary["history"][number] = {};
+    pushOptional(entry, "status", stringValue(record.status));
+    pushOptional(entry, "date", stringValue(record.date));
+    return [entry];
+  });
+
+  const data: MlcClaimStatusHistorySummary = { history };
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, history.length),
+  };
+}
+
+export function normalizeImageOrchestration(input: {
+  sellerId: string;
+  itemId: string;
+  pictureUrl: string;
+  categoryId: string;
+  title?: string;
+  now: Date;
+}): MlcReadSnapshot<MlcImageOrchestrationSummary> {
+  const steps: ReadonlyArray<MlcImageOrchestrationStep> = [
+    { step: "diagnose", status: "pending" },
+    { step: "upload", status: "pending" },
+    { step: "associate", status: "pending" },
+    { step: "check", status: "pending" },
+  ];
+
+  const data: MlcImageOrchestrationSummary = {
+    itemId: input.itemId,
+    steps,
+    requiresApproval: true,
+    noMutationExecuted: true,
+  };
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness: "complete",
+    freshness: createFreshness("listing", input.now),
+    confidence: "high",
+  };
+}
+
+function normalizeShipmentStatus(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcShipmentStatusSnapshot {
+  const record = asRecord(input.payload);
+  let complete = record !== undefined;
+
+  const id = stringValue(record?.id);
+  if (record === undefined || id === undefined) {
+    complete = false;
+  }
+
+  const data: MlcShipmentStatusSummary = { id: id ?? "" };
+  pushOptional(data, "status", stringValue(record?.status));
+  pushOptional(data, "substatus", stringValue(record?.substatus));
+  pushOptional(data, "dateCreated", stringValue(record?.date_created));
+  pushOptional(data, "lastUpdated", stringValue(record?.last_updated));
+  pushOptional(data, "trackingNumber", stringValue(record?.tracking_number));
+  pushOptional(data, "trackingMethod", stringValue(record?.tracking_method));
+  pushOptional(data, "logisticType", stringValue(record?.logistic_type));
+  pushOptional(data, "senderId", stringValue(record?.sender_id));
+  pushOptional(data, "receiverId", stringValue(record?.receiver_id));
+  pushOptional(data, "siteId", stringValue(record?.site_id));
+
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, id !== undefined ? 1 : 0),
   };
 }
 
@@ -2745,6 +3395,113 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         { method: "POST", body: formData },
       );
       return normalizeImageUpload({ sellerId, payload, now: input.now() });
+    },
+    getModerationStatus: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(
+        sellerId,
+        `/moderations/last_moderation/${safeItemId}`,
+      );
+      return normalizeModerationStatus({ sellerId, payload, now: input.now() });
+    },
+    getNotices: async (sellerId, options) => {
+      const query: Record<string, string> = {};
+      if (options?.limit !== undefined) query.limit = String(options.limit);
+      if (options?.offset !== undefined) query.offset = String(options.offset);
+      const payload = await input.request(
+        sellerId,
+        "/communications/notices",
+        Object.keys(query).length > 0 ? query : undefined,
+      );
+      return normalizeNotices({ sellerId, payload, now: input.now() });
+    },
+    prepareAnswer: async (sellerId, answerInput) => {
+      const questionId = answerInput.questionId.trim();
+      const text = answerInput.text.trim();
+      if (!questionId || !text) {
+        return normalizeAnswer({
+          sellerId,
+          questionId: "",
+          text: "",
+          now: input.now(),
+        });
+      }
+      return normalizeAnswer({ sellerId, questionId, text, now: input.now() });
+    },
+    searchClaims: async (sellerId, options) => {
+      const query: Record<string, string> = {};
+      if (options?.limit !== undefined) query.limit = String(options.limit);
+      if (options?.offset !== undefined) query.offset = String(options.offset);
+      if (options?.status !== undefined) query.status = options.status;
+      if (options?.sort !== undefined) query.sort = options.sort;
+      const payload = await input.request(
+        sellerId,
+        "/post-purchase/v1/claims/search",
+        Object.keys(query).length > 0 ? query : undefined,
+      );
+      return normalizeClaimsSearch({ sellerId, payload, now: input.now() });
+    },
+    getClaimDetail: async (sellerId, claimId) => {
+      const payload = await input.request(
+        sellerId,
+        `/post-purchase/v1/claims/${claimId}`,
+      );
+      return normalizeClaimDetail({ sellerId, payload, now: input.now() });
+    },
+    getShipmentStatus: async (sellerId, shipmentId) => {
+      const payload = await input.request(
+        sellerId,
+        `/marketplace/shipments/${shipmentId}`,
+        undefined,
+        { "x-format-new": "true" },
+      );
+      return normalizeShipmentStatus({ sellerId, payload, now: input.now() });
+    },
+    getClaimMessages: async (sellerId, claimId) => {
+      const payload = await input.request(
+        sellerId,
+        `/post-purchase/v1/claims/${claimId}/messages`,
+      );
+      return normalizeClaimMessages({ sellerId, payload, now: input.now() });
+    },
+    getClaimExpectedResolutions: async (sellerId, claimId) => {
+      const payload = await input.request(
+        sellerId,
+        `/post-purchase/v1/claims/${claimId}/expected_resolutions`,
+      );
+      return normalizeClaimExpectedResolutions({ sellerId, payload, now: input.now() });
+    },
+    getClaimAffectsReputation: async (sellerId, claimId) => {
+      const payload = await input.request(
+        sellerId,
+        `/post-purchase/v1/claims/${claimId}/affects_reputation`,
+      );
+      return normalizeClaimAffectsReputation({ sellerId, payload, now: input.now() });
+    },
+    getClaimStatusHistory: async (sellerId, claimId) => {
+      const payload = await input.request(
+        sellerId,
+        `/post-purchase/v1/claims/${claimId}/status_history`,
+      );
+      return normalizeClaimStatusHistory({ sellerId, payload, now: input.now() });
+    },
+    associateImageToItem: async (sellerId, imageAssociateInput) => {
+      const safeItemId = assertMlcItemId(imageAssociateInput.itemId);
+      await input.request(sellerId, `/items/${safeItemId}`);
+      const data: MlcImageAssociateSummary = {
+        itemId: safeItemId,
+        pictureId: imageAssociateInput.pictureId,
+        status: "associated",
+      };
+      return {
+        sellerId,
+        kind: "listing",
+        source: "mercadolibre-api",
+        data,
+        completeness: "complete",
+        freshness: createFreshness("listing", input.now()),
+        confidence: "medium",
+      };
     },
   };
 }

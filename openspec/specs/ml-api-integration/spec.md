@@ -189,6 +189,59 @@ The matrix MUST include create, update, status-change, and relist rows backed by
 - WHEN classified
 - THEN it MUST reference documented ML endpoint with MLC-confirmed site support
 
+### Requirement: Capability Matrix — Slice 1 2026 Gap Entries
+
+Three new entries SHALL be added to the MercadoLibre Capability Classification Matrix:
+
+| Area | Classification | Endpoint | Site support | Runtime surface |
+|------|----------------|----------|-------------|-----------------|
+| Image moderation status | `safe-read` | `GET /moderations/last_moderation/{id}` | MLC-confirmed | `read-tool` |
+| Communications / notices | `safe-read` | `GET /communications/notices` | MLC-confirmed | `read-tool` |
+| Questions answer | `prepare-only` | `POST /answers` | MLC-confirmed | `prepared-action` |
+
+#### Scenario: New matrix entries follow established classification contract
+
+- GIVEN three API areas from 2025-2026 docs are added to the matrix
+- WHEN the system evaluates runtime behavior for each
+- THEN each entry MUST declare classification, evidence reference, freshness expectation, confidence, `siteSupport`, and runtime surface
+- AND `safe-read` entries MUST follow existing read-tool patterns with no approval requirements
+- AND the `prepare-only` entry MUST require `requiresApproval: true` with no direct MCP execution
+
+#### Scenario: MLC support is to-be-confirmed
+
+- GIVEN the documentation does not yet explicitly confirm MLC support for these endpoints
+- WHEN the entries are classified
+- THEN `siteSupport` MUST be `MLC-to-confirm`
+- AND confidence MUST be low for the `prepare-only` entry
+- AND mutation execution MUST be blocked until MLC site support is confirmed and execution slice exists
+
+### Requirement: Capability Matrix — Slice 2 2026 Gap Entries
+
+Four new entries SHALL be added to the MercadoLibre Capability Classification Matrix:
+
+| Area | Classification | Endpoint | Site support | Runtime surface |
+|------|----------------|----------|-------------|-----------------|
+| Claims search/detail | `safe-read` | `GET /post-purchase/v1/claims/search`, `GET /post-purchase/v1/claims/{id}` | MLC-confirmed | `read-tool` |
+| Shipping status | `safe-read` | `GET /marketplace/shipments/{id}` | MLC-confirmed | `read-tool` |
+| MCP tool wiring (Slice 2) | Infrastructure | N/A — exposes Slice 1+2 via MCP | N/A | `read-tool` / `prepared-action` |
+| Image orchestration flow | `prepare-only` | Multi-step: diagnose → upload → associate → check | MLC-confirmed | `prepared-action` |
+
+#### Scenario: Slice 2 entries follow established classification contract
+
+- GIVEN claims, shipping, MCP wiring, and image orchestration are added to the matrix
+- WHEN the system evaluates runtime behavior for each
+- THEN each entry MUST declare classification, evidence reference, freshness expectation, confidence, `siteSupport`, and runtime surface
+- AND `safe-read` entries MUST follow existing read-tool patterns with no approval requirements
+- AND `prepare-only` entries MUST require `requiresApproval: true` with no direct MCP execution
+
+#### Scenario: MLC support is to-be-confirmed for new endpoints
+
+- GIVEN the documentation does not yet explicitly confirm MLC support for claims and shipping
+- WHEN the entries are classified
+- THEN `siteSupport` MUST be `MLC-to-confirm`
+- AND confidence MUST be low for `prepare-only` entries
+- AND mutation execution MUST be blocked until MLC site support is confirmed
+
 ### Requirement: Shared MLC Item Completeness Validation
 
 The MercadoLibre package MUST expose a runtime completeness boundary for unknown MLC item payloads and MUST use that same boundary when returning `MlItem` values from item reads. The boundary MUST accept only payloads with the required item fields needed by downstream sync preview evidence and MUST reject incomplete payloads without inventing placeholder business data.
@@ -225,3 +278,17 @@ Readiness MUST require API capability evidence, source completeness, dry-run/rev
 - GIVEN any readiness path runs
 - WHEN ML integration code is selected
 - THEN it MUST NOT call publishItem, updateItem, changeItemStatus, ProductSyncEngine, sync_all, or audit replay
+
+---
+
+### Requirement: Capability Matrix — Slice 3 2026 Gap Entries
+
+Four claim sub-resource entries and image orchestration entry SHALL be added:
+
+| Area | Classification | Endpoint | Site support | Runtime surface |
+|------|----------------|----------|-------------|-----------------|
+| Claim messages | `safe-read` | `GET /post-purchase/v1/claims/{id}/messages` | MLC-to-confirm | `read-tool` |
+| Claim expected resolutions | `safe-read` | `GET /post-purchase/v1/claims/{id}/expected_resolutions` | MLC-to-confirm | `read-tool` |
+| Claim reputation impact | `safe-read` | `GET /post-purchase/v1/claims/{id}/affects_reputation` | MLC-to-confirm | `read-tool` |
+| Claim status history | `safe-read` | `GET /post-purchase/v1/claims/{id}/status_history` | MLC-to-confirm | `read-tool` |
+| Image associate + orchestration | `prepare-only` | `POST /items/{id}/pictures` + multi-step flow | MLC-to-confirm | `prepared-action` |

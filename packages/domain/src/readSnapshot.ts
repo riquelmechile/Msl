@@ -9,7 +9,8 @@ export type ReadSnapshotKind =
   | "message"
   | "reputation"
   | "category-attributes"
-  | "category-technical-specs";
+  | "category-technical-specs"
+  | "business-signal";
 
 export type MlCapabilitySiteSupport = "MLC-confirmed" | "unknown";
 

@@ -22,10 +22,12 @@ import {
   assertCompleteMlcItem,
   assertPlasticovToMaustianDirection,
   getMlAccountRoleConfig,
+  normalizeImageOrchestration,
   normalizeMlcItemId,
   previewStrategyChanges,
   MLC_PRODUCT_ADS_MAX_LIMIT,
   type MlcApiClient,
+  type MlcImageOrchestrationSummary,
   type MlItem,
   type MlAccountRoleConfig,
   type Strategy,
@@ -1667,6 +1669,251 @@ export function createMcpServer(config: McpServerConfig = {}) {
       server,
       "read_mercadolibre_listing_prices",
       readTools.listingPrices,
+    );
+  }
+
+  if (config.mlcClient) {
+    const mlcClient = config.mlcClient;
+
+    // ── read_moderation_status ───────────────────────────────────────
+    server.registerTool(
+      "read_moderation_status",
+      {
+        description: "Checks moderation status for a specific MercadoLibre item.",
+        inputSchema: {
+          sellerId: z.string(),
+          itemId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, itemId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getModerationStatus!(sellerId, itemId));
+      },
+    );
+
+    // ── read_notices ─────────────────────────────────────────────────
+    server.registerTool(
+      "read_notices",
+      {
+        description: "Reads seller communications and notices from MercadoLibre.",
+        inputSchema: {
+          sellerId: z.string(),
+          limit: z.number().optional(),
+          offset: z.number().optional(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, limit, offset, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        const opts: { limit?: number; offset?: number } = {};
+        if (limit !== undefined) opts.limit = limit;
+        if (offset !== undefined) opts.offset = offset;
+        return jsonResult(await mlcClient.getNotices!(sellerId, opts));
+      },
+    );
+
+    // ── prepare_answer ───────────────────────────────────────────────
+    server.registerTool(
+      "prepare_answer",
+      {
+        description:
+          "Prepares an answer to a MercadoLibre question for seller approval without executing the post.",
+        inputSchema: {
+          sellerId: z.string(),
+          questionId: z.string(),
+          text: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, questionId, text, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.prepareAnswer!(sellerId, { questionId, text }));
+      },
+    );
+
+    // ── read_claims ──────────────────────────────────────────────────
+    server.registerTool(
+      "read_claims",
+      {
+        description: "Searches post-purchase claims for a MercadoLibre seller.",
+        inputSchema: {
+          sellerId: z.string(),
+          limit: z.number().optional(),
+          offset: z.number().optional(),
+          status: z.string().optional(),
+          sort: z.string().optional(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, limit, offset, status, sort, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        const opts: { limit?: number; offset?: number; status?: string; sort?: string } = {};
+        if (limit !== undefined) opts.limit = limit;
+        if (offset !== undefined) opts.offset = offset;
+        if (status !== undefined) opts.status = status;
+        if (sort !== undefined) opts.sort = sort;
+        return jsonResult(await mlcClient.searchClaims!(sellerId, opts));
+      },
+    );
+
+    // ── read_claim_detail ────────────────────────────────────────────
+    server.registerTool(
+      "read_claim_detail",
+      {
+        description: "Gets detail for a specific MercadoLibre post-purchase claim.",
+        inputSchema: {
+          sellerId: z.string(),
+          claimId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, claimId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getClaimDetail!(sellerId, claimId));
+      },
+    );
+
+    // ── read_shipment_status ─────────────────────────────────────────
+    server.registerTool(
+      "read_shipment_status",
+      {
+        description: "Gets the shipment status for a MercadoLibre order.",
+        inputSchema: {
+          sellerId: z.string(),
+          shipmentId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, shipmentId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getShipmentStatus!(sellerId, shipmentId));
+      },
+    );
+
+    // ── read_claim_messages ──────────────────────────────────────────
+    server.registerTool(
+      "read_claim_messages",
+      {
+        description: "Reads messages for a specific MercadoLibre post-purchase claim.",
+        inputSchema: {
+          sellerId: z.string(),
+          claimId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, claimId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getClaimMessages!(sellerId, claimId));
+      },
+    );
+
+    // ── read_claim_expected_resolutions ──────────────────────────────
+    server.registerTool(
+      "read_claim_expected_resolutions",
+      {
+        description: "Reads expected resolutions for a specific MercadoLibre post-purchase claim.",
+        inputSchema: {
+          sellerId: z.string(),
+          claimId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, claimId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getClaimExpectedResolutions!(sellerId, claimId));
+      },
+    );
+
+    // ── read_claim_affects_reputation ────────────────────────────────
+    server.registerTool(
+      "read_claim_affects_reputation",
+      {
+        description: "Reads whether a claim affects the seller reputation.",
+        inputSchema: {
+          sellerId: z.string(),
+          claimId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, claimId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getClaimAffectsReputation!(sellerId, claimId));
+      },
+    );
+
+    // ── read_claim_status_history ────────────────────────────────────
+    server.registerTool(
+      "read_claim_status_history",
+      {
+        description: "Reads status history for a specific MercadoLibre post-purchase claim.",
+        inputSchema: {
+          sellerId: z.string(),
+          claimId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, claimId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getClaimStatusHistory!(sellerId, claimId));
+      },
+    );
+
+    // ── prepare_image_orchestration ──────────────────────────────────
+    server.registerTool(
+      "prepare_image_orchestration",
+      {
+        description:
+          "Prepares a 4-step image orchestration flow (diagnose → upload → associate → check) without executing any MercadoLibre mutations.",
+        inputSchema: {
+          sellerId: z.string(),
+          itemId: z.string(),
+          pictureUrl: z.string(),
+          categoryId: z.string(),
+          title: z.string().optional(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      ({ sellerId, itemId, pictureUrl, categoryId, title, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        const summary: MlcImageOrchestrationSummary = normalizeImageOrchestration({
+          sellerId,
+          itemId,
+          pictureUrl,
+          categoryId,
+          title,
+          now: new Date(),
+        }).data;
+        return jsonResult({
+          ...summary,
+          metadata: {
+            requiresApproval: true,
+            noMutationExecuted: true,
+          },
+        });
+      },
     );
   }
 
