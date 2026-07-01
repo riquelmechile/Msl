@@ -3,8 +3,10 @@ import type {
   MlClient,
   MlAccountRoleConfig,
   MlcApiClient,
+  MlcImageDiagnosticInput,
   MlcListingPricesInput,
   MlcListingsSnapshot,
+  MlcRelistInput,
   MlcVisitsSnapshot,
   MlcVisitsTimeWindowSnapshot,
   ProductSyncEngine,
@@ -918,6 +920,434 @@ export function createReadMyOrdersTool(mlcClient: MlcApiClient): ToolDefinition 
       } catch (err) {
         return {
           error: `No se pudo leer las órdenes de "${sellerId}": ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// check_listing_quality tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_listing_quality` tool.
+ *
+ * Queries MercadoLibre's item performance API to audit the listing's quality
+ * score (0-100), level ("Good"/"Bad"/"Medium"), and actionable improvement
+ * opportunities grouped by bucket and variable.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_listing_quality` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckListingQualityTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_listing_quality",
+    description:
+      "Revisa la calidad de una publicación en MercadoLibre. " +
+      "Devuelve un score 0-100, nivel (Good/Bad/Medium), y oportunidades " +
+      "de mejora accionables organizadas por categoría (fotos, ficha técnica, " +
+      "cuotas, etc.). Usá esta herramienta cuando el vendedor pregunte por " +
+      "la calidad de una publicación o quiera saber cómo mejorarla para " +
+      "aumentar su exposición.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        itemId: {
+          type: "string",
+          description: "ID de la publicación en MercadoLibre. Ej: 'MLC1001'.",
+        },
+      },
+      required: ["sellerId", "itemId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      if (!mlcClient.getItemPerformance) {
+        return {
+          error: "La auditoría de calidad de publicaciones no está disponible en este momento.",
+        };
+      }
+
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const itemId = coerceItemId(args.itemId);
+      if (!itemId) {
+        return { error: "El parámetro 'itemId' es obligatorio y debe ser un string no vacío." };
+      }
+
+      try {
+        const snapshot = await mlcClient.getItemPerformance(sellerId, itemId);
+        const data = snapshot.data as import("@msl/mercadolibre").MlcPerformanceSummary;
+
+        // Extract actionable OPPORTUNITY mode rules grouped by variable.
+        const opportunities: Array<{
+          variable: string;
+          rules: Array<{ title: string; label: string; link: string }>;
+        }> = [];
+        for (const bucket of data.buckets) {
+          for (const variable of bucket.variables) {
+            const pendingOpportunities = variable.rules.filter(
+              (r) => r.mode === "OPPORTUNITY" && r.status === "PENDING",
+            );
+            if (pendingOpportunities.length > 0) {
+              opportunities.push({
+                variable: variable.title,
+                rules: pendingOpportunities.map((r) => ({
+                  title: r.wordings.title,
+                  label: r.wordings.label,
+                  link: r.wordings.link,
+                })),
+              });
+            }
+          }
+        }
+
+        return {
+          ...snapshot,
+          opportunities,
+          recommendation:
+            data.score >= 70
+              ? `El listing ${itemId} tiene buena calidad (score ${data.score}). `
+              : `El listing ${itemId} tiene calidad baja (score ${data.score}). ` +
+                "Revisá las oportunidades pendientes para mejorar su exposición.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo auditar la calidad de "${itemId}": ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// relist_listing tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `relist_listing` tool.
+ *
+ * Relists a closed MercadoLibre item by creating a new listing that inherits
+ * visits, questions, and sales history from the original. This is a REAL
+ * mutation — requires user approval before execution.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `relist_listing` tool definition compatible with OpenAI function calling.
+ */
+export function createRelistListingTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "relist_listing",
+    description:
+      "Republica un ítem cerrado de MercadoLibre creando uno nuevo que hereda " +
+      "visitas, preguntas y ventas del ítem original. IMPORTANTE: esta herramienta " +
+      "crea una mutación real en MercadoLibre — solo debe usarse después de que el " +
+      "vendedor confirme explícitamente la operación. El ítem original debe estar " +
+      "cerrado hace menos de 60 días. Solo se permite UNA republicación por ítem padre. " +
+      "Podés ajustar precio, cantidad y tipo de publicación en la nueva publicación.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        itemId: {
+          type: "string",
+          description:
+            "ID del ítem cerrado a republicar en MercadoLibre. Debe ser un ítem en estado 'closed'.",
+        },
+        price: {
+          type: "number",
+          description: "Nuevo precio (opcional — si no se especifica, se usa el original).",
+        },
+        quantity: {
+          type: "number",
+          description:
+            "Nueva cantidad de stock (opcional — si no se especifica, se usa la original).",
+        },
+        listingTypeId: {
+          type: "string",
+          description:
+            "Nuevo tipo de publicación: gold_pro (Premium), gold_special (Clásica), free (Gratuita). Opcional.",
+        },
+      },
+      required: ["sellerId", "itemId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      if (!mlcClient.relistItem) {
+        return {
+          error:
+            "La republicación de ítems no está disponible en este momento. " +
+            "Verificá que la cuenta tenga los permisos necesarios.",
+        };
+      }
+
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const itemId = coerceItemId(args.itemId);
+      if (!itemId) {
+        return { error: "El parámetro 'itemId' es obligatorio y debe ser un string no vacío." };
+      }
+
+      const input: MlcRelistInput = {};
+      if (args.price !== undefined) {
+        input.price = args.price as number;
+      }
+      if (args.quantity !== undefined) {
+        input.quantity = args.quantity as number;
+      }
+      if (typeof args.listingTypeId === "string" && args.listingTypeId.length > 0) {
+        input.listingTypeId = args.listingTypeId;
+      }
+
+      try {
+        const snapshot = await mlcClient.relistItem(sellerId, itemId, input);
+        return {
+          ...snapshot,
+          requiresApproval: true,
+          warning:
+            "⚠️ Esta es una mutación real en MercadoLibre. Solo debe ejecutarse " +
+            "después de la confirmación explícita del vendedor.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo republicar el ítem "${itemId}": ` +
+            `${err instanceof Error ? err.message : String(err)}. ` +
+            "Verificá que el ítem original esté cerrado y hayan pasado menos de 60 días.",
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// diagnose_image tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `diagnose_image` tool.
+ *
+ * Sends an image URL to MercadoLibre's moderation diagnostic API to detect
+ * potential issues before publishing: white background, minimum size,
+ * text/logo overlay, and watermark violations.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `diagnose_image` tool definition compatible with OpenAI function calling.
+ */
+export function createDiagnoseImageTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "diagnose_image",
+    description:
+      "Diagnostica una imagen antes de publicarla en MercadoLibre. " +
+      "Detecta problemas de fondo blanco, tamaño mínimo, texto/logos " +
+      "y marcas de agua que podrían causar moderación o rechazo. " +
+      "Usá esta herramienta cuando el vendedor esté preparando imágenes " +
+      "para una publicación nueva o quiera verificar si una imagen " +
+      "cumple con los requisitos de MercadoLibre.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        pictureUrl: {
+          type: "string",
+          description: "URL de la imagen a diagnosticar (puede ser URL pública o base64).",
+        },
+        categoryId: {
+          type: "string",
+          description: "ID de la categoría de MercadoLibre donde se publicará. Ej: MLC1743.",
+        },
+        title: {
+          type: "string",
+          description: "Título del producto (opcional, ayuda al diagnóstico contextual).",
+        },
+        pictureType: {
+          type: "string",
+          enum: ["thumbnail", "variation_thumbnail", "other"],
+          description: "Tipo de imagen: thumbnail, variation_thumbnail, u other.",
+        },
+      },
+      required: ["sellerId", "pictureUrl", "categoryId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      if (!mlcClient.diagnoseImage) {
+        return {
+          error: "El diagnóstico de imágenes no está disponible en este momento.",
+        };
+      }
+
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const pictureUrl = args.pictureUrl as string;
+      if (!pictureUrl || typeof pictureUrl !== "string") {
+        return {
+          error: "El parámetro 'pictureUrl' es obligatorio y debe ser una URL válida.",
+        };
+      }
+
+      const categoryId = args.categoryId as string;
+      if (!categoryId || typeof categoryId !== "string") {
+        return {
+          error: "El parámetro 'categoryId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const input: MlcImageDiagnosticInput = {
+        pictureUrl,
+        categoryId,
+      };
+      if (typeof args.title === "string" && args.title.length > 0) {
+        input.title = args.title;
+      }
+      if (
+        typeof args.pictureType === "string" &&
+        (args.pictureType === "thumbnail" ||
+          args.pictureType === "variation_thumbnail" ||
+          args.pictureType === "other")
+      ) {
+        input.pictureType = args.pictureType;
+      }
+
+      try {
+        const snapshot = await mlcClient.diagnoseImage(sellerId, input);
+        const data = snapshot.data as import("@msl/mercadolibre").MlcImageDiagnosticSummary;
+        const issues = data.diagnostics.flatMap((d) =>
+          d.detections.map((det) => ({
+            type: det.name,
+            pictureType: d.pictureType,
+            details: det.wordings.map((w) => `${w.kind}: ${w.value}`).join("; "),
+          })),
+        );
+
+        return {
+          ...snapshot,
+          issues,
+          recommendation: data.hasIssues
+            ? `Se detectaron ${issues.length} problemas en la imagen. Corregilos antes de publicar.`
+            : "La imagen pasó el diagnóstico sin problemas detectados.",
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo diagnosticar la imagen: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// upload_image tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `upload_image` tool.
+ *
+ * Downloads an image from the provided URL and uploads it to MercadoLibre's
+ * picture CDN. Returns the picture ID and variation URLs for use in listings.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns an `upload_image` tool definition compatible with OpenAI function calling.
+ */
+export function createUploadImageTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "upload_image",
+    description:
+      "Sube una imagen al CDN de MercadoLibre para usarla en publicaciones. " +
+      "Descarga la imagen desde la URL proporcionada y la sube a MercadoLibre. " +
+      "Devuelve el ID de la imagen y las URLs en diferentes tamaños. " +
+      "Usá esta herramienta cuando el vendedor necesite subir imágenes para " +
+      "una publicación nueva o reemplazar las imágenes de una existente. " +
+      "IMPORTANTE: pasá siempre las imágenes por diagnose_image antes de publicar.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        imageUrl: {
+          type: "string",
+          description: "URL pública de la imagen a subir al CDN de MercadoLibre.",
+        },
+      },
+      required: ["sellerId", "imageUrl"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      if (!mlcClient.uploadImage) {
+        return {
+          error: "La subida de imágenes no está disponible en este momento.",
+        };
+      }
+
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return {
+          error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
+        };
+      }
+
+      const imageUrl = args.imageUrl as string;
+      if (!imageUrl || typeof imageUrl !== "string") {
+        return {
+          error: "El parámetro 'imageUrl' es obligatorio y debe ser una URL válida.",
+        };
+      }
+
+      try {
+        // Fetch the image from the provided URL.
+        const imageResponse = await fetch(imageUrl);
+        if (!imageResponse.ok) {
+          return {
+            error:
+              `No se pudo descargar la imagen desde "${imageUrl}": ` +
+              `${imageResponse.status} ${imageResponse.statusText}`,
+          };
+        }
+
+        const contentType = imageResponse.headers.get("content-type") ?? "image/jpeg";
+        const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+        const filename =
+          imageUrl
+            .split("/")
+            .pop()
+            ?.replace(/[^a-zA-Z0-9._-]/g, "_") ?? "image.jpg";
+
+        const snapshot = await mlcClient.uploadImage(sellerId, imageBuffer, filename);
+        return {
+          ...snapshot,
+          uploadedFrom: imageUrl,
+          contentType,
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo subir la imagen a MercadoLibre: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
         };
       }
     },

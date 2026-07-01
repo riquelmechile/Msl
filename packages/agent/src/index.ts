@@ -95,6 +95,10 @@ export {
   createCheckListingVisitsTool,
   createProductAdsInsightsTool,
   createReadMyOrdersTool,
+  createCheckListingQualityTool,
+  createRelistListingTool,
+  createDiagnoseImageTool,
+  createUploadImageTool,
 } from "./conversation/syncTools.js";
 
 // ── Actor simulation ────────────────────────────────────────────────

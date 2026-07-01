@@ -105,6 +105,92 @@ export type MlcVisitsTimeWindowSummary = {
   }>;
 };
 
+export type MlcPerformanceRule = {
+  key: string;
+  status: "COMPLETED" | "PENDING";
+  progress: number;
+  mode: "OPPORTUNITY" | "WARNING";
+  wordings: { title: string; label: string; link: string };
+};
+
+export type MlcPerformanceVariable = {
+  key: string;
+  status: "COMPLETED" | "PENDING";
+  score: number;
+  title: string;
+  rules: MlcPerformanceRule[];
+};
+
+export type MlcPerformanceBucket = {
+  key: string;
+  status: "COMPLETED" | "PENDING";
+  score: number;
+  title: string;
+  variables: MlcPerformanceVariable[];
+};
+
+export type MlcPerformanceSummary = {
+  entityId: string;
+  entityType: string;
+  score: number;
+  level: string;
+  levelWording: string;
+  calculatedAt: string;
+  buckets: MlcPerformanceBucket[];
+};
+
+export type MlcPerformanceSnapshot = MlcReadSnapshot<MlcPerformanceSummary>;
+
+export type MlcRelistInput = {
+  price?: number;
+  quantity?: number;
+  listingTypeId?: string;
+};
+
+export type MlcRelistResult = {
+  newItemId: string;
+  parentItemId: string;
+  title: string;
+  price: number;
+  listingTypeId: string;
+  status: string;
+};
+
+export type MlcRelistSnapshot = MlcReadSnapshot<MlcRelistResult>;
+
+export type MlcImageDiagnosticInput = {
+  pictureUrl: string;
+  categoryId: string;
+  title?: string;
+  pictureType?: "thumbnail" | "variation_thumbnail" | "other";
+};
+
+export type MlcImageDetection = {
+  name: string;
+  wordings: Array<{ kind: string; value: string }>;
+};
+
+export type MlcImageDiagnosticResult = {
+  pictureType: string;
+  action: "diagnostic" | "empty";
+  detections: MlcImageDetection[];
+};
+
+export type MlcImageDiagnosticSummary = {
+  diagnosticId: string;
+  diagnostics: MlcImageDiagnosticResult[];
+  hasIssues: boolean;
+};
+
+export type MlcImageDiagnosticSnapshot = MlcReadSnapshot<MlcImageDiagnosticSummary>;
+
+export type MlcImageUploadResult = {
+  pictureId: string;
+  variations: Array<{ size: string; url: string; secureUrl: string }>;
+};
+
+export type MlcImageUploadSnapshot = MlcReadSnapshot<MlcImageUploadResult>;
+
 const MLC_REPUTATION_RULES = {
   establishedSellerCompletedTransactions: 40,
   establishedSellerMetricPeriodDays: 60,
@@ -300,6 +386,17 @@ export type MlcApiClient = {
     itemId: string,
     options: { last: number; unit: "day"; ending?: string },
   ): Promise<MlcVisitsTimeWindowSnapshot>;
+  getItemPerformance?(sellerId: string, itemId: string): Promise<MlcPerformanceSnapshot>;
+  relistItem?(sellerId: string, itemId: string, input: MlcRelistInput): Promise<MlcRelistSnapshot>;
+  diagnoseImage?(
+    sellerId: string,
+    input: MlcImageDiagnosticInput,
+  ): Promise<MlcImageDiagnosticSnapshot>;
+  uploadImage?(
+    sellerId: string,
+    imageBuffer: Buffer,
+    filename: string,
+  ): Promise<MlcImageUploadSnapshot>;
 };
 
 export type MlcProductAdsInsightsOptions = {
@@ -312,11 +409,17 @@ export type MlcProductAdsInsightsOptions = {
   status?: string;
 };
 
+type MlcReadRequestOptions = {
+  method?: "POST" | "PUT";
+  body?: unknown;
+};
+
 type MlcReadRequest = (
   sellerId: string,
   path: string,
   query?: Readonly<Record<string, string>>,
   headers?: Readonly<Record<string, string>>,
+  reqOptions?: MlcReadRequestOptions,
 ) => Promise<unknown>;
 
 type MlcReadEndpoint<TSnapshot> = {
@@ -741,6 +844,180 @@ function normalizeItemVisitsTimeWindow(input: {
     completeness,
     freshness: createFreshness("listing", input.now),
     confidence: snapshotConfidence(completeness, parsedResults.length),
+  };
+}
+
+function normalizeListingPerformance(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcPerformanceSnapshot {
+  const record = asRecord(input.payload);
+  const buckets = asArray(record?.buckets).map(normalizePerformanceBucket);
+  const summary: MlcPerformanceSummary = {
+    entityId: stringValue(record?.entity_id) ?? "",
+    entityType: stringValue(record?.entity_type) ?? "",
+    score: numberValue(record?.score) ?? 0,
+    level: stringValue(record?.level) ?? "",
+    levelWording: stringValue(record?.level_wording) ?? "",
+    calculatedAt: stringValue(record?.calculated_at) ?? "",
+    buckets,
+  };
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: summary,
+    completeness: "complete",
+    freshness: createFreshness("listing", input.now),
+    confidence: "high",
+  };
+}
+
+function normalizePerformanceBucket(raw: unknown): MlcPerformanceBucket {
+  const record = asRecord(raw);
+  const variables = asArray(record?.variables).map(normalizePerformanceVariable);
+  return {
+    key: stringValue(record?.key) ?? "",
+    status: (stringValue(record?.status) as "COMPLETED" | "PENDING") ?? "PENDING",
+    score: numberValue(record?.score) ?? 0,
+    title: stringValue(record?.title) ?? "",
+    variables,
+  };
+}
+
+function normalizePerformanceVariable(raw: unknown): MlcPerformanceVariable {
+  const record = asRecord(raw);
+  const rules = asArray(record?.rules).map(normalizePerformanceRule);
+  return {
+    key: stringValue(record?.key) ?? "",
+    status: (stringValue(record?.status) as "COMPLETED" | "PENDING") ?? "PENDING",
+    score: numberValue(record?.score) ?? 0,
+    title: stringValue(record?.title) ?? "",
+    rules,
+  };
+}
+
+function normalizePerformanceRule(raw: unknown): MlcPerformanceRule {
+  const record = asRecord(raw);
+  const wordings = asRecord(record?.wordings);
+  return {
+    key: stringValue(record?.key) ?? "",
+    status: (stringValue(record?.status) as "COMPLETED" | "PENDING") ?? "PENDING",
+    progress: numberValue(record?.progress) ?? 0,
+    mode: (stringValue(record?.mode) as "OPPORTUNITY" | "WARNING") ?? "OPPORTUNITY",
+    wordings: {
+      title: stringValue(wordings?.title) ?? "",
+      label: stringValue(wordings?.label) ?? "",
+      link: stringValue(wordings?.link) ?? "",
+    },
+  };
+}
+
+function normalizeRelist(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+  itemId: string;
+}): MlcRelistSnapshot {
+  const record = asRecord(input.payload);
+  const newItemId = stringValue(record?.id) ?? "";
+  const parentItemId = stringValue(record?.parent_item_id) ?? input.itemId;
+  const data: MlcRelistResult = {
+    newItemId,
+    parentItemId,
+    title: stringValue(record?.title) ?? "",
+    price: numberValue(record?.price) ?? 0,
+    listingTypeId: stringValue(record?.listing_type_id) ?? "",
+    status: stringValue(record?.status) ?? "",
+  };
+  const completeness = newItemId.length > 0 ? "complete" : "partial";
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, newItemId.length > 0 ? 1 : 0),
+  };
+}
+
+function normalizeImageDiagnostic(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcImageDiagnosticSnapshot {
+  const record = asRecord(input.payload);
+  const diagnosticId = stringValue(record?.id) ?? "";
+  const diagList = asArray(record?.diagnostics);
+  let complete = record !== undefined && diagnosticId.length > 0;
+
+  const diagnostics: MlcImageDiagnosticResult[] = diagList.flatMap((d) => {
+    const dr = asRecord(d);
+    if (dr === undefined) {
+      complete = false;
+      return [];
+    }
+    const pictureType = stringValue(dr.picture_type) ?? "";
+    const action = (stringValue(dr.action) as "diagnostic" | "empty") ?? "empty";
+    const detections: MlcImageDetection[] = asArray(dr.detections).flatMap((det) => {
+      const detRecord = asRecord(det);
+      if (detRecord === undefined) return [];
+      const name = stringValue(detRecord.name) ?? "";
+      const wordings = asArray(detRecord.wordings).flatMap((w) => {
+        const wr = asRecord(w);
+        const kind = stringValue(wr?.kind) ?? "";
+        const value = stringValue(wr?.value) ?? "";
+        return kind ? [{ kind, value }] : [];
+      });
+      return name ? [{ name, wordings }] : [];
+    });
+    return [{ pictureType, action, detections }];
+  });
+
+  const hasIssues = diagnostics.some((d) => d.detections.length > 0);
+
+  const data: MlcImageDiagnosticSummary = { diagnosticId, diagnostics, hasIssues };
+
+  const completeness: MlcReadSnapshotCompleteness = complete ? "complete" : "partial";
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, diagnostics.length),
+  };
+}
+
+function normalizeImageUpload(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcImageUploadSnapshot {
+  const record = asRecord(input.payload);
+  const pictureId = stringValue(record?.id) ?? "";
+  const variations: Array<{ size: string; url: string; secureUrl: string }> = asArray(
+    record?.variations,
+  ).flatMap((v) => {
+    const vr = asRecord(v);
+    const size = stringValue(vr?.size) ?? "";
+    const url = stringValue(vr?.url) ?? "";
+    const secureUrl = stringValue(vr?.secure_url) ?? "";
+    return size ? [{ size, url, secureUrl }] : [];
+  });
+  const data: MlcImageUploadResult = { pictureId, variations };
+  const completeness = pictureId.length > 0 ? "complete" : "partial";
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, variations.length),
   };
 }
 
@@ -1334,6 +1611,61 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         options,
       });
     },
+    getItemPerformance: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(sellerId, `/items/${safeItemId}/performance`);
+      return normalizeListingPerformance({ sellerId, payload, now: input.now() });
+    },
+    relistItem: async (sellerId, itemId, relistInput) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const body: Record<string, unknown> = {};
+      if (relistInput.price !== undefined) body.price = relistInput.price;
+      if (relistInput.quantity !== undefined) body.quantity = relistInput.quantity;
+      if (relistInput.listingTypeId) body.listing_type_id = relistInput.listingTypeId;
+      const payload = await input.request(
+        sellerId,
+        `/items/${safeItemId}/relist`,
+        undefined,
+        undefined,
+        { method: "POST", body: JSON.stringify(body) },
+      );
+      return normalizeRelist({ sellerId, payload, now: input.now(), itemId: safeItemId });
+    },
+    diagnoseImage: async (sellerId, diagnosticInput) => {
+      const context: Record<string, unknown> = {
+        category_id: diagnosticInput.categoryId,
+      };
+      if (diagnosticInput.title !== undefined) {
+        context.title = diagnosticInput.title;
+      }
+      if (diagnosticInput.pictureType !== undefined) {
+        context.picture_type = diagnosticInput.pictureType;
+      }
+      const body = { picture_url: diagnosticInput.pictureUrl, context };
+      const payload = await input.request(
+        sellerId,
+        "/moderations/pictures/diagnostic",
+        undefined,
+        undefined,
+        { method: "POST", body: JSON.stringify(body) },
+      );
+      return normalizeImageDiagnostic({ sellerId, payload, now: input.now() });
+    },
+    uploadImage: async (sellerId, imageBuffer, filename) => {
+      const formData = new FormData();
+      // Node.js Buffer <-> DOM BlobPart type mismatch with SharedArrayBuffer.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument
+      const blob = new Blob([imageBuffer as any], { type: "image/jpeg" });
+      formData.append("file", blob, filename);
+      const payload = await input.request(
+        sellerId,
+        "/pictures/items/upload",
+        undefined,
+        undefined,
+        { method: "POST", body: formData },
+      );
+      return normalizeImageUpload({ sellerId, payload, now: input.now() });
+    },
   };
 }
 
@@ -1365,6 +1697,7 @@ export function createMlcApiClient(input: {
     path: string,
     query?: Readonly<Record<string, string>>,
     headers?: Readonly<Record<string, string>>,
+    reqOptions?: MlcReadRequestOptions,
   ) => {
     const access = evaluateOAuthAccess(input.tokenState, input.now);
 
@@ -1384,7 +1717,7 @@ export function createMlcApiClient(input: {
     }
 
     const apiRequest: MercadoLibreApiRequest = {
-      method: "GET",
+      method: reqOptions?.method ?? "GET",
       path,
       accessToken: access.accessToken,
     };
@@ -1394,6 +1727,9 @@ export function createMlcApiClient(input: {
     }
     if (headers !== undefined) {
       apiRequest.headers = headers;
+    }
+    if (reqOptions?.body !== undefined) {
+      apiRequest.body = reqOptions.body;
     }
 
     return input.transport.request(apiRequest);
@@ -1428,6 +1764,7 @@ export function createOAuthMlcApiClient(input: {
     path: string,
     query?: Readonly<Record<string, string>>,
     headers?: Readonly<Record<string, string>>,
+    reqOptions?: MlcReadRequestOptions,
   ) => {
     if (!allowedSellerIds.has(sellerId)) {
       const failure: OAuthSellerAuthorizationFailure = {
@@ -1441,13 +1778,20 @@ export function createOAuthMlcApiClient(input: {
     }
 
     const accessToken = await input.oauthManager.ensureValidToken(sellerId);
-    const apiRequest: MercadoLibreApiRequest = { method: "GET", path, accessToken };
+    const apiRequest: MercadoLibreApiRequest = {
+      method: reqOptions?.method ?? "GET",
+      path,
+      accessToken,
+    };
 
     if (query !== undefined) {
       apiRequest.query = query;
     }
     if (headers !== undefined) {
       apiRequest.headers = headers;
+    }
+    if (reqOptions?.body !== undefined) {
+      apiRequest.body = reqOptions.body;
     }
 
     return input.transport.request(apiRequest);
@@ -1516,10 +1860,26 @@ export function createMercadoLibreApiFetchTransport(): MercadoLibreApiTransport 
         url = `${url}?${new URLSearchParams(request.query).toString()}`;
       }
 
-      const response = await fetchWithBackoff(url, {
+      const init: RequestInit & { headers: Record<string, string> } = {
         method: request.method,
         headers: { Authorization: `Bearer ${request.accessToken}`, ...request.headers },
-      });
+      };
+
+      if (request.body !== undefined && request.method !== "GET") {
+        if (request.body instanceof FormData || request.body instanceof Blob) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+          (init as unknown as Record<string, unknown>).body = request.body;
+          // Let fetch set the Content-Type with boundary for multipart.
+        } else if (typeof request.body === "string") {
+          init.headers["Content-Type"] = "application/json";
+          init.body = request.body;
+        } else {
+          init.headers["Content-Type"] = "application/json";
+          init.body = JSON.stringify(request.body);
+        }
+      }
+
+      const response = await fetchWithBackoff(url, init);
 
       if (!response.ok) {
         throw new Error(

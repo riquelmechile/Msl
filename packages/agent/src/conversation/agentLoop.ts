@@ -35,6 +35,10 @@ import {
   createCheckListingVisitsTool,
   createProductAdsInsightsTool,
   createReadMyOrdersTool,
+  createCheckListingQualityTool,
+  createRelistListingTool,
+  createDiagnoseImageTool,
+  createUploadImageTool,
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
 
@@ -241,6 +245,18 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.mlcClient && !toolMap.has("read_my_orders")) {
     toolMap.set("read_my_orders", createReadMyOrdersTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("check_listing_quality")) {
+    toolMap.set("check_listing_quality", createCheckListingQualityTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("relist_listing")) {
+    toolMap.set("relist_listing", createRelistListingTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("diagnose_image")) {
+    toolMap.set("diagnose_image", createDiagnoseImageTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("upload_image")) {
+    toolMap.set("upload_image", createUploadImageTool(config.mlcClient));
   }
 
   // Real client is used only when the caller has not explicitly requested the mock.
