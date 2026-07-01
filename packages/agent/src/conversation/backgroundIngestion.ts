@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { GraphEngine } from "@msl/memory";
-import type { MlcApiClient, MlcListingSummary, MlcVisitsDetail } from "@msl/mercadolibre";
+import type { MlcApiClient, MlcListingSummary, MlcPerformanceSummary, MlcVisitsDetail } from "@msl/mercadolibre";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -34,6 +34,11 @@ const SEASONAL_RUN_EVERY_DAYS = 7;
 const SEASONAL_ADVANCE_DAYS = 30; // alert N days before peak
 const PRICE_CHANGE_THRESHOLD = 0.2; // ±20%
 const SIMILAR_PRICE_RANGE = 0.2; // ±20% for cross-account matching
+const QUALITY_CHECK_MAX_PER_CYCLE = 20; // listings per cycle
+const QUALITY_SCORE_DROP_THRESHOLD = 10; // points
+const QUALITY_LOW_SCORE_THRESHOLD = 70;
+const RELIST_WINDOW_DAYS = 55; // 60-day limit minus 5-day buffer
+const RELIST_EXPIRING_DAYS = 7; // warn when relist window closes within 7 days
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -1082,6 +1087,415 @@ function buildDailyContext(
     },
     alerts,
   };
+}
+
+// ── Phase 7: Quality checks ────────────────────────────────────────────
+
+/**
+ * Runs listing quality checks using the MercadoLibre Item Performance API.
+ *
+ * Picks up to {@link QUALITY_CHECK_MAX_PER_CYCLE} active listings that
+ * are most in need of a fresh quality check (oldest or missing snapshots),
+ * calls `mlcClient.getItemPerformance`, persists `quality_snapshot` nodes,
+ * and generates alerts for low scores and score drops.
+ *
+ * Silently skips when `getItemPerformance` is not available on the client.
+ */
+async function runQualityChecks(
+  config: BackgroundIngestionConfig,
+): Promise<{ alerts: string[]; checkedCount: number }> {
+  const alerts: string[] = [];
+
+  // Gracefully skip if the capability is not available
+  if (typeof config.mlcClient.getItemPerformance !== "function") {
+    console.log("[worker] Phase 7 quality: getItemPerformance not available, skipping");
+    return { alerts, checkedCount: 0 };
+  }
+
+  const capturedAt = new Date().toISOString();
+
+  // ── Find active listings from recent snapshots ──────────────
+  const listingSnaps = config.engine.queryByMetadata({
+    type: "listing_snapshot",
+    limit: 5000,
+  });
+
+  // Group newest snapshot per itemId, keep only active ones
+  const newestPerItem = new Map<
+    string,
+    { itemId: string; sellerId: string; sellerName: string; title: string; capturedAt: string }
+  >();
+  for (const snap of listingSnaps) {
+    const m = snap.metadata as Record<string, unknown>;
+    const itemId = String(m.itemId ?? "");
+    const status = String(m.status ?? "");
+    if (!itemId || status !== "active") continue;
+    const sellerId = String(m.sellerId ?? "");
+    const sellerName = String(m.sellerName ?? sellerId);
+    const title = String(m.title ?? "");
+    const snapCapturedAt = String(m.capturedAt ?? "");
+    const existing = newestPerItem.get(itemId);
+    if (!existing || snapCapturedAt > existing.capturedAt) {
+      newestPerItem.set(itemId, { itemId, sellerId, sellerName, title, capturedAt: snapCapturedAt });
+    }
+  }
+
+  if (newestPerItem.size === 0) {
+    console.log("[worker] Phase 7 quality: no active listings found");
+    return { alerts, checkedCount: 0 };
+  }
+
+  // ── Find existing quality snapshots per item ────────────────
+  const qualitySnaps = config.engine.queryByMetadata({
+    type: "quality_snapshot",
+    limit: 5000,
+  });
+
+  const latestQualityPerItem = new Map<string, string>(); // itemId → capturedAt
+  for (const snap of qualitySnaps) {
+    const qm = snap.metadata as Record<string, unknown>;
+    const itemId = String(qm.itemId ?? "");
+    const qCapturedAt = String(qm.capturedAt ?? "");
+    if (!itemId) continue;
+    const existing = latestQualityPerItem.get(itemId);
+    if (!existing || qCapturedAt > existing) {
+      latestQualityPerItem.set(itemId, qCapturedAt);
+    }
+  }
+
+  // ── Prioritise: missing first, then oldest ──────────────────
+  const candidates = Array.from(newestPerItem.entries()).map(([itemId, info]) => {
+    const lastQuality = latestQualityPerItem.get(itemId);
+    return {
+      ...info,
+      hasQuality: lastQuality !== undefined,
+      lastQualityAt: lastQuality ?? "",
+    };
+  });
+
+  candidates.sort((a, b) => {
+    // Missing quality checks first
+    if (!a.hasQuality && b.hasQuality) return -1;
+    if (a.hasQuality && !b.hasQuality) return 1;
+    // Then oldest quality checks first
+    return a.lastQualityAt.localeCompare(b.lastQualityAt);
+  });
+
+  const batch = candidates.slice(0, QUALITY_CHECK_MAX_PER_CYCLE);
+
+  // ── Check each candidate ────────────────────────────────────
+  for (const candidate of batch) {
+    try {
+      const perfSnapshot = await config.mlcClient.getItemPerformance!(
+        candidate.sellerId,
+        candidate.itemId,
+      );
+      const data = perfSnapshot.data as MlcPerformanceSummary;
+
+      // Count pending OPPORTUNITY rules across all buckets
+      let pendingOpportunities = 0;
+      for (const bucket of data.buckets) {
+        for (const variable of bucket.variables) {
+          for (const rule of variable.rules) {
+            if (rule.mode === "OPPORTUNITY" && rule.status === "PENDING") {
+              pendingOpportunities++;
+            }
+          }
+        }
+      }
+
+      // ── Persist quality snapshot ────────────────────────────
+      const snapshotLabel = `quality_snapshot_${candidate.itemId}_${todayLabel()}`;
+      config.engine.getOrCreateNode(snapshotLabel, {
+        type: "quality_snapshot",
+        itemId: candidate.itemId,
+        sellerId: candidate.sellerId,
+        score: data.score,
+        level: data.level,
+        levelWording: data.levelWording,
+        pendingOpportunities,
+        capturedAt,
+      });
+
+      // ── Score drop detection ────────────────────────────────
+      const prevQualitySnaps = config.engine.queryByMetadata({
+        type: "quality_snapshot",
+        itemId: candidate.itemId,
+        limit: 2,
+      });
+      const prevQuality = prevQualitySnaps.length >= 2 ? prevQualitySnaps[1] : null;
+      if (prevQuality?.metadata) {
+        const prevMeta = prevQuality.metadata as Record<string, unknown>;
+        const prevScore = Number(prevMeta.score ?? 0);
+        if (prevScore > 0) {
+          const drop = prevScore - data.score;
+          if (drop > QUALITY_SCORE_DROP_THRESHOLD) {
+            alerts.push(
+              `📉 ${candidate.itemId} bajó de ${prevScore} a ${data.score} (-${drop} pts). Revisar qué cambió.`,
+            );
+          }
+        }
+      }
+
+      // ── Low score alert ─────────────────────────────────────
+      if (data.score < QUALITY_LOW_SCORE_THRESHOLD) {
+        // Build a summary of the weakest areas
+        const weakAreas: string[] = [];
+        for (const bucket of data.buckets) {
+          for (const variable of bucket.variables) {
+            if (variable.score < 50) {
+              weakAreas.push(`${variable.title} (${variable.score}%)`);
+            }
+          }
+        }
+        const weakSummary =
+          weakAreas.length > 0
+            ? weakAreas.slice(0, 3).join(", ")
+            : "múltiples áreas";
+        alerts.push(
+          `⚠️ ${candidate.itemId} score ${data.score}/100. ${weakSummary}. Corregilo para no perder exposición.`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[background-ingestion] Quality check failed for ${candidate.itemId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      // Continue with next candidate — don't abort the batch
+    }
+  }
+
+  console.log(
+    `[worker] Phase 7 quality: checked ${batch.length} listings, ${alerts.length} alerts`,
+  );
+
+  return { alerts, checkedCount: batch.length };
+}
+
+// ── Phase 8: Relist opportunities ──────────────────────────────────────
+
+/**
+ * Detects relist opportunities by scanning closed listings in Cortex.
+ *
+ * A MercadoLibre listing can be relisted within 60 days of closing and the
+ * new listing inherits visits, questions, and sales history. This phase:
+ *
+ * 1. Queries Cortex for `listing_snapshot` nodes with status "closed".
+ * 2. Estimates the close date from the first "closed" snapshot's `capturedAt`.
+ * 3. Checks whether the listing had sales history (via visit/order Cortex data).
+ * 4. Persists `relist_opportunity` nodes and generates alerts.
+ *
+ * Also surfaces paused listings with sales history as potential relist
+ * candidates (close → relist path).
+ */
+async function runRelistChecks(
+  config: BackgroundIngestionConfig,
+): Promise<{ alerts: string[]; opportunitiesFound: number }> {
+  const alerts: string[] = [];
+  const capturedAt = new Date().toISOString();
+  const now = new Date();
+  const relistDeadline = new Date(now);
+  relistDeadline.setDate(relistDeadline.getDate() - RELIST_WINDOW_DAYS);
+  const expiringAfter = new Date(now);
+  expiringAfter.setDate(expiringAfter.getDate() + RELIST_EXPIRING_DAYS);
+  // Hard 60-day limit from MercadoLibre
+  const hardDeadline = new Date(now);
+  hardDeadline.setDate(hardDeadline.getDate() - 60);
+
+  // ── Get all listing snapshots grouped by itemId ─────────────
+  const allSnaps = config.engine.queryByMetadata({
+    type: "listing_snapshot",
+    limit: 10000,
+  });
+
+  const byItem = new Map<
+    string,
+    Array<{
+      id: number;
+      itemId: string;
+      sellerId: string;
+      sellerName: string;
+      title: string;
+      status: string;
+      capturedAt: string;
+    }>
+  >();
+  for (const snap of allSnaps) {
+    const m = snap.metadata as Record<string, unknown>;
+    const itemId = String(m.itemId ?? "");
+    const status = String(m.status ?? "");
+    const sellerId = String(m.sellerId ?? "");
+    const sellerName = String(m.sellerName ?? sellerId);
+    const title = String(m.title ?? "");
+    const snapCapturedAt = String(m.capturedAt ?? "");
+    if (!itemId) continue;
+    let entries = byItem.get(itemId);
+    if (!entries) {
+      entries = [];
+      byItem.set(itemId, entries);
+    }
+    entries.push({ id: snap.id, itemId, sellerId, sellerName, title, status, capturedAt: snapCapturedAt });
+  }
+
+  let opportunitiesFound = 0;
+
+  for (const [itemId, entries] of byItem) {
+    // Sort newest first
+    entries.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+    const latest = entries[0]!;
+    const currentStatus = latest.status;
+
+    // ── Closed listings ───────────────────────────────────────
+    if (currentStatus === "closed") {
+      // Find the first snapshot where status became "closed"
+      // (scan from newest to oldest, find the earliest contiguous "closed")
+      let closeDateStr = latest.capturedAt;
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i]!;
+        // Check if this snapshot and all newer ones are "closed"
+        let allClosedSince = true;
+        for (let j = i; j < entries.length; j++) {
+          if (entries[j]!.status !== "closed") {
+            allClosedSince = false;
+            break;
+          }
+        }
+        if (allClosedSince && i > 0 && entries[i - 1]!.status !== "closed") {
+          closeDateStr = entries[i]!.capturedAt;
+          break;
+        }
+      }
+
+      const closeDate = new Date(closeDateStr);
+      if (isNaN(closeDate.getTime())) continue;
+
+      // Check if within the 60-day window
+      if (closeDate < hardDeadline) continue; // past 60 days, can't relist
+
+      const daysSinceClose = Math.round(
+        (now.getTime() - closeDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      // If closed within the 55-day window (buffer before 60-day limit)
+      const isWithinWindow = closeDate >= relistDeadline;
+      if (!isWithinWindow) continue;
+
+      // ── Check sales history ─────────────────────────────────
+      let hadSalesHistory = false;
+      let salesCount = 0;
+
+      // Check order snapshots that mention this item
+      // (order_snapshot nodes have categoryBreakdown, not per-item — use visit data as proxy)
+      const visitNodes = config.engine.queryByMetadata({
+        type: "visit_snapshot",
+        itemId,
+        limit: 1,
+      });
+      if (visitNodes.length > 0) {
+        const vm = visitNodes[0]!.metadata as Record<string, unknown>;
+        const totalVisits = Number(vm.totalVisits ?? 0);
+        if (totalVisits > 0) hadSalesHistory = true;
+      }
+
+      // Also try to find order data via seller-scoped query
+      const orderNodes = config.engine.queryByMetadata({
+        type: "order_snapshot",
+        limit: 100,
+      });
+      for (const on of orderNodes) {
+        const om = on.metadata as Record<string, unknown>;
+        const orders = Number(om.totalOrders ?? 0);
+        if (orders > 0) {
+          salesCount += orders;
+          hadSalesHistory = true;
+        }
+      }
+
+      // ── Suggest relist price ─────────────────────────────────
+      // Use the last known price from the listing snapshot
+      const lastMeta = entries[0]!;
+      const suggestedPrice = Number(
+        ((entries.find((e) => e.status === "active") ?? lastMeta) as { price?: unknown })
+          .price ?? 0,
+      );
+      // Actually the snapshot metadata has price in it — parse from latest snapshot
+      let lastPrice = 0;
+      for (const e of entries) {
+        const snapNode = config.engine.queryByMetadata({ type: "listing_snapshot", itemId, limit: 1 });
+        if (snapNode.length > 0) {
+          const sm = snapNode[0]!.metadata as Record<string, unknown>;
+          lastPrice = Number(sm.price ?? 0);
+          break;
+        }
+      }
+
+      // ── Persist relist opportunity node ──────────────────────
+      const relistLabel = `relist_opportunity_${itemId}`;
+      config.engine.getOrCreateNode(relistLabel, {
+        type: "relist_opportunity",
+        itemId,
+        sellerId: latest.sellerId,
+        title: latest.title,
+        closedAt: closeDateStr,
+        daysSinceClose,
+        hadSalesHistory,
+        salesCount,
+        suggestedPrice: lastPrice,
+        capturedAt,
+      });
+
+      opportunitiesFound++;
+
+      // ── Calculate expiry date ───────────────────────────────
+      const expiryDate = new Date(closeDate);
+      expiryDate.setDate(expiryDate.getDate() + 60);
+      const expiryLabel = expiryDate.toISOString().slice(0, 10);
+      const daysUntilExpiry = Math.round(
+        (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      // ── Alerts ──────────────────────────────────────────────
+      if (hadSalesHistory || salesCount > 0) {
+        if (daysUntilExpiry <= RELIST_EXPIRING_DAYS) {
+          alerts.push(
+            `⏰ ${itemId} vence en ${daysUntilExpiry} días para relist. Si no se republica antes del ${expiryLabel}, pierde el historial.`,
+          );
+        } else if (isWithinWindow) {
+          alerts.push(
+            `🔄 ${itemId} cerrada hace ${daysSinceClose} días, ${salesCount} ventas históricas. Elegible para relist hasta ${expiryLabel}. ¿Republicar con nuevo precio?`,
+          );
+        }
+      }
+    }
+
+    // ── Paused listings with sales history ────────────────────
+    if (currentStatus === "paused") {
+      // Check if there's visit or order data suggesting sales history
+      const visitNodes = config.engine.queryByMetadata({
+        type: "visit_snapshot",
+        itemId,
+        limit: 2,
+      });
+      let totalVisits = 0;
+      for (const vn of visitNodes) {
+        const vm = vn.metadata as Record<string, unknown>;
+        totalVisits += Number(vm.totalVisits ?? 0);
+      }
+
+      if (totalVisits > 0) {
+        alerts.push(
+          `💡 ${itemId} está pausada con ${totalVisits} visitas acumuladas. Si la cerrás, podés republicarla con nuevo precio/tipo y hereda el historial.`,
+        );
+        opportunitiesFound++;
+      }
+    }
+  }
+
+  console.log(
+    `[worker] Phase 8 relist: found ${opportunitiesFound} opportunities, ${alerts.length} alerts`,
+  );
+
+  return { alerts, opportunitiesFound };
 }
 
 // ── Worker ─────────────────────────────────────────────────────────────

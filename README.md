@@ -96,9 +96,10 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  └───────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘ │
 │          │                 │                      │                  │
 │  ┌───────┴─────────────────┴──────────────────────┴────────────────┐ │
-│  │              6 ML Business Tools                                │ │
+│  │              10 ML Business Tools                               │ │
 │  │  calculate_listing_fees · read_my_listings · find_paused_listings│ │
-│  │  check_listing_visits · read_product_ads_insights · read_orders │ │
+│  │  check_listing_visits · read_product_ads_insights · read_orders  │ │
+│  │  check_listing_quality · relist_listing · diagnose_image · upload│ │
 │  └──────────────────────────┬─────────────────────────────────────┘ │
 │          ┌──────────────────┴──────────────────┐                     │
 │          │  Background Ingestion Worker (6h)   │  DeepSeek Inference │
@@ -166,13 +167,16 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 10  | **Autonomy Engine**    | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                      |
 | 11  | **Product Sync**       | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary   |
 | 12  | **Approval Queue**     | Every write action goes through prepare → approve → execute → audit                                             |
-| 13  | **ML Business Tools**  | 6 tools for real MercadoLibre data (listings, fees, visits, orders, ads, paused detection)                       |
+| 13  | **ML Business Tools**  | 10 tools for real MercadoLibre data (listings, fees, visits, orders, ads, paused detection, quality, relist, images) |
 | 14  | **Background Ingestion** | 6h worker that snapshots ALL listings/visits/orders into Cortex, detects anomalies, cross-account comparison    |
 | 15  | **Seasonal Detection** | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts               |
 | 16  | **Cross-Account Intelligence** | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                    |
 | 17  | **Proactive Alerts**   | Push notifications for visit anomalies, paused listing reuse, seasonal preparation, cross-account gaps           |
 | 18  | **DeepSeek Inference** | Daily business intelligence: feeds Cortex data to DeepSeek for insight generation                               |
 | 19  | **Actionable Proposals** | prepare_action with 10 action kinds, data-driven proposals with estimated profit impact                       |
+| 20  | **Listing Quality**   | Audits listing score (0-100) via /performance API, surfaces OPPORTUNITY/WARNING rules by variable              |
+| 21  | **Relist Intelligence** | Detects closed/paused listings eligible for relist (<60 days), preserves visits/questions/sales history         |
+| 22  | **Image Pipeline**    | Pre-publish image diagnostic (white_background, text_logo, watermark) + upload to ML CDN via API                |
 
 ## Stack
 
