@@ -36,6 +36,8 @@ import {
   createProductAdsInsightsTool,
   createReadMyOrdersTool,
   createCheckListingQualityTool,
+  createCheckPriceIntelligenceTool,
+  createFindAutomatedPriceItemsTool,
   createAuditAllQualityTool,
   createRelistListingTool,
   createFindRelistOpportunitiesTool,
@@ -251,6 +253,12 @@ export function createAgentLoop(config: AgentLoopConfig) {
   if (config.mlcClient && !toolMap.has("check_listing_quality")) {
     toolMap.set("check_listing_quality", createCheckListingQualityTool(config.mlcClient));
   }
+  if (config.mlcClient && !toolMap.has("check_price_intelligence")) {
+    toolMap.set("check_price_intelligence", createCheckPriceIntelligenceTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("find_automated_price_items")) {
+    toolMap.set("find_automated_price_items", createFindAutomatedPriceItemsTool(config.mlcClient));
+  }
   if (config.mlcClient && !toolMap.has("relist_listing")) {
     toolMap.set("relist_listing", createRelistListingTool(config.mlcClient));
   }
@@ -439,6 +447,7 @@ ${strategyLines.join("\n")}`;
               metrics?.record("tool.call", 1, { name: tc.name });
 
               const result = await tool.execute(tc.arguments);
+              recordReturnedToolIssue(metrics, tc.name, result);
               llmMessages.push({
                 role: "tool",
                 content: JSON.stringify(result),
@@ -1245,6 +1254,27 @@ function createNoopClient(): LlmClient {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function recordReturnedToolIssue(
+  metrics: MetricsCollector | undefined,
+  toolName: string,
+  result: unknown,
+): void {
+  if (!metrics || !isRecord(result)) return;
+
+  if ("error" in result && result.error !== undefined && result.error !== null) {
+    metrics.record("tool.call", 1, { name: toolName, status: "error" });
+    return;
+  }
+
+  if (Array.isArray(result.partialErrors) && result.partialErrors.length > 0) {
+    metrics.record("tool.call", 1, { name: toolName, status: "partial" });
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 /**
  * Resolve the conversation turn outcome for the Escribano observer.

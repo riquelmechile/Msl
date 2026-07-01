@@ -207,6 +207,82 @@ describe("EscribanoObserver", () => {
     });
   });
 
+  describe("observeToolResult — returned tool issues", () => {
+    it("records returned tool errors for production visibility", () => {
+      observer.observeToolResult("check_price_intelligence", {
+        error: "pricing automation unavailable",
+      });
+
+      const issues = engine.queryByMetadata({ type: "tool_issue" });
+
+      expect(issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: "tool_issue_check_price_intelligence",
+            metadata: expect.objectContaining({
+              toolName: "check_price_intelligence",
+              status: "error",
+              error: "pricing automation unavailable",
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it("records returned partial errors without requiring metrics", () => {
+      observer.observeToolResult("check_price_intelligence", {
+        partialErrors: [{ endpoint: "price_to_win", message: "not found" }],
+      });
+
+      const issues = engine.queryByMetadata({ type: "tool_issue" });
+
+      expect(issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: "tool_issue_check_price_intelligence",
+            metadata: expect.objectContaining({
+              toolName: "check_price_intelligence",
+              status: "partial",
+              partialErrors: [expect.objectContaining({ endpoint: "price_to_win" })],
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it("sanitizes returned tool issue metadata before persistence", () => {
+      observer.observeToolResult("check_price_intelligence", {
+        error:
+          `failed Bearer raw-token access_token=raw-access ` +
+          `{"client_secret":"json-secret","password":"json-password","raw_secret":"raw-value"} ` +
+          `${"x".repeat(900)}`,
+        partialErrors: [
+          { endpoint: "price_to_win", message: "not found client_secret=raw-secret" },
+        ],
+      });
+
+      const [issue] = engine.queryByMetadata({ type: "tool_issue" });
+      const metadata = issue?.metadata as {
+        error: string;
+        partialErrors: Array<{ message: string }>;
+      };
+
+      expect(metadata.error).toContain("Bearer [REDACTED]");
+      expect(metadata.error).toContain("access_token=[REDACTED]");
+      expect(metadata.error).toContain('"client_secret":"[REDACTED]"');
+      expect(metadata.error).toContain('"password":"[REDACTED]"');
+      expect(metadata.error).toContain('"raw_secret":"[REDACTED]"');
+      expect(metadata.error).not.toContain("raw-token");
+      expect(metadata.error).not.toContain("raw-access");
+      expect(metadata.error).not.toContain("json-secret");
+      expect(metadata.error).not.toContain("json-password");
+      expect(metadata.error).not.toContain("raw-value");
+      expect(metadata.error.length).toBeLessThanOrEqual(512);
+      expect(metadata.partialErrors[0]?.message).toContain("client_secret=[REDACTED]");
+      expect(metadata.partialErrors[0]?.message).not.toContain("raw-secret");
+    });
+  });
+
   describe("auto-pruning", () => {
     it("triggers prune() every pruneInterval turns", () => {
       const pruningObserver = new EscribanoObserver({ engine, pruneInterval: 3 });

@@ -7,6 +7,7 @@ import type {
   EscribanoConfig,
   TurnOutcome,
 } from "./types.js";
+import { sanitizeReturnedToolIssueEntry, sanitizeToolErrorText } from "./toolErrorSanitizer.js";
 
 // ── Strategy keyword patterns (reuse from guardrails/strategyParser domains) ──
 
@@ -93,13 +94,19 @@ export class EscribanoObserver {
 
     // Periodic Darwinian pruning
     if (this.#pruneInterval > 0 && this.#turnCount % this.#pruneInterval === 0) {
-      this.#engine.prune({ maxNodes: this.#maxConceptNodes, excludeNodeIds: this.#businessNodeIds });
+      this.#engine.prune({
+        maxNodes: this.#maxConceptNodes,
+        excludeNodeIds: this.#businessNodeIds,
+      });
     }
 
     // Concept node FIFO cap: if the graph has accumulated more concept
     // nodes than maxConceptNodes, force a prune to evict inactive ones.
     if (this.#turnCount % (this.#pruneInterval * 5) === 0) {
-      this.#engine.prune({ maxNodes: this.#maxConceptNodes, excludeNodeIds: this.#businessNodeIds });
+      this.#engine.prune({
+        maxNodes: this.#maxConceptNodes,
+        excludeNodeIds: this.#businessNodeIds,
+      });
     }
   }
 
@@ -117,6 +124,8 @@ export class EscribanoObserver {
     if (!this.#engine) return;
 
     try {
+      this.#handleReturnedToolIssue(toolName, result);
+
       if (toolName === "read_my_listings" || toolName === "find_paused_listings") {
         this.#handleListingResult(result);
       } else if (toolName === "check_listing_visits") {
@@ -198,6 +207,43 @@ export class EscribanoObserver {
   }
 
   // ── Business-data ingestion helpers ────────────────────────────
+
+  /**
+   * Persist returned tool-level failures that do not throw.
+   *
+   * Some production tools return `{ error }` or `partialErrors` while the turn
+   * continues successfully. Recording them here keeps endpoint issues visible
+   * even when the production bot is wired with Escribano but no metrics sink.
+   */
+  #handleReturnedToolIssue(toolName: string, result: Record<string, unknown>): void {
+    const returnedError =
+      result.error !== undefined ? sanitizeToolErrorText(result.error) : undefined;
+    const partialErrors = Array.isArray(result.partialErrors)
+      ? result.partialErrors
+          .filter((entry): entry is Record<string, unknown> => {
+            return typeof entry === "object" && entry !== null;
+          })
+          .map(sanitizeReturnedToolIssueEntry)
+      : [];
+
+    if (returnedError === undefined && partialErrors.length === 0) return;
+
+    const metadata: Record<string, unknown> = {
+      type: "tool_issue",
+      toolName,
+      source: "escribano",
+      updatedAt: new Date().toISOString(),
+      status: returnedError !== undefined ? "error" : "partial",
+    };
+    if (returnedError !== undefined) metadata.error = returnedError;
+    if (partialErrors.length > 0) metadata.partialErrors = partialErrors;
+
+    const issueNode = this.#engine.getOrCreateNode(`tool_issue_${toolName}`, metadata);
+    this.#businessNodeIds.add(issueNode.id);
+
+    const toolNode = this.#getOrCreateConcept(`tool_${toolName}`);
+    this.#ensureEdge(toolNode, issueNode.id);
+  }
 
   /**
    * Persist listing data from {@link MlcListingsSnapshot} results.
@@ -284,7 +330,11 @@ export class EscribanoObserver {
       this.#businessNodeIds.add(visitsNode.id);
 
       // Edge: listing → visits
-      const listingNode = this.#engine.getOrCreateNode(`listing_${itemId}`, { type: "listing", itemId, updatedAt: new Date().toISOString() });
+      const listingNode = this.#engine.getOrCreateNode(`listing_${itemId}`, {
+        type: "listing",
+        itemId,
+        updatedAt: new Date().toISOString(),
+      });
       this.#businessNodeIds.add(listingNode.id);
       this.#ensureEdge(listingNode.id, visitsNode.id);
     } catch {

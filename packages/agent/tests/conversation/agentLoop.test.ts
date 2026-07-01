@@ -9,6 +9,8 @@ import {
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
 import type { ConversationState, Strategy, StreamingChunk } from "../../src/conversation/types.js";
+import { createMetrics } from "../../src/conversation/observability.js";
+import type { ToolDefinition } from "../../src/conversation/tools.js";
 import { createGraphEngine } from "@msl/memory";
 
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
@@ -128,6 +130,46 @@ describe("createAgentLoop — mock client", () => {
 
     expect(result.response.length).toBeGreaterThan(0);
     expect(result.updatedState.messages).toHaveLength(2);
+  });
+
+  it("records returned tool errors and partial errors without breaking the turn", async () => {
+    const metrics = createMetrics();
+    let returnError = false;
+    const tool: ToolDefinition = {
+      name: "simulate_actor",
+      description: "Stub actor simulation",
+      parameters: { type: "object", properties: {} },
+      execute: async () => {
+        if (returnError) return { error: "upstream failed" };
+        return {
+          actorType: "competidor",
+          partialErrors: [{ endpoint: "price_to_win", message: "not found" }],
+        };
+      },
+    };
+    const agentWithTool = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+      tools: [tool],
+      metrics,
+    });
+
+    await agentWithTool.converse("Revisá al competidor", makeState());
+    returnError = true;
+    await agentWithTool.converse("Revisá al competidor", makeState());
+
+    expect(metrics.flush()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "tool.call",
+          tags: { name: "simulate_actor", status: "partial" },
+        }),
+        expect.objectContaining({
+          name: "tool.call",
+          tags: { name: "simulate_actor", status: "error" },
+        }),
+      ]),
+    );
   });
 });
 

@@ -6,6 +6,7 @@ import type {
   MlcImageDiagnosticInput,
   MlcListingPricesInput,
   MlcListingsSnapshot,
+  MlcAutomatedPriceItemsSnapshot,
   MlcRelistInput,
   MlcVisitsSnapshot,
   MlcVisitsTimeWindowSnapshot,
@@ -14,15 +15,22 @@ import type {
   SyncReport,
   MlUserSnapshot,
 } from "@msl/mercadolibre";
-import { assertPlasticovToMaustianDirection } from "@msl/mercadolibre";
+import {
+  assertPlasticovToMaustianDirection,
+  PRICING_AUTOMATION_ITEMS_DEFAULT_LIMIT,
+  PRICING_AUTOMATION_ITEMS_MAX_LIMIT,
+} from "@msl/mercadolibre";
 import type { Strategy as SyncStrategy } from "@msl/mercadolibre";
 
 import type { ToolDefinition } from "./tools.js";
+import { sanitizeToolErrorText } from "./toolErrorSanitizer.js";
 
 export type SyncToolOptions = {
   approvedExecution?: boolean;
   accountConfig?: MlAccountRoleConfig;
 };
+
+const DEFAULT_SALE_PRICE_CONTEXT = "channel_marketplace,buyer_loyalty_3";
 
 function approvalRequired(tool: "sync_product" | "sync_all"): Record<string, unknown> {
   return {
@@ -816,6 +824,193 @@ export function createCheckListingVisitsTool(mlcClient: MlcApiClient): ToolDefin
 }
 
 // ---------------------------------------------------------------------------
+// price intelligence tools
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `check_price_intelligence` tool.
+ *
+ * Aggregates read-only pricing signals for one MercadoLibre listing: sale price,
+ * price book, catalog price-to-win, and pricing automation state. It never
+ * mutates prices and explicitly surfaces the 2026 automation guard.
+ *
+ * @param mlcClient — the `MlcApiClient` instance for API calls.
+ * @returns a `check_price_intelligence` tool definition compatible with OpenAI function calling.
+ */
+export function createCheckPriceIntelligenceTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "check_price_intelligence",
+    description:
+      "Consulta inteligencia de precios READ-ONLY para una publicación: precio real " +
+      "que ve el comprador (sale_price), lista de precios, precio para ganar catálogo " +
+      "(price_to_win v2) y estado de automatización de precios. Usá esta herramienta " +
+      "cuando el vendedor pregunte qué precio necesita para ganar catálogo, qué precio " +
+      "está viendo el comprador, o si la publicación tiene automatización activa. " +
+      "No cambia precios. Desde 2026, si hay automatización activa, los cambios de " +
+      "precio vía /items pueden ser rechazados o ignorados.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        itemId: {
+          type: "string",
+          description: "ID de la publicación en MercadoLibre. Ej: 'MLC1001'.",
+        },
+        salePriceContext: {
+          type: "string",
+          description: `Contexto opcional para sale_price. Por defecto usa ${DEFAULT_SALE_PRICE_CONTEXT}.`,
+        },
+      },
+      required: ["sellerId", "itemId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return { error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío." };
+      }
+
+      const itemId = coerceItemId(args.itemId);
+      if (!itemId) {
+        return { error: "El parámetro 'itemId' es obligatorio y debe ser un string no vacío." };
+      }
+
+      const context =
+        typeof args.salePriceContext === "string" && args.salePriceContext.length > 0
+          ? args.salePriceContext
+          : DEFAULT_SALE_PRICE_CONTEXT;
+
+      const readOptional = async <T>(
+        name: string,
+        reader: (() => Promise<T>) | undefined,
+      ): Promise<{ data?: T; error?: { endpoint: string; message: string } }> => {
+        if (reader === undefined) {
+          return { error: { endpoint: name, message: "Endpoint no disponible en este cliente." } };
+        }
+        try {
+          return { data: await reader() };
+        } catch (err) {
+          return {
+            error: { endpoint: name, message: sanitizeToolErrorText(err) },
+          };
+        }
+      };
+
+      const [salePrice, prices, priceToWin, automation] = await Promise.all([
+        readOptional(
+          "sale_price",
+          mlcClient.getItemSalePrice?.bind(mlcClient, sellerId, itemId, { context }),
+        ),
+        readOptional("prices", mlcClient.getItemPrices?.bind(mlcClient, sellerId, itemId)),
+        readOptional(
+          "price_to_win",
+          mlcClient.getItemPriceToWin?.bind(mlcClient, sellerId, itemId),
+        ),
+        readOptional(
+          "pricing_automation",
+          mlcClient.getPricingAutomation?.bind(mlcClient, sellerId, itemId),
+        ),
+      ]);
+
+      const errors = [salePrice.error, prices.error, priceToWin.error, automation.error].filter(
+        (error): error is { endpoint: string; message: string } => error !== undefined,
+      );
+      const automationActive =
+        automation.data !== undefined &&
+        Boolean((automation.data as { data?: { active?: boolean } }).data?.active);
+
+      return {
+        sellerId,
+        itemId,
+        kind: "price-intelligence",
+        source: "mercadolibre-api",
+        noMutationExecuted: true,
+        ...(salePrice.data !== undefined && { salePrice: salePrice.data }),
+        ...(prices.data !== undefined && { prices: prices.data }),
+        ...(priceToWin.data !== undefined && { priceToWin: priceToWin.data }),
+        ...(automation.data !== undefined && { automation: automation.data }),
+        automationGuard: automationActive
+          ? "Automatización de precio activa: desde 2026, los cambios de precio vía /items pueden ser rechazados o ignorados. No propongas editar precio sin resolver la automatización primero."
+          : "No se detectó automatización activa en la respuesta consultada; igualmente verificá antes de cualquier mutación futura.",
+        ...(errors.length > 0 && { partialErrors: errors }),
+        recommendation:
+          priceToWin.data !== undefined
+            ? "Usá priceToWin para evaluar competencia de catálogo y calculá margen neto antes de recomendar un cambio."
+            : "No hubo señal completa de price_to_win; respondé con los datos disponibles y aclaración de cobertura.",
+      };
+    },
+  };
+}
+
+/**
+ * Creates the `find_automated_price_items` tool.
+ *
+ * Lists seller items with MercadoLibre price automation enabled. Read-only.
+ */
+export function createFindAutomatedPriceItemsTool(mlcClient: MlcApiClient): ToolDefinition {
+  return {
+    name: "find_automated_price_items",
+    description:
+      "Lista publicaciones con automatización de precios activa para un vendedor. " +
+      "Es READ-ONLY y sirve para responder qué publicaciones tienen precio automatizado " +
+      `antes de considerar cualquier recomendación de cambio. Máximo ${PRICING_AUTOMATION_ITEMS_MAX_LIMIT} por página.`,
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID del vendedor en MercadoLibre. Ej: 'plasticov' o 'maustian'.",
+        },
+        offset: { type: "number", description: "Offset de paginación. Default 0." },
+        limit: {
+          type: "number",
+          description: `Cantidad por página. Default ${PRICING_AUTOMATION_ITEMS_DEFAULT_LIMIT}, máximo ${PRICING_AUTOMATION_ITEMS_MAX_LIMIT}.`,
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      if (!mlcClient.getPricingAutomationItems) {
+        return { error: "La lectura de automatizaciones de precio no está disponible." };
+      }
+
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return { error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío." };
+      }
+
+      const options: { offset?: number; limit?: number } = {};
+      if (typeof args.offset === "number") options.offset = args.offset;
+      if (typeof args.limit === "number") options.limit = args.limit;
+
+      try {
+        const snapshot: MlcAutomatedPriceItemsSnapshot = await mlcClient.getPricingAutomationItems(
+          sellerId,
+          options,
+        );
+        const data = snapshot.data;
+        const itemCount = data.items.length;
+        return {
+          ...snapshot,
+          noMutationExecuted: true,
+          automationGuard:
+            "Antes de editar un precio, verificá automatización activa. Desde 2026, MercadoLibre puede rechazar o ignorar cambios vía /items si la publicación está automatizada.",
+          summary: `${itemCount} publicaciones con precio automatizado encontradas en esta página.`,
+        };
+      } catch (err) {
+        return {
+          error:
+            `No se pudo listar publicaciones con automatización de precio para "${sellerId}": ` +
+            `${sanitizeToolErrorText(err)}`,
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // read_product_ads_insights tool
 // ---------------------------------------------------------------------------
 
@@ -1249,7 +1444,10 @@ export function createFindRelistOpportunitiesTool(engine: GraphEngine): ToolDefi
       type: "object",
       properties: {
         sellerId: { type: "string", description: "Filtrar por vendedor (plasticov o maustian)" },
-        urgent: { type: "boolean", description: "Solo mostrar las que vencen en <5 días (default: false)" },
+        urgent: {
+          type: "boolean",
+          description: "Solo mostrar las que vencen en <5 días (default: false)",
+        },
       },
       required: [],
     },
@@ -1276,9 +1474,7 @@ export function createFindRelistOpportunitiesTool(engine: GraphEngine): ToolDefi
         hadSalesHistory: n.metadata.hadSalesHistory,
         suggestedPrice: n.metadata.suggestedPrice,
         expiresAt: n.metadata.closedAt
-          ? new Date(
-              new Date(n.metadata.closedAt as string).getTime() + 60 * 24 * 60 * 60 * 1000,
-            )
+          ? new Date(new Date(n.metadata.closedAt as string).getTime() + 60 * 24 * 60 * 60 * 1000)
               .toISOString()
               .slice(0, 10)
           : undefined,

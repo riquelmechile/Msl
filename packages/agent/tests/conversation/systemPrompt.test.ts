@@ -89,6 +89,13 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/datos reales/i);
     expect(prompt).toMatch(/utilidad neta/i);
   });
+
+  it("contains safe pricing intelligence and 2026 automation guard", () => {
+    expect(prompt).toContain("check_price_intelligence");
+    expect(prompt).toContain("find_automated_price_items");
+    expect(prompt).toMatch(/automatización de precio activa/i);
+    expect(prompt).toMatch(/rechazar o ignorar cambios de precio vía \/items/i);
+  });
 });
 
 describe("buildSystemPrompt — CEO strategies injection", () => {

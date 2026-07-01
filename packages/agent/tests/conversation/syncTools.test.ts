@@ -9,6 +9,7 @@ import type {
   MlUserInfo,
   MlItem,
   MlWriteSnapshot,
+  MlcApiClient,
 } from "@msl/mercadolibre";
 import type { Strategy as SyncStrategy } from "@msl/mercadolibre";
 
@@ -18,6 +19,8 @@ import {
   createCheckAccountTool,
   createAuditAllQualityTool,
   createFindRelistOpportunitiesTool,
+  createCheckPriceIntelligenceTool,
+  createFindAutomatedPriceItemsTool,
 } from "../../src/conversation/syncTools.js";
 import { createAgentLoop } from "../../src/conversation/agentLoop.js";
 import { createGraphEngine } from "@msl/memory";
@@ -257,6 +260,124 @@ function createStubMlClient(): MlClient {
   };
 }
 
+function createStubMlcPriceClient(): MlcApiClient {
+  return {
+    getListings: async () => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: [],
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getItem: async () => ({
+      id: "MLC1001",
+      title: "Test Product",
+      price: 10990,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+    }),
+    getOrders: async () => ({
+      sellerId: "plasticov",
+      kind: "order",
+      source: "mercadolibre-api",
+      data: [],
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getMessages: async () => ({
+      sellerId: "plasticov",
+      kind: "message",
+      source: "mercadolibre-api",
+      data: [],
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getReputation: async () => ({
+      sellerId: "plasticov",
+      kind: "reputation",
+      source: "mercadolibre-api",
+      data: {},
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getCategoryAttributes: async () => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: [],
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getCategoryTechnicalSpecs: async () => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: [],
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getItemSalePrice: async (_sellerId, itemId) => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: { itemId, amount: 10990, currencyId: "CLP" },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getItemPrices: async (_sellerId, itemId) => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: { itemId, prices: [{ type: "standard", amount: 10990, currencyId: "CLP" }] },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getItemPriceToWin: async (_sellerId, itemId) => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: { itemId, currentPrice: 10990, priceToWin: 9990, status: "competing", boosts: [] },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getPricingAutomation: async (_sellerId, itemId) => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: { itemId, active: true, status: "active", ruleId: "rule-1" },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getPricingAutomationItems: async (sellerId) => ({
+      sellerId,
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        paging: { total: 1, offset: 0, limit: 50 },
+        items: [{ itemId: "MLC1001", status: "active", ruleId: "rule-1" }],
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests: sync tools in isolation
 // ---------------------------------------------------------------------------
@@ -475,6 +596,138 @@ describe("createCheckAccountTool — unit", () => {
   });
 });
 
+describe("price intelligence tools — unit", () => {
+  it("aggregates read-only price intelligence and surfaces automation guard", async () => {
+    const tool = createCheckPriceIntelligenceTool(createStubMlcPriceClient());
+
+    const result = await tool.execute({ sellerId: "plasticov", itemId: "MLC1001" });
+
+    expect(result).toMatchObject({
+      sellerId: "plasticov",
+      itemId: "MLC1001",
+      kind: "price-intelligence",
+      noMutationExecuted: true,
+    });
+    expect(result.salePrice).toMatchObject({ data: { amount: 10990 } });
+    expect(result.priceToWin).toMatchObject({ data: { priceToWin: 9990, status: "competing" } });
+    expect(result.automation).toMatchObject({ data: { active: true, ruleId: "rule-1" } });
+    expect(result.automationGuard).toMatch(/automatización de precio activa/i);
+  });
+
+  it("returns partial errors when optional pricing endpoints are unavailable", async () => {
+    const {
+      getItemSalePrice: _getItemSalePrice,
+      getItemPrices: _getItemPrices,
+      getItemPriceToWin: _getItemPriceToWin,
+      getPricingAutomation: _getPricingAutomation,
+      getPricingAutomationItems: _getPricingAutomationItems,
+      ...clientWithoutPricingEndpoints
+    } = createStubMlcPriceClient();
+    void [
+      _getItemSalePrice,
+      _getItemPrices,
+      _getItemPriceToWin,
+      _getPricingAutomation,
+      _getPricingAutomationItems,
+    ];
+    const tool = createCheckPriceIntelligenceTool(clientWithoutPricingEndpoints);
+
+    const result = await tool.execute({ sellerId: "plasticov", itemId: "MLC1001" });
+
+    expect(result).toMatchObject({ noMutationExecuted: true });
+    expect(result.partialErrors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ endpoint: "sale_price" }),
+        expect.objectContaining({ endpoint: "prices" }),
+        expect.objectContaining({ endpoint: "price_to_win" }),
+        expect.objectContaining({ endpoint: "pricing_automation" }),
+      ]),
+    );
+  });
+
+  it("keeps available signals when an individual price endpoint fails", async () => {
+    const tool = createCheckPriceIntelligenceTool({
+      ...createStubMlcPriceClient(),
+      getItemPriceToWin: async () => {
+        throw new Error("price_to_win unavailable");
+      },
+    });
+
+    const result = await tool.execute({ sellerId: "plasticov", itemId: "MLC1001" });
+
+    expect(result.salePrice).toMatchObject({ data: { amount: 10990 } });
+    expect(result.automation).toMatchObject({ data: { active: true } });
+    expect(result.partialErrors).toEqual([
+      { endpoint: "price_to_win", message: "price_to_win unavailable" },
+    ]);
+  });
+
+  it("sanitizes upstream pricing endpoint failures before returning them", async () => {
+    const tool = createCheckPriceIntelligenceTool({
+      ...createStubMlcPriceClient(),
+      getItemPriceToWin: async () => {
+        throw new Error(
+          `upstream failed Bearer secret-token-123 access_token=abc123 ` +
+            `{"client_secret":"json-secret","password":"json-password","raw_secret":"raw-value"} ` +
+            `postgres://user:db-password@localhost/db ` +
+            `mongodb+srv://user:mongo-password@example.mongodb.net/db ${"x".repeat(900)}`,
+        );
+      },
+    });
+
+    const result = await tool.execute({ sellerId: "plasticov", itemId: "MLC1001" });
+
+    expect(result.partialErrors).toEqual([
+      {
+        endpoint: "price_to_win",
+        message: expect.stringContaining("Bearer [REDACTED]"),
+      },
+    ]);
+    const partialError = (result.partialErrors as Array<{ message: string }>)[0]!;
+    expect(partialError.message).toContain("access_token=[REDACTED]");
+    expect(partialError.message).toContain('"client_secret":"[REDACTED]"');
+    expect(partialError.message).toContain('"password":"[REDACTED]"');
+    expect(partialError.message).toContain('"raw_secret":"[REDACTED]"');
+    expect(partialError.message).toContain("postgres://[REDACTED]");
+    expect(partialError.message).toContain("mongodb+srv://[REDACTED]");
+    expect(partialError.message).not.toContain("secret-token-123");
+    expect(partialError.message).not.toContain("abc123");
+    expect(partialError.message).not.toContain("json-secret");
+    expect(partialError.message).not.toContain("json-password");
+    expect(partialError.message).not.toContain("raw-value");
+    expect(partialError.message).not.toContain("db-password");
+    expect(partialError.message).not.toContain("mongo-password");
+    expect(partialError.message.length).toBeLessThanOrEqual(512);
+  });
+
+  it("sanitizes automated price item list failures before returning them", async () => {
+    const tool = createFindAutomatedPriceItemsTool({
+      ...createStubMlcPriceClient(),
+      getPricingAutomationItems: async () => {
+        throw new Error("boom client_secret=super-secret-token");
+      },
+    });
+
+    const result = await tool.execute({ sellerId: "plasticov" });
+
+    expect(result.error).toContain("client_secret=[REDACTED]");
+    expect(result.error).not.toContain("super-secret-token");
+  });
+
+  it("lists automated price items without mutations", async () => {
+    const tool = createFindAutomatedPriceItemsTool(createStubMlcPriceClient());
+
+    const result = await tool.execute({ sellerId: "plasticov", limit: 100 });
+
+    expect(result).toMatchObject({
+      noMutationExecuted: true,
+      data: { items: [{ itemId: "MLC1001", ruleId: "rule-1" }] },
+    });
+    expect(result.automationGuard).toMatch(/antes de editar un precio/i);
+    expect(result.summary).toMatch(/1 publicaciones/i);
+  });
+});
+
 describe("createAuditAllQualityTool — unit", () => {
   it("returns latest quality snapshot per item ranked from worst to best", async () => {
     const cortex = createGraphEngine(":memory:");
@@ -563,7 +816,9 @@ describe("createFindRelistOpportunitiesTool — unit", () => {
     const items = result.items as Array<Record<string, unknown>>;
 
     expect(items).toHaveLength(2);
-    expect(items.map((item) => item.itemId)).toEqual(expect.arrayContaining(["MLC2001", "MLC2002"]));
+    expect(items.map((item) => item.itemId)).toEqual(
+      expect.arrayContaining(["MLC2001", "MLC2002"]),
+    );
     expect(items.find((item) => item.itemId === "MLC2001")).toMatchObject({
       expiresAt: "2026-07-31",
       suggestedPrice: 19990,
@@ -608,9 +863,10 @@ describe("createFindRelistOpportunitiesTool — unit", () => {
 describe("sync tools — agent loop integration", () => {
   const systemPrompt = "Eres Plasticov, asistente comercial. Respondé en español.";
 
-  it("includes sync_product, sync_all, and check_account in tool map when configured", () => {
+  it("includes sync_product, sync_all, account, and MLC read tools in tool map when configured", () => {
     const engine = createStubSyncEngine();
     const mlClient = createStubMlClient();
+    const mlcClient = createStubMlcPriceClient();
 
     // We can't directly inspect the internal toolMap, but we verify the
     // agent creates without errors when sync tools are configured.
@@ -619,6 +875,7 @@ describe("sync tools — agent loop integration", () => {
       mockClient: true,
       syncEngine: engine,
       mlClient,
+      mlcClient,
     });
 
     // The converse method should work — sync tools are just extra tools.
