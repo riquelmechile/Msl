@@ -887,17 +887,24 @@ export async function generateDailyInsights(
 Plasticov/Maustian y generá 3-5 insights accionables en español. Cada insight debe:
 - Identificar un patrón o anomalía concreta
 - Explicar por qué importa para la utilidad neta
-- Recomendar una acción específica
+- Recomendar una acción específica (qué listing, qué cambiar, de qué valor a qué valor)
+- Incluir los datos que respaldan la recomendación
+
+Cuando corresponda, sugerí acciones concretas que el vendedor puede confirmar con "dale":
+- Cambios de precio: "MLC99281 bajar de $15.000 a $12.500 (margen 34%, +23% ventas esperadas)"
+- Ajustes de stock: "MLC77412 reponer 20 unidades (67% más visitas, stock crítico)"
+- Presupuesto de ads: "Campaña X subir daily_budget de $12.000 a $25.000 (ROAS 4.2)"
+- Reutilizar paused: "MLC84512 pausada (47 ventas) → reutilizar para nuevo producto"
 
 DATOS DEL NEGOCIO:
 ${JSON.stringify(context, null, 2)}
 
-Respondé en este formato:
-🔍 [Insight 1]
-💰 [Insight 2 - relacionado con margen/utilidad]
-📈 [Insight 3 - tendencia]
-⚠️ [Insight 4 - riesgo]
-🎯 [Insight 5 - oportunidad]`;
+Respondé en este formato exacto, máximo 5 insights:
+🔍 [Insight 1 - patrón detectado]
+💰 [Insight 2 - margen/utilidad con acción concreta]
+📈 [Insight 3 - tendencia con acción concreta]
+⚠️ [Insight 4 - riesgo con acción correctiva]
+🎯 [Insight 5 - oportunidad con acción concreta]`;
 
   try {
     const completion = await openai.chat.completions.create({

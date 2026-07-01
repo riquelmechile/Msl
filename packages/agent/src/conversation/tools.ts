@@ -385,18 +385,29 @@ export function createPrepareActionTool(): ToolDefinition {
             "refund",
             "listing-edit",
             "creative-publication",
+            "product-ads-action",
             "honey-pot-deploy",
             "probe-analysis",
           ],
           description:
             "Tipo de acción a ejecutar: cambio de precio, cambio de stock, " +
             "mensaje a cliente, cancelación, reembolso, edición de listing, " +
-            "o publicación creativa.",
+            "publicación creativa, o ajuste de Product Ads.",
         },
         targetType: {
           type: "string",
-          enum: ["listing", "order", "message", "creative-asset"],
-          description: "Tipo de entidad sobre la que se ejecuta la acción.",
+          enum: [
+            "listing",
+            "order",
+            "message",
+            "creative-asset",
+            "product-ads-campaign",
+            "product-ads-ad",
+          ],
+          description:
+            "Tipo de entidad sobre la que se ejecuta la acción. " +
+            "Usá 'product-ads-campaign' para ajustar campañas y " +
+            "'product-ads-ad' para anuncios individuales.",
         },
         targetId: {
           type: "string",
@@ -442,14 +453,22 @@ export function createPrepareActionTool(): ToolDefinition {
       const targetId = (args.targetId as string) ?? "";
 
       // Build the action target from the flat args.
-      const target: AgentProposal["action"]["target"] =
-        targetType === "listing"
-          ? { type: "listing", listingId: targetId }
-          : targetType === "order"
-            ? { type: "order", orderId: targetId }
-            : targetType === "message"
-              ? { type: "message", threadId: targetId }
-              : { type: "creative-asset", assetId: targetId };
+      const target: AgentProposal["action"]["target"] = (() => {
+        switch (targetType) {
+          case "listing":
+            return { type: "listing", listingId: targetId };
+          case "order":
+            return { type: "order", orderId: targetId };
+          case "message":
+            return { type: "message", threadId: targetId };
+          case "product-ads-campaign":
+            return { type: "product-ads-campaign", campaignId: targetId };
+          case "product-ads-ad":
+            return { type: "product-ads-ad", adId: targetId };
+          default:
+            return { type: "creative-asset", assetId: targetId };
+        }
+      })();
 
       const proposal: AgentProposal = {
         action: {

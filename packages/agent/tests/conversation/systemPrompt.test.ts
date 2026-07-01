@@ -84,9 +84,10 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/correcciones/i);
   });
 
-  it("contains hard rule 7: propose concrete actions, never generic", () => {
-    expect(prompt).toMatch(/acciones concretas/i);
-    expect(prompt).toMatch(/genéricas/i);
+  it("contains hard rule 7: data-driven actionable proposals", () => {
+    expect(prompt).toMatch(/Propuestas accionables basadas en datos/i);
+    expect(prompt).toMatch(/datos reales/i);
+    expect(prompt).toMatch(/utilidad neta/i);
   });
 });
 
