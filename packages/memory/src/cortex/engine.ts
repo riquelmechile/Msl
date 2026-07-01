@@ -601,12 +601,15 @@ export class GraphEngine {
   queryByMetadata(filters: {
     type?: string;
     itemId?: string;
+    sellerId?: string;
     status?: string;
     categoryId?: string;
     /** Only nodes whose metadata.capturedAt >= this ISO date */
     after?: string;
     /** Only nodes whose metadata.capturedAt <= this ISO date */
     before?: string;
+    /** Optional label prefix filter (LIKE prefix%). */
+    labelPrefix?: string;
     limit?: number;
   }): Array<{ id: number; label: string; metadata: Record<string, unknown> }> {
     try {
@@ -620,6 +623,10 @@ export class GraphEngine {
       if (filters.itemId !== undefined) {
         conditions.push("JSON_EXTRACT(metadata, '$.itemId') = ?");
         params.push(filters.itemId);
+      }
+      if (filters.sellerId !== undefined) {
+        conditions.push("JSON_EXTRACT(metadata, '$.sellerId') = ?");
+        params.push(filters.sellerId);
       }
       if (filters.status !== undefined) {
         conditions.push("JSON_EXTRACT(metadata, '$.status') = ?");
@@ -636,6 +643,10 @@ export class GraphEngine {
       if (filters.before !== undefined) {
         conditions.push("JSON_EXTRACT(metadata, '$.capturedAt') <= ?");
         params.push(filters.before);
+      }
+      if (filters.labelPrefix !== undefined) {
+        conditions.push("label LIKE ?");
+        params.push(`${filters.labelPrefix}%`);
       }
 
       let sql = "SELECT id, label, metadata FROM nodes";

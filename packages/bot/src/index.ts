@@ -67,6 +67,7 @@ export type TelegramBotEnv = Partial<
     | "MSL_CORTEX_SQLITE_PATH"
     | "MSL_CHAT_SELLER_ID"
     | "MSL_CHAT_SELLER_NAME"
+    | "MERCADOLIBRE_SOURCE_SELLER_ID"
     | "MERCADOLIBRE_TARGET_SELLER_ID"
     | "MERCADOLIBRE_ACCESS_TOKEN"
     | "MERCADOLIBRE_REFRESH_TOKEN"
@@ -194,13 +195,30 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   let ingestionHandle: { stop: () => void } | undefined;
 
   if (mlcClient && engine && mlcSellerId) {
+    // Build multi-seller config: include source + target when both are configured.
+    const sourceSellerId = env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
+    const targetSellerId = env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+
+    const allSellerIds: string[] = [mlcSellerId];
+    const sellerNames: Record<string, string> = { [mlcSellerId]: sellerName };
+
+    if (sourceSellerId && sourceSellerId !== mlcSellerId) {
+      allSellerIds.push(sourceSellerId);
+      sellerNames[sourceSellerId] = "Plasticov";
+    }
+    if (targetSellerId && targetSellerId !== mlcSellerId) {
+      allSellerIds.push(targetSellerId);
+      sellerNames[targetSellerId] = "Maustian";
+    }
+
     ingestionHandle = startBackgroundIngestion({
       mlcClient,
       engine,
       sendProactiveMessage: (chatId, text) =>
         botHandle.sendProactiveMessage(chatId, text),
       listActiveChats: () => botHandle.listActiveChats(),
-      sellerIds: [mlcSellerId],
+      sellerIds: allSellerIds,
+      sellerNames,
       intervalMs: 6 * 60 * 60 * 1000, // 6 hours
     });
   }

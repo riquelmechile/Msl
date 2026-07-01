@@ -9,9 +9,24 @@ export type BackgroundIngestionConfig = {
   sendProactiveMessage: (chatId: number, text: string) => Promise<void>;
   listActiveChats: () => Promise<number[]>;
   sellerIds: string[];
+  /** Human-readable names for seller IDs: `{ [sellerId]: "Plasticov" | "Maustian" }`. */
+  sellerNames?: Record<string, string>;
   /** Interval in milliseconds between ingestion runs. Default: 6 hours. */
   intervalMs?: number;
 };
+
+// ── Constants ──────────────────────────────────────────────────────────
+
+const LISTING_SNAPSHOT_KEEP = 30; // per item
+const VISIT_SNAPSHOT_KEEP = 30; // per item
+const ORDER_SNAPSHOT_KEEP_TOTAL = 90;
+const TREND_WINDOW = 3; // consecutive periods for trend detection
+const VISIT_SPIKE_THRESHOLD = 0.5; // ±50%
+const SEASONAL_PEAK_MULTIPLIER = 1.5; // >50% above yearly average
+const SEASONAL_RUN_EVERY_DAYS = 7;
+const SEASONAL_ADVANCE_DAYS = 30; // alert N days before peak
+const PRICE_CHANGE_THRESHOLD = 0.2; // ±20%
+const SIMILAR_PRICE_RANGE = 0.2; // ±20% for cross-account matching
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -32,12 +47,795 @@ function normalizeVisitsDetail(
   return detail ?? [];
 }
 
+/** Compute percentage change from previous value. Returns null if prev is 0. */
+function pctChange(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return (current - previous) / previous;
+}
+
+/**
+ * Calculate text similarity between two strings (case-insensitive).
+ * Simple token-overlap ratio for cross-account listing matching.
+ */
+function titleSimilarity(a: string, b: string): number {
+  const tokensA = new Set(a.toLowerCase().split(/\s+/).filter((t) => t.length >= 2));
+  const tokensB = new Set(b.toLowerCase().split(/\s+/).filter((t) => t.length >= 2));
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+  let overlap = 0;
+  for (const t of tokensA) {
+    if (tokensB.has(t)) overlap++;
+  }
+  return overlap / Math.max(tokensA.size, tokensB.size);
+}
+
+// ── Core: process one seller's listings and visits ─────────────────────
+
+interface SellerProcessResult {
+  listings: ReadonlyArray<MlcListingSummary>;
+  alerts: string[];
+}
+
+async function processSellerListings(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  sellerName: string,
+): Promise<SellerProcessResult> {
+  const alerts: string[] = [];
+
+  const snapshot = await config.mlcClient.getListings(sellerId);
+  const listings = normalizeListings(snapshot.data);
+
+  for (const listing of listings) {
+    const itemId = listing.id;
+    if (!itemId) continue;
+
+    const capturedAt = new Date().toISOString();
+    const snapshotLabel = `listing_snapshot_${itemId}_${todayLabel()}`;
+
+    // ── Create listing snapshot node ─────────────────────────
+    config.engine.getOrCreateNode(snapshotLabel, {
+      type: "listing_snapshot",
+      itemId,
+      sellerId,
+      sellerName,
+      title: listing.title ?? "",
+      price: listing.price ?? 0,
+      currencyId: listing.currencyId ?? "CLP",
+      status: listing.status ?? "unknown",
+      categoryId: listing.categoryId ?? "",
+      listingTypeId: listing.listingTypeId ?? "",
+      capturedAt,
+    });
+
+    // ── Find previous snapshot for comparison ───────────────
+    const previousSnapshots = config.engine.queryByMetadata({
+      type: "listing_snapshot",
+      itemId,
+      limit: 2,
+    });
+
+    // Index 0 is the one we just created, index 1 is the previous
+    const prevSnapshot =
+      previousSnapshots.length >= 2 ? previousSnapshots[1] : null;
+
+    if (prevSnapshot?.metadata) {
+      const prevMeta = prevSnapshot.metadata as Record<string, unknown>;
+
+      // ── Detect paused with sales history ──────────────────
+      const newStatus = listing.status ?? "unknown";
+      const prevStatus = String(prevMeta.status ?? "unknown");
+      const salesCount = Number(prevMeta.salesCount ?? 0);
+
+      if (
+        newStatus === "paused" &&
+        prevStatus !== "paused" &&
+        salesCount > 0
+      ) {
+        alerts.push(
+          `${itemId} (${sellerName}) se pausó. Tenía ${salesCount} ventas — ¿reutilizar?`,
+        );
+      }
+
+      // ── Detect reactivation ───────────────────────────────
+      if (newStatus === "active" && prevStatus === "paused") {
+        alerts.push(`${itemId} (${sellerName}) volvió a activarse`);
+      }
+
+      // ── Detect significant price change (>20%) ────────────
+      const newPrice = listing.price ?? 0;
+      const prevPrice = Number(prevMeta.price ?? 0);
+      if (prevPrice > 0 && newPrice > 0) {
+        const change = Math.abs(newPrice - prevPrice) / prevPrice;
+        if (change > PRICE_CHANGE_THRESHOLD) {
+          const direction = newPrice > prevPrice ? "subió" : "bajó";
+          const pct = Math.round(change * 100);
+          alerts.push(
+            `${itemId} (${sellerName}) ${direction} de precio en ${pct}% (${prevPrice} → ${newPrice})`,
+          );
+        }
+      }
+    }
+
+    // ── Visits snapshot ─────────────────────────────────────
+    if (typeof config.mlcClient.getItemVisits === "function") {
+      try {
+        const visitsSnapshot = await config.mlcClient.getItemVisits(
+          sellerId,
+          itemId,
+        );
+        const visitsSummary = Array.isArray(visitsSnapshot.data)
+          ? visitsSnapshot.data[0]
+          : visitsSnapshot.data;
+
+        if (visitsSummary) {
+          const detail = normalizeVisitsDetail(visitsSummary.visitsDetail);
+          const totalVisits = visitsSummary.totalVisits ?? 0;
+
+          const visitLabel = `visit_snapshot_${itemId}_${todayLabel()}`;
+          config.engine.getOrCreateNode(visitLabel, {
+            type: "visit_snapshot",
+            itemId,
+            sellerId,
+            sellerName,
+            totalVisits,
+            visitsDetail: detail,
+            capturedAt,
+          });
+
+          // ── Visit trend detection (3+ periods) ────────────
+          const recentVisits = config.engine.queryByMetadata({
+            type: "visit_snapshot",
+            itemId,
+            limit: TREND_WINDOW + 1, // current + N previous
+          });
+
+          if (recentVisits.length >= TREND_WINDOW) {
+            const values = recentVisits
+              .slice(0, TREND_WINDOW)
+              .map(
+                (n) =>
+                  (n.metadata as Record<string, unknown>).totalVisits as number,
+              )
+              .filter((v) => typeof v === "number" && v > 0);
+
+            if (values.length >= TREND_WINDOW) {
+              // Determine direction: comparing consecutive pairs
+              let trendingUp = true;
+              let trendingDown = true;
+              for (let i = 0; i < values.length - 1; i++) {
+                const change = pctChange(values[i]!, values[i + 1]!);
+                if (change === null || change <= 0) trendingUp = false;
+                if (change === null || change >= 0) trendingDown = false;
+              }
+
+              const first = values[0]!;
+              const last = values[values.length - 1]!;
+
+              if (trendingUp) {
+                const pct = Math.round(
+                  ((first - last) / last) * 100,
+                );
+                alerts.push(
+                  `📈 ${itemId} (${sellerName}) lleva ${TREND_WINDOW} períodos subiendo (+${pct}% total) — tendencia alcista confirmada`,
+                );
+              } else if (trendingDown) {
+                const pct = Math.round(
+                  ((last - first) / last) * 100,
+                );
+                alerts.push(
+                  `📉 ${itemId} (${sellerName}) lleva ${TREND_WINDOW} períodos bajando (${pct}% total) — tendencia bajista`,
+                );
+              }
+            }
+          }
+
+          // ── Single-period spike/drop (legacy behavior) ────
+          const previousVisits = config.engine.queryByMetadata({
+            type: "visit_snapshot",
+            itemId,
+            limit: 2,
+          });
+
+          const prevVisit =
+            previousVisits.length >= 2 ? previousVisits[1] : null;
+
+          if (prevVisit?.metadata) {
+            const prevVisitMeta = prevVisit.metadata as Record<
+              string,
+              unknown
+            >;
+            const prevTotal = Number(prevVisitMeta.totalVisits ?? 0);
+
+            if (prevTotal > 0) {
+              const visitChange = (totalVisits - prevTotal) / prevTotal;
+
+              if (visitChange > VISIT_SPIKE_THRESHOLD) {
+                const pct = Math.round(visitChange * 100);
+                alerts.push(
+                  `📈 ${itemId} (${sellerName}) +${pct}% visitas esta semana. ¿Aumentar precio?`,
+                );
+              } else if (visitChange < -VISIT_SPIKE_THRESHOLD) {
+                const pct = Math.round(Math.abs(visitChange) * 100);
+                alerts.push(
+                  `📉 ${itemId} (${sellerName}) -${pct}% visitas. ¿Revisar título/fotos/ads?`,
+                );
+              }
+            }
+          }
+        }
+      } catch {
+        // Visits unavailable for this item — skip silently
+      }
+    }
+  }
+
+  return { listings, alerts };
+}
+
+// ── Order history snapshots ────────────────────────────────────────────
+
+async function ingestOrderSnapshots(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  sellerName: string,
+): Promise<{ alerts: string[]; orderCount: number; totalAmount: number }> {
+  const alerts: string[] = [];
+
+  try {
+    const ordersSnapshot = await config.mlcClient.getOrders(sellerId);
+    const orders = ordersSnapshot.data;
+
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return { alerts, orderCount: 0, totalAmount: 0 };
+    }
+
+    const capturedAt = new Date().toISOString();
+    let totalAmount = 0;
+
+    // Build category breakdown by cross-referencing with Cortex listings
+    const categoryMap = new Map<string, { orderCount: number; totalAmount: number }>();
+
+    for (const order of orders) {
+      const amount = order.totalAmount ?? 0;
+      totalAmount += amount;
+
+      // Look up category from listing snapshots
+      // We use seller-scoped listing snapshots; if an order's items are not
+      // in our snapshots yet, category is "unknown".
+      const listingSnaps = config.engine.queryByMetadata({
+        type: "listing_snapshot",
+        sellerId,
+        limit: 1,
+      });
+
+      // Use the first listing snapshot category as fallback — in practice,
+      // most orders for a seller come from that seller's listings.
+      let catId = "unknown";
+      const firstSnap = listingSnaps[0];
+      if (firstSnap) {
+        catId = String(
+          (firstSnap.metadata as Record<string, unknown>).categoryId ?? "unknown",
+        );
+      }
+
+      const existing = categoryMap.get(catId);
+      if (existing) {
+        existing.orderCount++;
+        existing.totalAmount += amount;
+      } else {
+        categoryMap.set(catId, { orderCount: 1, totalAmount: amount });
+      }
+    }
+
+    const categoryBreakdown = Array.from(categoryMap.entries()).map(
+      ([categoryId, data]) => ({
+        categoryId,
+        orderCount: data.orderCount,
+        totalAmount: data.totalAmount,
+      }),
+    );
+
+    const orderLabel = `order_snapshot_${sellerId}_${todayLabel()}`;
+    config.engine.getOrCreateNode(orderLabel, {
+      type: "order_snapshot",
+      sellerId,
+      sellerName,
+      totalOrders: orders.length,
+      totalAmount,
+      categoryBreakdown,
+      capturedAt,
+    });
+
+    // ── Category star alert ─────────────────────────────────
+    if (categoryBreakdown.length > 0) {
+      const topCategory = categoryBreakdown.reduce((a, b) =>
+        a.totalAmount > b.totalAmount ? a : b,
+      );
+      alerts.push(
+        `⭐ Categoría estrella (${sellerName}): ${topCategory.categoryId} con $${Math.round(topCategory.totalAmount).toLocaleString("es-CL")} CLP en ${topCategory.orderCount} órdenes`,
+      );
+    }
+
+    return { alerts, orderCount: orders.length, totalAmount };
+  } catch {
+    console.error(
+      `[background-ingestion] Failed to fetch orders for seller ${sellerId}`,
+    );
+    return { alerts, orderCount: 0, totalAmount: 0 };
+  }
+}
+
+// ── Cross-account comparison ───────────────────────────────────────────
+
+interface CrossAccountMatch {
+  plasticovItem: MlcListingSummary;
+  maustianItem: MlcListingSummary;
+  similarity: number;
+}
+
+function matchCrossAccountListings(
+  plasticovListings: ReadonlyArray<MlcListingSummary>,
+  maustianListings: ReadonlyArray<MlcListingSummary>,
+): CrossAccountMatch[] {
+  const matches: CrossAccountMatch[] = [];
+  const usedMaustianIds = new Set<string>();
+
+  for (const pItem of plasticovListings) {
+    if (!pItem.id) continue;
+    const pTitle = (pItem.title ?? "").toLowerCase();
+    const pCategory = pItem.categoryId ?? "";
+    const pPrice = pItem.price ?? 0;
+
+    let bestMatch: CrossAccountMatch | null = null;
+    let bestScore = 0;
+
+    for (const mItem of maustianListings) {
+      if (!mItem.id || usedMaustianIds.has(mItem.id)) continue;
+      const mTitle = (mItem.title ?? "").toLowerCase();
+      const mCategory = mItem.categoryId ?? "";
+      const mPrice = mItem.price ?? 0;
+
+      // Title similarity
+      const titleSim = titleSimilarity(pTitle, mTitle);
+
+      // Category match bonus
+      const catMatch = pCategory && mCategory && pCategory === mCategory ? 0.3 : 0;
+
+      // Price similarity
+      let priceSim = 0;
+      if (pPrice > 0 && mPrice > 0) {
+        const diff = Math.abs(pPrice - mPrice) / pPrice;
+        if (diff <= SIMILAR_PRICE_RANGE) {
+          priceSim = 0.2;
+        }
+      }
+
+      const score = titleSim * 0.5 + catMatch + priceSim;
+
+      if (score > 0.3 && score > bestScore) {
+        bestScore = score;
+        bestMatch = {
+          plasticovItem: pItem,
+          maustianItem: mItem,
+          similarity: score,
+        };
+      }
+    }
+
+    if (bestMatch) {
+      matches.push(bestMatch);
+      usedMaustianIds.add(bestMatch.maustianItem.id!);
+    }
+  }
+
+  return matches;
+}
+
+async function runCrossAccountComparison(
+  config: BackgroundIngestionConfig,
+  plasticovId: string,
+  plasticovName: string,
+  plasticovListings: ReadonlyArray<MlcListingSummary>,
+  maustianId: string,
+  maustianName: string,
+  maustianListings: ReadonlyArray<MlcListingSummary>,
+): Promise<string[]> {
+  const alerts: string[] = [];
+  const matches = matchCrossAccountListings(plasticovListings, maustianListings);
+
+  const matchedMaustianIds = new Set(
+    matches.map((m) => m.maustianItem.id!).filter(Boolean),
+  );
+  const unmatchedPlasticov = plasticovListings.filter(
+    (l) =>
+      l.id &&
+      !matches.some(
+        (m) => m.plasticovItem.id === l.id,
+      ),
+  );
+  const unmatchedMaustian = maustianListings.filter(
+    (l) => l.id && !matchedMaustianIds.has(l.id),
+  );
+
+  // Process matches
+  for (const match of matches) {
+    const pId = match.plasticovItem.id!;
+    const mId = match.maustianItem.id!;
+    const pLabel = `listing_snapshot_${pId}_${todayLabel()}`;
+    const mLabel = `listing_snapshot_${mId}_${todayLabel()}`;
+
+    // Create Cortex edge between matching listings
+    try {
+      const pNode = config.engine.getOrCreateNode(pLabel, {});
+      const mNode = config.engine.getOrCreateNode(mLabel, {});
+      if (pNode.id && mNode.id) {
+        try {
+          config.engine.createEdge(pNode.id, mNode.id);
+        } catch {
+          // Edge already exists — ignore
+        }
+      }
+    } catch {
+      // Node or edge creation failed — skip
+    }
+
+    // ── Visit comparison ────────────────────────────────────
+    const pVisits = config.engine.queryByMetadata({
+      type: "visit_snapshot",
+      itemId: pId,
+      limit: 1,
+    });
+    const mVisits = config.engine.queryByMetadata({
+      type: "visit_snapshot",
+      itemId: mId,
+      limit: 1,
+    });
+
+    const pVisitsNode = pVisits[0];
+    const mVisitsNode = mVisits[0];
+
+    const pTotal =
+      pVisitsNode
+        ? Number(
+            (pVisitsNode.metadata as Record<string, unknown>).totalVisits ?? 0,
+          )
+        : 0;
+    const mTotal =
+      mVisitsNode
+        ? Number(
+            (mVisitsNode.metadata as Record<string, unknown>).totalVisits ?? 0,
+          )
+        : 0;
+
+    if (pTotal > 0 || mTotal > 0) {
+      alerts.push(
+        `🔍 ${pId} (${plasticovName}): ${pTotal} visitas vs ${mId} (${maustianName}): ${mTotal} visitas`,
+      );
+    }
+
+    // ── Price comparison ────────────────────────────────────
+    const pPrice = match.plasticovItem.price ?? 0;
+    const mPrice = match.maustianItem.price ?? 0;
+    if (pPrice > 0 && mPrice > 0 && pPrice !== mPrice) {
+      const diff = Math.abs(pPrice - mPrice) / pPrice;
+      if (diff > 0.01) {
+        alerts.push(
+          `⚠️ ${mId} (${maustianName}) tiene precio distinto: $${mPrice} vs $${pPrice} en ${plasticovName}`,
+        );
+      }
+    }
+
+    // ── Status comparison ───────────────────────────────────
+    const pStatus = match.plasticovItem.status ?? "unknown";
+    const mStatus = match.maustianItem.status ?? "unknown";
+    if (pStatus !== mStatus) {
+      alerts.push(
+        `⚠️ ${mId} (${maustianName}) está ${mStatus} pero ${pId} (${plasticovName}) está ${pStatus}`,
+      );
+    }
+  }
+
+  // ── Unmatched alerts ──────────────────────────────────────
+  for (const listing of unmatchedPlasticov) {
+    if (!listing.id) continue;
+    const visits = config.engine.queryByMetadata({
+      type: "visit_snapshot",
+      itemId: listing.id,
+      limit: 1,
+    });
+    const visitsNode = visits[0];
+    const totalVisits =
+      visitsNode
+        ? Number(
+            (visitsNode.metadata as Record<string, unknown>).totalVisits ?? 0,
+          )
+        : 0;
+    if (totalVisits > 0) {
+      alerts.push(
+        `🔄 ${listing.id} (${plasticovName}, ${totalVisits} visitas) no tiene equivalente en ${maustianName} — ¿sincronizar?`,
+      );
+    }
+  }
+
+  for (const listing of unmatchedMaustian) {
+    if (!listing.id) continue;
+    alerts.push(
+      `🔄 ${listing.id} (${maustianName}) no tiene equivalente en ${plasticovName} — ¿está solo en esta cuenta?`,
+    );
+  }
+
+  return alerts;
+}
+
+// ── Seasonal pattern detection ─────────────────────────────────────────
+
+async function runSeasonalAnalysis(
+  config: BackgroundIngestionConfig,
+): Promise<string[]> {
+  const alerts: string[] = [];
+  const now = new Date();
+
+  // Check if we should run (every 7 days)
+  const markerNodes = config.engine.queryByMetadata({
+    type: "seasonal_marker",
+    limit: 1,
+  });
+
+  const firstMarker = markerNodes[0];
+  if (firstMarker) {
+    const markerMeta = firstMarker.metadata as Record<string, unknown>;
+    const lastRun = String(markerMeta.lastRun ?? "");
+    if (lastRun) {
+      const lastRunDate = new Date(lastRun);
+      const daysSince = (now.getTime() - lastRunDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSince < SEASONAL_RUN_EVERY_DAYS) {
+        return alerts;
+      }
+    }
+  }
+
+  // Fetch all order snapshots from last 2+ years
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const after = twoYearsAgo.toISOString().slice(0, 10);
+
+  const orderSnaps = config.engine.queryByMetadata({
+    type: "order_snapshot",
+    after,
+    limit: 1000,
+  });
+
+  if (orderSnaps.length < 12) {
+    // Not enough data for seasonal analysis — update marker and skip
+    config.engine.getOrCreateNode("seasonal_marker", {
+      type: "seasonal_marker",
+      lastRun: now.toISOString(),
+    });
+    return alerts;
+  }
+
+  // Group by month and category
+  type MonthlyData = {
+    month: number; // 0-11
+    year: number;
+    orderCount: number;
+    totalAmount: number;
+  };
+
+  const byCategoryMonth = new Map<string, MonthlyData[]>();
+
+  for (const snap of orderSnaps) {
+    const meta = snap.metadata as Record<string, unknown>;
+    const capturedAt = String(meta.capturedAt ?? "");
+    const breakdown =
+      (meta.categoryBreakdown as Array<{
+        categoryId: string;
+        orderCount: number;
+        totalAmount: number;
+      }>) ?? [];
+
+    const date = new Date(capturedAt);
+    if (isNaN(date.getTime())) continue;
+
+    const month = date.getMonth();
+    const year = date.getFullYear();
+
+    for (const cat of breakdown) {
+      const key = cat.categoryId;
+      let monthly = byCategoryMonth.get(key);
+      if (!monthly) {
+        monthly = [];
+        byCategoryMonth.set(key, monthly);
+      }
+      monthly.push({
+        month,
+        year,
+        orderCount: cat.orderCount,
+        totalAmount: cat.totalAmount,
+      });
+    }
+  }
+
+  // Detect seasonal patterns per category/month
+  for (const [categoryId, monthlyData] of byCategoryMonth) {
+    // Calculate yearly average per month
+    const monthlyAvg = new Map<number, { total: number; years: number[] }>();
+    for (const d of monthlyData) {
+      const existing = monthlyAvg.get(d.month);
+      if (existing) {
+        existing.total += d.orderCount;
+        existing.years.push(d.year);
+      } else {
+        monthlyAvg.set(d.month, { total: d.orderCount, years: [d.year] });
+      }
+    }
+
+    // Global yearly average across all months
+    let globalTotal = 0;
+    let globalCount = 0;
+    for (const [, data] of monthlyAvg) {
+      globalTotal += data.total;
+      globalCount += data.years.length;
+    }
+    const globalAvg = globalCount > 0 ? globalTotal / globalCount : 0;
+
+    // Find months with significantly higher orders
+    for (const [month, data] of monthlyAvg) {
+      const monthlyAvgValue = data.total / data.years.length;
+      if (
+        globalAvg > 0 &&
+        monthlyAvgValue > globalAvg * SEASONAL_PEAK_MULTIPLIER &&
+        data.years.length >= 2
+      ) {
+        const confidence = Math.min(
+          1.0,
+          (monthlyAvgValue / globalAvg - 1) * 0.5 + 0.5,
+        );
+
+        const patternLabel = `seasonal_pattern_${categoryId}_${month}`;
+        config.engine.getOrCreateNode(patternLabel, {
+          type: "seasonal_pattern",
+          categoryId,
+          month,
+          avgOrderCount: Math.round(monthlyAvgValue),
+          confidence,
+          years: data.years,
+          detectedAt: now.toISOString(),
+        });
+
+        // Proactive alert 30 days before peak
+        const peakMonth = month;
+        const currentMonth = now.getMonth();
+        const monthsUntilPeak =
+          peakMonth >= currentMonth
+            ? peakMonth - currentMonth
+            : 12 - currentMonth + peakMonth;
+        const daysUntilPeak = monthsUntilPeak * 30;
+
+        if (daysUntilPeak <= SEASONAL_ADVANCE_DAYS && daysUntilPeak >= 0) {
+          const pctAbove = Math.round(
+            ((monthlyAvgValue - globalAvg) / globalAvg) * 100,
+          );
+          alerts.push(
+            `📅 Estacionalidad detectada: ${categoryId} pico en mes ${month + 1}. ` +
+              `Últimos ${data.years.length} años: +${pctAbove}% órdenes vs promedio. ` +
+              `Prepará stock y campañas.`,
+          );
+        }
+      }
+    }
+  }
+
+  // Update seasonal marker
+  config.engine.getOrCreateNode("seasonal_marker", {
+    type: "seasonal_marker",
+    lastRun: now.toISOString(),
+  });
+
+  return alerts;
+}
+
+// ── Pruning ────────────────────────────────────────────────────────────
+
+async function pruneSnapshots(config: BackgroundIngestionConfig): Promise<void> {
+  const db = config.engine.db;
+
+  // Prune listing_snapshot per item (keep last 30)
+  const listingNodes = config.engine.queryByMetadata({
+    type: "listing_snapshot",
+    limit: 10000,
+  });
+
+  const byItem = new Map<string, Array<{ id: number; capturedAt: string }>>();
+  for (const node of listingNodes) {
+    const meta = node.metadata as Record<string, unknown>;
+    const itemId = String(meta.itemId ?? "");
+    const capturedAt = String(meta.capturedAt ?? "");
+    if (!itemId) continue;
+    let entries = byItem.get(itemId);
+    if (!entries) {
+      entries = [];
+      byItem.set(itemId, entries);
+    }
+    entries.push({ id: node.id, capturedAt });
+  }
+
+  for (const [, entries] of byItem) {
+    if (entries.length <= LISTING_SNAPSHOT_KEEP) continue;
+    // Sort newest first, keep first N, delete rest
+    entries.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+    const toDelete = entries.slice(LISTING_SNAPSHOT_KEEP);
+    const deleteStmt = db.prepare("DELETE FROM nodes WHERE id = ?");
+    for (const entry of toDelete) {
+      deleteStmt.run(entry.id);
+    }
+  }
+
+  // Prune visit_snapshot per item (keep last 30)
+  const visitNodes = config.engine.queryByMetadata({
+    type: "visit_snapshot",
+    limit: 10000,
+  });
+
+  const byVisitItem = new Map<string, Array<{ id: number; capturedAt: string }>>();
+  for (const node of visitNodes) {
+    const meta = node.metadata as Record<string, unknown>;
+    const itemId = String(meta.itemId ?? "");
+    const capturedAt = String(meta.capturedAt ?? "");
+    if (!itemId) continue;
+    let entries = byVisitItem.get(itemId);
+    if (!entries) {
+      entries = [];
+      byVisitItem.set(itemId, entries);
+    }
+    entries.push({ id: node.id, capturedAt });
+  }
+
+  for (const [, entries] of byVisitItem) {
+    if (entries.length <= VISIT_SNAPSHOT_KEEP) continue;
+    entries.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+    const toDelete = entries.slice(VISIT_SNAPSHOT_KEEP);
+    const deleteStmt = db.prepare("DELETE FROM nodes WHERE id = ?");
+    for (const entry of toDelete) {
+      deleteStmt.run(entry.id);
+    }
+  }
+
+  // Prune order_snapshot (keep last 90 total)
+  const orderNodes = config.engine.queryByMetadata({
+    type: "order_snapshot",
+    limit: ORDER_SNAPSHOT_KEEP_TOTAL + 50,
+  });
+
+  if (orderNodes.length > ORDER_SNAPSHOT_KEEP_TOTAL) {
+    orderNodes.sort((a, b) => {
+      const aTime = String(
+        (a.metadata as Record<string, unknown>).capturedAt ?? "",
+      );
+      const bTime = String(
+        (b.metadata as Record<string, unknown>).capturedAt ?? "",
+      );
+      return bTime.localeCompare(aTime);
+    });
+    const toDelete = orderNodes.slice(ORDER_SNAPSHOT_KEEP_TOTAL);
+    const deleteStmt = db.prepare("DELETE FROM nodes WHERE id = ?");
+    for (const entry of toDelete) {
+      deleteStmt.run(entry.id);
+    }
+  }
+
+  // Also clean up orphaned edges
+  db.prepare(
+    "DELETE FROM edges WHERE source NOT IN (SELECT id FROM nodes) OR target NOT IN (SELECT id FROM nodes)",
+  ).run();
+}
+
 // ── Worker ─────────────────────────────────────────────────────────────
 
 /**
- * Start a background ingestion worker that periodically syncs all listings
- * into Cortex and detects anomalies (pauses, reactivations, price changes,
- * visit spikes/drops).
+ * Start a background ingestion worker that periodically syncs all listings,
+ * visits, and orders into Cortex. Detects anomalies, cross-account gaps,
+ * seasonal patterns, and pushes proactive alerts to active Telegram chats.
  *
  * Returns a `stop` handle to cancel the interval timer.
  */
@@ -45,166 +843,102 @@ export function startBackgroundIngestion(
   config: BackgroundIngestionConfig,
 ): { stop: () => void } {
   const intervalMs = config.intervalMs ?? 6 * 60 * 60 * 1000; // 6 hours
+  const sellerNames = config.sellerNames ?? {};
 
   const run = async () => {
     const runStart = Date.now();
     let totalListings = 0;
+    let totalOrders = 0;
     const alerts: string[] = [];
 
+    // Accumulate all listing data for cross-account comparison
+    const sellerListingMap = new Map<string, ReadonlyArray<MlcListingSummary>>();
+
+    // ── Phase 1: Process each seller ─────────────────────────
     for (const sellerId of config.sellerIds) {
+      const sellerName = sellerNames[sellerId] ?? sellerId;
+
       try {
-        // ── Fetch all listings ────────────────────────────────
-        const snapshot = await config.mlcClient.getListings(sellerId);
-        const listings = normalizeListings(snapshot.data);
+        // ── Listings & visits ──────────────────────────────
+        const result = await processSellerListings(
+          config,
+          sellerId,
+          sellerName,
+        );
+        sellerListingMap.set(sellerId, result.listings);
+        totalListings += result.listings.length;
+        alerts.push(...result.alerts);
 
-        for (const listing of listings) {
-          totalListings++;
-          const itemId = listing.id;
-
-          if (!itemId) continue;
-
-          const capturedAt = new Date().toISOString();
-          const snapshotLabel = `listing_snapshot_${itemId}_${todayLabel()}`;
-
-          // ── Create snapshot node ─────────────────────────────
-          config.engine.getOrCreateNode(snapshotLabel, {
-            type: "listing_snapshot",
-            itemId,
-            title: listing.title ?? "",
-            price: listing.price ?? 0,
-            currencyId: listing.currencyId ?? "CLP",
-            status: listing.status ?? "unknown",
-            categoryId: listing.categoryId ?? "",
-            listingTypeId: listing.listingTypeId ?? "",
-            capturedAt,
-          });
-
-          // ── Find previous snapshot for comparison ────────────
-          const previousSnapshots = config.engine.queryByMetadata({
-            type: "listing_snapshot",
-            itemId,
-            limit: 2, // Get last 2 so we can compare with the one just before
-          });
-
-          // Previous snapshot is index 1 (index 0 is the one we just created)
-          const prevSnapshot =
-            previousSnapshots.length >= 2 ? previousSnapshots[1] : null;
-
-          if (prevSnapshot?.metadata) {
-            const prevMeta = prevSnapshot.metadata as Record<string, unknown>;
-
-            // ── Detect paused with sales history ───────────────
-            const newStatus = listing.status ?? "unknown";
-            const prevStatus = String(prevMeta.status ?? "unknown");
-            const salesCount = Number(prevMeta.salesCount ?? 0);
-
-            if (
-              newStatus === "paused" &&
-              prevStatus !== "paused" &&
-              salesCount > 0
-            ) {
-              alerts.push(
-                `${itemId} se pausó. Tenía ${salesCount} ventas — ¿reutilizar?`,
-              );
-            }
-
-            // ── Detect reactivation ────────────────────────────
-            if (
-              newStatus === "active" &&
-              prevStatus === "paused"
-            ) {
-              alerts.push(`${itemId} volvió a activarse`);
-            }
-
-            // ── Detect significant price change (>20%) ─────────
-            const newPrice = listing.price ?? 0;
-            const prevPrice = Number(prevMeta.price ?? 0);
-            if (prevPrice > 0 && newPrice > 0) {
-              const change = Math.abs(newPrice - prevPrice) / prevPrice;
-              if (change > 0.2) {
-                const direction = newPrice > prevPrice ? "subió" : "bajó";
-                const pct = Math.round(change * 100);
-                alerts.push(
-                  `${itemId} ${direction} de precio en ${pct}% (${prevPrice} → ${newPrice})`,
-                );
-              }
-            }
-          }
-
-          // ── Visits snapshot ──────────────────────────────────
-          if (typeof config.mlcClient.getItemVisits === "function") {
-            try {
-              const visitsSnapshot = await config.mlcClient.getItemVisits(
-                sellerId,
-                itemId,
-              );
-              const visitsSummary = Array.isArray(visitsSnapshot.data)
-                ? visitsSnapshot.data[0]
-                : visitsSnapshot.data;
-
-              if (visitsSummary) {
-                const detail = normalizeVisitsDetail(visitsSummary.visitsDetail);
-                const totalVisits = visitsSummary.totalVisits ?? 0;
-
-                const visitLabel = `visit_snapshot_${itemId}_${todayLabel()}`;
-                config.engine.getOrCreateNode(visitLabel, {
-                  type: "visit_snapshot",
-                  itemId,
-                  totalVisits,
-                  visitsDetail: detail,
-                  capturedAt,
-                });
-
-                // ── Detect visit anomalies ─────────────────────
-                const previousVisits = config.engine.queryByMetadata({
-                  type: "visit_snapshot",
-                  itemId,
-                  limit: 2,
-                });
-
-                const prevVisit =
-                  previousVisits.length >= 2 ? previousVisits[1] : null;
-
-                if (prevVisit?.metadata) {
-                  const prevVisitMeta = prevVisit.metadata as Record<
-                    string,
-                    unknown
-                  >;
-                  const prevTotal = Number(prevVisitMeta.totalVisits ?? 0);
-
-                  if (prevTotal > 0) {
-                    const visitChange =
-                      (totalVisits - prevTotal) / prevTotal;
-
-                    if (visitChange > 0.5) {
-                      const pct = Math.round(visitChange * 100);
-                      alerts.push(
-                        `📈 ${itemId} +${pct}% visitas esta semana. ¿Aumentar precio?`,
-                      );
-                    } else if (visitChange < -0.5) {
-                      const pct = Math.round(Math.abs(visitChange) * 100);
-                      alerts.push(
-                        `📉 ${itemId} -${pct}% visitas. ¿Revisar título/fotos/ads?`,
-                      );
-                    }
-                  }
-                }
-              }
-            } catch {
-              // Visits unavailable for this item — skip silently
-            }
-          }
-        }
+        // ── Orders ─────────────────────────────────────────
+        const orderResult = await ingestOrderSnapshots(
+          config,
+          sellerId,
+          sellerName,
+        );
+        totalOrders += orderResult.orderCount;
+        alerts.push(...orderResult.alerts);
       } catch (err) {
         console.error(
-          `[background-ingestion] Failed to fetch listings for seller ${sellerId}:`,
+          `[background-ingestion] Failed to process seller ${sellerId}:`,
           err instanceof Error ? err.message : String(err),
         );
         // Skip this seller cycle, retry next interval
       }
     }
 
-    // ── Send proactive alerts to all active chats ──────────────
+    // ── Phase 2: Cross-account comparison ────────────────────
+    const sellerIds = config.sellerIds;
+    if (sellerIds.length >= 2) {
+      const firstId = sellerIds[0]!;
+      const secondId = sellerIds[1]!;
+      const firstName = sellerNames[firstId] ?? firstId;
+      const secondName = sellerNames[secondId] ?? secondId;
+      const firstListings = sellerListingMap.get(firstId);
+      const secondListings = sellerListingMap.get(secondId);
+
+      if (firstListings && secondListings) {
+        try {
+          const crossAlerts = await runCrossAccountComparison(
+            config,
+            firstId,
+            firstName,
+            firstListings,
+            secondId,
+            secondName,
+            secondListings,
+          );
+          alerts.push(...crossAlerts);
+        } catch (err) {
+          console.error(
+            "[background-ingestion] Cross-account comparison failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }
+    }
+
+    // ── Phase 3: Seasonal pattern detection ──────────────────
+    try {
+      const seasonalAlerts = await runSeasonalAnalysis(config);
+      alerts.push(...seasonalAlerts);
+    } catch (err) {
+      console.error(
+        "[background-ingestion] Seasonal analysis failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // ── Phase 4: Pruning ─────────────────────────────────────
+    try {
+      await pruneSnapshots(config);
+    } catch (err) {
+      console.error(
+        "[background-ingestion] Pruning failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // ── Phase 5: Send proactive alerts ───────────────────────
     if (alerts.length > 0) {
       try {
         const chatIds = await config.listActiveChats();
@@ -233,7 +967,7 @@ export function startBackgroundIngestion(
     const duration = Date.now() - runStart;
     console.log(
       `[background-ingestion] Ingestion complete: ${totalListings} listings, ` +
-        `${alerts.length} alerts sent (${duration}ms)`,
+        `${totalOrders} orders, ${alerts.length} alerts (${duration}ms)`,
     );
   };
 
