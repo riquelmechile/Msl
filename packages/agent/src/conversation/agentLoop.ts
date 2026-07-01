@@ -33,6 +33,8 @@ import {
   createReadMyListingsTool,
   createFindPausedListingsTool,
   createCheckListingVisitsTool,
+  createProductAdsInsightsTool,
+  createReadMyOrdersTool,
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
 
@@ -233,6 +235,12 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.mlcClient && !toolMap.has("check_listing_visits")) {
     toolMap.set("check_listing_visits", createCheckListingVisitsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("read_product_ads_insights")) {
+    toolMap.set("read_product_ads_insights", createProductAdsInsightsTool(config.mlcClient));
+  }
+  if (config.mlcClient && !toolMap.has("read_my_orders")) {
+    toolMap.set("read_my_orders", createReadMyOrdersTool(config.mlcClient));
   }
 
   // Real client is used only when the caller has not explicitly requested the mock.

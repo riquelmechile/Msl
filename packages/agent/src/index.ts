@@ -89,6 +89,8 @@ export {
   createReadMyListingsTool,
   createFindPausedListingsTool,
   createCheckListingVisitsTool,
+  createProductAdsInsightsTool,
+  createReadMyOrdersTool,
 } from "./conversation/syncTools.js";
 
 // ── Actor simulation ────────────────────────────────────────────────
