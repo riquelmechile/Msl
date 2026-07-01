@@ -47,6 +47,9 @@ export class EscribanoObserver {
   // ── Cache concept node ids to avoid repeated DB lookups ────
   readonly #conceptCache = new Map<string, number>();
 
+  /** Business-data node IDs protected from Darwinian pruning. */
+  readonly #businessNodeIds = new Set<number>();
+
   constructor(config: EscribanoConfig) {
     this.#engine = config.engine;
     this.#pruneInterval = config.pruneInterval ?? 10;
@@ -90,13 +93,37 @@ export class EscribanoObserver {
 
     // Periodic Darwinian pruning
     if (this.#pruneInterval > 0 && this.#turnCount % this.#pruneInterval === 0) {
-      this.#engine.prune({ maxNodes: this.#maxConceptNodes });
+      this.#engine.prune({ maxNodes: this.#maxConceptNodes, excludeNodeIds: this.#businessNodeIds });
     }
 
     // Concept node FIFO cap: if the graph has accumulated more concept
     // nodes than maxConceptNodes, force a prune to evict inactive ones.
     if (this.#turnCount % (this.#pruneInterval * 5) === 0) {
-      this.#engine.prune({ maxNodes: this.#maxConceptNodes });
+      this.#engine.prune({ maxNodes: this.#maxConceptNodes, excludeNodeIds: this.#businessNodeIds });
+    }
+  }
+
+  /**
+   * Persists MercadoLibre business data from agent tool results into Cortex.
+   *
+   * Creates listing nodes, visit-history nodes, and edges so the agent can
+   * recall business state across sessions. Gracefully no-ops when the Cortex
+   * engine is unavailable or any individual write fails.
+   *
+   * @param toolName — The tool that produced this result (e.g. "read_my_listings").
+   * @param result — The raw tool return value (MlcListingsSnapshot or MlcVisitsTimeWindowSnapshot).
+   */
+  observeToolResult(toolName: string, result: Record<string, unknown>): void {
+    if (!this.#engine) return;
+
+    try {
+      if (toolName === "read_my_listings" || toolName === "find_paused_listings") {
+        this.#handleListingResult(result);
+      } else if (toolName === "check_listing_visits") {
+        this.#handleVisitsResult(result);
+      }
+    } catch {
+      // Cortex save failure must not break the conversation loop.
     }
   }
 
@@ -167,6 +194,101 @@ export class EscribanoObserver {
       const consultId = this.#getOrCreateConcept("actor_consultation");
 
       this.#ensureAndReinforce(actorId, consultId);
+    }
+  }
+
+  // ── Business-data ingestion helpers ────────────────────────────
+
+  /**
+   * Persist listing data from {@link MlcListingsSnapshot} results.
+   *
+   * Creates/updates `listing_{itemId}` nodes, edges from seller to listing,
+   * and edges from listing to category concept nodes.
+   */
+  #handleListingResult(result: Record<string, unknown>): void {
+    const sellerId = typeof result.sellerId === "string" ? result.sellerId : "";
+    const data = result.data;
+    if (!Array.isArray(data)) return;
+
+    const now = new Date().toISOString();
+
+    for (const item of data) {
+      if (typeof item !== "object" || item === null) continue;
+      const record = item as Record<string, unknown>;
+      const itemId = typeof record.id === "string" ? record.id : undefined;
+      if (!itemId) continue;
+
+      try {
+        // Create/update listing node
+        const metadata: Record<string, unknown> = {
+          type: "listing",
+          itemId,
+          source: "ml-api",
+          updatedAt: now,
+        };
+        // Copy known listing fields when present
+        if (typeof record.title === "string") metadata.title = record.title;
+        if (typeof record.price === "number") metadata.price = record.price;
+        if (typeof record.currencyId === "string") metadata.currencyId = record.currencyId;
+        if (typeof record.status === "string") metadata.status = record.status;
+        if (typeof record.categoryId === "string") metadata.categoryId = record.categoryId;
+        if (typeof record.listingTypeId === "string") metadata.listingTypeId = record.listingTypeId;
+
+        const listingNode = this.#engine.getOrCreateNode(`listing_${itemId}`, metadata);
+        this.#businessNodeIds.add(listingNode.id);
+
+        // Edge: seller → listing (weight based on listing age — stale items get lower weight)
+        if (sellerId) {
+          const sellerNode = this.#getOrCreateConcept(`seller_${sellerId}`);
+          this.#ensureEdge(sellerNode, listingNode.id);
+        }
+
+        // Edge: listing → category concept (if categoryId present)
+        if (typeof record.categoryId === "string" && record.categoryId.length > 0) {
+          const catLabel = `category_${record.categoryId}`;
+          const catNode = this.#getOrCreateConcept(catLabel);
+          this.#ensureEdge(listingNode.id, catNode);
+        }
+      } catch {
+        // Individual listing write failure is non-fatal — skip and continue.
+      }
+    }
+  }
+
+  /**
+   * Persist visit data from {@link MlcVisitsTimeWindowSnapshot} results.
+   *
+   * Creates/updates `visits_{itemId}` nodes and edges from listing to visits.
+   */
+  #handleVisitsResult(result: Record<string, unknown>): void {
+    const data = result.data;
+    if (typeof data !== "object" || data === null) return;
+
+    const record = data as Record<string, unknown>;
+    const itemId = typeof record.itemId === "string" ? record.itemId : undefined;
+    if (!itemId) return;
+
+    try {
+      const metadata: Record<string, unknown> = {
+        type: "visits",
+        itemId,
+        source: "ml-api",
+        updatedAt: new Date().toISOString(),
+      };
+      if (typeof record.totalVisits === "number") metadata.totalVisits = record.totalVisits;
+      if (typeof record.dateFrom === "string") metadata.dateFrom = record.dateFrom;
+      if (typeof record.dateTo === "string") metadata.dateTo = record.dateTo;
+      if (Array.isArray(record.results)) metadata.timeWindowResults = record.results;
+
+      const visitsNode = this.#engine.getOrCreateNode(`visits_${itemId}`, metadata);
+      this.#businessNodeIds.add(visitsNode.id);
+
+      // Edge: listing → visits
+      const listingNode = this.#engine.getOrCreateNode(`listing_${itemId}`, { type: "listing", itemId, updatedAt: new Date().toISOString() });
+      this.#businessNodeIds.add(listingNode.id);
+      this.#ensureEdge(listingNode.id, visitsNode.id);
+    } catch {
+      // Individual visits write failure is non-fatal.
     }
   }
 

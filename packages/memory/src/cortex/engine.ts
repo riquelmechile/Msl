@@ -251,10 +251,13 @@ export class GraphEngine {
    * of age.
    *
    * @param options.maxNodes — maximum nodes before archival kicks in (default 10000).
+   * @param options.excludeNodeIds — set of node IDs to preserve regardless of
+   *   activation or edge count (e.g. business-data nodes that should survive FIFO).
    * @returns the number of edges pruned.
    */
-  prune(options?: { maxNodes?: number }): { archivedCount: number } {
+  prune(options?: { maxNodes?: number; excludeNodeIds?: Set<number> }): { archivedCount: number } {
     const maxNodes = options?.maxNodes ?? 10000;
+    const excludeNodeIds = options?.excludeNodeIds;
 
     const count = this.db.transaction(() => {
       // Distill lessons from edges about to be pruned
@@ -283,7 +286,16 @@ export class GraphEngine {
       if (nodeCount > maxNodes) {
         // Archive nodes with activation=0 that have no incident edges
         // (both as source or target), keeping the newest ones.
+        // Exclude protected business-data nodes when specified.
         const toArchive = nodeCount - maxNodes;
+        const excludeClause =
+          excludeNodeIds && excludeNodeIds.size > 0
+            ? `AND n.id NOT IN (${Array.from(excludeNodeIds)
+                .map(() => "?")
+                .join(", ")})`
+            : "";
+        const excludeParams = excludeNodeIds ? Array.from(excludeNodeIds) : [];
+
         this.db
           .prepare(
             `INSERT INTO darwinian_lessons (source_node, target_node, lesson, archived_at, reason)
@@ -294,10 +306,11 @@ export class GraphEngine {
              WHERE n.activation = 0
                AND n.id NOT IN (SELECT DISTINCT source FROM edges)
                AND n.id NOT IN (SELECT DISTINCT target FROM edges)
+               ${excludeClause}
              ORDER BY n.id ASC
              LIMIT ?`,
           )
-          .run(toArchive);
+          .run(...excludeParams, toArchive);
 
         this.db
           .prepare(
@@ -307,11 +320,12 @@ export class GraphEngine {
                WHERE activation = 0
                  AND id NOT IN (SELECT DISTINCT source FROM edges)
                  AND id NOT IN (SELECT DISTINCT target FROM edges)
+                 ${excludeClause}
                ORDER BY id ASC
                LIMIT ?
              )`,
           )
-          .run(toArchive);
+          .run(...excludeParams, toArchive);
       }
 
       return info.changes;
@@ -536,6 +550,38 @@ export class GraphEngine {
       .get(label) as GraphNode | undefined;
 
     if (existing) return existing;
+
+    return this.createNode(label, metadata);
+  }
+
+  /**
+   * Idempotent node upsert by label.
+   *
+   * Returns an existing node if a row with the given label already exists
+   * (updating its metadata in place). Otherwise creates a new node with
+   * activation 0.0 and the provided metadata.
+   *
+   * Unlike {@link findOrCreateConceptNode}, this method always writes the
+   * provided metadata — useful for business-data nodes where fields evolve
+   * across API refreshes (listings, visits, etc.).
+   *
+   * @param label — Unique node label (e.g., "listing_MLC1234").
+   * @param metadata — Metadata written to the node on create or update.
+   * @returns The existing (updated) or newly created graph node.
+   */
+  getOrCreateNode(label: string, metadata: Record<string, unknown> = {}): GraphNode {
+    const metadataJson = JSON.stringify(metadata);
+
+    const existing = this.db
+      .prepare("SELECT id, label, activation, metadata FROM nodes WHERE label = ?")
+      .get(label) as GraphNode | undefined;
+
+    if (existing) {
+      this.db
+        .prepare("UPDATE nodes SET metadata = ? WHERE id = ?")
+        .run(metadataJson, existing.id);
+      return { ...existing, metadata: metadataJson };
+    }
 
     return this.createNode(label, metadata);
   }

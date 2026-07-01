@@ -411,6 +411,10 @@ ${strategyLines.join("\n")}`;
                 role: "tool",
                 content: JSON.stringify(result),
               });
+              // Escribano: persist ML business data into Cortex graph memory
+              if (config.escribano) {
+                void config.escribano.observeToolResult(tc.name, result);
+              }
             } catch {
               metrics?.record("tool.call", 1, { name: tc.name, status: "error" });
               llmMessages.push({
