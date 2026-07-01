@@ -12,6 +12,7 @@ export const WRITE_ACTION_KINDS = [
   "refund",
   "listing-edit",
   "creative-publication",
+  "product-ads-action",
   "honey-pot-deploy",
   "probe-analysis",
 ] as const;
@@ -25,16 +26,22 @@ export const ACTION_TARGET_FIELD_BY_TYPE = {
   order: "orderId",
   message: "threadId",
   "creative-asset": "assetId",
+  "product-ads-campaign": "campaignId",
+  "product-ads-ad": "adId",
 } as const;
 
 type ActionTargetFieldByType = typeof ACTION_TARGET_FIELD_BY_TYPE;
 
-export type ActionTarget = {
+type BaseActionTarget = {
   [TargetType in keyof ActionTargetFieldByType]: { type: TargetType } & Record<
     ActionTargetFieldByType[TargetType],
     TargetType extends "listing" ? ListingId : string
   >;
 }[keyof ActionTargetFieldByType];
+
+export type ActionTarget =
+  | Exclude<BaseActionTarget, { type: "product-ads-ad" }>
+  | { type: "product-ads-ad"; adId?: string; itemId?: string };
 
 export type ExactChange = {
   field: string;
@@ -63,6 +70,7 @@ const riskByKind: Record<WriteActionKind, RiskLevel> = {
   refund: "high",
   "listing-edit": "high",
   "creative-publication": "high",
+  "product-ads-action": "high",
   "honey-pot-deploy": "high",
   "probe-analysis": "high",
 };

@@ -75,6 +75,23 @@ function makePrepareWritePayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeProductAdsActionPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    sellerId: "plasticov-seller",
+    proposalType: "adjust-campaign-budget",
+    campaignId: "campaign-123",
+    itemId: "MLC1001",
+    currentStatus: "active",
+    proposedValue: 12000,
+    metricsSnapshotSummary: "campaign-123 ROAS 2.1, ACOS 0.31, spend 10000 for MLC1001",
+    rationale: "Budget change is supported by recent Product Ads read evidence.",
+    sourceTool: "read_product_ads_insights",
+    observedAt: "2026-01-01T00:00:00.000Z",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 function makeSyncProductPayload(overrides: Record<string, unknown> = {}) {
   return {
     sourceSellerId: "plasticov-seller",
@@ -869,6 +886,232 @@ describe("MCP Server", () => {
       status: "pending",
       action: { id: "prepared-1", approvalStatus: "pending" },
     });
+  });
+
+  it("registers a prepare-only Product Ads action proposal tool when approval dependencies are injected", () => {
+    const { prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+
+    expect(registeredTools.has("prepare_product_ads_action")).toBe(true);
+    expect(registeredTools.has("execute_product_ads_action")).toBe(false);
+  });
+
+  it("persists Product Ads proposals with evidence and no mutation execution", async () => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+
+    const cb = registeredTools.get("prepare_product_ads_action");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeProductAdsActionPayload())) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ highlightedRisk: "high", status: "pending" }),
+    );
+    expect(parsed.metadata).toMatchObject({
+      requiresApproval: true,
+      noMutationExecuted: true,
+      operation: "prepare_product_ads_action",
+      risk: "high",
+    });
+    expect(parsed.data).toMatchObject({
+      action: {
+        sellerId: "plasticov-seller",
+        kind: "product-ads-action",
+        target: { type: "product-ads-campaign", campaignId: "campaign-123" },
+        approvalStatus: "pending",
+        riskLevel: "high",
+      },
+    });
+    const savedEntry = save.mock.calls[0]![0];
+    expect(savedEntry.action.exactChange).toEqual(
+      expect.arrayContaining([
+        { field: "evidence.sourceTool", from: null, to: "read_product_ads_insights" },
+        { field: "evidence.observedAt", from: null, to: "2026-01-01T00:00:00.000Z" },
+      ]),
+    );
+  });
+
+  it.each([
+    ["campaign target", { type: "product-ads-campaign", campaignId: "campaign-123" }],
+    ["ad target", { type: "product-ads-ad", adId: "ad-123" }],
+  ])("rejects Product Ads %s through generic prepare-only write", async (_name, target) => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+    const cb = registeredTools.get("prepare_mercadolibre_write");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(
+      makePrepareWritePayload({
+        id: `generic-product-ads-${target.type}`,
+        kind: "product-ads-action",
+        target,
+      }),
+    )) as { content: { text: string }[]; isError?: boolean };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({
+      status: "blocked",
+      reason: "unsupported-target",
+      message:
+        "Product Ads proposals must use prepare_product_ads_action so evidence validation can be enforced.",
+    });
+  });
+
+  it("accepts valid Product Ads proposals with runtime auth fields after API key validation", async () => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+    const cb = registeredTools.get("prepare_product_ads_action");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeProductAdsActionPayload({ msl_api_key: "runtime-key" }))) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+
+    expect(result.isError).toBeUndefined();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects Product Ads proposals without campaign or ad evidence before saving", async () => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+    const cb = registeredTools.get("prepare_product_ads_action");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(
+      makeProductAdsActionPayload({ campaignId: undefined, itemId: undefined }),
+    )) as { content: { text: string }[]; isError?: boolean };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({ status: "blocked", reason: "missing-target" });
+  });
+
+  it("rejects Product Ads proposals with credential-like or raw mutation payloads before saving", async () => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+    const cb = registeredTools.get("prepare_product_ads_action");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(
+      makeProductAdsActionPayload({ rawMutationPayload: { access_token: "Bearer raw-token" } }),
+    )) as { content: { text: string }[]; isError?: boolean };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({ status: "blocked", reason: "credential-like-payload" });
+    expect(result.content[0]!.text).not.toContain("raw-token");
+  });
+
+  it.each([
+    [
+      "rationale",
+      { rationale: 'PATCH /advertising/product_ads/campaigns/123 body {"budget":12000}' },
+    ],
+    [
+      "metrics summary",
+      { metricsSnapshotSummary: 'POST /advertising/product_ads/ads body {"status":"paused"}' },
+    ],
+    [
+      "current status",
+      { currentStatus: 'PATCH /advertising/product_ads/ads/123 body {"status":"paused"}' },
+    ],
+    [
+      "proposed value",
+      { proposedValue: 'POST /advertising/product_ads/campaigns/123 body {"budget":12000}' },
+    ],
+    [
+      "separated endpoint then method",
+      {
+        proposedValue:
+          "endpoint: /advertising/product_ads/campaigns/123; method: PATCH; headers: x",
+      },
+    ],
+    [
+      "separated method then endpoint",
+      { currentStatus: "method: PATCH endpoint: /advertising/product_ads/campaigns/123" },
+    ],
+    [
+      "body fragment paired with Product Ads endpoint",
+      { rationale: "url: /advertising/product_ads/campaigns/123 body: budget change" },
+    ],
+    ["headers fragment paired with mutating method", { rationale: "method: PATCH headers: x" }],
+  ])(
+    "rejects Product Ads proposal text with raw mutation contract text in %s",
+    async (_name, overrides) => {
+      const { save, prepareWrite } = makeApprovalDependencies();
+
+      createMcpServer({ prepareWrite });
+      const cb = registeredTools.get("prepare_product_ads_action");
+      expect(cb).toBeDefined();
+
+      const result = (await cb!(makeProductAdsActionPayload(overrides))) as {
+        content: { text: string }[];
+        isError?: boolean;
+      };
+      const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+      expect(result.isError).toBe(true);
+      expect(save).not.toHaveBeenCalled();
+      expect(parsed).toMatchObject({ status: "blocked", reason: "credential-like-payload" });
+    },
+  );
+
+  it.each([
+    ["missing source tool", { sourceTool: undefined }],
+    ["wrong source tool", { sourceTool: "manual_note" }],
+    ["invalid observedAt", { observedAt: "2026-01-01" }],
+  ])("rejects Product Ads proposals with %s evidence metadata", async (_name, overrides) => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+    const cb = registeredTools.get("prepare_product_ads_action");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!(makeProductAdsActionPayload(overrides))) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({ status: "blocked", reason: "missing-evidence" });
+  });
+
+  it("keeps Product Ads item identity separate from ad identity for ad proposals", async () => {
+    const { save, prepareWrite } = makeApprovalDependencies();
+
+    createMcpServer({ prepareWrite });
+    const cb = registeredTools.get("prepare_product_ads_action");
+    expect(cb).toBeDefined();
+
+    await cb!(
+      makeProductAdsActionPayload({
+        proposalType: "pause-ad",
+        campaignId: undefined,
+        adId: undefined,
+        itemId: "MLC1001",
+        currentStatus: "active",
+        proposedValue: "paused",
+      }),
+    );
+
+    const savedEntry = save.mock.calls[0]![0];
+    expect(savedEntry.action.target).toEqual({ type: "product-ads-ad", itemId: "MLC1001" });
   });
 
   it("derives prepare-write kind schema from the tools prepared-write kinds", () => {

@@ -87,6 +87,31 @@ The system MUST expose project-owned read tools for listings, orders, messages, 
 - AND it MUST disclose `noMutationExecuted: true` and `requiresApproval: false`
 - AND it MUST NOT expose campaign/ad mutation tools, use legacy Product Ads endpoints, or prepare budget/status changes in this read operation.
 
+### Requirement: Prepare-Only Product Ads Actions
+
+Product Ads budget, campaign status, ad status, and campaign-structure recommendations MUST remain prepare-only until verified write endpoint documentation and a dedicated approval/execution contract exist. The MCP tool surface MAY expose `prepare_product_ads_action` to persist local approval-required recommendations, but it MUST NOT call Product Ads mutation endpoints.
+
+#### Scenario: Evidence-based Product Ads recommendation is prepared
+
+- GIVEN MCP API-key auth is valid and approval storage is available
+- WHEN `prepare_product_ads_action` is called with seller scope, supported proposal type, campaign/ad evidence, metrics snapshot summary, rationale, and future expiry
+- THEN it MUST persist a pending prepared action with `requiresApproval: true`
+- AND it MUST disclose `noMutationExecuted: true` and medium/high risk metadata
+
+#### Scenario: Product Ads recommendation lacks read evidence
+
+- GIVEN MCP API-key auth is valid
+- WHEN the request omits seller scope, campaign/ad identifiers, metrics snapshot summary, or rationale
+- THEN the tool MUST block before saving
+- AND it MUST NOT fabricate Product Ads evidence
+
+#### Scenario: Product Ads recommendation includes unsafe payload material
+
+- GIVEN MCP API-key auth is valid
+- WHEN the request includes credentials, tokens, database paths, raw API request bodies, endpoint/method/header/body payloads, or unverified mutation contracts
+- THEN the tool MUST block before saving
+- AND it MUST NOT persist or echo the unsafe payload.
+
 ### Requirement: Read-Only Approval Bypass
 
 Read tools MUST NOT create approval requests because they do not mutate seller state or publish public-facing actions. Risky write and publication behavior MUST remain governed by approval controls.
