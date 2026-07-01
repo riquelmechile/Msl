@@ -18,6 +18,7 @@ import {
   type MlcOrderSummary,
   type MlcReadSnapshotFreshness,
   type MercadoLibreApiTransport,
+  type MlcPromotionItemsSummary,
   type OAuthManager,
   type OAuthTokenState,
 } from "./index.js";
@@ -936,6 +937,337 @@ describe("direct MLC API client boundary", () => {
         method: "GET",
         path: "/pricing-automation/users/seller-1/items",
         query: { offset: "0", limit: "50" },
+      }),
+    );
+  });
+
+  it("reads documented seller promotion list, detail, and promotion items", async () => {
+    const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        requests.push(request);
+        if (request.path === "/seller-promotions/users/seller-1") {
+          return Promise.resolve({
+            results: [
+              {
+                id: "P-MLC1806015",
+                type: "MARKETPLACE_CAMPAIGN",
+                status: "started",
+                start_date: "2023-04-20T02:00:00Z",
+                finish_date: "2023-08-01T02:00:00Z",
+                deadline_date: "2023-08-01T01:00:00Z",
+                name: "Campaña de prueba v2",
+                benefits: { type: "REBATE", meli_percent: 5, seller_percent: 25 },
+                raw_secret: "must-not-leak",
+              },
+            ],
+            paging: { offset: 0, limit: 50, total: 1 },
+          });
+        }
+        if (request.path.endsWith("/items")) {
+          return Promise.resolve({
+            results: [
+              {
+                id: "MLC1001",
+                status: "started",
+                price: 23968,
+                original_price: 28549,
+                start_date: "2023-04-27T15:04:00Z",
+                end_date: "2023-05-05T03:00:00Z",
+                sub_type: "FLEXIBLE_PERCENTAGE",
+                ignored: "must-not-leak",
+              },
+            ],
+            paging: { search_after: "next-cursor", limit: 50 },
+          });
+        }
+        return Promise.resolve({
+          id: "C-MLC302",
+          type: "SELLER_CAMPAIGN",
+          sub_type: "FLEXIBLE_PERCENTAGE",
+          status: "started",
+          start_date: "2023-04-27T15:04:00Z",
+          finish_date: "2023-05-05T03:00:00Z",
+          name: "camp del seller",
+          allow_combination: false,
+          raw_payload: "must-not-leak",
+        });
+      },
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(client.getSellerPromotions!("seller-1")).resolves.toMatchObject({
+      data: {
+        paging: { offset: 0, limit: 50, total: 1 },
+        promotions: [
+          {
+            id: "P-MLC1806015",
+            type: "MARKETPLACE_CAMPAIGN",
+            benefits: { type: "REBATE", meliPercent: 5, sellerPercent: 25 },
+          },
+        ],
+      },
+    });
+    await expect(
+      client.getPromotionDetail!("seller-1", "C-MLC302", "SELLER_CAMPAIGN"),
+    ).resolves.toMatchObject({
+      data: { id: "C-MLC302", type: "SELLER_CAMPAIGN", subType: "FLEXIBLE_PERCENTAGE", allowCombination: false },
+    });
+    await expect(
+      client.getPromotionItems!("seller-1", "P-MLC1806015", "MARKETPLACE_CAMPAIGN", {
+        status: "started",
+        statusItem: "active",
+        limit: 500,
+        searchAfter: "cursor-1",
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        promotionId: "P-MLC1806015",
+        promotionType: "MARKETPLACE_CAMPAIGN",
+        paging: { limit: 50, searchAfter: "next-cursor" },
+        items: [{ id: "MLC1001", price: 23968, originalPrice: 28549 }],
+      },
+    });
+    expect(JSON.stringify(requests)).not.toContain("must-not-leak");
+    expect(requests.map(({ method, path, query }) => ({ method, path, query }))).toEqual([
+      {
+        method: "GET",
+        path: "/seller-promotions/users/seller-1",
+        query: { app_version: "v2" },
+      },
+      {
+        method: "GET",
+        path: "/seller-promotions/promotions/C-MLC302",
+        query: { promotion_type: "SELLER_CAMPAIGN", app_version: "v2" },
+      },
+      {
+        method: "GET",
+        path: "/seller-promotions/promotions/P-MLC1806015/items",
+        query: {
+          promotion_type: "MARKETPLACE_CAMPAIGN",
+          app_version: "v2",
+          limit: "50",
+          status: "started",
+          status_item: "active",
+          search_after: "cursor-1",
+        },
+      },
+    ]);
+  });
+
+  it("normalizes UNHEALTHY_STOCK detail with pre-negotiated offers", async () => {
+    const request = vi.fn().mockResolvedValue({
+      id: "P-MLC13457036",
+      type: "UNHEALTHY_STOCK",
+      status: "started",
+      start_date: "2023-10-02T17:00:00Z",
+      finish_date: "2023-10-16T15:00:00Z",
+      deadline_date: "2023-10-16T15:00:00Z",
+      name: "Acelera tus ventas de stock Full",
+      offers: [
+        {
+          id: "",
+          original_price: 30,
+          new_price: 28,
+          status: "active",
+          start_date: "2023-10-05T14:02:52Z",
+          end_date: "",
+          benefits: { type: "REBATE", meli_percent: 0, seller_percent: 6.7 },
+        },
+      ],
+    });
+    const client = createMlcApiClient({
+      tokenState: tokenState(),
+      transport: { request },
+      now,
+    });
+    const snapshot = await client.getPromotionDetail!(
+      "seller-1", "P-MLC13457036", "UNHEALTHY_STOCK",
+    );
+    expect(snapshot.data).toMatchObject({
+      id: "P-MLC13457036",
+      type: "UNHEALTHY_STOCK",
+      offers: [
+        {
+          originalPrice: 30,
+          newPrice: 28,
+          status: "active",
+          benefits: { type: "REBATE", meliPercent: 0, sellerPercent: 6.7 },
+        },
+      ],
+    });
+  });
+
+  it("normalizes promotion items with offer_id, percentages, and net_proceeds", async () => {
+    const requests: any[] = [];
+    const request = vi.fn().mockImplementation((opts: any) => {
+      requests.push(opts);
+      return Promise.resolve({
+        results: [
+          {
+            id: "MLC1386957825",
+            status: "started",
+            price: 28,
+            original_price: 30,
+            currency_id: "USD",
+            offer_id: "OFFER-MLC1386957825-10097412984",
+            seller_percentage: 6.7,
+            meli_percentage: 10,
+            start_date: "2023-10-02T17:00:00Z",
+            end_date: "2023-10-16T15:00:00Z",
+            net_proceeds: { amount: 20.68, currency: "USD" },
+          },
+        ],
+        paging: { offset: 0, limit: 50, total: 1 },
+      });
+    });
+    const client = createMlcApiClient({
+      tokenState: tokenState(),
+      transport: { request },
+      now,
+    });
+    const snapshot = await client.getPromotionItems!(
+      "seller-1", "P-MLC13457036", "UNHEALTHY_STOCK",
+    );
+    const data = snapshot.data as MlcPromotionItemsSummary;
+    expect(data.items[0]).toMatchObject({
+      id: "MLC1386957825",
+      status: "started",
+      offerId: "OFFER-MLC1386957825-10097412984",
+      sellerPercentage: 6.7,
+      meliPercentage: 10,
+      currencyId: "USD",
+      netProceeds: { amount: 20.68, currency: "USD" },
+    });
+  });
+
+  it("normalizes SELLER_CAMPAIGN candidate items with nested net_proceeds", async () => {
+    const request = vi.fn().mockResolvedValue({
+      results: [
+        {
+          id: "MLC2001",
+          status: "candidate",
+          price: 200,
+          original_price: 250,
+          currency_id: "USD",
+          net_proceeds: {
+            suggested_discounted_price: { amount: 180.25, currency: "USD" },
+            max_discounted_price: { amount: 78.47, currency: "USD" },
+            min_discounted_price: { amount: 50.0, currency: "USD" },
+          },
+        },
+      ],
+      paging: { limit: 50 },
+    });
+    const client = createMlcApiClient({
+      tokenState: tokenState(),
+      transport: { request },
+      now,
+    });
+    const snapshot = await client.getPromotionItems!(
+      "seller-1", "C-MLC302", "SELLER_CAMPAIGN",
+    );
+    const data = snapshot.data as MlcPromotionItemsSummary;
+    expect(data.items[0]).toMatchObject({
+      id: "MLC2001",
+      status: "candidate",
+      netProceeds: {
+        suggestedDiscountedPrice: { amount: 180.25, currency: "USD" },
+        maxDiscountedPrice: { amount: 78.47, currency: "USD" },
+        minDiscountedPrice: { amount: 50.0, currency: "USD" },
+      },
+    });
+  });
+
+  it("reads pagination searchAfter from both snake_case and camelCase API responses", async () => {
+    const request = vi.fn().mockResolvedValue({
+      results: [],
+      paging: { searchAfter: "camel-cursor", limit: 50 },
+    });
+    const client = createMlcApiClient({
+      tokenState: tokenState(),
+      transport: { request },
+      now,
+    });
+    const snapshot = await client.getPromotionItems!(
+      "seller-1", "P-MLC1806015", "MARKETPLACE_CAMPAIGN",
+    );
+    expect(snapshot.data).toMatchObject({
+      paging: { searchAfter: "camel-cursor", limit: 50 },
+    });
+  });
+
+  it("accepts PRICE_MATCHING_MELI_ALL as a valid promotion type", async () => {
+    const request = vi.fn().mockResolvedValue({
+      results: [],
+      paging: { limit: 50 },
+    });
+    const client = createMlcApiClient({
+      tokenState: tokenState(),
+      transport: { request },
+      now,
+    });
+    const snapshot = await client.getPromotionItems!(
+      "seller-1", "P-MLC999", "PRICE_MATCHING_MELI_ALL",
+    );
+    expect(snapshot.data).toMatchObject({
+      promotionId: "P-MLC999",
+      promotionType: "PRICE_MATCHING_MELI_ALL",
+    });
+  });
+
+  it("reads documented item promotions fields without forwarding raw payloads", async () => {
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue([
+      {
+        id: "P-MLC1806015",
+        type: "LIGHTNING",
+        ref_id: "ref-1",
+        status: "started",
+        price: 18990,
+        original_price: 23990,
+        name: "Oferta relámpago",
+        min_discounted_price: 18000,
+        max_discounted_price: 21000,
+        suggested_discounted_price: 19990,
+        meli_percentage: 5,
+        seller_percentage: 20,
+        start_date: "2023-04-20T02:00:00Z",
+        finish_date: "2023-08-01T02:00:00Z",
+        top_price: 20000,
+        top_deal_price: 19000,
+        stock: { remaining_stock: 7, warehouse_id: "must-not-leak" },
+        boosted_offer: true,
+        discount_meli_boosted_percentage: 10,
+        discount_meli_boost_amount: 1000,
+        total_price_for_boosted_offer: 17990,
+        raw_payload: "must-not-leak",
+      },
+    ]);
+    const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });
+
+    const snapshot = await client.getItemPromotions!("seller-1", "MLC1001");
+
+    expect(snapshot).toMatchObject({
+      data: {
+        itemId: "MLC1001",
+        promotions: [
+          {
+            id: "P-MLC1806015",
+            type: "LIGHTNING",
+            suggestedDiscountedPrice: 19990,
+            stock: { remainingStock: 7 },
+            boostedOffer: true,
+            totalPriceForBoostedOffer: 17990,
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("must-not-leak");
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/seller-promotions/items/MLC1001",
+        query: { app_version: "v2" },
       }),
     );
   });

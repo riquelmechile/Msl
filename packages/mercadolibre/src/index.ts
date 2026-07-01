@@ -393,6 +393,135 @@ export type MlcAutomatedPriceItemsSummary = {
   }>;
 };
 
+export const MLC_PROMOTIONS_ITEMS_DEFAULT_LIMIT = 50;
+export const MLC_PROMOTIONS_ITEMS_MAX_LIMIT = 50;
+
+export type MlcPromotionType =
+  | "DEAL"
+  | "MARKETPLACE_CAMPAIGN"
+  | "DOD"
+  | "LIGHTNING"
+  | "VOLUME"
+  | "PRICE_DISCOUNT"
+  | "PRE_NEGOTIATED"
+  | "SELLER_CAMPAIGN"
+  | "SMART"
+  | "PRICE_MATCHING"
+  | "PRICE_MATCHING_MELI_ALL"
+  | "UNHEALTHY_STOCK"
+  | "SELLER_COUPON_CAMPAIGN"
+  | "BANK";
+
+export type MlcPromotionBenefitsSummary = {
+  type?: string;
+  meliPercent?: number;
+  sellerPercent?: number;
+};
+
+export type MlcPromotionSummary = {
+  id: string;
+  type: MlcPromotionType | string;
+  status?: string;
+  startDate?: string;
+  finishDate?: string;
+  deadlineDate?: string;
+  name?: string;
+  benefits?: MlcPromotionBenefitsSummary;
+  subType?: string;
+  /** UNHEALTHY_STOCK pre-negotiated offers */
+  offers?: ReadonlyArray<{
+    id?: string;
+    originalPrice?: number;
+    newPrice?: number;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    benefits?: MlcPromotionBenefitsSummary;
+  }>;
+  /** SELLER_CAMPAIGN */
+  allowCombination?: boolean;
+  /** SELLER_COUPON_CAMPAIGN */
+  fixedAmount?: number;
+  fixedPercentage?: number;
+  minPurchaseAmount?: number;
+  maxPurchaseAmount?: number;
+  couponCode?: string;
+  redeemsPerUser?: number;
+  budget?: number;
+  remainingBudget?: number;
+  usedCoupons?: number;
+};
+
+export type MlcPromotionParticipantSummary = {
+  id: string;
+  status?: string;
+  statusItem?: string;
+  price?: number;
+  originalPrice?: number;
+  startDate?: string;
+  endDate?: string;
+  subType?: string;
+  offerId?: string;
+  meliPercentage?: number;
+  sellerPercentage?: number;
+  currencyId?: string;
+  maxDiscountedPrice?: number;
+  minDiscountedPrice?: number;
+  suggestedDiscountedPrice?: number;
+  netProceeds?:
+    | { amount?: number; currency?: string }
+    | {
+        suggestedDiscountedPrice?: { amount?: number; currency?: string };
+        maxDiscountedPrice?: { amount?: number; currency?: string };
+        minDiscountedPrice?: { amount?: number; currency?: string };
+      };
+  fixedAmount?: number;
+  fixedPercentage?: number;
+};
+
+export type MlcItemPromotionStockSummary = { remainingStock?: number };
+
+export type MlcItemPromotionSummary = {
+  id: string;
+  type?: MlcPromotionType | string;
+  refId?: string;
+  status?: string;
+  price?: number;
+  originalPrice?: number;
+  name?: string;
+  minDiscountedPrice?: number;
+  maxDiscountedPrice?: number;
+  suggestedDiscountedPrice?: number;
+  meliPercentage?: number;
+  sellerPercentage?: number;
+  startDate?: string;
+  finishDate?: string;
+  topPrice?: number;
+  topDealPrice?: number;
+  stock?: MlcItemPromotionStockSummary;
+  boostedOffer?: boolean;
+  discountMeliBoostedPercentage?: number;
+  discountMeliBoostAmount?: number;
+  totalPriceForBoostedOffer?: number;
+};
+
+export type MlcSellerPromotionsSummary = {
+  paging: { offset: number; limit: number; total?: number };
+  promotions: ReadonlyArray<MlcPromotionSummary>;
+};
+
+export type MlcPromotionItemsSummary = {
+  promotionId: string;
+  promotionType: MlcPromotionType | string;
+  paging: { searchAfter?: string; limit: number; total?: number };
+  items: ReadonlyArray<MlcPromotionParticipantSummary>;
+};
+
+export type MlcItemPromotionsSummary = {
+  itemId: string;
+  promotions: ReadonlyArray<MlcItemPromotionSummary>;
+};
+
 export type MlcListingsSnapshot = MlcReadSnapshot<MlcListingSummary>;
 export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary>;
 export type MlcMessagesSnapshot = MlcReadSnapshot<MlcMessageSummary>;
@@ -414,6 +543,10 @@ export type MlcAutomatedPriceItemsSnapshot = Omit<
   MlcReadSnapshot<MlcAutomatedPriceItemsSummary>,
   "data"
 > & { data: MlcAutomatedPriceItemsSummary };
+export type MlcSellerPromotionsSnapshot = MlcReadSnapshot<MlcSellerPromotionsSummary>;
+export type MlcPromotionDetailSnapshot = MlcReadSnapshot<MlcPromotionSummary>;
+export type MlcPromotionItemsSnapshot = MlcReadSnapshot<MlcPromotionItemsSummary>;
+export type MlcItemPromotionsSnapshot = MlcReadSnapshot<MlcItemPromotionsSummary>;
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -529,6 +662,25 @@ export type MlcApiClient = {
     sellerId: string,
     options?: { offset?: number; limit?: number },
   ): Promise<MlcAutomatedPriceItemsSnapshot>;
+  getSellerPromotions?(sellerId: string): Promise<MlcSellerPromotionsSnapshot>;
+  getPromotionDetail?(
+    sellerId: string,
+    promotionId: string,
+    promotionType: MlcPromotionType | string,
+  ): Promise<MlcPromotionDetailSnapshot>;
+  getPromotionItems?(
+    sellerId: string,
+    promotionId: string,
+    promotionType: MlcPromotionType | string,
+    options?: {
+      itemId?: string;
+      status?: "started" | "pending" | "candidate";
+      statusItem?: "active" | "paused";
+      limit?: number;
+      searchAfter?: string;
+    },
+  ): Promise<MlcPromotionItemsSnapshot>;
+  getItemPromotions?(sellerId: string, itemId: string): Promise<MlcItemPromotionsSnapshot>;
   getItemVisits?(sellerId: string, itemId: string): Promise<MlcVisitsSnapshot>;
   getItemVisitsTimeWindow?(
     sellerId: string,
@@ -1914,6 +2066,286 @@ function normalizeAutomatedPriceItems(input: {
   };
 }
 
+function assertPromotionId(promotionId: string): string {
+  const trimmed = promotionId.trim();
+  if (!/^[A-Z]+-ML[A-Z]\d+$/.test(trimmed)) {
+    throw new Error(
+      "Only documented MercadoLibre promotion IDs are supported for promotion reads.",
+    );
+  }
+
+  return trimmed;
+}
+
+function assertPromotionType(promotionType: string): string {
+  const trimmed = promotionType.trim();
+  if (!/^[A-Z_]+$/.test(trimmed)) {
+    throw new Error("Promotion type must use the documented uppercase MercadoLibre format.");
+  }
+
+  return trimmed;
+}
+
+function normalizePromotionBenefits(
+  record: Readonly<Record<string, unknown>> | undefined,
+): MlcPromotionBenefitsSummary | undefined {
+  const benefits: MlcPromotionBenefitsSummary = {};
+  pushOptional(benefits, "type", stringValue(record?.type));
+  pushOptional(benefits, "meliPercent", numberValue(record?.meli_percent));
+  pushOptional(benefits, "sellerPercent", numberValue(record?.seller_percent));
+  return Object.keys(benefits).length > 0 ? benefits : undefined;
+}
+
+function normalizePromotionSummary(raw: unknown): MlcPromotionSummary | undefined {
+  const record = asRecord(raw);
+  const id = stringValue(record?.id);
+  const type = stringValue(record?.type);
+  if (record === undefined || id === undefined || type === undefined) return undefined;
+  const summary: MlcPromotionSummary = { id, type };
+  pushOptional(summary, "status", stringValue(record.status));
+  pushOptional(summary, "startDate", stringValue(record.start_date));
+  pushOptional(summary, "finishDate", stringValue(record.finish_date));
+  pushOptional(summary, "deadlineDate", stringValue(record.deadline_date));
+  pushOptional(summary, "name", stringValue(record.name));
+  pushOptional(summary, "benefits", normalizePromotionBenefits(asRecord(record.benefits)));
+  pushOptional(summary, "subType", stringValue(record.sub_type));
+  pushOptional(summary, "allowCombination", booleanValue(record.allow_combination));
+  pushOptional(summary, "fixedAmount", numberValue(record.fixed_amount));
+  pushOptional(summary, "fixedPercentage", numberValue(record.fixed_percentage));
+  pushOptional(summary, "minPurchaseAmount", numberValue(record.min_purchase_amount));
+  pushOptional(summary, "maxPurchaseAmount", numberValue(record.max_purchase_amount));
+  pushOptional(summary, "couponCode", stringValue(record.coupon_code));
+  pushOptional(summary, "redeemsPerUser", numberValue(record.redeems_per_user));
+  pushOptional(summary, "budget", numberValue(record.budget));
+  pushOptional(summary, "remainingBudget", numberValue(record.remaining_budget));
+  pushOptional(summary, "usedCoupons", numberValue(record.used_coupons));
+  const rawOffers = asArray(record.offers);
+  if (rawOffers.length > 0) {
+    const offers: MlcPromotionSummary["offers"] extends ReadonlyArray<infer T> | undefined
+      ? T[]
+      : never = [];
+    for (const o of rawOffers) {
+      const offer = asRecord(o);
+      if (offer === undefined) continue;
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const normalized = {} as typeof offers[number];
+      pushOptional(normalized, "id", stringValue(offer.id) ?? "");
+      pushOptional(normalized, "originalPrice", numberValue(offer.original_price));
+      pushOptional(normalized, "newPrice", numberValue(offer.new_price));
+      pushOptional(normalized, "status", stringValue(offer.status));
+      pushOptional(normalized, "startDate", stringValue(offer.start_date));
+      pushOptional(normalized, "endDate", stringValue(offer.end_date));
+      pushOptional(
+        normalized,
+        "benefits",
+        normalizePromotionBenefits(asRecord(offer.benefits)),
+      );
+      offers.push(normalized);
+    }
+    if (offers.length > 0) summary.offers = offers;
+  }
+  return summary;
+}
+
+function normalizeSellerPromotions(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcSellerPromotionsSnapshot {
+  const root = asRecord(input.payload);
+  const pagingRecord = asRecord(root?.paging);
+  const promotions = asArray(root?.results).flatMap((raw) => {
+    const promotion = normalizePromotionSummary(raw);
+    return promotion === undefined ? [] : [promotion];
+  });
+  const paging: MlcSellerPromotionsSummary["paging"] = {
+    offset: numberValue(pagingRecord?.offset) ?? 0,
+    limit: numberValue(pagingRecord?.limit) ?? MLC_PROMOTIONS_ITEMS_DEFAULT_LIMIT,
+  };
+  pushOptional(paging, "total", numberValue(pagingRecord?.total));
+  const completeness = root !== undefined && Array.isArray(root.results) ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: { paging, promotions },
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, promotions.length),
+  };
+}
+
+function normalizePromotionDetail(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcPromotionDetailSnapshot {
+  const promotion = normalizePromotionSummary(input.payload);
+  const completeness = promotion !== undefined ? "complete" : "partial";
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: promotion ?? { id: "unknown", type: "unknown" },
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, promotion !== undefined ? 1 : 0),
+  };
+}
+
+function normalizePromotionItems(input: {
+  sellerId: string;
+  promotionId: string;
+  promotionType: string;
+  payload: unknown;
+  now: Date;
+  options: { limit: number };
+}): MlcPromotionItemsSnapshot {
+  const root = asRecord(input.payload);
+  const pagingRecord = asRecord(root?.paging);
+  const items = asArray(root?.results).flatMap((raw) => {
+    const record = asRecord(raw);
+    const id = stringValue(record?.id);
+    if (record === undefined || id === undefined) return [];
+    const item: MlcPromotionParticipantSummary = { id };
+    pushOptional(item, "status", stringValue(record.status));
+    pushOptional(item, "statusItem", stringValue(record.status_item));
+    pushOptional(item, "price", numberValue(record.price));
+    pushOptional(item, "originalPrice", numberValue(record.original_price));
+    pushOptional(item, "startDate", stringValue(record.start_date));
+    pushOptional(item, "endDate", stringValue(record.end_date));
+    pushOptional(item, "subType", stringValue(record.sub_type));
+    pushOptional(item, "offerId", stringValue(record.offer_id));
+    pushOptional(item, "meliPercentage", numberValue(record.meli_percentage));
+    pushOptional(item, "sellerPercentage", numberValue(record.seller_percentage));
+    pushOptional(item, "currencyId", stringValue(record.currency_id));
+    pushOptional(item, "maxDiscountedPrice", numberValue(record.max_discounted_price));
+    pushOptional(item, "minDiscountedPrice", numberValue(record.min_discounted_price));
+    pushOptional(item, "suggestedDiscountedPrice", numberValue(record.suggested_discounted_price));
+    pushOptional(item, "fixedAmount", numberValue(record.fixed_amount));
+    pushOptional(item, "fixedPercentage", numberValue(record.fixed_percentage));
+    const netProceeds = asRecord(record.net_proceeds);
+    if (netProceeds !== undefined) {
+      const topAmount = numberValue(netProceeds.amount);
+      const topCurrency = stringValue(netProceeds.currency);
+      if (topAmount !== undefined || topCurrency !== undefined) {
+        // Flat shape: { amount, currency }
+        const flat: Record<string, unknown> = {};
+        pushOptional(flat, "amount", topAmount);
+        pushOptional(flat, "currency", topCurrency);
+        item.netProceeds = flat as NonNullable<typeof item.netProceeds>;
+      } else {
+        // Nested shape: { suggested_discounted_price, max_discounted_price, min_discounted_price }
+        const suggested = asRecord(netProceeds.suggested_discounted_price);
+        const max = asRecord(netProceeds.max_discounted_price);
+        const min = asRecord(netProceeds.min_discounted_price);
+        if (suggested !== undefined || max !== undefined || min !== undefined) {
+          const nested: Record<string, { amount?: number; currency?: string }> = {};
+          if (suggested !== undefined) {
+            nested.suggestedDiscountedPrice = {};
+            pushOptional(nested.suggestedDiscountedPrice, "amount", numberValue(suggested.amount));
+            pushOptional(nested.suggestedDiscountedPrice, "currency", stringValue(suggested.currency));
+          }
+          if (max !== undefined) {
+            nested.maxDiscountedPrice = {};
+            pushOptional(nested.maxDiscountedPrice, "amount", numberValue(max.amount));
+            pushOptional(nested.maxDiscountedPrice, "currency", stringValue(max.currency));
+          }
+          if (min !== undefined) {
+            nested.minDiscountedPrice = {};
+            pushOptional(nested.minDiscountedPrice, "amount", numberValue(min.amount));
+            pushOptional(nested.minDiscountedPrice, "currency", stringValue(min.currency));
+          }
+          item.netProceeds = nested as unknown as NonNullable<typeof item.netProceeds>;
+        }
+      }
+    }
+    return [item];
+  });
+  const paging: MlcPromotionItemsSummary["paging"] = {
+    limit: numberValue(pagingRecord?.limit) ?? input.options.limit,
+  };
+  pushOptional(paging, "searchAfter", stringValue(pagingRecord?.search_after) ?? stringValue(pagingRecord?.searchAfter));
+  pushOptional(paging, "total", numberValue(pagingRecord?.total));
+  const completeness = root !== undefined && Array.isArray(root.results) ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: { promotionId: input.promotionId, promotionType: input.promotionType, paging, items },
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, items.length),
+  };
+}
+
+function normalizeItemPromotions(input: {
+  sellerId: string;
+  itemId: string;
+  payload: unknown;
+  now: Date;
+}): MlcItemPromotionsSnapshot {
+  const promotions = asArray(input.payload).flatMap((raw) => {
+    const record = asRecord(raw);
+    const id = stringValue(record?.id);
+    if (record === undefined || id === undefined) return [];
+    const promotion: MlcItemPromotionSummary = { id };
+    pushOptional(promotion, "type", stringValue(record.type));
+    pushOptional(promotion, "refId", stringValue(record.ref_id));
+    pushOptional(promotion, "status", stringValue(record.status));
+    pushOptional(promotion, "price", numberValue(record.price));
+    pushOptional(promotion, "originalPrice", numberValue(record.original_price));
+    pushOptional(promotion, "name", stringValue(record.name));
+    pushOptional(promotion, "minDiscountedPrice", numberValue(record.min_discounted_price));
+    pushOptional(promotion, "maxDiscountedPrice", numberValue(record.max_discounted_price));
+    pushOptional(
+      promotion,
+      "suggestedDiscountedPrice",
+      numberValue(record.suggested_discounted_price),
+    );
+    pushOptional(promotion, "meliPercentage", numberValue(record.meli_percentage));
+    pushOptional(promotion, "sellerPercentage", numberValue(record.seller_percentage));
+    pushOptional(promotion, "startDate", stringValue(record.start_date));
+    pushOptional(promotion, "finishDate", stringValue(record.finish_date));
+    pushOptional(promotion, "topPrice", numberValue(record.top_price));
+    pushOptional(promotion, "topDealPrice", numberValue(record.top_deal_price));
+    const stockRecord = asRecord(record.stock);
+    const stock: MlcItemPromotionStockSummary = {};
+    pushOptional(stock, "remainingStock", numberValue(stockRecord?.remaining_stock));
+    if (Object.keys(stock).length > 0) promotion.stock = stock;
+    pushOptional(promotion, "boostedOffer", booleanValue(record.boosted_offer));
+    pushOptional(
+      promotion,
+      "discountMeliBoostedPercentage",
+      numberValue(record.discount_meli_boosted_percentage),
+    );
+    pushOptional(
+      promotion,
+      "discountMeliBoostAmount",
+      numberValue(record.discount_meli_boost_amount),
+    );
+    pushOptional(
+      promotion,
+      "totalPriceForBoostedOffer",
+      numberValue(record.total_price_for_boosted_offer),
+    );
+    return [promotion];
+  });
+  const completeness = Array.isArray(input.payload) ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing",
+    source: "mercadolibre-api",
+    data: { itemId: input.itemId, promotions },
+    completeness,
+    freshness: createFreshness("listing", input.now),
+    confidence: snapshotConfidence(completeness, promotions.length),
+  };
+}
+
 export const PRICING_AUTOMATION_ITEMS_DEFAULT_LIMIT = 50;
 export const PRICING_AUTOMATION_ITEMS_MAX_LIMIT = 100;
 export const PRICING_AUTOMATION_HISTORY_DEFAULT_DAYS = 30;
@@ -2171,6 +2603,67 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         now: input.now(),
         options: normalized,
       });
+    },
+    getSellerPromotions: async (sellerId) => {
+      const payload = await input.request(sellerId, `/seller-promotions/users/${sellerId}`, {
+        app_version: "v2",
+      });
+      return normalizeSellerPromotions({
+        sellerId,
+        payload,
+        now: input.now(),
+      });
+    },
+    getPromotionDetail: async (sellerId, promotionId, promotionType) => {
+      const safePromotionId = assertPromotionId(promotionId);
+      const safePromotionType = assertPromotionType(promotionType);
+      const payload = await input.request(
+        sellerId,
+        `/seller-promotions/promotions/${safePromotionId}`,
+        { promotion_type: safePromotionType, app_version: "v2" },
+      );
+      return normalizePromotionDetail({ sellerId, payload, now: input.now() });
+    },
+    getPromotionItems: async (sellerId, promotionId, promotionType, options = {}) => {
+      const safePromotionId = assertPromotionId(promotionId);
+      const safePromotionType = assertPromotionType(promotionType);
+      const normalized = {
+        limit: normalizePaginationNumber(
+          options.limit,
+          MLC_PROMOTIONS_ITEMS_DEFAULT_LIMIT,
+          1,
+          MLC_PROMOTIONS_ITEMS_MAX_LIMIT,
+        ),
+      };
+      const query: Record<string, string> = {
+        promotion_type: safePromotionType,
+        app_version: "v2",
+        limit: String(normalized.limit),
+      };
+      if (options.itemId !== undefined) query.item_id = assertMlcItemId(options.itemId);
+      if (options.status !== undefined) query.status = options.status;
+      if (options.statusItem !== undefined) query.status_item = options.statusItem;
+      pushOptional(query, "search_after", options.searchAfter);
+      const payload = await input.request(
+        sellerId,
+        `/seller-promotions/promotions/${safePromotionId}/items`,
+        query,
+      );
+      return normalizePromotionItems({
+        sellerId,
+        promotionId: safePromotionId,
+        promotionType: safePromotionType,
+        payload,
+        now: input.now(),
+        options: normalized,
+      });
+    },
+    getItemPromotions: async (sellerId, itemId) => {
+      const safeItemId = assertMlcItemId(itemId);
+      const payload = await input.request(sellerId, `/seller-promotions/items/${safeItemId}`, {
+        app_version: "v2",
+      });
+      return normalizeItemPromotions({ sellerId, itemId: safeItemId, payload, now: input.now() });
     },
     getItemVisits: async (sellerId, itemId) => {
       const safeItemId = assertMlcItemId(itemId);
