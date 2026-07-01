@@ -7,6 +7,8 @@ import type {
   MlcListingPricesInput,
   MlcListingsSnapshot,
   MlcAutomatedPriceItemsSnapshot,
+  MlcPricingAutomationHistorySnapshot,
+  MlcPricingAutomationRulesSnapshot,
   MlcRelistInput,
   MlcVisitsSnapshot,
   MlcVisitsTimeWindowSnapshot,
@@ -17,6 +19,10 @@ import type {
 } from "@msl/mercadolibre";
 import {
   assertPlasticovToMaustianDirection,
+  PRICING_AUTOMATION_HISTORY_DEFAULT_DAYS,
+  PRICING_AUTOMATION_HISTORY_DEFAULT_PAGE,
+  PRICING_AUTOMATION_HISTORY_DEFAULT_SIZE,
+  PRICING_AUTOMATION_HISTORY_MAX_SIZE,
   PRICING_AUTOMATION_ITEMS_DEFAULT_LIMIT,
   PRICING_AUTOMATION_ITEMS_MAX_LIMIT,
 } from "@msl/mercadolibre";
@@ -31,6 +37,31 @@ export type SyncToolOptions = {
 };
 
 const DEFAULT_SALE_PRICE_CONTEXT = "channel_marketplace,buyer_loyalty_3";
+
+type OptionalToolRead<T> = { data?: T; error?: { endpoint: string; message: string } };
+type PriceIntelligenceEndpointKey =
+  | "salePrice"
+  | "prices"
+  | "priceToWin"
+  | "automation"
+  | "itemRules"
+  | "productRules"
+  | "history";
+
+type PriceIntelligenceEndpointResult = {
+  salePrice: OptionalToolRead<unknown>;
+  prices: OptionalToolRead<unknown>;
+  priceToWin: OptionalToolRead<unknown>;
+  automation: OptionalToolRead<unknown>;
+  itemRules: OptionalToolRead<MlcPricingAutomationRulesSnapshot>;
+  productRules: OptionalToolRead<MlcPricingAutomationRulesSnapshot>;
+  history: OptionalToolRead<MlcPricingAutomationHistorySnapshot>;
+};
+
+type PriceIntelligenceEndpointSpec<K extends PriceIntelligenceEndpointKey> = {
+  key: K;
+  read: () => Promise<PriceIntelligenceEndpointResult[K]>;
+};
 
 function approvalRequired(tool: "sync_product" | "sync_all"): Record<string, unknown> {
   return {
@@ -831,8 +862,9 @@ export function createCheckListingVisitsTool(mlcClient: MlcApiClient): ToolDefin
  * Creates the `check_price_intelligence` tool.
  *
  * Aggregates read-only pricing signals for one MercadoLibre listing: sale price,
- * price book, catalog price-to-win, and pricing automation state. It never
- * mutates prices and explicitly surfaces the 2026 automation guard.
+ * price book, catalog price-to-win, pricing automation state, and optional
+ * automation rules/history. It never mutates prices and explicitly surfaces
+ * the 2026 automation guard.
  *
  * @param mlcClient — the `MlcApiClient` instance for API calls.
  * @returns a `check_price_intelligence` tool definition compatible with OpenAI function calling.
@@ -843,9 +875,11 @@ export function createCheckPriceIntelligenceTool(mlcClient: MlcApiClient): ToolD
     description:
       "Consulta inteligencia de precios READ-ONLY para una publicación: precio real " +
       "que ve el comprador (sale_price), lista de precios, precio para ganar catálogo " +
-      "(price_to_win v2) y estado de automatización de precios. Usá esta herramienta " +
+      "(price_to_win v2), estado de automatización, reglas disponibles e historial " +
+      "reciente de automatización de precios. Usá esta herramienta " +
       "cuando el vendedor pregunte qué precio necesita para ganar catálogo, qué precio " +
-      "está viendo el comprador, o si la publicación tiene automatización activa. " +
+      "está viendo el comprador, qué regla de automatización puede usar, qué cambios hizo " +
+      "la automatización, o si una publicación/producto de catálogo puede automatizarse. " +
       "No cambia precios. Desde 2026, si hay automatización activa, los cambios de " +
       "precio vía /items pueden ser rechazados o ignorados.",
     parameters: {
@@ -862,6 +896,32 @@ export function createCheckPriceIntelligenceTool(mlcClient: MlcApiClient): ToolD
         salePriceContext: {
           type: "string",
           description: `Contexto opcional para sale_price. Por defecto usa ${DEFAULT_SALE_PRICE_CONTEXT}.`,
+        },
+        includeRules: {
+          type: "boolean",
+          description:
+            "Si true, consulta reglas disponibles para el item y opcionalmente producto de catálogo.",
+        },
+        catalogProductId: {
+          type: "string",
+          description:
+            "ID del producto de catálogo MLC para consultar reglas disponibles por producto.",
+        },
+        includeHistory: {
+          type: "boolean",
+          description: "Si true, consulta historial reciente de cambios hechos por automatización.",
+        },
+        historyDays: {
+          type: "number",
+          description: `Días de historial de automatización. Default ${PRICING_AUTOMATION_HISTORY_DEFAULT_DAYS}.`,
+        },
+        historyPage: {
+          type: "number",
+          description: `Página del historial. Default ${PRICING_AUTOMATION_HISTORY_DEFAULT_PAGE}.`,
+        },
+        historySize: {
+          type: "number",
+          description: `Tamaño de página del historial. Default ${PRICING_AUTOMATION_HISTORY_DEFAULT_SIZE}, máximo ${PRICING_AUTOMATION_HISTORY_MAX_SIZE}.`,
         },
       },
       required: ["sellerId", "itemId"],
@@ -881,11 +941,21 @@ export function createCheckPriceIntelligenceTool(mlcClient: MlcApiClient): ToolD
         typeof args.salePriceContext === "string" && args.salePriceContext.length > 0
           ? args.salePriceContext
           : DEFAULT_SALE_PRICE_CONTEXT;
+      const includeRules = args.includeRules === true || typeof args.catalogProductId === "string";
+      const includeHistory = args.includeHistory === true;
+      const catalogProductId =
+        typeof args.catalogProductId === "string" && args.catalogProductId.length > 0
+          ? args.catalogProductId
+          : undefined;
+      const historyOptions: { days?: number; page?: number; size?: number } = {};
+      if (typeof args.historyDays === "number") historyOptions.days = args.historyDays;
+      if (typeof args.historyPage === "number") historyOptions.page = args.historyPage;
+      if (typeof args.historySize === "number") historyOptions.size = args.historySize;
 
       const readOptional = async <T>(
         name: string,
         reader: (() => Promise<T>) | undefined,
-      ): Promise<{ data?: T; error?: { endpoint: string; message: string } }> => {
+      ): Promise<OptionalToolRead<T>> => {
         if (reader === undefined) {
           return { error: { endpoint: name, message: "Endpoint no disponible en este cliente." } };
         }
@@ -897,29 +967,96 @@ export function createCheckPriceIntelligenceTool(mlcClient: MlcApiClient): ToolD
           };
         }
       };
+      const skippedOptional = <T>(): Promise<OptionalToolRead<T>> => Promise.resolve({});
 
-      const [salePrice, prices, priceToWin, automation] = await Promise.all([
-        readOptional(
-          "sale_price",
-          mlcClient.getItemSalePrice?.bind(mlcClient, sellerId, itemId, { context }),
-        ),
-        readOptional("prices", mlcClient.getItemPrices?.bind(mlcClient, sellerId, itemId)),
-        readOptional(
-          "price_to_win",
-          mlcClient.getItemPriceToWin?.bind(mlcClient, sellerId, itemId),
-        ),
-        readOptional(
-          "pricing_automation",
-          mlcClient.getPricingAutomation?.bind(mlcClient, sellerId, itemId),
-        ),
-      ]);
+      const endpointSpecs: Array<PriceIntelligenceEndpointSpec<PriceIntelligenceEndpointKey>> = [
+        {
+          key: "salePrice",
+          read: () =>
+            readOptional(
+              "sale_price",
+              mlcClient.getItemSalePrice?.bind(mlcClient, sellerId, itemId, { context }),
+            ),
+        },
+        {
+          key: "prices",
+          read: () =>
+            readOptional("prices", mlcClient.getItemPrices?.bind(mlcClient, sellerId, itemId)),
+        },
+        {
+          key: "priceToWin",
+          read: () =>
+            readOptional(
+              "price_to_win",
+              mlcClient.getItemPriceToWin?.bind(mlcClient, sellerId, itemId),
+            ),
+        },
+        {
+          key: "automation",
+          read: () =>
+            readOptional(
+              "pricing_automation",
+              mlcClient.getPricingAutomation?.bind(mlcClient, sellerId, itemId),
+            ),
+        },
+        {
+          key: "itemRules",
+          read: () =>
+            includeRules
+              ? readOptional<MlcPricingAutomationRulesSnapshot>(
+                  "pricing_automation_item_rules",
+                  mlcClient.getPricingAutomationItemRules?.bind(mlcClient, sellerId, itemId),
+                )
+              : skippedOptional<MlcPricingAutomationRulesSnapshot>(),
+        },
+        {
+          key: "productRules",
+          read: () =>
+            includeRules && catalogProductId !== undefined
+              ? readOptional<MlcPricingAutomationRulesSnapshot>(
+                  "pricing_automation_product_rules",
+                  mlcClient.getPricingAutomationProductRules?.bind(
+                    mlcClient,
+                    sellerId,
+                    catalogProductId,
+                  ),
+                )
+              : skippedOptional<MlcPricingAutomationRulesSnapshot>(),
+        },
+        {
+          key: "history",
+          read: () =>
+            includeHistory
+              ? readOptional<MlcPricingAutomationHistorySnapshot>(
+                  "pricing_automation_price_history",
+                  mlcClient.getPricingAutomationPriceHistory?.bind(
+                    mlcClient,
+                    sellerId,
+                    itemId,
+                    historyOptions,
+                  ),
+                )
+              : skippedOptional<MlcPricingAutomationHistorySnapshot>(),
+        },
+      ];
 
-      const errors = [salePrice.error, prices.error, priceToWin.error, automation.error].filter(
-        (error): error is { endpoint: string; message: string } => error !== undefined,
+      const endpointResults = await Promise.all(
+        endpointSpecs.map(async (spec) => [spec.key, await spec.read()] as const),
       );
+      const reads = Object.fromEntries(endpointResults) as PriceIntelligenceEndpointResult;
+
+      const errors = [
+        reads.salePrice.error,
+        reads.prices.error,
+        reads.priceToWin.error,
+        reads.automation.error,
+        reads.itemRules.error,
+        reads.productRules.error,
+        reads.history.error,
+      ].filter((error): error is { endpoint: string; message: string } => error !== undefined);
       const automationActive =
-        automation.data !== undefined &&
-        Boolean((automation.data as { data?: { active?: boolean } }).data?.active);
+        reads.automation.data !== undefined &&
+        Boolean((reads.automation.data as { data?: { active?: boolean } }).data?.active);
 
       return {
         sellerId,
@@ -927,16 +1064,21 @@ export function createCheckPriceIntelligenceTool(mlcClient: MlcApiClient): ToolD
         kind: "price-intelligence",
         source: "mercadolibre-api",
         noMutationExecuted: true,
-        ...(salePrice.data !== undefined && { salePrice: salePrice.data }),
-        ...(prices.data !== undefined && { prices: prices.data }),
-        ...(priceToWin.data !== undefined && { priceToWin: priceToWin.data }),
-        ...(automation.data !== undefined && { automation: automation.data }),
+        ...(reads.salePrice.data !== undefined && { salePrice: reads.salePrice.data }),
+        ...(reads.prices.data !== undefined && { prices: reads.prices.data }),
+        ...(reads.priceToWin.data !== undefined && { priceToWin: reads.priceToWin.data }),
+        ...(reads.automation.data !== undefined && { automation: reads.automation.data }),
+        ...(reads.itemRules.data !== undefined && { itemAutomationRules: reads.itemRules.data }),
+        ...(reads.productRules.data !== undefined && {
+          productAutomationRules: reads.productRules.data,
+        }),
+        ...(reads.history.data !== undefined && { automationPriceHistory: reads.history.data }),
         automationGuard: automationActive
           ? "Automatización de precio activa: desde 2026, los cambios de precio vía /items pueden ser rechazados o ignorados. No propongas editar precio sin resolver la automatización primero."
           : "No se detectó automatización activa en la respuesta consultada; igualmente verificá antes de cualquier mutación futura.",
         ...(errors.length > 0 && { partialErrors: errors }),
         recommendation:
-          priceToWin.data !== undefined
+          reads.priceToWin.data !== undefined
             ? "Usá priceToWin para evaluar competencia de catálogo y calculá margen neto antes de recomendar un cambio."
             : "No hubo señal completa de price_to_win; respondé con los datos disponibles y aclaración de cobertura.",
       };

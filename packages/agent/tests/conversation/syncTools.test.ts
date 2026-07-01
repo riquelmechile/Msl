@@ -363,6 +363,49 @@ function createStubMlcPriceClient(): MlcApiClient {
       freshness: {} as never,
       confidence: "high",
     }),
+    getPricingAutomationItemRules: async (_sellerId, itemId) => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        targetType: "item",
+        targetId: itemId,
+        rules: [{ ruleId: "INT_EXT" }, { ruleId: "INT" }],
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getPricingAutomationProductRules: async (_sellerId, catalogProductId) => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        targetType: "product",
+        targetId: catalogProductId,
+        rules: [{ ruleId: "INT_EXT" }, { ruleId: "INT" }],
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
+    getPricingAutomationPriceHistory: async (_sellerId, itemId) => ({
+      sellerId: "plasticov",
+      kind: "listing",
+      source: "mercadolibre-api",
+      data: {
+        itemId,
+        resultCode: 200,
+        resultMessage: "OK",
+        content: [
+          { dateTime: "2024-07-12T15:26:15Z", price: 120, event: "CurrentStrategyConfirmed" },
+        ],
+        pageable: { offset: 0, pageNumber: 0, pageSize: 10 },
+      },
+      completeness: "complete",
+      freshness: {} as never,
+      confidence: "high",
+    }),
     getPricingAutomationItems: async (sellerId) => ({
       sellerId,
       kind: "listing",
@@ -612,6 +655,75 @@ describe("price intelligence tools — unit", () => {
     expect(result.priceToWin).toMatchObject({ data: { priceToWin: 9990, status: "competing" } });
     expect(result.automation).toMatchObject({ data: { active: true, ruleId: "rule-1" } });
     expect(result.automationGuard).toMatch(/automatización de precio activa/i);
+  });
+
+  it("optionally includes automation rules and price history", async () => {
+    const tool = createCheckPriceIntelligenceTool(createStubMlcPriceClient());
+
+    const result = await tool.execute({
+      sellerId: "plasticov",
+      itemId: "MLC1001",
+      includeRules: true,
+      catalogProductId: "MLC123456",
+      includeHistory: true,
+      historyDays: Number.NaN,
+      historyPage: -1,
+      historySize: Infinity,
+    });
+
+    expect(result).toMatchObject({ noMutationExecuted: true });
+    expect(result.itemAutomationRules).toMatchObject({
+      data: {
+        targetType: "item",
+        targetId: "MLC1001",
+        rules: [{ ruleId: "INT_EXT" }, { ruleId: "INT" }],
+      },
+    });
+    expect(result.productAutomationRules).toMatchObject({
+      data: {
+        targetType: "product",
+        targetId: "MLC123456",
+        rules: [{ ruleId: "INT_EXT" }, { ruleId: "INT" }],
+      },
+    });
+    expect(result.automationPriceHistory).toMatchObject({
+      data: {
+        itemId: "MLC1001",
+        content: [{ dateTime: "2024-07-12T15:26:15Z", price: 120 }],
+      },
+    });
+  });
+
+  it("returns sanitized partial errors for optional automation rules and history", async () => {
+    const tool = createCheckPriceIntelligenceTool({
+      ...createStubMlcPriceClient(),
+      getPricingAutomationItemRules: async () => {
+        throw new Error("rules failed access_token=secret-token");
+      },
+      getPricingAutomationPriceHistory: async () => {
+        throw new Error("history failed Bearer bearer-secret");
+      },
+    });
+
+    const result = await tool.execute({
+      sellerId: "plasticov",
+      itemId: "MLC1001",
+      includeRules: true,
+      includeHistory: true,
+    });
+
+    expect(result.partialErrors).toEqual(
+      expect.arrayContaining([
+        {
+          endpoint: "pricing_automation_item_rules",
+          message: "rules failed access_token=[REDACTED]",
+        },
+        {
+          endpoint: "pricing_automation_price_history",
+          message: "history failed Bearer [REDACTED]",
+        },
+      ]),
+    );
   });
 
   it("returns partial errors when optional pricing endpoints are unavailable", async () => {
