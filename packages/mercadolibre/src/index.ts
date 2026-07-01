@@ -44,6 +44,8 @@ export type MlcListingSummary = {
   price?: number;
   currencyId?: string;
   permalink?: string;
+  categoryId?: string;
+  listingTypeId?: string;
 };
 
 export type MlcOrderSummary = {
@@ -612,6 +614,8 @@ function normalizeListings(input: {
     pushOptional(summary, "price", numberValue(record.price));
     pushOptional(summary, "currencyId", stringValue(record.currency_id));
     pushOptional(summary, "permalink", stringValue(record.permalink));
+    pushOptional(summary, "categoryId", stringValue(record.category_id));
+    pushOptional(summary, "listingTypeId", stringValue(record.listing_type_id));
 
     if (summary.title === undefined || summary.status === undefined) {
       complete = false;
@@ -1561,6 +1565,8 @@ function normalizeItems(input: {
     pushOptional(summary, "price", numberValue(record.price));
     pushOptional(summary, "currencyId", stringValue(record.currency_id));
     pushOptional(summary, "permalink", stringValue(record.permalink));
+    pushOptional(summary, "categoryId", stringValue(record.category_id));
+    pushOptional(summary, "listingTypeId", stringValue(record.listing_type_id));
 
     return [summary];
   });

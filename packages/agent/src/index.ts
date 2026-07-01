@@ -67,6 +67,10 @@ export type { SessionStore } from "./conversation/sessionStore.js";
 export { createAutonomyEngine } from "./conversation/autonomyEngine.js";
 export type { AutonomyEngine } from "./conversation/autonomyEngine.js";
 
+// ── Background ingestion ───────────────────────────────────────────────
+export { startBackgroundIngestion } from "./conversation/backgroundIngestion.js";
+export type { BackgroundIngestionConfig } from "./conversation/backgroundIngestion.js";
+
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";
 

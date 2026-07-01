@@ -9,6 +9,7 @@ import {
   createSessionStore,
   createStrategyStore,
   EscribanoObserver,
+  startBackgroundIngestion,
   type AgentLoopConfig,
   type ConversationState,
   type SessionStore,
@@ -37,10 +38,24 @@ export type BotConfig = {
   client?: ApiClientOptions;
 };
 
-export type TelegramBot = {
+/**
+ * Handle to a running Telegram bot instance.
+ *
+ * Provides lifecycle control plus proactive messaging for background workers
+ * (ingestion, anomaly alerts) to reach Telegram chats without waiting for
+ * user input.
+ */
+export type TelegramBotHandle = {
   start(): Promise<void>;
   stop(): Promise<void>;
+  /** Send a proactive message to a Telegram chat without waiting for user input. */
+  sendProactiveMessage(chatId: number, text: string): Promise<void>;
+  /** List active chat IDs from the session store. */
+  listActiveChats(): Promise<number[]>;
 };
+
+/** @deprecated Use {@link TelegramBotHandle} instead. */
+export type TelegramBot = TelegramBotHandle;
 
 export type TelegramBotEnv = Partial<
   Pick<
@@ -107,7 +122,7 @@ function createSellerScopedSqlitePath(sqlitePath: string, sellerId: string): str
  * ships defaults for secret values: `BOT_TOKEN` is required, while SQLite paths
  * and DeepSeek/Cortex wiring are opt-in.
  */
-export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): TelegramBot {
+export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): TelegramBotHandle {
   const token = env.BOT_TOKEN?.trim();
   if (!token) {
     throw new Error("BOT_TOKEN is required to start the Telegram bot.");
@@ -173,7 +188,33 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   if (sessionStore) botConfig.sessionStore = sessionStore;
   if (db) botConfig.cleanup = () => db.close();
 
-  return createTelegramBot(botConfig);
+  const botHandle = createTelegramBot(botConfig);
+
+  // ── Background ingestion worker ──────────────────────────
+  let ingestionHandle: { stop: () => void } | undefined;
+
+  if (mlcClient && engine && mlcSellerId) {
+    ingestionHandle = startBackgroundIngestion({
+      mlcClient,
+      engine,
+      sendProactiveMessage: (chatId, text) =>
+        botHandle.sendProactiveMessage(chatId, text),
+      listActiveChats: () => botHandle.listActiveChats(),
+      sellerIds: [mlcSellerId],
+      intervalMs: 6 * 60 * 60 * 1000, // 6 hours
+    });
+  }
+
+  return {
+    start: () => botHandle.start(),
+    stop: async () => {
+      ingestionHandle?.stop();
+      await botHandle.stop();
+    },
+    sendProactiveMessage: (chatId, text) =>
+      botHandle.sendProactiveMessage(chatId, text),
+    listActiveChats: () => botHandle.listActiveChats(),
+  };
 }
 
 /**
@@ -197,7 +238,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
  * | `/help`   | Available topics                   |
  * | any text  | Routed through agentLoop.converse()|
  */
-export function createTelegramBot(config: BotConfig): TelegramBot {
+export function createTelegramBot(config: BotConfig): TelegramBotHandle {
   const bot = new Bot(config.token, config.client ? { client: config.client } : undefined);
 
   const agentConfig: AgentLoopConfig = {
@@ -274,6 +315,8 @@ export function createTelegramBot(config: BotConfig): TelegramBot {
     }
   });
 
+  const sessionStore = config.sessionStore;
+
   // ── Lifecycle ───────────────────────────────────────────
 
   return {
@@ -294,6 +337,21 @@ export function createTelegramBot(config: BotConfig): TelegramBot {
       await bot.stop();
       config.cleanup?.();
       console.log("🛑 Bot detenido");
+    },
+
+    async sendProactiveMessage(chatId: number, text: string): Promise<void> {
+      await bot.api.sendMessage(chatId, text, { parse_mode: "HTML" });
+    },
+
+    async listActiveChats(): Promise<number[]> {
+      if (!sessionStore) return [];
+      const sessions = sessionStore.listActive();
+      return sessions
+        .map((s) => {
+          const match = /^telegram:[^:]+:(\d+)$/.exec(s.id);
+          return match ? parseInt(match[1]!, 10) : null;
+        })
+        .filter((id): id is number => id !== null);
     },
   };
 }

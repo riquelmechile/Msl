@@ -587,6 +587,85 @@ export class GraphEngine {
   }
 
   /**
+   * Query nodes by metadata fields. Returns nodes matching all provided criteria.
+   *
+   * Useful for historical analysis — e.g. "show me all listing snapshots from
+   * March 2025". Each filter constrains the result set; all filters are AND-ed.
+   *
+   * Date filters (`after` / `before`) are applied against the `capturedAt` key
+   * stored inside the node metadata JSON.
+   *
+   * Gracefully returns an empty array when the database is closed or the query
+   * fails for any reason (no crash on missing Cortex).
+   */
+  queryByMetadata(filters: {
+    type?: string;
+    itemId?: string;
+    status?: string;
+    categoryId?: string;
+    /** Only nodes whose metadata.capturedAt >= this ISO date */
+    after?: string;
+    /** Only nodes whose metadata.capturedAt <= this ISO date */
+    before?: string;
+    limit?: number;
+  }): Array<{ id: number; label: string; metadata: Record<string, unknown> }> {
+    try {
+      const conditions: string[] = [];
+      const params: unknown[] = [];
+
+      if (filters.type !== undefined) {
+        conditions.push("JSON_EXTRACT(metadata, '$.type') = ?");
+        params.push(filters.type);
+      }
+      if (filters.itemId !== undefined) {
+        conditions.push("JSON_EXTRACT(metadata, '$.itemId') = ?");
+        params.push(filters.itemId);
+      }
+      if (filters.status !== undefined) {
+        conditions.push("JSON_EXTRACT(metadata, '$.status') = ?");
+        params.push(filters.status);
+      }
+      if (filters.categoryId !== undefined) {
+        conditions.push("JSON_EXTRACT(metadata, '$.categoryId') = ?");
+        params.push(filters.categoryId);
+      }
+      if (filters.after !== undefined) {
+        conditions.push("JSON_EXTRACT(metadata, '$.capturedAt') >= ?");
+        params.push(filters.after);
+      }
+      if (filters.before !== undefined) {
+        conditions.push("JSON_EXTRACT(metadata, '$.capturedAt') <= ?");
+        params.push(filters.before);
+      }
+
+      let sql = "SELECT id, label, metadata FROM nodes";
+      if (conditions.length > 0) {
+        sql += " WHERE " + conditions.join(" AND ");
+      }
+      sql += " ORDER BY id DESC";
+
+      if (filters.limit !== undefined) {
+        sql += " LIMIT ?";
+        params.push(filters.limit);
+      }
+
+      const rows = this.db.prepare(sql).all(...params) as Array<{
+        id: number;
+        label: string;
+        metadata: string;
+      }>;
+
+      return rows.map((r) => ({
+        id: r.id,
+        label: r.label,
+        metadata: JSON.parse(r.metadata) as Record<string, unknown>,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Persist a honey-pot probe result.
    *
    * Creates a probe_results row, a Cortex node tagged `probe: true`,
