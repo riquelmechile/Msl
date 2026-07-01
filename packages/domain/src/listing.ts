@@ -4,6 +4,14 @@ export type ListingId = string;
 
 export type ListingStatus = "active" | "paused" | "closed" | "under_review";
 
+export type FulfillmentMode = "owned-stock" | "supplier-sourced" | "mixed";
+
+export type ListingExposureStrategy = {
+  listingType: "free" | "classic" | "premium";
+  titleVariant?: string;
+  exposureGoal: "margin" | "volume" | "test" | "defensive";
+};
+
 export type Money = {
   amount: number;
   currency: "CLP";
@@ -16,6 +24,8 @@ export type Listing = {
   status: ListingStatus;
   price: Money;
   availableQuantity: number;
+  fulfillmentMode?: FulfillmentMode;
+  accountStrategy?: ListingExposureStrategy;
   supplierSourcingRequired: boolean;
   updatedAt: Date;
 };

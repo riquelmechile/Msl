@@ -998,7 +998,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
   server.registerTool(
     "sync_product",
     {
-      description: "Sincroniza producto de Plasticov a Maustian aplicando estrategias",
+      description: "Prepara sync Plasticov a Maustian con safety gates y estrategias",
       inputSchema: mcpSyncProductInputSchema,
     },
     async (request) => {
@@ -1049,7 +1049,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
       if (!sourceSellerId || !targetSellerId) {
         return blockedResult(
           "unsafe-direction",
-          "Product sync preparation requires configured sourceSellerId and targetSellerId for the Plasticov to Maustian MLC direction.",
+          "Product sync preparation requires configured sourceSellerId and targetSellerId for the Plasticov to Maustian MLC sync boundary.",
         );
       }
 
@@ -1085,7 +1085,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
       } catch {
         return blockedResult(
           "missing-account-roles",
-          "MercadoLibre account roles are not configured for Plasticov to Maustian MLC sync preparation.",
+          "MercadoLibre account roles are not configured for the Plasticov to Maustian MLC sync boundary.",
         );
       }
 
@@ -1093,7 +1093,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
       if (roleConfigFailure) {
         return blockedResult(
           roleConfigFailure,
-          "Product sync preparation requires configured Plasticov and Maustian account roles on site MLC.",
+          "Product sync preparation requires configured Plasticov and Maustian seller accounts on site MLC.",
         );
       }
 
@@ -1105,7 +1105,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
       } catch {
         return blockedResult(
           "unsafe-direction",
-          "Product sync preparation is limited to the configured Plasticov source to Maustian target direction on MLC.",
+          "Product sync preparation is limited to the configured Plasticov to Maustian sync boundary on MLC.",
         );
       }
 

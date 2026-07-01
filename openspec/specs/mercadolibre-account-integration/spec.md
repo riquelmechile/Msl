@@ -100,18 +100,18 @@ The system MUST preserve fail-closed OAuth, configured allowed seller IDs, MLC s
 
 ### Requirement: MLC Plasticov-to-Maustian Sync Preparation Boundary
 
-MCP product sync preparation MUST enforce configured `MLC` seller roles where Plasticov is the source and Maustian is the target. The system MUST reject reversed, arbitrary, non-`MLC`, missing, or mismatched seller roles with controlled blocked responses.
+MCP product sync preparation MUST enforce the configured `MLC` Plasticov → Maustian direction as a specific sync/safety boundary. Plasticov and Maustian MUST otherwise be treated as separate seller accounts with the same business capabilities, not as manufacturer/store roles. The system MUST reject reversed, arbitrary, non-`MLC`, missing, or mismatched seller roles with controlled blocked responses.
 
 #### Scenario: Configured role direction is accepted
 
-- GIVEN valid MCP auth and configured `MLC` roles identify Plasticov as source and Maustian as target
+- GIVEN valid MCP auth and configured `MLC` roles identify the approved Plasticov → Maustian sync boundary
 - WHEN a single-product sync proposal targets Maustian from Plasticov
 - THEN the system MUST allow proposal preparation
 - AND it MUST include source seller, target seller, and site metadata
 
 #### Scenario: Reversed direction is requested
 
-- GIVEN configured `MLC` roles identify Plasticov as source and Maustian as target
+- GIVEN configured `MLC` roles identify the approved Plasticov → Maustian sync boundary
 - WHEN a request tries Maustian-to-Plasticov sync preparation
 - THEN the system MUST block the request as unsafe direction
 - AND it MUST NOT create a prepared proposal

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Multi-account OAuth management, ML API read/write client, real HTTP transport, and Product Sync Engine for Plasticov→Maustian MercadoLibre account listing migration on MLC.
+Multi-account OAuth management, ML API read/write client, real HTTP transport, and a configured Plasticov → Maustian Product Sync Engine boundary on MLC. Plasticov and Maustian remain parallel seller accounts, not factory/store roles.
 
 ## Current Boundary
 
@@ -12,7 +12,7 @@ This specification covers the production integration foundation. The current MCP
 
 ### Requirement: Multi-Account OAuth
 
-The system MUST store and manage OAuth tokens for the configured Plasticov source and Maustian target MercadoLibre seller accounts independently on the `MLC` site. `MLC` is the MercadoLibre Chile site code, not an account identity. Each account SHALL have its own encrypted token record with refresh cycle. OAuth token storage MUST validate the returned MercadoLibre `user_id` against the configured seller role before saving.
+The system MUST store and manage OAuth tokens for the configured Plasticov and Maustian MercadoLibre seller accounts independently on the `MLC` site. `MLC` is the MercadoLibre Chile site code, not an account identity. Each account SHALL have its own encrypted token record with refresh cycle. OAuth token storage MUST validate the returned MercadoLibre `user_id` against a configured allowed seller account before saving.
 
 #### Scenario: Two accounts connected
 

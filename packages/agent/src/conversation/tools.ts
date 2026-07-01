@@ -128,7 +128,7 @@ export function createPrepareActionTool(): ToolDefinition {
         },
         sellerId: {
           type: "string",
-          description: "ID del vendedor (siempre 'seller-1' para Plasticov).",
+          description: "ID de la cuenta vendedora configurada para esta acción.",
         },
         kind: {
           type: "string",

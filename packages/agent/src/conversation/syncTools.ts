@@ -86,8 +86,9 @@ function coerceItemId(raw: unknown): string | undefined {
 /**
  * Creates the `sync_product` tool.
  *
- * Synchronises a single product from a Plasticov account to a Maustian account
- * applying CEO strategies for margin, pricing, category filtering, and stock.
+ * Synchronises a single product across the configured Plasticov → Maustian
+ * boundary, applying CEO strategies for margin, pricing, category filtering,
+ * and stock without treating the accounts as a business hierarchy.
  *
  * @param syncEngine — the `ProductSyncEngine` instance orchestrating extract→apply→diff→publish.
  * @param cortex — optional Cortex GraphEngine for persisting sync-outcome nodes.
@@ -101,7 +102,7 @@ export function createSyncProductTool(
   return {
     name: "sync_product",
     description:
-      "Sincroniza un producto de Plasticov a Maustian aplicando estrategias de CEO. " +
+      "Prepara sync Plasticov a Maustian aplicando estrategias de CEO y safety gates. " +
       "Usa esta herramienta cuando el vendedor quiera publicar un producto específico " +
       "en su cuenta Maustian con las reglas de margen, filtro de categoría, stock y " +
       "precios configuradas por el CEO. IMPORTANTE: solo se ejecuta si hay estrategias " +
@@ -111,11 +112,13 @@ export function createSyncProductTool(
       properties: {
         sourceSellerId: {
           type: "string",
-          description: "ID del vendedor origen (Plasticov). Ej: 'plasticov'.",
+          description:
+            "ID del vendedor configurado como origen para este sync (Plasticov). Ej: 'plasticov'.",
         },
         targetSellerId: {
           type: "string",
-          description: "ID del vendedor destino (Maustian). Ej: 'maustian'.",
+          description:
+            "ID del vendedor configurado como destino para este sync (Maustian). Ej: 'maustian'.",
         },
         itemId: {
           type: "string",
@@ -184,9 +187,9 @@ export function createSyncProductTool(
 /**
  * Creates the `sync_all` tool.
  *
- * Synchronises all pending products from Plasticov to Maustian applying
- * CEO strategies. By default only processes changed/unsynced items (differential
- * mode). An optional `limit` caps the number of items processed.
+ * Runs the configured Plasticov → Maustian sync boundary for pending products,
+ * applying CEO strategies. By default only processes changed/unsynced items
+ * (differential mode). An optional `limit` caps the number of items processed.
  *
  * @param syncEngine — the `ProductSyncEngine` instance.
  * @param cortex — optional Cortex GraphEngine for persisting sync-outcome nodes.
@@ -200,9 +203,9 @@ export function createSyncAllTool(
   return {
     name: "sync_all",
     description:
-      "Sincroniza todos los productos pendientes de Plasticov a Maustian. " +
-      "Usa esta herramienta cuando el vendedor quiera publicar masivamente " +
-      "todos los productos que cambiaron o no fueron sincronizados aún. " +
+      "Prepara la operación masiva del sync configurado Plasticov a Maustian. " +
+      "Usa esta herramienta cuando el vendedor quiera procesar dentro de ese " +
+      "límite los productos que cambiaron o no fueron sincronizados aún. " +
       "IMPORTANTE: solo se ejecuta si hay estrategias de CEO activas y el " +
       "vendedor confirma con 'dale'.",
     parameters: {
@@ -210,11 +213,13 @@ export function createSyncAllTool(
       properties: {
         sourceSellerId: {
           type: "string",
-          description: "ID del vendedor origen (Plasticov). Ej: 'plasticov'.",
+          description:
+            "ID del vendedor configurado como origen para esta operación de sync (Plasticov). Ej: 'plasticov'.",
         },
         targetSellerId: {
           type: "string",
-          description: "ID del vendedor destino (Maustian). Ej: 'maustian'.",
+          description:
+            "ID del vendedor configurado como destino para esta operación de sync (Maustian). Ej: 'maustian'.",
         },
         strategies: {
           type: "array",

@@ -17,7 +17,7 @@ export function getMlAccountRoleConfig(env: NodeJS.ProcessEnv = process.env): Ml
 
   if (!sourceSellerId || !targetSellerId) {
     throw new Error(
-      "MercadoLibre account roles are not configured. Set MERCADOLIBRE_SOURCE_SELLER_ID for Plasticov and MERCADOLIBRE_TARGET_SELLER_ID for Maustian before sync/write operations.",
+      "MercadoLibre account roles are not configured. Set MERCADOLIBRE_SOURCE_SELLER_ID and MERCADOLIBRE_TARGET_SELLER_ID for the configured Plasticov to Maustian sync boundary before sync/write operations.",
     );
   }
 
@@ -36,7 +36,7 @@ export function assertPlasticovToMaustianDirection(
   const config = getMlAccountRoleConfig(env);
   if (sourceSellerId !== config.sourceSellerId || targetSellerId !== config.targetSellerId) {
     throw new Error(
-      `Invalid MercadoLibre sync direction. Expected Plasticov source ${config.sourceSellerId} -> Maustian target ${config.targetSellerId} on MLC.`,
+      `Invalid MercadoLibre sync direction. Expected configured Plasticov -> Maustian sync boundary ${config.sourceSellerId} -> ${config.targetSellerId} on MLC.`,
     );
   }
   return config;

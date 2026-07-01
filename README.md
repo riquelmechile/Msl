@@ -19,7 +19,7 @@ MSL is an AI agent that **manages your MercadoLibre Chile business through natur
 
 It understands your intent, proposes concrete actions, simulates buyer/seller/competitor behavior, learns from every interaction via a neural graph memory (Cortex), and protects your business with invisible safety gates — every action requires your explicit "dale" before execution.
 
-**Business context:** Plasticov (manufacturing) + Maustian (selling) — zero-stock arbitrage + physical inventory in Recoleta, Chile. 1,247 products, ~4,627 historical orders, $120M CLP/year.
+**Business context:** Plasticov and Maustian are separate MercadoLibre Chile seller accounts used as parallel commercial channels. Each account can carry independent prices, listing types, titles, and exposure strategies for the same or similar products. Fulfillment is product-level: some products use owned stock and others are supplier-sourced/arbitrage.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ cp .env.example .env.local
 
 Then paste your real API keys/passwords into `.env.local`. If `.env.local` already exists, edit it directly instead of replacing it. Keep `.env.example` committed with blank placeholder values only. For CI or hosted deploys, store the same values as GitHub Secrets or platform secrets; do not add secret values to workflow YAML.
 
-Naming matters here: **MSL** is the project/app name; **ML** means MercadoLibre; **MLC** is the MercadoLibre Chile site code, not an account identity. The business flow is dual-account — Plasticov MercadoLibre account (source) → Maustian MercadoLibre account (target). MercadoLibre app credentials identify the developer application; seller accounts are connected through OAuth and stored per account, not committed as raw tokens.
+Naming matters here: **MSL** is the project/app name; **ML** means MercadoLibre; **MLC** is the MercadoLibre Chile site code, not an account identity. Plasticov and Maustian are symmetric seller accounts, not a factory/store hierarchy. The configured Plasticov → Maustian `sync_product` path is a specific sync/safety boundary; it is not the full business model. MercadoLibre app credentials identify the developer application; seller accounts are connected through OAuth and stored per account, not committed as raw tokens.
 
 - Never prefix private keys with `NEXT_PUBLIC_`; Next.js exposes those values to the browser bundle.
 - Never paste raw MercadoLibre seller access or refresh tokens into docs, Git, examples, issues, or chat logs. Seller tokens are obtained through OAuth and stored per account.
@@ -70,14 +70,14 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 
 ## Production boundary today
 
-| Area               | Current state                                                                                               | Do not assume yet                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek. | Public unauthenticated production chat.                             |
-| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                         | Secret values in Git, or mutation execution without approval gates. |
-| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.       | Manual raw token setup or account role guessing.                    |
-| Product sync       | Sync direction is Plasticov source → Maustian target on `MLC`; reverse/arbitrary seller IDs are rejected.   | General-purpose bidirectional sync.                                 |
-| MCP tools          | MCP exposes a stubbed compatible surface for clients.                                                       | Production business-operation execution through MCP.                |
-| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                | Secrets in CI; use GitHub Secrets/platform secrets.                 |
+| Area               | Current state                                                                                                                        | Do not assume yet                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek.                          | Public unauthenticated production chat.                                    |
+| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                  | Secret values in Git, or mutation execution without approval gates.        |
+| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                | Manual raw token setup or account role guessing.                           |
+| Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary. | Business hierarchy between accounts or general-purpose bidirectional sync. |
+| MCP tools          | MCP exposes a stubbed compatible surface for clients.                                                                                | Production business-operation execution through MCP.                       |
+| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                         | Secrets in CI; use GitHub Secrets/platform secrets.                        |
 
 ## Architecture
 
@@ -147,7 +147,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 8   | **Probe Detection**    | Detects competitor intelligence-gathering patterns in questions and views                                       |
 | 9   | **Honey-Pot Proposer** | Generates decoy proposals when competitor probes are detected                                                   |
 | 10  | **Autonomy Engine**    | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                      |
-| 11  | **Product Sync**       | Syncs listings from Plasticov to Maustian applying CEO pricing/stock/category strategies                        |
+| 11  | **Product Sync**       | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary   |
 | 12  | **Approval Queue**     | Every write action goes through prepare → approve → execute → audit                                             |
 
 ## Stack

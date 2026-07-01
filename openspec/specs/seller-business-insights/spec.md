@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define daily explainable insights for a MercadoLibre Chile seller using an arbitrage/dropshipping operating model.
+Define daily explainable insights for MercadoLibre Chile seller accounts using product-level fulfillment signals. Plasticov and Maustian are parallel commercial channels; some products use owned stock and others are supplier-sourced/arbitrage.
 
 ## Requirements
 
@@ -24,7 +24,7 @@ The system MUST produce a concise daily summary of sales, margin signals, pendin
 
 ### Requirement: Opportunity and Risk Explanation
 
-The system MUST explain recommendations in terms of profit, margin, supplier sourcing after sale, customer treatment, claims, and reputation impact.
+The system MUST explain recommendations in terms of profit, margin, fulfillment mode, supplier sourcing when relevant, customer treatment, claims, and reputation impact.
 
 #### Scenario: Agent recommends an action
 

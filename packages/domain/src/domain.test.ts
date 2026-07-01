@@ -11,6 +11,7 @@ import {
   riskLevelForAction,
   type ApprovalRecord,
   type MlClaim,
+  type Listing,
   type MlMessage,
   type MlOrder,
   type PreparedAction,
@@ -266,6 +267,31 @@ describe("specialization evidence", () => {
     expect(readiness.requiredEvidence).toContain("at least three observed workflow examples");
     expect(readiness.requiredEvidence).toContain("seller decision criteria");
     expect(readiness.requiredEvidence).toContain("approval, audit, and rollback boundaries");
+  });
+});
+
+describe("domain types — Listing", () => {
+  it("models fulfillment and account-specific exposure strategy independently", () => {
+    const listing: Listing = {
+      id: "MLC123",
+      sellerId: "plasticov-seller",
+      title: "Organizer plástico reforzado",
+      status: "active",
+      price: { amount: 12990, currency: "CLP" },
+      availableQuantity: 8,
+      fulfillmentMode: "owned-stock",
+      accountStrategy: {
+        listingType: "premium",
+        titleVariant: "high-exposure-storage",
+        exposureGoal: "volume",
+      },
+      supplierSourcingRequired: false,
+      updatedAt: now,
+    };
+
+    expect(listing.fulfillmentMode).toBe("owned-stock");
+    expect(listing.accountStrategy?.listingType).toBe("premium");
+    expect(listing.accountStrategy?.exposureGoal).toBe("volume");
   });
 });
 

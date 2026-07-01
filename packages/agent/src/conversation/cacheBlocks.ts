@@ -89,6 +89,8 @@ export function buildDailyAggregates(source?: DailyDataSource): string {
 
 ### Métricas del día
 - Fecha: ${todaySpanish()}
+- Plasticov y Maustian operan como canales comerciales paralelos, no como fábrica/tienda.
+- La estrategia de precio, título, tipo de publicación y exposición puede diferir por cuenta.
 - Ventas del día: $340.500 CLP (12 órdenes)
 - Ventas del mes: $${monthlyVolume.toLocaleString("es-CL")} CLP
 - Margen promedio: 32.4%
