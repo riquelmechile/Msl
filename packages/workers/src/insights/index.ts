@@ -41,6 +41,7 @@ const signalLabels: Record<BusinessSignalKind, string> = {
   message: "mensajes",
   order: "órdenes",
   pricing: "precios",
+  "product-ads-insights": "Product Ads insights",
   reputation: "reputación",
   stock: "stock",
 };

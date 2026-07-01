@@ -419,11 +419,12 @@ describe("MCP Server", () => {
       },
     });
 
-    expect(registeredTools.size).toBe(15);
+    expect(registeredTools.size).toBe(16);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_reputation")).toBe(true);
+    expect(registeredTools.has("read_product_ads_insights")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_category_attributes")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_category_technical_specs")).toBe(true);
 
@@ -436,6 +437,53 @@ describe("MCP Server", () => {
     expect(getListings).toHaveBeenCalledWith("ML-test");
     expect(parsed.metadata).toMatchObject({ requiresApproval: false });
     expect(parsed.data).toMatchObject({ sellerId: "ML-test" });
+  });
+
+  it("executes Product Ads insights reads with auth, seller scope, and no mutation surface", async () => {
+    const getProductAdsInsights = vi.fn().mockResolvedValue({
+      kind: "product-ads-insights",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "product-ads-insights" },
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+      data: { noMutationExecuted: true, performanceMetric: "roas" },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getProductAdsInsights,
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_product_ads_insights");
+    expect(cb).toBeDefined();
+
+    const request = { sellerId: "ML-test", dateFrom: "2026-02-01", itemId: "MLC1001" };
+    const result = (await cb!(request)) as { content: { text: string }[] };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getProductAdsInsights).toHaveBeenCalledWith("ML-test", {
+      dateFrom: "2026-02-01",
+      itemId: "MLC1001",
+    });
+    expect(parsed.metadata).toMatchObject({
+      requiresApproval: false,
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+    });
+    expect(parsed.data).toMatchObject({
+      data: { noMutationExecuted: true, performanceMetric: "roas" },
+    });
   });
 
   it("registers only supported new MCP category safe reads and no mutation execution tools", () => {

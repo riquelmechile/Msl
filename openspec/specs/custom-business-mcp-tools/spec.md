@@ -64,12 +64,12 @@ The system MUST enforce approval, risk labeling, and audit records for every wri
 
 ### Requirement: Concrete Read Tool Surface
 
-The system MUST expose project-owned read tools for listings, orders, messages, and reputation snapshots. Read tools MUST be authorized, scoped to the connected seller, and MUST return source, freshness, and confidence metadata with their business data.
+The system MUST expose project-owned read tools for listings, orders, messages, reputation snapshots, and Product Ads insights. Read tools MUST be authorized, scoped to the connected seller, and MUST return source, freshness, and confidence metadata with their business data.
 
 #### Scenario: Authorized read returns business snapshot
 
 - GIVEN a connected MLC seller with valid access
-- WHEN the agent requests listings, orders, messages, or reputation through a read tool
+- WHEN the agent requests listings, orders, messages, reputation, or Product Ads insights through a read tool
 - THEN the tool MUST return the requested snapshot with source, freshness, and confidence metadata
 - AND the data MUST come from project-owned direct API tooling
 
@@ -78,6 +78,14 @@ The system MUST expose project-owned read tools for listings, orders, messages, 
 - GIVEN an authorized read has incomplete or conservative evidence
 - WHEN the tool returns a snapshot
 - THEN the result MUST indicate partial or low-confidence metadata instead of hiding uncertainty
+
+#### Scenario: Product Ads insights are read-only
+
+- GIVEN MCP API-key auth is valid and a connected MLC seller is requested
+- WHEN `read_product_ads_insights` is called with optional date, item, campaign, or status filters
+- THEN the tool MUST return Product Ads advertiser, campaign, ad, and metric evidence with seller scope
+- AND it MUST disclose `noMutationExecuted: true` and `requiresApproval: false`
+- AND it MUST NOT expose campaign/ad mutation tools, use legacy Product Ads endpoints, or prepare budget/status changes in this read operation.
 
 ### Requirement: Read-Only Approval Bypass
 

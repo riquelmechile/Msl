@@ -144,6 +144,7 @@ The system MUST classify documented MercadoLibre API areas before adding runtime
 | Pictures | `prepare-only` | Official docs: `working-with-pictures`; upload/link/replace endpoints mutate item media, while picture requirements are also observable through listing quality and category settings. | Safe evidence MUST come from listing quality/category reads; upload validation or replacement is not a read surface. | Low | unknown | Prepared action only; no direct execution. |
 | Shipping | `prepare-only` | Official docs: `items-shipping-attributes-and-dimensions`; dimensions and ME2/fulfillment updates can be rejected or managed by logistics. | Treat evidence as validation guidance until a read-only shipping endpoint is explicitly confirmed for MLC. | Low | unknown | Prepared action only; no direct execution. |
 | Visits/metrics | `safe-read` | Official docs: `visits-resource`; GET visit resources support user and item windows and return totals/details with request date ranges. | Use requested `date_from`/`date_to`, `last`, and `unit`; maximum documented window is 150 days. | Low | unknown | No runtime surface until MLC support is confirmed. |
+| Product Ads insights | `safe-read` | Official docs: `pads-read` updated 2026-02-18; advertiser lookup uses GET `/advertising/advertisers?product_id=PADS` with `Api-Version: 1`, and campaign/ad metrics use current Product Ads search endpoints with `api-version: 2`. | Use requested `date_from`/`date_to`; ROAS is the standard 2026 performance metric. The read metric `acos` remains requested by default, while the transitional target field `acos_target` is intentionally omitted from default metrics until its 2026-03-30 deprecation. | High | `MLC-confirmed` | Project-owned read tool only; campaign/ad budget, status, and strategy changes remain prepare-only/approval-bound. |
 | Reputation | `safe-read` | Official docs: `sellers-reputation`; GET `/users/{user_id}` returns `seller_reputation`, and the docs explicitly describe MLC thresholds and limits. | Use retrieval time and documented metric periods such as 60 or 365 days for MLC. | High | `MLC-confirmed` | Future project-owned read tool only. |
 | Questions | `prepare-only` | Official docs: `questions`; reads exist, but answer, blacklist, and public question-answering flows can create public or stateful effects. | Read evidence MUST preserve status/date metadata; answer-question behavior remains approval-bound proposal work only. | Low | unknown | Prepared action only; no direct execution. |
 | Messages | `safe-read` | Existing project-owned MLC read snapshots already expose non-mutating message summaries through authorized direct API reads. Official docs: `pending-messages`; post-sale replies and mark-read flows can create stateful effects and are not included in this read surface. | Read snapshots MUST preserve status/date metadata, seller scope, blocked-result handling, freshness, and confidence; they MUST NOT mark messages read, send replies, or execute mutation operations. | Medium | project-owned existing MLC read | Existing project-owned read tool only; answering, mark-read, and reply operations remain prepared-action-only or future approval work. |
@@ -154,6 +155,14 @@ The system MUST classify documented MercadoLibre API areas before adding runtime
 - WHEN the system evaluates whether runtime behavior may be added
 - THEN the entry MUST declare classification, evidence reference, freshness expectation, confidence, `siteSupport`, and runtime surface
 - AND runtime implementation MUST follow the declared runtime surface instead of inferring execution from documentation.
+
+#### Scenario: Product Ads insights are read before ad strategy changes
+
+- GIVEN a connected Plasticov or Maustian seller account has Product Ads access
+- WHEN the agent evaluates exposure, budget, status, title, or listing strategy for a product
+- THEN the system MUST read Product Ads advertiser, campaign, ad, and metrics evidence first through current `pads-read` endpoints
+- AND the read MUST preserve seller scope and disclose `noMutationExecuted: true`
+- AND Product Ads mutations, legacy endpoints, budget changes, campaign status changes, and ad edits MUST remain out of scope for this safe-read capability.
 
 #### Scenario: MLC support is unknown
 

@@ -511,6 +511,64 @@ describe("direct MLC API client boundary", () => {
     ]);
   });
 
+  it("reads Product Ads insights through current safe-read endpoints and headers only", async () => {
+    const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        requests.push(request);
+        if (request.path === "/advertising/advertisers") {
+          return Promise.resolve({ results: [{ id: 123, site_id: "MLC" }] });
+        }
+        if (request.path.endsWith("/campaigns/search")) {
+          return Promise.resolve({
+            results: [{ id: 456, status: "active", metrics: { roas: 3.2 } }],
+          });
+        }
+        return Promise.resolve({
+          results: [{ id: 789, item_id: "MLC1001", campaign_id: 456, metrics: { cost: 1000 } }],
+        });
+      },
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(
+      client.getProductAdsInsights!("seller-1", {
+        dateFrom: "2026-02-01",
+        dateTo: "2026-02-18",
+        itemId: "MLC1001",
+      }),
+    ).resolves.toMatchObject({
+      kind: "product-ads-insights",
+      data: {
+        advertiser: { id: "123", siteId: "MLC", productId: "PADS" },
+        noMutationExecuted: true,
+        performanceMetric: "roas",
+        campaigns: [{ id: "456", metrics: { roas: 3.2 } }],
+        ads: [{ id: "789", itemId: "MLC1001", campaignId: "456", metrics: { cost: 1000 } }],
+      },
+      siteSupport: "MLC-confirmed",
+      sellerScope: { sellerId: "seller-1", site: "MLC" },
+    });
+
+    expect(requests.map(({ method, path }) => ({ method, path }))).toEqual([
+      { method: "GET", path: "/advertising/advertisers" },
+      { method: "GET", path: "/advertising/MLC/advertisers/123/product_ads/campaigns/search" },
+      { method: "GET", path: "/advertising/MLC/advertisers/123/product_ads/ads/search" },
+    ]);
+    expect(requests[0]).toMatchObject({
+      query: { product_id: "PADS" },
+      headers: { "Api-Version": "1" },
+    });
+    expect(requests[1]).toMatchObject({
+      query: { metrics_summary: "true" },
+      headers: { "api-version": "2" },
+    });
+    expect(requests[2]).toMatchObject({
+      query: { item_id: "MLC1001" },
+      headers: { "api-version": "2" },
+    });
+  });
+
   it("rejects unconfigured OAuth read sellers before token resolution", async () => {
     const ensureValidToken = vi.fn().mockResolvedValue("access-token");
     const request = vi.fn().mockResolvedValue({ results: [] });

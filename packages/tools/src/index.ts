@@ -22,6 +22,7 @@ import type {
   MlcListingSummary,
   MlcMessageSummary,
   MlcOrderSummary,
+  MlcProductAdsInsights,
   MlcReadSnapshot,
   MlcReputationSummary,
 } from "@msl/mercadolibre";
@@ -73,6 +74,7 @@ export type ReadToolBlocked =
       siteSupport: "unknown";
     }
   | { status: "blocked"; reason: "unsupported-domain-id"; message: string; siteSupport: "unknown" }
+  | { status: "blocked"; reason: "product-ads-unavailable"; message: string }
   | { status: "degraded"; reason: "ml-api-read-failed"; message: string; siteSupport: "unknown" };
 
 export type MlcReadTools = {
@@ -91,6 +93,19 @@ export type MlcReadTools = {
   reputation: CustomBusinessTool<
     { sellerId: SellerId },
     MlcReadSnapshot<MlcReputationSummary> | ReadToolBlocked
+  >;
+  productAdsInsights: CustomBusinessTool<
+    {
+      sellerId: SellerId;
+      dateFrom?: string;
+      dateTo?: string;
+      limit?: number;
+      offset?: number;
+      itemId?: string;
+      campaignId?: string;
+      status?: string;
+    },
+    MlcReadSnapshot<MlcProductAdsInsights> | ReadToolBlocked
   >;
 };
 
@@ -145,6 +160,18 @@ export function createMlcReadTools(input: {
       name: "read-mercadolibre-reputation",
       description: "Reads authorized MercadoLibre reputation snapshots for the connected seller.",
       read: ({ sellerId }) => input.client.getReputation(sellerId),
+    }),
+    productAdsInsights: createMlcReadTool({
+      name: "read-mercadolibre-product-ads-insights",
+      description:
+        "Reads authorized Product Ads advertiser, campaign, ad, and metrics insights for the connected seller without mutating campaigns or ads.",
+      catchUnexpectedErrors: true,
+      read: ({ sellerId, ...options }) => {
+        if (!input.client.getProductAdsInsights) {
+          throw new Error("Product Ads advertiser is not available for this seller.");
+        }
+        return input.client.getProductAdsInsights(sellerId, options);
+      },
     }),
     categoryAttributes: createMlcReadTool({
       name: "read-mercadolibre-category-attributes",
@@ -290,11 +317,19 @@ function toReadToolBlocked(
     return { status: "blocked", reason: "unsupported-domain-id", message, siteSupport: "unknown" };
   }
 
+  if (/Product Ads advertiser is not available/i.test(message)) {
+    return {
+      status: "blocked",
+      reason: "product-ads-unavailable",
+      message: "Product Ads is not available for this seller or token scope.",
+    };
+  }
+
   if (catchUnexpectedErrors) {
     return {
       status: "degraded",
       reason: "ml-api-read-failed",
-      message,
+      message: "MercadoLibre read failed before reliable data could be returned.",
       siteSupport: "unknown",
     };
   }

@@ -18,6 +18,7 @@ import {
   getMlAccountRoleConfig,
   normalizeMlcItemId,
   previewStrategyChanges,
+  MLC_PRODUCT_ADS_MAX_LIMIT,
   type MlcApiClient,
   type MlItem,
   type MlAccountRoleConfig,
@@ -145,6 +146,20 @@ const mcpApproveSyncProductProposalInputSchema = {
 
 const mcpReadSyncProductExecutionReadinessInputSchema = {
   actionId: z.string(),
+  msl_api_key: z.string().optional(),
+};
+
+const mcpReadProductAdsInsightsInputSchema = {
+  sellerId: z.string(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  limit: z.number().int().positive().max(MLC_PRODUCT_ADS_MAX_LIMIT).optional(),
+  offset: z.number().int().nonnegative().optional(),
+  itemId: z.string().optional(),
+  campaignId: z.string().optional(),
+  status: z
+    .enum(["active", "paused", "hold", "idle", "delegated", "revoked", "recommended"])
+    .optional(),
   msl_api_key: z.string().optional(),
 };
 
@@ -1316,6 +1331,11 @@ export function createMcpServer(config: McpServerConfig = {}) {
     registerMlcReadTool(server, "read_mercadolibre_orders", readTools.orders);
     registerMlcReadTool(server, "read_mercadolibre_messages", readTools.messages);
     registerMlcReadTool(server, "read_mercadolibre_reputation", readTools.reputation);
+    registerMlcProductAdsInsightsReadTool(
+      server,
+      "read_product_ads_insights",
+      readTools.productAdsInsights,
+    );
     registerMlcCategoryAttributesReadTool(
       server,
       "read_mercadolibre_category_attributes",
@@ -1427,6 +1447,27 @@ function registerMlcReadTool(
       }
 
       return jsonResult(await tool.execute({ sellerId }));
+    },
+  );
+}
+
+function registerMlcProductAdsInsightsReadTool(
+  server: McpServer,
+  name: string,
+  tool: MlcReadTools["productAdsInsights"],
+): void {
+  server.registerTool(
+    name,
+    {
+      description: tool.description,
+      inputSchema: mcpReadProductAdsInsightsInputSchema,
+    },
+    async ({ msl_api_key, ...request }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      return jsonResult(await tool.execute(request as Parameters<typeof tool.execute>[0]));
     },
   );
 }

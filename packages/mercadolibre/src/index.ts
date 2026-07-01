@@ -107,12 +107,41 @@ export type MlcCategoryTechnicalSpecSummary = {
   group?: string;
 };
 
+export type MlcProductAdsMetricSummary = Readonly<Record<string, number>>;
+
+export const MLC_PRODUCT_ADS_DEFAULT_LIMIT = 50;
+export const MLC_PRODUCT_ADS_DEFAULT_OFFSET = 0;
+export const MLC_PRODUCT_ADS_MAX_LIMIT = 100;
+export const MLC_PRODUCT_ADS_DEFAULT_METRICS =
+  "clicks,prints,ctr,cost,cpc,acos,cvr,roas,sov,direct_amount,indirect_amount,total_amount,direct_units,indirect_units,total_units";
+
+export type MlcProductAdsEntitySummary = {
+  id: string;
+  name?: string;
+  itemId?: string;
+  campaignId?: string;
+  status?: string;
+  metrics?: MlcProductAdsMetricSummary;
+};
+
+export type MlcProductAdsInsights = {
+  advertiser: { id: string; siteId: string; productId: "PADS" };
+  dateFrom?: string;
+  dateTo?: string;
+  campaigns: ReadonlyArray<MlcProductAdsEntitySummary>;
+  ads: ReadonlyArray<MlcProductAdsEntitySummary>;
+  noMutationExecuted: true;
+  performanceMetric: "roas";
+  transitionalMetrics: { acosTargetDeprecatedAfter: "2026-03-30" };
+};
+
 export type MlcListingsSnapshot = MlcReadSnapshot<MlcListingSummary>;
 export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary>;
 export type MlcMessagesSnapshot = MlcReadSnapshot<MlcMessageSummary>;
 export type MlcReputationSnapshot = MlcReadSnapshot<MlcReputationSummary>;
 export type MlcCategoryAttributesSnapshot = MlcReadSnapshot<MlcCategoryAttributeSummary>;
 export type MlcCategoryTechnicalSpecsSnapshot = MlcReadSnapshot<MlcCategoryTechnicalSpecSummary>;
+export type MlcProductAdsInsightsSnapshot = MlcReadSnapshot<MlcProductAdsInsights>;
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -155,6 +184,7 @@ export type MercadoLibreApiRequest = {
   path: string;
   accessToken: string;
   query?: Readonly<Record<string, string>>;
+  headers?: Readonly<Record<string, string>>;
   body?: unknown;
 };
 
@@ -191,12 +221,27 @@ export type MlcApiClient = {
     sellerId: string,
     domainId: string,
   ): Promise<MlcCategoryTechnicalSpecsSnapshot>;
+  getProductAdsInsights?(
+    sellerId: string,
+    options?: MlcProductAdsInsightsOptions,
+  ): Promise<MlcProductAdsInsightsSnapshot>;
+};
+
+export type MlcProductAdsInsightsOptions = {
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+  offset?: number;
+  itemId?: string;
+  campaignId?: string;
+  status?: string;
 };
 
 type MlcReadRequest = (
   sellerId: string,
   path: string,
   query?: Readonly<Record<string, string>>,
+  headers?: Readonly<Record<string, string>>,
 ) => Promise<unknown>;
 
 type MlcReadEndpoint<TSnapshot> = {
@@ -310,6 +355,12 @@ function booleanValue(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function numericStringValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
 function pushOptional<T extends object, K extends keyof T>(
   target: T,
   key: K,
@@ -333,6 +384,43 @@ function snapshotConfidence(
 
 function sellerScope(sellerId: string): { sellerId: string; site: "MLC" } {
   return { sellerId, site: "MLC" };
+}
+
+function assertIsoDate(value: string | undefined, field: string): void {
+  if (value !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`Product Ads ${field} must use YYYY-MM-DD format.`);
+  }
+}
+
+function productAdsQuery(options: MlcProductAdsInsightsOptions = {}): Record<string, string> {
+  assertIsoDate(options.dateFrom, "dateFrom");
+  assertIsoDate(options.dateTo, "dateTo");
+  const query: Record<string, string> = {
+    limit: String(options.limit ?? MLC_PRODUCT_ADS_DEFAULT_LIMIT),
+    offset: String(options.offset ?? MLC_PRODUCT_ADS_DEFAULT_OFFSET),
+    metrics: MLC_PRODUCT_ADS_DEFAULT_METRICS,
+    metrics_summary: "true",
+  };
+  pushOptional(query, "date_from", options.dateFrom);
+  pushOptional(query, "date_to", options.dateTo);
+  pushOptional(query, "item_id", options.itemId);
+  pushOptional(query, "campaign_id", options.campaignId);
+  pushOptional(query, "status", options.status);
+  return query;
+}
+
+function productAdsMetrics(
+  record: Readonly<Record<string, unknown>> | undefined,
+): MlcProductAdsMetricSummary | undefined {
+  const metrics = asRecord(record?.metrics) ?? asRecord(record?.metrics_summary) ?? record;
+  if (metrics === undefined) return undefined;
+  const summary = Object.fromEntries(
+    Object.keys(metrics).flatMap((key) => {
+      const value = numberValue(metrics[key]);
+      return value === undefined ? [] : [[key, value]];
+    }),
+  );
+  return Object.keys(summary).length > 0 ? summary : undefined;
 }
 
 function assertMlcCategoryId(categoryId: string): void {
@@ -749,6 +837,84 @@ function normalizeCategoryTechnicalSpecs(input: {
   };
 }
 
+function findProductAdsAdvertiser(payload: unknown): { id: string; siteId: string } {
+  const root = asRecord(payload);
+  const candidates = asArray(root?.results ?? root?.advertisers ?? payload);
+  for (const candidate of candidates) {
+    const record = asRecord(candidate);
+    const id = numericStringValue(record?.advertiser_id ?? record?.id);
+    const siteId = stringValue(record?.site_id ?? record?.siteId ?? record?.advertiser_site_id);
+    if (record !== undefined && id !== undefined && siteId !== undefined) {
+      return { id, siteId };
+    }
+  }
+
+  throw new Error("Product Ads advertiser is not available for this seller.");
+}
+
+function normalizeProductAdsEntities(
+  payload: unknown,
+  kind: "campaigns" | "ads",
+): {
+  data: MlcProductAdsEntitySummary[];
+  complete: boolean;
+} {
+  const root = asRecord(payload);
+  const results = asArray(root?.results ?? root?.[kind]);
+  let complete = root !== undefined && Array.isArray(root.results ?? root[kind]);
+  const data = results.flatMap((item): MlcProductAdsEntitySummary[] => {
+    const record = asRecord(item);
+    const id = numericStringValue(record?.id ?? record?.ad_id ?? record?.campaign_id);
+    if (record === undefined || id === undefined) {
+      complete = false;
+      return [];
+    }
+    const entity: MlcProductAdsEntitySummary = { id };
+    pushOptional(entity, "name", stringValue(record.name));
+    pushOptional(entity, "itemId", stringValue(record.item_id));
+    pushOptional(entity, "campaignId", numericStringValue(record.campaign_id));
+    pushOptional(entity, "status", stringValue(record.status));
+    pushOptional(entity, "metrics", productAdsMetrics(record));
+    return [entity];
+  });
+  return { data, complete };
+}
+
+function normalizeProductAdsInsights(input: {
+  sellerId: string;
+  advertiser: { id: string; siteId: string };
+  campaignsPayload: unknown;
+  adsPayload: unknown;
+  options: MlcProductAdsInsightsOptions;
+  now: Date;
+}): MlcProductAdsInsightsSnapshot {
+  const campaigns = normalizeProductAdsEntities(input.campaignsPayload, "campaigns");
+  const ads = normalizeProductAdsEntities(input.adsPayload, "ads");
+  const completeness = campaigns.complete && ads.complete ? "complete" : "partial";
+  const data: MlcProductAdsInsights = {
+    advertiser: { id: input.advertiser.id, siteId: input.advertiser.siteId, productId: "PADS" },
+    campaigns: campaigns.data,
+    ads: ads.data,
+    noMutationExecuted: true,
+    performanceMetric: "roas",
+    transitionalMetrics: { acosTargetDeprecatedAfter: "2026-03-30" },
+  };
+  pushOptional(data, "dateFrom", input.options.dateFrom);
+  pushOptional(data, "dateTo", input.options.dateTo);
+
+  return {
+    sellerId: input.sellerId,
+    kind: "product-ads-insights",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("product-ads-insights", input.now),
+    confidence: snapshotConfidence(completeness, campaigns.data.length + ads.data.length),
+    siteSupport: MLC_CONFIRMED_SITE_SUPPORT,
+    sellerScope: sellerScope(input.sellerId),
+  };
+}
+
 const MLC_READ_ENDPOINTS = {
   listings: {
     path: (sellerId: string) => `/users/${sellerId}/items/search`,
@@ -832,6 +998,31 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       const payload = await input.request(sellerId, `/domains/${domainId}/technical_specs`);
       return normalizeCategoryTechnicalSpecs({ sellerId, payload, now: input.now() });
     },
+    getProductAdsInsights: async (sellerId, options = {}) => {
+      const advertiserPayload = await input.request(
+        sellerId,
+        "/advertising/advertisers",
+        { product_id: "PADS" },
+        { "Content-Type": "application/json", "Api-Version": "1" },
+      );
+      const advertiser = findProductAdsAdvertiser(advertiserPayload);
+      const basePath = `/advertising/${advertiser.siteId}/advertisers/${advertiser.id}/product_ads`;
+      const query = productAdsQuery(options);
+      const headers = { "api-version": "2" };
+      const [campaignsPayload, adsPayload] = await Promise.all([
+        input.request(sellerId, `${basePath}/campaigns/search`, query, headers),
+        input.request(sellerId, `${basePath}/ads/search`, query, headers),
+      ]);
+
+      return normalizeProductAdsInsights({
+        sellerId,
+        advertiser,
+        campaignsPayload,
+        adsPayload,
+        options,
+        now: input.now(),
+      });
+    },
   };
 }
 
@@ -862,6 +1053,7 @@ export function createMlcApiClient(input: {
     sellerId: string,
     path: string,
     query?: Readonly<Record<string, string>>,
+    headers?: Readonly<Record<string, string>>,
   ) => {
     const access = evaluateOAuthAccess(input.tokenState, input.now);
 
@@ -888,6 +1080,9 @@ export function createMlcApiClient(input: {
 
     if (query !== undefined) {
       apiRequest.query = query;
+    }
+    if (headers !== undefined) {
+      apiRequest.headers = headers;
     }
 
     return input.transport.request(apiRequest);
@@ -921,6 +1116,7 @@ export function createOAuthMlcApiClient(input: {
     sellerId: string,
     path: string,
     query?: Readonly<Record<string, string>>,
+    headers?: Readonly<Record<string, string>>,
   ) => {
     if (!allowedSellerIds.has(sellerId)) {
       const failure: OAuthSellerAuthorizationFailure = {
@@ -938,6 +1134,9 @@ export function createOAuthMlcApiClient(input: {
 
     if (query !== undefined) {
       apiRequest.query = query;
+    }
+    if (headers !== undefined) {
+      apiRequest.headers = headers;
     }
 
     return input.transport.request(apiRequest);
@@ -1008,7 +1207,7 @@ export function createMercadoLibreApiFetchTransport(): MercadoLibreApiTransport 
 
       const response = await fetchWithBackoff(url, {
         method: request.method,
-        headers: { Authorization: `Bearer ${request.accessToken}` },
+        headers: { Authorization: `Bearer ${request.accessToken}`, ...request.headers },
       });
 
       if (!response.ok) {

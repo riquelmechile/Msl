@@ -6,6 +6,7 @@ export type BusinessSignalKind =
   | "reputation"
   | "message"
   | "listing"
+  | "product-ads-insights"
   | "category-attributes"
   | "category-technical-specs"
   | "pricing"
