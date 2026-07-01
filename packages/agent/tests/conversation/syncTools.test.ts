@@ -16,6 +16,8 @@ import {
   createSyncProductTool,
   createSyncAllTool,
   createCheckAccountTool,
+  createAuditAllQualityTool,
+  createFindRelistOpportunitiesTool,
 } from "../../src/conversation/syncTools.js";
 import { createAgentLoop } from "../../src/conversation/agentLoop.js";
 import { createGraphEngine } from "@msl/memory";
@@ -470,6 +472,132 @@ describe("createCheckAccountTool — unit", () => {
 
     expect(result).toHaveProperty("error");
     expect((result as { error: string }).error).toMatch(/network failure/i);
+  });
+});
+
+describe("createAuditAllQualityTool — unit", () => {
+  it("returns latest quality snapshot per item ranked from worst to best", async () => {
+    const cortex = createGraphEngine(":memory:");
+    const tool = createAuditAllQualityTool(cortex);
+
+    cortex.createNode("quality_MLC1001_old", {
+      type: "quality_snapshot",
+      sellerId: "plasticov",
+      itemId: "MLC1001",
+      score: 82,
+      levelWording: "Good",
+      pendingOpportunities: 1,
+      capturedAt: "2026-07-01T08:00:00Z",
+    });
+    cortex.createNode("quality_MLC1001_new", {
+      type: "quality_snapshot",
+      sellerId: "plasticov",
+      itemId: "MLC1001",
+      score: 55,
+      levelWording: "Poor",
+      pendingOpportunities: 4,
+      capturedAt: "2026-07-01T12:00:00Z",
+    });
+    cortex.createNode("quality_MLC1002", {
+      type: "quality_snapshot",
+      sellerId: "plasticov",
+      itemId: "MLC1002",
+      score: 72,
+      levelWording: "Good",
+      pendingOpportunities: 0,
+      capturedAt: "2026-07-01T11:00:00Z",
+    });
+
+    const result = await tool.execute({ sellerId: "plasticov" });
+    const items = result.items as Array<Record<string, unknown>>;
+
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.itemId)).toEqual(["MLC1001", "MLC1002"]);
+    expect(items[0]).toMatchObject({ score: 55, level: "Poor", pendingOpportunities: 4 });
+    expect(result.metadata).toMatchObject({ avgScore: 64, totalItems: 2, lowScoreCount: 1 });
+    expect(result.summary).toMatch(/2 publicaciones auditadas/i);
+
+    cortex.db.close();
+  });
+
+  it("returns empty result when Cortex has no quality snapshots", async () => {
+    const cortex = createGraphEngine(":memory:");
+    const tool = createAuditAllQualityTool(cortex);
+
+    const result = await tool.execute({ sellerId: "plasticov" });
+
+    expect(result).toMatchObject({ items: [] });
+    expect(result.summary).toMatch(/no hay datos de calidad/i);
+
+    cortex.db.close();
+  });
+});
+
+describe("createFindRelistOpportunitiesTool — unit", () => {
+  it("returns relist opportunities with expiry dates and urgency metadata", async () => {
+    const cortex = createGraphEngine(":memory:");
+    const tool = createFindRelistOpportunitiesTool(cortex);
+
+    cortex.createNode("relist_MLC2001", {
+      type: "relist_opportunity",
+      sellerId: "plasticov",
+      itemId: "MLC2001",
+      title: "Closed winner",
+      daysSinceClose: 55,
+      hadSalesHistory: true,
+      suggestedPrice: 19990,
+      closedAt: "2026-06-01T00:00:00Z",
+    });
+    cortex.createNode("relist_MLC2002", {
+      type: "relist_opportunity",
+      sellerId: "plasticov",
+      itemId: "MLC2002",
+      title: "Recent close",
+      daysSinceClose: 12,
+      hadSalesHistory: true,
+      suggestedPrice: 9990,
+      closedAt: "2026-06-20T00:00:00Z",
+    });
+
+    const result = await tool.execute({ sellerId: "plasticov" });
+    const items = result.items as Array<Record<string, unknown>>;
+
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.itemId)).toEqual(expect.arrayContaining(["MLC2001", "MLC2002"]));
+    expect(items.find((item) => item.itemId === "MLC2001")).toMatchObject({
+      expiresAt: "2026-07-31",
+      suggestedPrice: 19990,
+    });
+    expect(result.metadata).toMatchObject({ total: 2, urgent: 1 });
+
+    cortex.db.close();
+  });
+
+  it("filters relist opportunities to urgent items only", async () => {
+    const cortex = createGraphEngine(":memory:");
+    const tool = createFindRelistOpportunitiesTool(cortex);
+
+    cortex.createNode("relist_urgent", {
+      type: "relist_opportunity",
+      sellerId: "maustian",
+      itemId: "MLC3001",
+      daysSinceClose: 58,
+    });
+    cortex.createNode("relist_regular", {
+      type: "relist_opportunity",
+      sellerId: "maustian",
+      itemId: "MLC3002",
+      daysSinceClose: 20,
+    });
+
+    const result = await tool.execute({ sellerId: "maustian", urgent: true });
+    const items = result.items as Array<Record<string, unknown>>;
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ itemId: "MLC3001", daysSinceClose: 58 });
+    expect(result.metadata).toMatchObject({ total: 1, urgent: 1 });
+
+    cortex.db.close();
   });
 });
 
