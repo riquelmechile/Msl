@@ -1663,6 +1663,11 @@ export function createMcpServer(config: McpServerConfig = {}) {
       "read_mercadolibre_category_technical_specs",
       readTools.categoryTechnicalSpecs,
     );
+    registerMlcListingPricesReadTool(
+      server,
+      "read_mercadolibre_listing_prices",
+      readTools.listingPrices,
+    );
   }
 
   if (config.prepareWrite) {
@@ -1860,6 +1865,41 @@ function registerMlcCategoryTechnicalSpecsReadTool(
       }
 
       return jsonResult(await tool.execute({ sellerId, domainId }));
+    },
+  );
+}
+
+function registerMlcListingPricesReadTool(
+  server: McpServer,
+  name: string,
+  tool: MlcReadTools["listingPrices"],
+): void {
+  server.registerTool(
+    name,
+    {
+      description: tool.description,
+      inputSchema: {
+        sellerId: z.string(),
+        siteId: z.string(),
+        price: z.number(),
+        categoryId: z.string(),
+        currencyId: z.string().optional(),
+        listingTypeId: z.string().optional(),
+        logisticType: z.string().optional(),
+        shippingMode: z.string().optional(),
+        billableWeight: z.number().optional(),
+        quantity: z.number().optional(),
+        tags: z.union([z.string(), z.array(z.string())]).optional(),
+        logisticsAware: z.boolean().optional(),
+        msl_api_key: z.string().optional(),
+      },
+    },
+    async ({ msl_api_key, ...request }) => {
+      if (!validateApiKey(msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      return jsonResult(await tool.execute(request as Parameters<typeof tool.execute>[0]));
     },
   );
 }

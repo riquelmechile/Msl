@@ -436,8 +436,9 @@ describe("MCP Server", () => {
       },
     });
 
-    expect(registeredTools.size).toBe(16);
+    expect(registeredTools.size).toBe(17);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
+    expect(registeredTools.has("read_mercadolibre_listing_prices")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_messages")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_reputation")).toBe(true);
