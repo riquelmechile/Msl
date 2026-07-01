@@ -17,7 +17,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@msl/agent": "0.1.0"
+    "@msl/agent": "0.1.0",
+    "grammy": "^1.44.0"
   },
   "devDependencies": {
     "@types/node-telegram-bot-api": "^0.64.0"
