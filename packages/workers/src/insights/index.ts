@@ -38,6 +38,7 @@ const signalLabels: Record<BusinessSignalKind, string> = {
   claim: "reclamos",
   "historical-summary": "resumen histórico",
   listing: "publicaciones",
+  "listing-prices": "listing prices",
   message: "mensajes",
   order: "órdenes",
   pricing: "precios",

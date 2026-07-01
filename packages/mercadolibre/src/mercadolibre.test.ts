@@ -468,8 +468,15 @@ describe("direct MLC API client boundary", () => {
     await client.getReputation("seller-1");
     await client.getCategoryAttributes("seller-1", "MLC1743");
     await client.getCategoryTechnicalSpecs("seller-1", "MLC-CARS");
+    await client.getListingPrices!("seller-1", {
+      siteId: "MLA",
+      price: 5000,
+      categoryId: "MLA418448",
+      billableWeight: 5828,
+    });
 
     expect(tokenCalls).toEqual([
+      "seller-1",
       "seller-1",
       "seller-1",
       "seller-1",
@@ -508,7 +515,137 @@ describe("direct MLC API client boundary", () => {
         query: undefined,
         accessToken: "access-for-seller-1-6",
       },
+      {
+        path: "/sites/MLA/listing_prices",
+        query: { price: "5000", category_id: "MLA418448", billable_weight: "5828" },
+        accessToken: "access-for-seller-1-7",
+      },
     ]);
+  });
+
+  it("reads Premium listing prices with logistics-aware 2026 fee details", async () => {
+    const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        requests.push(request);
+        return Promise.resolve([
+          {
+            currency_id: "ARS",
+            listing_type_id: "gold_pro",
+            listing_type_name: "Premium",
+            sale_fee_amount: 875,
+            sale_fee_details: {
+              financing_add_on_fee: 100,
+              fixed_fee: 250,
+              gross_amount: 5000,
+              meli_percentage_fee: 525,
+              percentage_fee: 10.5,
+            },
+          },
+        ]);
+      },
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    await expect(
+      client.getListingPrices!("seller-1", {
+        siteId: "MLA",
+        price: 5000,
+        currencyId: "ARS",
+        categoryId: "MLA418448",
+        listingTypeId: "gold_pro",
+        logisticType: "drop_off",
+        shippingMode: "me2",
+        billableWeight: 5828,
+        quantity: 1,
+        tags: ["ahora-3"],
+      }),
+    ).resolves.toMatchObject({
+      kind: "listing-prices",
+      data: [
+        {
+          currencyId: "ARS",
+          listingTypeId: "gold_pro",
+          listingTypeName: "Premium",
+          saleFeeAmount: 875,
+          saleFeeDetails: {
+            financingAddOnFee: 100,
+            fixedFee: 250,
+            grossAmount: 5000,
+            meliPercentageFee: 525,
+            percentageFee: 10.5,
+          },
+        },
+      ],
+    });
+
+    expect(requests[0]).toMatchObject({
+      method: "GET",
+      path: "/sites/MLA/listing_prices",
+      query: {
+        price: "5000",
+        currency_id: "ARS",
+        category_id: "MLA418448",
+        listing_type_id: "gold_pro",
+        logistic_type: "drop_off",
+        shipping_mode: "me2",
+        billable_weight: "5828",
+        quantity: "1",
+        tags: "ahora-3",
+      },
+    });
+  });
+
+  it("reads Classic listing prices and can return multiple listing types when omitted", async () => {
+    const transport: MercadoLibreApiTransport = {
+      request: vi.fn().mockResolvedValue({
+        results: [
+          { currency_id: "ARS", listing_type_id: "gold_special", sale_fee_amount: 700 },
+          { currency_id: "ARS", listing_type_id: "gold_pro", sale_fee_amount: 875 },
+        ],
+      }),
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+
+    const response = await client.getListingPrices!("seller-1", {
+      siteId: "MLA",
+      price: 5000,
+      categoryId: "MLA418448",
+    });
+
+    expect(response.data).toMatchObject([
+      { listingTypeId: "gold_special", saleFeeAmount: 700 },
+      { listingTypeId: "gold_pro", saleFeeAmount: 875 },
+    ]);
+    expect(transport.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: { price: "5000", category_id: "MLA418448" },
+      }),
+    );
+  });
+
+  it("requires MLA billable weight when logistics-aware listing price params are present", async () => {
+    const request = vi.fn().mockResolvedValue([]);
+    const client = createMlcApiClient({ tokenState: tokenState(), transport: { request }, now });
+
+    await expect(
+      client.getListingPrices!("seller-1", {
+        siteId: "MLA",
+        price: 5000,
+        categoryId: "MLA418448",
+        logisticType: "drop_off",
+        shippingMode: "me2",
+      }),
+    ).rejects.toThrow(/billableWeight/);
+    await expect(
+      client.getListingPrices!("seller-1", {
+        siteId: "MLA",
+        price: 5000,
+        categoryId: "MLA418448",
+        logisticsAware: true,
+      }),
+    ).rejects.toThrow(/billableWeight/);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("reads Product Ads insights through current safe-read endpoints and headers only", async () => {

@@ -241,6 +241,52 @@ describe("project-owned MercadoLibre safe read tools", () => {
     expect(PREPARED_WRITE_KINDS).toContain("customer-message");
   });
 
+  it("wraps listing_prices as a read-only sale fee calculation tool", async () => {
+    const getListingPrices = vi
+      .fn<NonNullable<MlcApiClient["getListingPrices"]>>()
+      .mockResolvedValue(
+        snapshot("seller-1", "listing-prices", [
+          {
+            currencyId: "ARS",
+            listingTypeId: "gold_special",
+            listingTypeName: "Classic",
+            saleFeeAmount: 700,
+            saleFeeDetails: { fixedFee: 250, percentageFee: 9 },
+          },
+        ]),
+      );
+    const tools = createMlcReadTools({ client: clientWith({ getListingPrices }) });
+
+    const response = await tools.listingPrices.execute({
+      sellerId: "seller-1",
+      siteId: "MLA",
+      price: 5000,
+      categoryId: "MLA418448",
+      listingTypeId: "gold_special",
+      logisticType: "drop_off",
+      shippingMode: "me2",
+      billableWeight: 5828,
+    });
+
+    expect(getListingPrices).toHaveBeenCalledWith("seller-1", {
+      siteId: "MLA",
+      price: 5000,
+      categoryId: "MLA418448",
+      listingTypeId: "gold_special",
+      logisticType: "drop_off",
+      shippingMode: "me2",
+      billableWeight: 5828,
+    });
+    expect(response).toMatchObject({
+      data: {
+        kind: "listing-prices",
+        source: "mercadolibre-api",
+        data: [{ listingTypeId: "gold_special", saleFeeAmount: 700 }],
+      },
+      metadata: { source: "mercadolibre-api", requiresApproval: false },
+    });
+  });
+
   it("keeps prepare-only and unknown-support entries unavailable as read tools", () => {
     const tools = createMlcReadTools({ client: clientWith({}) });
 
@@ -378,6 +424,7 @@ function clientWith(overrides: Partial<MlcApiClient>): MlcApiClient {
     getReputation: vi.fn(),
     getCategoryAttributes: vi.fn(),
     getCategoryTechnicalSpecs: vi.fn(),
+    getListingPrices: vi.fn(),
     ...overrides,
   };
 }

@@ -135,6 +135,38 @@ export type MlcProductAdsInsights = {
   transitionalMetrics: { acosTargetDeprecatedAfter: "2026-03-30" };
 };
 
+export type MlcListingPriceListingTypeId = "gold_pro" | "gold_special" | "free" | string;
+
+export type MlcListingPricesInput = {
+  siteId: string;
+  price: number;
+  categoryId: string;
+  currencyId?: string;
+  listingTypeId?: MlcListingPriceListingTypeId;
+  logisticType?: string;
+  shippingMode?: string;
+  billableWeight?: number;
+  quantity?: number;
+  tags?: string | ReadonlyArray<string>;
+  logisticsAware?: boolean;
+};
+
+export type MlcSaleFeeDetails = {
+  financingAddOnFee?: number;
+  fixedFee?: number;
+  grossAmount?: number;
+  meliPercentageFee?: number;
+  percentageFee?: number;
+};
+
+export type MlcListingPriceSummary = {
+  currencyId?: string;
+  listingTypeId?: string;
+  listingTypeName?: string;
+  saleFeeAmount?: number;
+  saleFeeDetails: MlcSaleFeeDetails;
+};
+
 export type MlcListingsSnapshot = MlcReadSnapshot<MlcListingSummary>;
 export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary>;
 export type MlcMessagesSnapshot = MlcReadSnapshot<MlcMessageSummary>;
@@ -142,6 +174,7 @@ export type MlcReputationSnapshot = MlcReadSnapshot<MlcReputationSummary>;
 export type MlcCategoryAttributesSnapshot = MlcReadSnapshot<MlcCategoryAttributeSummary>;
 export type MlcCategoryTechnicalSpecsSnapshot = MlcReadSnapshot<MlcCategoryTechnicalSpecSummary>;
 export type MlcProductAdsInsightsSnapshot = MlcReadSnapshot<MlcProductAdsInsights>;
+export type MlcListingPricesSnapshot = MlcReadSnapshot<MlcListingPriceSummary>;
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -225,6 +258,10 @@ export type MlcApiClient = {
     sellerId: string,
     options?: MlcProductAdsInsightsOptions,
   ): Promise<MlcProductAdsInsightsSnapshot>;
+  getListingPrices?(
+    sellerId: string,
+    input: MlcListingPricesInput,
+  ): Promise<MlcListingPricesSnapshot>;
 };
 
 export type MlcProductAdsInsightsOptions = {
@@ -421,6 +458,52 @@ function productAdsMetrics(
     }),
   );
   return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
+function listingPricesQuery(input: MlcListingPricesInput): Record<string, string> {
+  if (!input.siteId) throw new Error("Listing prices siteId is required.");
+  if (!Number.isFinite(input.price)) throw new Error("Listing prices price must be finite.");
+  if (!input.categoryId) throw new Error("Listing prices categoryId is required.");
+  const usesLogisticsAwareParams =
+    input.logisticsAware === true ||
+    input.logisticType !== undefined ||
+    input.shippingMode !== undefined ||
+    input.billableWeight !== undefined;
+  if (input.siteId === "MLA" && usesLogisticsAwareParams && input.billableWeight === undefined) {
+    throw new Error(
+      "MLA listing price logistics-aware calculations require billableWeight to avoid incorrect 2026 fixed fee estimates.",
+    );
+  }
+
+  const query: Record<string, string> = {
+    price: String(input.price),
+    category_id: input.categoryId,
+  };
+  pushOptional(query, "currency_id", input.currencyId);
+  pushOptional(query, "listing_type_id", input.listingTypeId);
+  pushOptional(query, "logistic_type", input.logisticType);
+  // Official listing_prices docs use the singular `shipping_mode` parameter.
+  pushOptional(query, "shipping_mode", input.shippingMode);
+  if (input.billableWeight !== undefined) query.billable_weight = String(input.billableWeight);
+  if (input.quantity !== undefined) query.quantity = String(input.quantity);
+  if (Array.isArray(input.tags)) {
+    if (input.tags.length > 0) query.tags = input.tags.join(",");
+  } else if (typeof input.tags === "string") {
+    pushOptional(query, "tags", input.tags);
+  }
+  return query;
+}
+
+function normalizeSaleFeeDetails(
+  record: Readonly<Record<string, unknown>> | undefined,
+): MlcSaleFeeDetails {
+  const details: MlcSaleFeeDetails = {};
+  pushOptional(details, "financingAddOnFee", numberValue(record?.financing_add_on_fee));
+  pushOptional(details, "fixedFee", numberValue(record?.fixed_fee));
+  pushOptional(details, "grossAmount", numberValue(record?.gross_amount));
+  pushOptional(details, "meliPercentageFee", numberValue(record?.meli_percentage_fee));
+  pushOptional(details, "percentageFee", numberValue(record?.percentage_fee));
+  return details;
 }
 
 function assertMlcCategoryId(categoryId: string): void {
@@ -915,6 +998,43 @@ function normalizeProductAdsInsights(input: {
   };
 }
 
+function normalizeListingPrices(input: {
+  sellerId: string;
+  payload: unknown;
+  now: Date;
+}): MlcListingPricesSnapshot {
+  const root = asRecord(input.payload);
+  const results = asArray(root?.results ?? root?.listing_prices ?? input.payload);
+  let complete =
+    Array.isArray(input.payload) || Array.isArray(root?.results ?? root?.listing_prices);
+  const data = results.flatMap((item): MlcListingPriceSummary[] => {
+    const record = asRecord(item);
+    if (record === undefined) {
+      complete = false;
+      return [];
+    }
+    const saleFeeDetails = normalizeSaleFeeDetails(asRecord(record.sale_fee_details));
+    const summary: MlcListingPriceSummary = { saleFeeDetails };
+    pushOptional(summary, "currencyId", stringValue(record.currency_id));
+    pushOptional(summary, "listingTypeId", stringValue(record.listing_type_id));
+    pushOptional(summary, "listingTypeName", stringValue(record.listing_type_name));
+    pushOptional(summary, "saleFeeAmount", numberValue(record.sale_fee_amount));
+    if (summary.saleFeeAmount === undefined) complete = false;
+    return [summary];
+  });
+  const completeness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "listing-prices",
+    source: "mercadolibre-api",
+    data,
+    completeness,
+    freshness: createFreshness("listing-prices", input.now),
+    confidence: snapshotConfidence(completeness, data.length),
+  };
+}
+
 const MLC_READ_ENDPOINTS = {
   listings: {
     path: (sellerId: string) => `/users/${sellerId}/items/search`,
@@ -1022,6 +1142,14 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         options,
         now: input.now(),
       });
+    },
+    getListingPrices: async (sellerId, listingPricesInput) => {
+      const payload = await input.request(
+        sellerId,
+        `/sites/${listingPricesInput.siteId}/listing_prices`,
+        listingPricesQuery(listingPricesInput),
+      );
+      return normalizeListingPrices({ sellerId, payload, now: input.now() });
     },
   };
 }

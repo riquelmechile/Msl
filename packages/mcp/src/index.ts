@@ -1772,7 +1772,7 @@ function parseStrictIsoTimestamp(value: unknown): Date | null {
 function registerMlcReadTool(
   server: McpServer,
   name: string,
-  tool: MlcReadTools[keyof MlcReadTools],
+  tool: MlcReadTools["listings" | "orders" | "messages" | "reputation"],
 ): void {
   server.registerTool(
     name,

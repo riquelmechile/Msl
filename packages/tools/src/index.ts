@@ -19,6 +19,8 @@ import type {
   MlcApiClient,
   MlcCategoryAttributeSummary,
   MlcCategoryTechnicalSpecSummary,
+  MlcListingPricesInput,
+  MlcListingPriceSummary,
   MlcListingSummary,
   MlcMessageSummary,
   MlcOrderSummary,
@@ -107,6 +109,10 @@ export type MlcReadTools = {
     },
     MlcReadSnapshot<MlcProductAdsInsights> | ReadToolBlocked
   >;
+  listingPrices: CustomBusinessTool<
+    { sellerId: SellerId } & MlcListingPricesInput,
+    MlcReadSnapshot<MlcListingPriceSummary> | ReadToolBlocked
+  >;
 };
 
 export type MlcCategoryReadTools = {
@@ -171,6 +177,18 @@ export function createMlcReadTools(input: {
           throw new Error("Product Ads advertiser is not available for this seller.");
         }
         return input.client.getProductAdsInsights(sellerId, options);
+      },
+    }),
+    listingPrices: createMlcReadTool({
+      name: "read-mercadolibre-listing-prices",
+      description:
+        "Reads MercadoLibre listing_prices sale-fee calculations for Premium, Classic, or all listing types without mutating listings.",
+      catchUnexpectedErrors: true,
+      read: ({ sellerId, ...listingPricesInput }) => {
+        if (!input.client.getListingPrices) {
+          throw new Error("Listing prices are not available for this MercadoLibre client.");
+        }
+        return input.client.getListingPrices(sellerId, listingPricesInput);
       },
     }),
     categoryAttributes: createMlcReadTool({

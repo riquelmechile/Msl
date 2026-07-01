@@ -3,6 +3,7 @@ import type { SellerId } from "./seller.js";
 
 export type ReadSnapshotKind =
   | "listing"
+  | "listing-prices"
   | "product-ads-insights"
   | "order"
   | "message"
