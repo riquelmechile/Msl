@@ -96,7 +96,9 @@ export {
   createProductAdsInsightsTool,
   createReadMyOrdersTool,
   createCheckListingQualityTool,
+  createAuditAllQualityTool,
   createRelistListingTool,
+  createFindRelistOpportunitiesTool,
   createDiagnoseImageTool,
   createUploadImageTool,
 } from "./conversation/syncTools.js";

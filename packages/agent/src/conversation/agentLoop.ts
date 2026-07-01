@@ -36,7 +36,9 @@ import {
   createProductAdsInsightsTool,
   createReadMyOrdersTool,
   createCheckListingQualityTool,
+  createAuditAllQualityTool,
   createRelistListingTool,
+  createFindRelistOpportunitiesTool,
   createDiagnoseImageTool,
   createUploadImageTool,
 } from "./syncTools.js";
@@ -251,6 +253,12 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.mlcClient && !toolMap.has("relist_listing")) {
     toolMap.set("relist_listing", createRelistListingTool(config.mlcClient));
+  }
+  if (config.engine && !toolMap.has("audit_all_quality")) {
+    toolMap.set("audit_all_quality", createAuditAllQualityTool(config.engine));
+  }
+  if (config.engine && !toolMap.has("find_relist_opportunities")) {
+    toolMap.set("find_relist_opportunities", createFindRelistOpportunitiesTool(config.engine));
   }
   if (config.mlcClient && !toolMap.has("diagnose_image")) {
     toolMap.set("diagnose_image", createDiagnoseImageTool(config.mlcClient));
