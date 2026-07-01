@@ -20,6 +20,7 @@ function makeSyncProductPayload(overrides: Record<string, unknown> = {}) {
 function makeApprovalDependencies(
   save = vi.fn<ApprovalQueueRepository["save"]>().mockResolvedValue(undefined),
   findAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(null),
+  findApproval = vi.fn<ApprovalQueueRepository["findApproval"]>().mockResolvedValue(null),
 ) {
   return {
     save,
@@ -29,12 +30,51 @@ function makeApprovalDependencies(
         save,
         findAction,
         saveApproval: vi.fn(),
-        findApproval: vi.fn(),
+        findApproval,
         saveAudit: vi.fn(),
         listAudits: vi.fn(),
       },
       clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },
     },
+  };
+}
+
+function makeApprovedSyncProductQueueEntry(
+  overrides: Parameters<typeof makeSyncProductQueueEntry>[0] = {},
+) {
+  return makeSyncProductQueueEntry({
+    status: "approved",
+    action: { approvalStatus: "approved", ...overrides.action },
+    ...overrides,
+  });
+}
+
+function makeApprovalRecord(entry: ApprovalQueueEntry, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `approval:${entry.action.id}:2026-01-01T00:00:00.000Z`,
+    actionId: entry.action.id,
+    sellerId: entry.action.sellerId,
+    approvedBy: "seller" as const,
+    approvedAt: new Date("2026-01-01T00:00:00.000Z"),
+    exactChangeAccepted: entry.action.exactChange,
+    riskAccepted: entry.action.riskLevel,
+    executionStatus: "not-executed" as const,
+    ...overrides,
+  };
+}
+
+function makeSourceItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "MLC1001",
+    title: "Source item",
+    price: 10000,
+    available_quantity: 10,
+    category_id: "MLC1000",
+    seller_id: 123,
+    status: "active" as const,
+    pictures: [{ url: "https://example.test/item.jpg" }],
+    attributes: [{ id: "BRAND", value_name: "Generic" }],
+    ...overrides,
   };
 }
 
@@ -204,6 +244,80 @@ async function callReadSyncProductStatusThroughSdk(
   }
 }
 
+async function callReadSyncProductExecutionReadinessThroughSdk(
+  arguments_: Record<string, unknown>,
+  options: {
+    entry?: ApprovalQueueEntry | null;
+    approval?: Awaited<ReturnType<ApprovalQueueRepository["findApproval"]>>;
+    syncPreview?: NonNullable<Parameters<typeof createMcpServer>[0]>["syncPreview"];
+    readinessEvidence?: NonNullable<Parameters<typeof createMcpServer>[0]>["readinessEvidence"];
+  } = {},
+) {
+  const entry = options.entry === undefined ? makeApprovedSyncProductQueueEntry() : options.entry;
+  const findAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(entry);
+  const findApproval = vi
+    .fn<ApprovalQueueRepository["findApproval"]>()
+    .mockResolvedValue(
+      options.approval === undefined
+        ? entry
+          ? makeApprovalRecord(entry)
+          : null
+        : options.approval,
+    );
+  const { prepareWrite } = makeApprovalDependencies(undefined, findAction, findApproval);
+  const server = createMcpServer({
+    prepareWrite,
+    accountRoles: {
+      sourceSellerId: "plasticov-seller",
+      targetSellerId: "maustian-seller",
+      site: "MLC",
+    },
+    syncPreview: options.syncPreview ?? {
+      getSourceItem: vi.fn().mockResolvedValue(makeSourceItem()),
+      getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+    },
+    readinessEvidence: options.readinessEvidence ?? {
+      readRollbackStrategyPresent: vi.fn().mockResolvedValue(true),
+      readApiCapabilityEvidence: vi.fn().mockResolvedValue("present"),
+    },
+  });
+  const client = new Client({ name: "msl-mcp-test-client", version: "0.1.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  let serverConnected = false;
+  let clientConnected = false;
+
+  try {
+    await withTimeout(server.connect(serverTransport), "MCP server connect");
+    serverConnected = true;
+    await withTimeout(client.connect(clientTransport), "MCP client connect");
+    clientConnected = true;
+
+    const result = (await withTimeout(
+      client.callTool(
+        { name: "read_sync_product_execution_readiness", arguments: arguments_ },
+        undefined,
+        { timeout: 1_000 },
+      ),
+      "read_sync_product_execution_readiness SDK call",
+    )) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
+
+    return { result, prepareWrite, findAction, findApproval };
+  } finally {
+    if (clientConnected) {
+      try {
+        await withTimeout(client.close(), "MCP client close");
+      } finally {
+        if (serverConnected) {
+          await withTimeout(server.close(), "MCP server close");
+        }
+      }
+    } else if (serverConnected) {
+      await withTimeout(server.close(), "MCP server close");
+    }
+  }
+}
+
 async function callApproveSyncProductProposalThroughSdk(
   arguments_: Record<string, unknown>,
   options: {
@@ -268,7 +382,100 @@ function parseTextResult(result: { content: Array<{ type: string; text?: string 
   };
 }
 
+function expectReadinessDidNotMutate(repository: ApprovalQueueRepository) {
+  expect(repository["save"]).not.toHaveBeenCalled();
+  expect(repository["saveApproval"]).not.toHaveBeenCalled();
+  expect(repository["saveAudit"]).not.toHaveBeenCalled();
+  expect(repository["listAudits"]).not.toHaveBeenCalled();
+}
+
+function expectReadinessTextRedacted(text: string) {
+  expect(text).not.toContain("secret-key-42");
+  expect(text).not.toContain("/tmp/msl/approval.sqlite");
+  expect(text).not.toContain("SQLITE_CANTOPEN");
+  expect(text).not.toContain("raw upstream detail");
+  expect(text).not.toContain("ProductSyncEngine");
+  expect(text).not.toContain("sync_all");
+}
+
 describe("MCP Server SDK integration", () => {
+  it.each([
+    ["eligible", {}, { status: "eligible", reasons: [], preview: "matched" }],
+    [
+      "blocked",
+      { approval: null },
+      { status: "blocked", reasons: ["approval-unavailable"], preview: "matched" },
+    ],
+    [
+      "degraded",
+      {
+        readinessEvidence: { readRollbackStrategyPresent: vi.fn().mockResolvedValue(true) },
+      },
+      {
+        status: "degraded",
+        reasons: ["api-capability-evidence-missing"],
+        preview: "matched",
+      },
+    ],
+  ])(
+    "reads %s sync_product execution readiness through the MCP SDK without mutation calls",
+    async (_name, options, expected) => {
+      const actionId = "sync-product:MLC1001:2026-01-01T00:00:00.000Z";
+      const { result, prepareWrite, findAction, findApproval } =
+        await callReadSyncProductExecutionReadinessThroughSdk({ actionId }, options);
+      const { text, parsed } = parseTextResult(result);
+
+      expect(result.isError).toBeFalsy();
+      expect(findAction).toHaveBeenCalledWith(actionId);
+      expect(findApproval).toHaveBeenCalledWith(actionId);
+      expect(parsed).toMatchObject({
+        status: expected.status,
+        actionId: "redacted",
+        reasons: expected.reasons,
+        evidence: {
+          preview: expected.preview,
+          idempotencyCandidate: "sync-product:MLC1001:",
+          rollbackStrategyPresent: true,
+        },
+        noMutationExecuted: true,
+      });
+      expect(text).not.toContain(actionId);
+      expectReadinessTextRedacted(text);
+      expectReadinessDidNotMutate(prepareWrite.repository);
+    },
+  );
+
+  it("redacts readiness storage and upstream failures through the MCP SDK", async () => {
+    const actionId = "sync-product:MLC1001:2026-01-01T00:00:00.000Z";
+    const { result, prepareWrite } = await callReadSyncProductExecutionReadinessThroughSdk(
+      { actionId },
+      {
+        syncPreview: {
+          getSourceItem: vi.fn().mockRejectedValue(new Error("Bearer secret-key-42")),
+          getStrategies: vi.fn(),
+        },
+        readinessEvidence: {
+          readRollbackStrategyPresent: vi
+            .fn()
+            .mockRejectedValue(new Error("SQLITE_CANTOPEN /tmp/msl/approval.sqlite")),
+          readApiCapabilityEvidence: vi.fn().mockRejectedValue(new Error("raw upstream detail")),
+        },
+      },
+    );
+    const { text, parsed } = parseTextResult(result);
+
+    expect(parsed).toMatchObject({ actionId: "redacted", noMutationExecuted: true });
+    expect(parsed.reasons).toEqual(
+      expect.arrayContaining([
+        "source-read-failed",
+        "storage-unavailable",
+        "upstream-temporary-failure",
+      ]),
+    );
+    expectReadinessTextRedacted(text);
+    expectReadinessDidNotMutate(prepareWrite.repository);
+  });
+
   it("records sync_product approval through the MCP SDK without execution or audit replay", async () => {
     const entry = makeSyncProductQueueEntry();
     const findAction = vi.fn<ApprovalQueueRepository["findAction"]>().mockResolvedValue(entry);
