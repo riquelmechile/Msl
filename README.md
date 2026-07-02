@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <code>905+ tests</code> ·
+  <code>1026+ tests</code> ·
   <code>TypeScript 5.8</code> ·
   <code>Node ≥22</code> ·
   <code>DeepSeek v4</code> ·
@@ -25,7 +25,7 @@ MSL is a proactive AI agent that manages your MercadoLibre Chile business throug
 git clone https://github.com/riquelmechile/Msl.git
 cd Msl
 npm install
-npm test          # 905+ tests in 36 files
+npm test          # 1026+ tests in 36 files
 npm run dev       # http://127.0.0.1:3000
 ```
 
@@ -96,12 +96,14 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  └───────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘ │
 │          │                 │                      │                  │
 │  ┌───────┴─────────────────┴──────────────────────┴────────────────┐ │
-│  │              16 ML Business Tools                               │ │
+│  │              30 ML Business Tools                               │ │
 │  │  calculate_listing_fees · read_my_listings · find_paused_listings│ │
 │  │  check_listing_visits · read_product_ads_insights · read_orders  │ │
 │  │  check_listing_quality · relist_listing · diagnose_image · upload│ │
 │  │  check_price_intelligence · find_automated_price_items           │ │
 │  │  read_seller_promotions · read_item_promotions                   │ │
+│  │  delegate_to_subagent · get_business_context · consult_cortex    │ │
+│  │  read_moderation_status · read_notices · read_claims · questions │ │
 │  └──────────────────────────┬─────────────────────────────────────┘ │
 │          ┌──────────────────┴──────────────────┐                     │
 │          │  Background Ingestion Worker (6h)   │  DeepSeek Inference │
@@ -181,6 +183,10 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 22  | **Image Pipeline**             | Pre-publish image diagnostic (white_background, text_logo, watermark) + upload to ML CDN via API                                   |
 | 23  | **Pricing Intelligence**       | Read-only pricing automation rules, history, and competitive price suggestions per item/catalog                                    |
 | 24  | **Promotions Intelligence**    | Read-only seller campaign discovery, item promotion participation, boosted offers, coupon budgets, pre-negotiated offers           |
+| 25  | **CEO Socio Lanes**            | Coordinator lane with cache-resident specialists (Cost/Supplier, Market/Catalog, Creative/Commercial) using stable DeepSeek prefixes for near-zero cache-hit cost |
+| 26  | **Operational Read Model**     | SQLite-backed full business context: listings, claims, questions, orders, messages, reputation snapshots with per-seller lane isolation and freshness TTLs |
+| 27  | **Darwinian Cortex Learning**  | Spreading-activation outcome propagation: approved proposals strengthen activated constellation edges (+0.10), rejected weaken all (−0.15); learning generalizes across shared concept edges |
+| 28  | **DeepSeek Tool Smoke**        | Opt-in official DeepSeek V4 tool-call validation with forced delegate_to_subagent, synthetic user_id lane isolation, and cache telemetry |
 
 ## Stack
 
@@ -192,7 +198,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction          |
 | **Bot**      | Telegram (grammY, proactive messaging)       | Natural language interface, no UI needed                  |
 | **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Stubbed project tool surface for compatible clients       |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 905+ tests, guarded platform support                      |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 1026+ tests, guarded platform support                      |
 | **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                              |
 
 ## Philosophy
