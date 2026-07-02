@@ -1,6 +1,19 @@
 export { createDatabase, migrate } from "./database.js";
 export { cosineSimilarity, GraphEngine } from "./engine.js";
+export { canStoreInCortex, decideCortexFeedbackAction } from "./feedback.js";
 export { DuplicateEdgeError, NodeNotFoundError } from "./types.js";
+export type {
+  CortexFeedbackAction,
+  CortexFeedbackDecision,
+  CortexSnapshotStorageRequest,
+  DelegationApprovalFeedback,
+  DelegationCorrectionFeedback,
+  DelegationFeedback,
+  DelegationFeedbackBase,
+  DelegationFeedbackKind,
+  DelegationPruningFeedback,
+  DelegationRejectionFeedback,
+} from "./feedback.js";
 export type {
   ActivationSnapshot,
   ActorProfileNode,

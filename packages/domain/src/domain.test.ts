@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   canExecutePreparedAction,
+  canMakeHighConfidenceClaimFromEvidence,
   createPreparedAction,
+  confidenceForOperationalEvidence,
   evaluateFreshness,
   evaluateSpecializationReadiness,
   isReadSnapshotFresh,
@@ -14,6 +16,7 @@ import {
   type Listing,
   type MlMessage,
   type MlOrder,
+  type OperationalEvidence,
   type PreparedAction,
   type ReadSnapshot,
   type SellerReputation,
@@ -183,6 +186,24 @@ describe("freshness by business risk", () => {
     });
 
     expect(freshness).toMatchObject({ risk: "low", status: "fresh" });
+  });
+});
+
+describe("operational evidence freshness", () => {
+  it("prevents stale evidence from supporting high-confidence claims", () => {
+    const evidence: OperationalEvidence = {
+      evidenceId: "evidence-listing-1",
+      snapshotKind: "listing",
+      sellerId: "seller-1",
+      entityId: "MLC123",
+      capturedAt: new Date("2026-06-25T12:00:00.000Z"),
+      freshnessStatus: "stale",
+      completeness: "complete",
+      source: "operational-read-model",
+    };
+
+    expect(canMakeHighConfidenceClaimFromEvidence(evidence)).toBe(false);
+    expect(confidenceForOperationalEvidence(evidence)).toBe("low");
   });
 });
 

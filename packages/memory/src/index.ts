@@ -9,6 +9,7 @@ export {
   GraphEngine,
 } from "./cortex/index.js";
 export { DuplicateEdgeError, NodeNotFoundError } from "./cortex/index.js";
+export { canStoreInCortex, decideCortexFeedbackAction } from "./cortex/index.js";
 export type {
   ActivationSnapshot,
   ActorProfileNode,
@@ -19,6 +20,30 @@ export type {
   SpreadingOptions,
   TraversalResult,
 } from "./cortex/index.js";
+export type {
+  CortexFeedbackAction,
+  CortexFeedbackDecision,
+  CortexSnapshotStorageRequest,
+  DelegationApprovalFeedback,
+  DelegationCorrectionFeedback,
+  DelegationFeedback,
+  DelegationFeedbackKind,
+  DelegationPruningFeedback,
+  DelegationRejectionFeedback,
+} from "./cortex/index.js";
+export type {
+  CheckpointRow,
+  OperationalEvidenceQuery,
+  OperationalReadModel,
+  OperationalReadModelReader,
+  OperationalReadModelSnapshot,
+  OperationalReadModelWriter,
+  SnapshotRow,
+} from "./operationalReadModel.js";
+export {
+  createSqliteOperationalReadModel,
+  migrateOperationalStore,
+} from "./operationalReadModel.js";
 
 // Re-export shared connection pool and backup utilities.
 export { getSharedDb, closeSharedDb } from "./connectionPool.js";

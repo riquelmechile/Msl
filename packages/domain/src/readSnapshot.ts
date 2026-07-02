@@ -6,8 +6,10 @@ export type ReadSnapshotKind =
   | "listing-prices"
   | "product-ads-insights"
   | "order"
+  | "claim"
   | "message"
   | "reputation"
+  | "question"
   | "category-attributes"
   | "category-technical-specs"
   | "business-signal";

@@ -5,12 +5,17 @@ import { unlinkSync } from "node:fs";
 import { evaluateFreshness, type ReadSnapshot } from "@msl/domain";
 
 import {
+  canStoreInCortex,
   decideReadSnapshotFreshness,
   decideSelectiveSync,
+  decideCortexFeedbackAction,
+  type DelegationApprovalFeedback,
+  type OperationalReadModelReader,
   type PgvectorMemoryStore,
   type PostgresRepositoryBoundary,
 } from "./index.js";
 import { backupDatabase } from "./backup.js";
+import { createGraphEngine } from "./cortex/index.js";
 
 function listingSnapshot(
   overrides: Partial<ReadSnapshot<{ id: string }>> = {},
@@ -135,6 +140,48 @@ describe("read snapshot freshness decisions", () => {
   });
 });
 
+describe("operational read-model boundaries", () => {
+  it("defines minimal read-model interfaces without requiring ingestion", async () => {
+    const reader: OperationalReadModelReader = {
+      findEvidence: () => Promise.resolve(null),
+      readSnapshot: () => Promise.resolve(null),
+    };
+
+    await expect(
+      reader.findEvidence({ sellerId: "seller-1", snapshotKind: "listing" }),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("Cortex delegation feedback boundaries", () => {
+  it("maps approval feedback to reinforcement without storing catalog snapshots", () => {
+    const feedback: DelegationApprovalFeedback = {
+      kind: "approval",
+      proposalId: "proposal-1",
+      sellerId: "seller-1",
+      reasoningEdgeIds: [1, 2],
+      evidenceIds: ["evidence-1"],
+      observedAt: "2026-07-02T00:00:00.000Z",
+      approvedScope: "prepare campaign draft",
+      outcome: "positive",
+    };
+
+    expect(decideCortexFeedbackAction(feedback)).toEqual({
+      action: "reinforce",
+      proposalId: "proposal-1",
+      reasoningEdgeIds: [1, 2],
+      evidenceIds: ["evidence-1"],
+    });
+    expect(
+      canStoreInCortex({
+        kind: "full-catalog-snapshot",
+        sellerId: "seller-1",
+        payload: { listings: [{ id: "MLC123" }] },
+      }),
+    ).toBe(false);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────
 // Database backup (bottleneck 2.7)
 // ─────────────────────────────────────────────────────────────────────
@@ -193,5 +240,67 @@ describe("backupDatabase", () => {
     } catch {
       /* ok */
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Cortex Darwinian Feedback: empty constellation + outcome node recording
+// ─────────────────────────────────────────────────────────────────────
+describe("Cortex outcome node recording (engine-level)", () => {
+  it("traverse() returns zero edges on empty graph", () => {
+    const engine = createGraphEngine(":memory:");
+    const result = engine.traverse();
+    expect(result.traversedEdges).toHaveLength(0);
+    expect(result.activatedNodes).toHaveLength(0);
+  });
+
+  it("createNode persists proposal_outcome with metadata even when graph is empty", () => {
+    const engine = createGraphEngine(":memory:");
+    const timestamp = new Date().toISOString();
+
+    const node = engine.createNode(`proposal_outcome_${timestamp}`, {
+      type: "proposal_outcome",
+      outcome: "rejected",
+      sellerId: "seller-test",
+      timestamp,
+    });
+
+    expect(node.id).toBeGreaterThan(0);
+
+    // Query back by metadata
+    const outcomeNodes = engine.queryByMetadata({ type: "proposal_outcome" });
+    expect(outcomeNodes).toHaveLength(1);
+    expect(outcomeNodes[0]!.metadata).toMatchObject({
+      type: "proposal_outcome",
+      outcome: "rejected",
+      sellerId: "seller-test",
+    });
+  });
+
+  it("outcome node persists even when constellation remains empty after previous turns", () => {
+    const engine = createGraphEngine(":memory:");
+
+    // Empty graph — traverse returns nothing.
+    expect(engine.traverse().traversedEdges).toHaveLength(0);
+
+    // Record two outcomes — both should be persisted.
+    const ts1 = new Date().toISOString();
+    engine.createNode(`proposal_outcome_${ts1}`, {
+      type: "proposal_outcome",
+      outcome: "confirmed",
+      sellerId: "seller-1",
+      timestamp: ts1,
+    });
+
+    const ts2 = new Date(Date.now() + 1000).toISOString();
+    engine.createNode(`proposal_outcome_${ts2}`, {
+      type: "proposal_outcome",
+      outcome: "rejected",
+      sellerId: "seller-1",
+      timestamp: ts2,
+    });
+
+    const nodes = engine.queryByMetadata({ type: "proposal_outcome" });
+    expect(nodes).toHaveLength(2);
   });
 });

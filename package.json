@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node scripts/run-e2e.mjs",
+    "smoke:deepseek:tool": "npm run build --workspace @msl/agent && node scripts/deepseek-tool-smoke.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

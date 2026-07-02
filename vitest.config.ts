@@ -15,7 +15,7 @@ export default defineConfig({
   },
   test: {
     forbidOnly: Boolean(process.env.CI),
-    include: ["packages/**/*.test.ts", "tests/**/*.test.ts"],
+    include: ["packages/**/*.test.ts", "tests/**/*.test.ts", "scripts/**/*.test.mjs"],
     coverage: {
       reporter: ["text", "html"],
     },

@@ -577,9 +577,7 @@ export class GraphEngine {
       .get(label) as GraphNode | undefined;
 
     if (existing) {
-      this.db
-        .prepare("UPDATE nodes SET metadata = ? WHERE id = ?")
-        .run(metadataJson, existing.id);
+      this.db.prepare("UPDATE nodes SET metadata = ? WHERE id = ?").run(metadataJson, existing.id);
       return { ...existing, metadata: metadataJson };
     }
 
