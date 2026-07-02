@@ -442,7 +442,7 @@ describe("MCP Server", () => {
       },
     });
 
-    expect(registeredTools.size).toBe(28);
+    expect(registeredTools.size).toBe(31);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_listing_prices")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);
@@ -457,6 +457,9 @@ describe("MCP Server", () => {
     expect(registeredTools.has("read_claims")).toBe(true);
     expect(registeredTools.has("read_claim_detail")).toBe(true);
     expect(registeredTools.has("read_shipment_status")).toBe(true);
+    expect(registeredTools.has("read_claim_return")).toBe(true);
+    expect(registeredTools.has("read_return_reviews")).toBe(true);
+    expect(registeredTools.has("read_claim_return_cost")).toBe(true);
 
     const cb = registeredTools.get("read_mercadolibre_listings");
     expect(cb).toBeDefined();
@@ -1249,6 +1252,358 @@ describe("MCP Server", () => {
       id: "41567890123",
       status: "delivered",
     });
+  });
+
+  it("read_claim_return tool calls getClaimReturn with claim scoping", async () => {
+    const getClaimReturn = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      siteSupport: "MLC-to-confirm",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+      noMutationExecuted: true,
+      data: { claimId: "C-2001", returns: [{ id: "R-1001", status: "in_progress" }] },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+        getClaimReturn,
+        getReturnReviews: vi.fn(),
+        getClaimReturnCost: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_claim_return");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", claimId: "C-2001" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getClaimReturn).toHaveBeenCalledWith("ML-test", "C-2001");
+    expect(parsed.metadata).toBeUndefined();
+    expect(parsed.siteSupport).toBe("MLC-to-confirm");
+    expect(parsed.sellerScope).toMatchObject({ sellerId: "ML-test", site: "MLC" });
+    expect(parsed.noMutationExecuted).toBe(true);
+    expect(parsed.data).toMatchObject({
+      claimId: "C-2001",
+      returns: [{ id: "R-1001", status: "in_progress" }],
+    });
+  });
+
+  it("read_return_reviews tool calls getReturnReviews with return scoping", async () => {
+    const getReturnReviews = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      siteSupport: "MLC-to-confirm",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+      noMutationExecuted: true,
+      data: { returnId: "R-1001", reviews: [{ id: "RV-1", rating: 4 }] },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+        getClaimReturn: vi.fn(),
+        getReturnReviews,
+        getClaimReturnCost: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_return_reviews");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", returnId: "R-1001" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getReturnReviews).toHaveBeenCalledWith("ML-test", "R-1001");
+    expect(parsed.metadata).toBeUndefined();
+    expect(parsed.siteSupport).toBe("MLC-to-confirm");
+    expect(parsed.sellerScope).toMatchObject({ sellerId: "ML-test", site: "MLC" });
+    expect(parsed.noMutationExecuted).toBe(true);
+    expect(parsed.data).toMatchObject({
+      returnId: "R-1001",
+      reviews: [{ id: "RV-1", rating: 4 }],
+    });
+  });
+
+  it("read_claim_return_cost tool calls getClaimReturnCost with claim scoping", async () => {
+    const getClaimReturnCost = vi.fn().mockResolvedValue({
+      kind: "business-signal",
+      sellerId: "ML-test",
+      source: "mercadolibre-api",
+      completeness: "complete",
+      confidence: "high",
+      freshness: { source: "mercadolibre-api", signalKind: "business-signal" },
+      siteSupport: "MLC-to-confirm",
+      sellerScope: { sellerId: "ML-test", site: "MLC" },
+      noMutationExecuted: true,
+      data: { claimId: "C-2001", charges: [{ id: "CH-1", amount: 5000 }], totalCost: 5000 },
+    });
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+        getClaimReturn: vi.fn(),
+        getReturnReviews: vi.fn(),
+        getClaimReturnCost,
+      },
+    });
+
+    const cb = registeredTools.get("read_claim_return_cost");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({ sellerId: "ML-test", claimId: "C-2001" })) as {
+      content: { text: string }[];
+    };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(getClaimReturnCost).toHaveBeenCalledWith("ML-test", "C-2001");
+    expect(parsed.metadata).toBeUndefined();
+    expect(parsed.siteSupport).toBe("MLC-to-confirm");
+    expect(parsed.sellerScope).toMatchObject({ sellerId: "ML-test", site: "MLC" });
+    expect(parsed.noMutationExecuted).toBe(true);
+    expect(parsed.data).toMatchObject({
+      claimId: "C-2001",
+      charges: [{ id: "CH-1", amount: 5000 }],
+      totalCost: 5000,
+    });
+  });
+
+  it("read_claim_return auth gate blocks invalid API key before client call", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const getClaimReturn = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+        getClaimReturn,
+        getReturnReviews: vi.fn(),
+        getClaimReturnCost: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_claim_return");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      claimId: "C-2001",
+      msl_api_key: "wrong",
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(getClaimReturn).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
+
+    vi.unstubAllEnvs();
+  });
+
+  it("read_return_reviews auth gate blocks invalid API key before client call", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const getReturnReviews = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+        getClaimReturn: vi.fn(),
+        getReturnReviews,
+        getClaimReturnCost: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("read_return_reviews");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      returnId: "R-1001",
+      msl_api_key: "wrong",
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(getReturnReviews).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
+
+    vi.unstubAllEnvs();
+  });
+
+  it("read_claim_return_cost auth gate blocks invalid API key before client call", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const getClaimReturnCost = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+        getClaimReturn: vi.fn(),
+        getReturnReviews: vi.fn(),
+        getClaimReturnCost,
+      },
+    });
+
+    const cb = registeredTools.get("read_claim_return_cost");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      claimId: "C-2001",
+      msl_api_key: "wrong",
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(getClaimReturnCost).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
+
+    vi.unstubAllEnvs();
+  });
+
+  it("exposes no return mutation, upload, refund, dispute, durable ingestion, lane evidence, or AI image tools", () => {
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer: vi.fn(),
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+        getClaimReturn: vi.fn(),
+        getReturnReviews: vi.fn(),
+        getClaimReturnCost: vi.fn(),
+      },
+    });
+
+    const toolNames = [...registeredTools.keys()];
+
+    // Return-read tools should be present
+    expect(toolNames).toContain("read_claim_return");
+    expect(toolNames).toContain("read_return_reviews");
+    expect(toolNames).toContain("read_claim_return_cost");
+
+    // No return mutation / POST-review tools
+    expect(toolNames).not.toContain("post_return_review");
+    expect(toolNames).not.toContain("submit_return_review");
+    expect(toolNames).not.toContain("write_return_review");
+    expect(toolNames).not.toContain("create_return_review");
+
+    // No return attachment upload
+    expect(toolNames).not.toContain("upload_return_attachment");
+    expect(toolNames).not.toContain("upload_return_evidence");
+
+    // No refund / dispute / action tools
+    expect(toolNames).not.toContain("refund_return");
+    expect(toolNames).not.toContain("dispute_return");
+    expect(toolNames).not.toContain("execute_return_action");
+    expect(toolNames).not.toContain("resolve_return");
+
+    // No durable ingestion tooling
+    expect(toolNames).not.toContain("ingest_return");
+    expect(toolNames).not.toContain("persist_return");
+    expect(toolNames).not.toContain("cache_return_snapshot");
+
+    // No lane evidence tooling
+    expect(toolNames).not.toContain("read_return_lane_evidence");
+    expect(toolNames).not.toContain("ingest_operational_lane");
+
+    // No AI image generation tooling
+    expect(toolNames).not.toContain("generate_return_image");
+    expect(toolNames).not.toContain("diagnose_return_image");
+
+    // Explicitly ensure no mutation execution tools are present
+    expect(toolNames).not.toContain("execute_mercadolibre_write");
+    expect(toolNames).not.toContain("executePreparedAction");
   });
 
   it("registers a prepare-only write proposal tool when approval dependencies are injected", async () => {

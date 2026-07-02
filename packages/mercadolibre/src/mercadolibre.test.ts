@@ -3239,4 +3239,484 @@ describe("normalizeImageOrchestration", () => {
     });
     expect(result.data.steps[1]).toEqual({ step: "upload", status: "pending" });
   });
+
+  // ── Return safe-read tests (Operational Returns Ingestion — PR 1) ──
+
+  describe("getClaimReturn", () => {
+    const sellerId = "seller-1";
+    const now = new Date("2026-07-01T12:00:00.000Z");
+
+    it("reads claim return detail with typed safe-read metadata", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi.fn().mockResolvedValue({
+        returns: [
+          {
+            id: "R-5001",
+            status: "delivered",
+            reason: "buyer_return",
+            date_created: "2026-06-28T10:00:00Z",
+            last_updated: "2026-06-30T15:00:00Z",
+            tracking_number: "TRACK-001",
+            carrier: "Correos Chile",
+            estimated_delivery: "2026-07-05T00:00:00Z",
+            resource: "order",
+            resource_id: "O-5001",
+            site_id: "MLC",
+          },
+          {
+            id: "R-5002",
+            status: "in_transit",
+            reason: "change_of_mind",
+            date_created: "2026-06-29T08:00:00Z",
+          },
+        ],
+      });
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getClaimReturn!("seller-1", "C-1001");
+
+      expect(result.kind).toBe("business-signal");
+      expect(result.source).toBe("mercadolibre-api");
+      expect(result.siteSupport).toBe("MLC-to-confirm");
+      expect(result.sellerScope).toEqual({ sellerId: "seller-1", site: "MLC" });
+      expect(result.noMutationExecuted).toBe(true);
+      expect(result.completeness).toBe("complete");
+      expect(result.confidence).toBe("high");
+      expect(result.data.claimId).toBe("C-1001");
+      expect(result.data.returns).toHaveLength(2);
+      const firstReturn = present(result.data.returns[0]);
+      expect(firstReturn.id).toBe("R-5001");
+      expect(firstReturn.status).toBe("delivered");
+      expect(firstReturn.reason).toBe("buyer_return");
+      expect(firstReturn.trackingNumber).toBe("TRACK-001");
+      expect(firstReturn.carrier).toBe("Correos Chile");
+      const secondReturn = present(result.data.returns[1]);
+      expect(secondReturn.id).toBe("R-5002");
+      expect(secondReturn.status).toBe("in_transit");
+      expect(secondReturn.carrier).toBeUndefined();
+
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "GET",
+          path: "/post-purchase/v2/claims/C-1001/returns",
+          retryOnRateLimit: false,
+        }),
+      );
+    });
+
+    it("returns empty returns with partial completeness when payload is empty", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi.fn().mockResolvedValue({});
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getClaimReturn!("seller-1", "C-1002");
+
+      expect(result.completeness).toBe("partial");
+      expect(result.confidence).toBe("low");
+      expect(result.data.returns).toEqual([]);
+      expect(result.noMutationExecuted).toBe(true);
+    });
+
+    it("degrades to controlled snapshot on upstream error", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi
+        .fn()
+        .mockRejectedValue(
+          new Error("ML API GET /post-purchase/v2/claims/C-9999/returns failed: 404 Not Found"),
+        );
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getClaimReturn!("seller-1", "C-9999");
+
+      expect(result.completeness).toBe("partial");
+      expect(result.confidence).toBe("low");
+      expect(result.siteSupport).toBe("MLC-to-confirm");
+      expect(result.noMutationExecuted).toBe(true);
+      expect(result.data.returns).toEqual([]);
+      expect(result.data.claimId).toBe("C-9999");
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("getReturnReviews", () => {
+    const sellerId = "seller-1";
+    const now = new Date("2026-07-01T12:00:00.000Z");
+
+    it("reads return reviews with typed safe-read metadata", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi.fn().mockResolvedValue({
+        reviews: [
+          {
+            id: "rev-1",
+            rating: 4,
+            comment: "Good packaging",
+            date_created: "2026-06-29T10:00:00Z",
+            from_role: "buyer",
+          },
+          {
+            id: "rev-2",
+            rating: 5,
+            comment: "Fast shipping",
+            date_created: "2026-06-30T08:00:00Z",
+          },
+        ],
+      });
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getReturnReviews!("seller-1", "R-5001");
+
+      expect(result.kind).toBe("business-signal");
+      expect(result.source).toBe("mercadolibre-api");
+      expect(result.siteSupport).toBe("MLC-to-confirm");
+      expect(result.sellerScope).toEqual({ sellerId: "seller-1", site: "MLC" });
+      expect(result.noMutationExecuted).toBe(true);
+      expect(result.completeness).toBe("complete");
+      expect(result.confidence).toBe("high");
+      expect(result.data.returnId).toBe("R-5001");
+      expect(result.data.reviews).toHaveLength(2);
+      const firstReview = present(result.data.reviews[0]);
+      expect(firstReview.id).toBe("rev-1");
+      expect(firstReview.rating).toBe(4);
+      expect(firstReview.comment).toBe("Good packaging");
+      expect(firstReview.fromRole).toBe("buyer");
+      const secondReview = present(result.data.reviews[1]);
+      expect(secondReview.id).toBe("rev-2");
+      expect(secondReview.rating).toBe(5);
+      expect(secondReview.fromRole).toBeUndefined();
+
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "GET",
+          path: "/post-purchase/v1/returns/R-5001/reviews",
+          retryOnRateLimit: false,
+        }),
+      );
+    });
+
+    it("returns empty reviews with complete confidence for empty array", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi.fn().mockResolvedValue({ reviews: [] });
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getReturnReviews!("seller-1", "R-5002");
+
+      expect(result.completeness).toBe("complete");
+      expect(result.data.reviews).toEqual([]);
+      expect(result.confidence).toBe("medium");
+      expect(result.noMutationExecuted).toBe(true);
+      expect(result.siteSupport).toBe("MLC-to-confirm");
+    });
+
+    it("degrades to controlled snapshot on unauthorized", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi
+        .fn()
+        .mockRejectedValue(
+          new Error("ML API GET /post-purchase/v1/returns/R-unauth/reviews failed: 401 Unauthorized"),
+        );
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getReturnReviews!("seller-1", "R-unauth");
+
+      expect(result.completeness).toBe("partial");
+      expect(result.confidence).toBe("low");
+      expect(result.siteSupport).toBe("MLC-to-confirm");
+      expect(result.noMutationExecuted).toBe(true);
+      expect(result.data.reviews).toEqual([]);
+      expect(result.data.returnId).toBe("R-unauth");
+    });
+  });
+
+  describe("getClaimReturnCost", () => {
+    const sellerId = "seller-1";
+    const now = new Date("2026-07-01T12:00:00.000Z");
+
+    it("reads return cost charges with typed safe-read metadata", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi.fn().mockResolvedValue({
+        charges: [
+          {
+            id: "chg-1",
+            status: "pending",
+            type: "return_shipping",
+            amount: 3500,
+            currency_id: "CLP",
+            date_created: "2026-06-29T10:00:00Z",
+            description: "Return shipping cost",
+          },
+          {
+            id: "chg-2",
+            status: "charged",
+            type: "return_restocking",
+            amount: 2000,
+            currency_id: "CLP",
+            date_created: "2026-06-30T08:00:00Z",
+          },
+        ],
+      });
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getClaimReturnCost!("seller-1", "C-1001");
+
+      expect(result.kind).toBe("business-signal");
+      expect(result.source).toBe("mercadolibre-api");
+      expect(result.siteSupport).toBe("MLC-to-confirm");
+      expect(result.sellerScope).toEqual({ sellerId: "seller-1", site: "MLC" });
+      expect(result.noMutationExecuted).toBe(true);
+      expect(result.completeness).toBe("complete");
+      expect(result.confidence).toBe("high");
+      expect(result.data.claimId).toBe("C-1001");
+      expect(result.data.totalCost).toBe(5500);
+      expect(result.data.charges).toHaveLength(2);
+      const firstCharge = present(result.data.charges[0]);
+      expect(firstCharge.id).toBe("chg-1");
+      expect(firstCharge.status).toBe("pending");
+      expect(firstCharge.type).toBe("return_shipping");
+      expect(firstCharge.amount).toBe(3500);
+      expect(firstCharge.currencyId).toBe("CLP");
+      expect(firstCharge.description).toBe("Return shipping cost");
+      const secondCharge = present(result.data.charges[1]);
+      expect(secondCharge.id).toBe("chg-2");
+      expect(secondCharge.status).toBe("charged");
+      expect(secondCharge.type).toBe("return_restocking");
+      expect(secondCharge.amount).toBe(2000);
+      expect(secondCharge.description).toBeUndefined();
+
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "GET",
+          path: "/post-purchase/v1/claims/C-1001/charges/return-cost",
+          retryOnRateLimit: false,
+        }),
+      );
+    });
+
+    it("returns no totalCost when charges are empty", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi.fn().mockResolvedValue({ charges: [] });
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getClaimReturnCost!("seller-1", "C-1002");
+
+      expect(result.completeness).toBe("complete");
+      expect(result.confidence).toBe("medium");
+      expect(result.data.charges).toEqual([]);
+      expect(result.data.totalCost).toBeUndefined();
+      expect(result.noMutationExecuted).toBe(true);
+    });
+
+    it("degrades to controlled snapshot on not-found", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const request = vi
+        .fn()
+        .mockRejectedValue(
+          new Error("ML API GET /post-purchase/v1/claims/C-nf/charges/return-cost failed: 404 Not Found"),
+        );
+      const tokenState: OAuthTokenState = {
+        sellerId,
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+      const result = await client.getClaimReturnCost!("seller-1", "C-nf");
+
+      expect(result.completeness).toBe("partial");
+      expect(result.confidence).toBe("low");
+      expect(result.siteSupport).toBe("MLC-to-confirm");
+      expect(result.noMutationExecuted).toBe(true);
+      expect(result.data.charges).toEqual([]);
+      expect(result.data.claimId).toBe("C-nf");
+    });
+  });
+
+  describe("return safe-read absence assertions", () => {
+    it("does not expose return-review POST, upload, refund, dispute, or action methods", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const transport: MercadoLibreApiTransport = {
+        request: vi.fn().mockResolvedValue({}),
+      };
+      const tokenState: OAuthTokenState = {
+        sellerId: "seller-1",
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport, now: new Date("2026-07-01T12:00:00.000Z") });
+
+      const forbiddenKeys = [
+        "postReturnReview",
+        "uploadReturnAttachment",
+        "refundReturn",
+        "disputeReturn",
+        "executeReturnAction",
+        "ingestReturnEvidence",
+        "createReturnLaneEvidence",
+        "generateReturnAiImage",
+      ];
+      for (const key of forbiddenKeys) {
+        expect(key in client).toBe(false);
+      }
+    });
+
+    it("does not send POST, PUT, or DELETE for return reads", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+      const transport: MercadoLibreApiTransport = {
+        request: (request) => {
+          requests.push(request);
+          return Promise.resolve({ returns: [] });
+        },
+      };
+      const tokenState: OAuthTokenState = {
+        sellerId: "seller-1",
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport, now: new Date("2026-07-01T12:00:00.000Z") });
+
+      await client.getClaimReturn!("seller-1", "C-1001");
+      await client.getReturnReviews!("seller-1", "R-5001");
+      await client.getClaimReturnCost!("seller-1", "C-1001");
+
+      for (const req of requests) {
+        expect(req.method).toBe("GET");
+      }
+      expect(requests).toHaveLength(3);
+    });
+
+    it("does not construct durable ingestion, lane evidence, or AI image paths for returns", async () => {
+      const { createMlcApiClient } = await import("./index.js");
+      const requestedPaths: string[] = [];
+      const transport: MercadoLibreApiTransport = {
+        request: (request) => {
+          requestedPaths.push(request.path);
+          return Promise.resolve({ returns: [] });
+        },
+      };
+      const tokenState: OAuthTokenState = {
+        sellerId: "seller-1",
+        site: "MLC",
+        accessToken: "tok",
+        refreshToken: "rt",
+        scopes: ["read"],
+        status: "connected",
+        connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+        expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+      };
+      const client = createMlcApiClient({ tokenState, transport, now: new Date("2026-07-01T12:00:00.000Z") });
+
+      await client.getClaimReturn!("seller-1", "C-1001");
+      await client.getReturnReviews!("seller-1", "R-5001");
+      await client.getClaimReturnCost!("seller-1", "C-1001");
+
+      expect(requestedPaths).toEqual([
+        "/post-purchase/v2/claims/C-1001/returns",
+        "/post-purchase/v1/returns/R-5001/reviews",
+        "/post-purchase/v1/claims/C-1001/charges/return-cost",
+      ]);
+
+      for (const path of requestedPaths) {
+        expect(path).not.toContain("/ingestion");
+        expect(path).not.toContain("/lane");
+        expect(path).not.toContain("/business-memory");
+        expect(path).not.toContain("/image");
+        expect(path).not.toContain("/ai");
+      }
+    });
+  });
 });

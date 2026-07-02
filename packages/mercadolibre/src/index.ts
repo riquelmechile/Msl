@@ -753,6 +753,71 @@ export type MlcShipmentStatusSnapshot = MlcSingleReadSnapshot<MlcShipmentStatusS
   noMutationExecuted?: true;
 };
 
+// ── Return safe-read types ──────────────────────────────────────────
+
+export type MlcReturnSnapshotBase<TData> = Omit<
+  MlcSingleReadSnapshot<TData>,
+  "siteSupport" | "sellerScope"
+> & {
+  siteSupport: "MLC-to-confirm";
+  sellerScope: { sellerId: string; site: "MLC" };
+  noMutationExecuted: true;
+};
+
+export type MlcReturnSummary = {
+  id: string;
+  status?: string;
+  reason?: string;
+  dateCreated?: string;
+  lastUpdated?: string;
+  trackingNumber?: string;
+  carrier?: string;
+  estimatedDelivery?: string;
+  resource?: string;
+  resourceId?: string;
+  siteId?: string;
+};
+
+export type MlcClaimReturnSummary = {
+  claimId: string;
+  returns: ReadonlyArray<MlcReturnSummary>;
+};
+
+export type MlcClaimReturnSnapshot = MlcReturnSnapshotBase<MlcClaimReturnSummary>;
+
+export type MlcReturnReview = {
+  id?: string;
+  rating?: number;
+  comment?: string;
+  dateCreated?: string;
+  fromRole?: string;
+};
+
+export type MlcReturnReviewsSummary = {
+  returnId: string;
+  reviews: ReadonlyArray<MlcReturnReview>;
+};
+
+export type MlcReturnReviewsSnapshot = MlcReturnSnapshotBase<MlcReturnReviewsSummary>;
+
+export type MlcReturnCostCharge = {
+  id?: string;
+  status?: string;
+  type?: string;
+  amount?: number;
+  currencyId?: string;
+  dateCreated?: string;
+  description?: string;
+};
+
+export type MlcClaimReturnCostSummary = {
+  claimId: string;
+  charges: ReadonlyArray<MlcReturnCostCharge>;
+  totalCost?: number;
+};
+
+export type MlcClaimReturnCostSnapshot = MlcReturnSnapshotBase<MlcClaimReturnCostSummary>;
+
 export type OAuthTokenState = {
   sellerId: string;
   site: "MLC";
@@ -940,6 +1005,9 @@ export type MlcApiClient = {
     input: MlcImageAssociateInput,
   ): Promise<MlcImageAssociateSnapshot>;
   getShipmentStatus?(sellerId: string, shipmentId: string): Promise<MlcShipmentStatusSnapshot>;
+  getClaimReturn?(sellerId: string, claimId: string): Promise<MlcClaimReturnSnapshot>;
+  getReturnReviews?(sellerId: string, returnId: string): Promise<MlcReturnReviewsSnapshot>;
+  getClaimReturnCost?(sellerId: string, claimId: string): Promise<MlcClaimReturnCostSnapshot>;
 };
 
 export type MlcProductAdsInsightsOptions = {
@@ -2103,6 +2171,173 @@ function normalizeRateLimitedShipmentStatus(input: {
     freshness: createFreshness("business-signal", input.now),
     confidence: "low",
     blockedMetadata: rateLimitBlockedMetadata(),
+    noMutationExecuted: true,
+  };
+}
+
+// ── Return safe-read normalizers ────────────────────────────────────
+
+function degradedReturnSnapshot<
+  TData,
+  TSnapshot extends MlcReturnSnapshotBase<TData>,
+>(input: {
+  sellerId: string;
+  now: Date;
+  kind: MlcReadSnapshotKind;
+  data: TData;
+  completeness: MlcReadSnapshotCompleteness;
+}): TSnapshot {
+  return {
+    sellerId: input.sellerId,
+    kind: input.kind,
+    source: "mercadolibre-api",
+    data: input.data,
+    completeness: input.completeness,
+    freshness: createFreshness(input.kind, input.now),
+    confidence: "low",
+    siteSupport: "MLC-to-confirm",
+    sellerScope: { sellerId: input.sellerId, site: "MLC" },
+    noMutationExecuted: true,
+  } as unknown as TSnapshot;
+}
+
+function normalizeClaimReturn(input: {
+  sellerId: string;
+  claimId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimReturnSnapshot {
+  const root = asRecord(input.payload);
+  const returns = asArray(root?.returns ?? root?.results ?? input.payload);
+  let complete = root !== undefined && Array.isArray(root.returns ?? root.results);
+
+  const data = returns.flatMap((item): MlcReturnSummary[] => {
+    const record = asRecord(item);
+    const id = stringValue(record?.id);
+    if (record === undefined || id === undefined) {
+      complete = false;
+      return [];
+    }
+
+    const summary: MlcReturnSummary = { id };
+    pushOptional(summary, "status", stringValue(record.status));
+    pushOptional(summary, "reason", stringValue(record.reason));
+    pushOptional(summary, "dateCreated", stringValue(record.date_created));
+    pushOptional(summary, "lastUpdated", stringValue(record.last_updated));
+    pushOptional(summary, "trackingNumber", stringValue(record.tracking_number));
+    pushOptional(summary, "carrier", stringValue(record.carrier));
+    pushOptional(summary, "estimatedDelivery", stringValue(record.estimated_delivery));
+    pushOptional(summary, "resource", stringValue(record.resource));
+    pushOptional(summary, "resourceId", stringValue(record.resource_id));
+    pushOptional(summary, "siteId", stringValue(record.site_id));
+    return [summary];
+  });
+
+  const completeness: MlcReadSnapshotCompleteness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data: { claimId: input.claimId, returns: data },
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, data.length),
+    siteSupport: "MLC-to-confirm",
+    sellerScope: { sellerId: input.sellerId, site: "MLC" },
+    noMutationExecuted: true,
+  };
+}
+
+function normalizeReturnReviews(input: {
+  sellerId: string;
+  returnId: string;
+  payload: unknown;
+  now: Date;
+}): MlcReturnReviewsSnapshot {
+  const root = asRecord(input.payload);
+  const reviews = asArray(root?.reviews ?? root?.results ?? input.payload);
+  let complete = root !== undefined && Array.isArray(root.reviews ?? root.results);
+
+  const data = reviews.flatMap((item): MlcReturnReview[] => {
+    const record = asRecord(item);
+    if (record === undefined) {
+      complete = false;
+      return [];
+    }
+    const review: MlcReturnReview = {};
+    pushOptional(review, "id", stringValue(record.id));
+    pushOptional(review, "rating", numberValue(record.rating));
+    pushOptional(review, "comment", stringValue(record.comment));
+    pushOptional(review, "dateCreated", stringValue(record.date_created));
+    pushOptional(review, "fromRole", stringValue(record.from_role));
+    return Object.keys(review).length > 0 ? [review] : [];
+  });
+
+  const completeness: MlcReadSnapshotCompleteness = complete ? "complete" : "partial";
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data: { returnId: input.returnId, reviews: data },
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, data.length),
+    siteSupport: "MLC-to-confirm",
+    sellerScope: { sellerId: input.sellerId, site: "MLC" },
+    noMutationExecuted: true,
+  };
+}
+
+function normalizeClaimReturnCost(input: {
+  sellerId: string;
+  claimId: string;
+  payload: unknown;
+  now: Date;
+}): MlcClaimReturnCostSnapshot {
+  const root = asRecord(input.payload);
+  const charges = asArray(root?.charges ?? root?.results ?? input.payload);
+  let complete = root !== undefined && Array.isArray(root.charges ?? root.results);
+
+  const data = charges.flatMap((item): MlcReturnCostCharge[] => {
+    const record = asRecord(item);
+    if (record === undefined) {
+      complete = false;
+      return [];
+    }
+    const charge: MlcReturnCostCharge = {};
+    pushOptional(charge, "id", stringValue(record.id));
+    pushOptional(charge, "status", stringValue(record.status));
+    pushOptional(charge, "type", stringValue(record.type));
+    pushOptional(charge, "amount", numberValue(record.amount));
+    pushOptional(charge, "currencyId", stringValue(record.currency_id));
+    pushOptional(charge, "dateCreated", stringValue(record.date_created));
+    pushOptional(charge, "description", stringValue(record.description));
+    return Object.keys(charge).length > 0 ? [charge] : [];
+  });
+
+  const total = data.reduce((sum, charge) => sum + (charge.amount ?? 0), 0);
+  const completeness: MlcReadSnapshotCompleteness = complete ? "complete" : "partial";
+
+  const summary: MlcClaimReturnCostSummary = {
+    claimId: input.claimId,
+    charges: data,
+  };
+  if (data.length > 0) {
+    summary.totalCost = total;
+  }
+
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data: summary,
+    completeness,
+    freshness: createFreshness("business-signal", input.now),
+    confidence: snapshotConfidence(completeness, data.length),
+    siteSupport: "MLC-to-confirm",
+    sellerScope: { sellerId: input.sellerId, site: "MLC" },
     noMutationExecuted: true,
   };
 }
@@ -3622,6 +3857,66 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
           return normalizeRateLimitedShipmentStatus({ sellerId, now: input.now() });
         }
         throw error;
+      }
+    },
+    getClaimReturn: async (sellerId, claimId) => {
+      try {
+        const payload = await input.request(
+          sellerId,
+          `/post-purchase/v2/claims/${claimId}/returns`,
+          undefined,
+          undefined,
+          { retryOnRateLimit: false },
+        );
+        return normalizeClaimReturn({ sellerId, claimId, payload, now: input.now() });
+      } catch (error) {
+        return degradedReturnSnapshot<MlcClaimReturnSummary, MlcClaimReturnSnapshot>({
+          sellerId,
+          now: input.now(),
+          kind: "business-signal",
+          data: { claimId, returns: [] },
+          completeness: "partial",
+        });
+      }
+    },
+    getReturnReviews: async (sellerId, returnId) => {
+      try {
+        const payload = await input.request(
+          sellerId,
+          `/post-purchase/v1/returns/${returnId}/reviews`,
+          undefined,
+          undefined,
+          { retryOnRateLimit: false },
+        );
+        return normalizeReturnReviews({ sellerId, returnId, payload, now: input.now() });
+      } catch (error) {
+        return degradedReturnSnapshot<MlcReturnReviewsSummary, MlcReturnReviewsSnapshot>({
+          sellerId,
+          now: input.now(),
+          kind: "business-signal",
+          data: { returnId, reviews: [] },
+          completeness: "partial",
+        });
+      }
+    },
+    getClaimReturnCost: async (sellerId, claimId) => {
+      try {
+        const payload = await input.request(
+          sellerId,
+          `/post-purchase/v1/claims/${claimId}/charges/return-cost`,
+          undefined,
+          undefined,
+          { retryOnRateLimit: false },
+        );
+        return normalizeClaimReturnCost({ sellerId, claimId, payload, now: input.now() });
+      } catch (error) {
+        return degradedReturnSnapshot<MlcClaimReturnCostSummary, MlcClaimReturnCostSnapshot>({
+          sellerId,
+          now: input.now(),
+          kind: "business-signal",
+          data: { claimId, charges: [] },
+          completeness: "partial",
+        });
       }
     },
     getClaimMessages: async (sellerId, claimId) => {

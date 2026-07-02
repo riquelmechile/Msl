@@ -1879,6 +1879,63 @@ export function createMcpServer(config: McpServerConfig = {}) {
       },
     );
 
+    // ── read_claim_return ──────────────────────────────────────────────
+    server.registerTool(
+      "read_claim_return",
+      {
+        description: "Reads return details for a specific MercadoLibre post-purchase claim.",
+        inputSchema: {
+          sellerId: z.string(),
+          claimId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, claimId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getClaimReturn!(sellerId, claimId));
+      },
+    );
+
+    // ── read_return_reviews ────────────────────────────────────────────
+    server.registerTool(
+      "read_return_reviews",
+      {
+        description: "Reads reviews for a specific MercadoLibre return.",
+        inputSchema: {
+          sellerId: z.string(),
+          returnId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, returnId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getReturnReviews!(sellerId, returnId));
+      },
+    );
+
+    // ── read_claim_return_cost ─────────────────────────────────────────
+    server.registerTool(
+      "read_claim_return_cost",
+      {
+        description: "Reads return cost charges for a specific MercadoLibre post-purchase claim.",
+        inputSchema: {
+          sellerId: z.string(),
+          claimId: z.string(),
+          msl_api_key: z.string().optional(),
+        },
+      },
+      async ({ sellerId, claimId, msl_api_key }) => {
+        if (!validateApiKey(msl_api_key)) {
+          return unauthorizedResult();
+        }
+        return jsonResult(await mlcClient.getClaimReturnCost!(sellerId, claimId));
+      },
+    );
+
     // ── prepare_image_orchestration ──────────────────────────────────
     server.registerTool(
       "prepare_image_orchestration",
