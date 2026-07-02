@@ -315,3 +315,91 @@ The agent loop MUST register ML API sync tools (`sync_product`, `sync_all`, `che
 - GIVEN seller asks "¿cuántas ventas tuve hoy?"
 - WHEN the agent processes the message
 - THEN sync tools SHALL NOT be invoked (read-only listing query)
+
+### Requirement: CEO Specialist-Lane Conversation
+
+The system MUST present the Telegram agent as a CEO/Socio lane that can coordinate bounded specialist investigations and return one combined, evidence-backed proposal.
+
+#### Scenario: Combined specialist proposal
+
+- GIVEN the seller approves investigation with "dale"
+- WHEN the CEO lane gathers Cost/Supplier, Market/Catalog, and Creative/Commercial outputs
+- THEN it MUST return one Spanish proposal with recommendation, rationale, risks, and evidence IDs
+- AND it MUST state that no external mutation was executed
+
+#### Scenario: Investigation remains bounded
+
+- GIVEN a delegated investigation has a stated scope
+- WHEN a lane needs work outside that scope
+- THEN the CEO lane MUST ask the seller for a new approval before continuing
+
+### Requirement: Missing Cost Clarification
+
+The system MUST ask for missing product cost, supplier, or margin inputs before making profitability claims.
+
+#### Scenario: Cost data missing
+
+- GIVEN local evidence lacks reliable cost or supplier constraints
+- WHEN the seller asks whether an opportunity is profitable
+- THEN the CEO lane MUST ask for the missing inputs
+- AND it MUST NOT present profit as confirmed
+
+#### Scenario: Cost data available
+
+- GIVEN fresh-enough cost and supplier evidence exists
+- WHEN the CEO lane prepares the proposal
+- THEN it MAY include margin viability with cited evidence IDs
+
+### Requirement: DeepSeek Cache Telemetry in Conversation
+
+The system MUST report per-lane DeepSeek cache telemetry as optimization evidence, using `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens` when provider telemetry is available.
+
+#### Scenario: Telemetry available
+
+- GIVEN DeepSeek returns cache hit and miss token counts
+- WHEN the CEO lane records a turn
+- THEN telemetry MUST be associated with the lane that produced the output
+
+#### Scenario: Telemetry unavailable
+
+- GIVEN the provider omits cache counters
+- WHEN the turn completes
+- THEN the system MUST degrade without treating cache state as memory
+
+### Requirement: Opt-In DeepSeek Tool Smoke Validation
+
+The system MUST provide an optional live DeepSeek smoke validation for function-calling contract evidence. The smoke MUST require both a valid provider API key and an explicit live-smoke opt-in gate before any paid provider call. It MUST use only synthetic prompt content and a synthetic non-personal `user_id` for provider lane/cache isolation, and MUST NOT include real seller, catalog, MercadoLibre, account, token, or business data in requests or logs.
+
+#### Scenario: Live smoke is explicitly enabled
+
+- GIVEN `DEEPSEEK_API_KEY` is present and the live-smoke opt-in flag is enabled
+- WHEN the DeepSeek tool smoke is run
+- THEN exactly one non-streaming live provider request MAY be made
+- AND the request MUST include a synthetic `user_id` not derived from personal or business data
+
+#### Scenario: Opt-in gate is missing
+
+- GIVEN `DEEPSEEK_API_KEY` is missing or the live-smoke opt-in flag is disabled
+- WHEN the DeepSeek tool smoke is requested
+- THEN the system MUST stop before any provider call
+- AND it MUST explain that live paid smoke execution requires explicit opt-in
+
+#### Scenario: Provider contract evidence is validated
+
+- GIVEN DeepSeek returns a chat completion response
+- WHEN the smoke validates the response
+- THEN it MUST require `finish_reason` to be `tool_calls`
+- AND it MUST require a `delegate_to_subagent` tool call with parseable JSON arguments
+
+#### Scenario: Cache telemetry is absent or first-run miss
+
+- GIVEN the provider omits cache counters or returns zero cache-hit tokens
+- WHEN smoke validation evaluates usage telemetry
+- THEN it MUST NOT fail solely because first-run cache hit evidence is absent
+- AND any returned cache counters MUST be finite non-negative numbers
+
+#### Scenario: Logs are safe for review
+
+- GIVEN the smoke reports request or response evidence
+- WHEN output is written to logs
+- THEN it MUST redact secrets and avoid printing headers, environment dumps, raw API keys, or real business identifiers

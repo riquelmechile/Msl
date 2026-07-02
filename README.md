@@ -68,15 +68,15 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 
 ## Production boundary today
 
-| Area               | Current state                                                                                                                        | Do not assume yet                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek.                          | Public unauthenticated production chat.                                    |
-| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                  | Secret values in Git, or mutation execution without approval gates.        |
-| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                | Manual raw token setup or account role guessing.                           |
-| Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary. | Business hierarchy between accounts or general-purpose bidirectional sync. |
-| MCP tools          | MCP exposes 7 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices).          | Production business-operation execution through MCP.                       |
-| ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram. | Real-time MercadoLibre data without OAuth tokens for every role.                   |
-| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                         | Secrets in CI; use GitHub Secrets/platform secrets.                        |
+| Area               | Current state                                                                                                                          | Do not assume yet                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek.                            | Public unauthenticated production chat.                                    |
+| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                    | Secret values in Git, or mutation execution without approval gates.        |
+| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                  | Manual raw token setup or account role guessing.                           |
+| Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.   | Business hierarchy between accounts or general-purpose bidirectional sync. |
+| MCP tools          | MCP exposes 7 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices).                      | Production business-operation execution through MCP.                       |
+| ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram. | Real-time MercadoLibre data without OAuth tokens for every role.           |
+| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                           | Secrets in CI; use GitHub Secrets/platform secrets.                        |
 
 ## Architecture
 
@@ -155,32 +155,32 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 
 ## Capabilities
 
-| #   | System                 | What it does                                                                                                    |
-| --- | ---------------------- | --------------------------------------------------------------------------------------------------------------- |
-| 1   | **Agent Loop**         | Orchestrates conversation turns: validate → cache → LLM → parse → gate                                          |
-| 2   | **Cortex Memory**      | Neural graph (SQLite + recursive CTEs). Hebbian learning, Darwinian pruning                                     |
-| 3   | **Escribano**          | Memory scribe that observes every turn and autonomously updates Cortex                                          |
-| 4   | **Guardrails**         | 6 safety gates: Spanish-only, harmful content, action safety, strategy compliance, honey-pot TOS, autonomy gate |
-| 5   | **Self-Verification**  | Calibrated-distrust: the agent checks its own proposals before presenting them                                  |
-| 6   | **Strategy Parser**    | Hybrid parser (regex fast-path → regex/rule matching) for CEO strategy injection                                |
-| 7   | **Actor Simulator**    | Simulates comprador, proveedor, and competidor mental models via LLM                                            |
-| 8   | **Probe Detection**    | Detects competitor intelligence-gathering patterns in questions and views                                       |
-| 9   | **Honey-Pot Proposer** | Generates decoy proposals when competitor probes are detected                                                   |
-| 10  | **Autonomy Engine**    | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                      |
-| 11  | **Product Sync**       | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary   |
-| 12  | **Approval Queue**     | Every write action goes through prepare → approve → execute → audit                                             |
-| 13  | **ML Business Tools**  | 16 tools for real MercadoLibre data (listings, fees, visits, orders, ads, pricing automation, promotions, quality, relist, images) |
-| 14  | **Background Ingestion** | 6h worker that snapshots ALL listings/visits/orders into Cortex, detects anomalies, cross-account comparison    |
-| 15  | **Seasonal Detection** | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts               |
-| 16  | **Cross-Account Intelligence** | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                    |
-| 17  | **Proactive Alerts**   | Push notifications for visit anomalies, paused listing reuse, seasonal preparation, cross-account gaps           |
-| 18  | **DeepSeek Inference** | Daily business intelligence: feeds Cortex data to DeepSeek for insight generation                               |
-| 19  | **Actionable Proposals** | prepare_action with 10 action kinds, data-driven proposals with estimated profit impact                       |
-| 20  | **Listing Quality**   | Audits listing score (0-100) via /performance API, surfaces OPPORTUNITY/WARNING rules by variable              |
-| 21  | **Relist Intelligence** | Detects closed/paused listings eligible for relist (<60 days), preserves visits/questions/sales history         |
-| 22  | **Image Pipeline**    | Pre-publish image diagnostic (white_background, text_logo, watermark) + upload to ML CDN via API                |
-| 23  | **Pricing Intelligence** | Read-only pricing automation rules, history, and competitive price suggestions per item/catalog               |
-| 24  | **Promotions Intelligence** | Read-only seller campaign discovery, item promotion participation, boosted offers, coupon budgets, pre-negotiated offers |
+| #   | System                         | What it does                                                                                                                       |
+| --- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Agent Loop**                 | Orchestrates conversation turns: validate → cache → LLM → parse → gate                                                             |
+| 2   | **Cortex Memory**              | Neural graph (SQLite + recursive CTEs). Hebbian learning, Darwinian pruning                                                        |
+| 3   | **Escribano**                  | Memory scribe that observes every turn and autonomously updates Cortex                                                             |
+| 4   | **Guardrails**                 | 6 safety gates: Spanish-only, harmful content, action safety, strategy compliance, honey-pot TOS, autonomy gate                    |
+| 5   | **Self-Verification**          | Calibrated-distrust: the agent checks its own proposals before presenting them                                                     |
+| 6   | **Strategy Parser**            | Hybrid parser (regex fast-path → regex/rule matching) for CEO strategy injection                                                   |
+| 7   | **Actor Simulator**            | Simulates comprador, proveedor, and competidor mental models via LLM                                                               |
+| 8   | **Probe Detection**            | Detects competitor intelligence-gathering patterns in questions and views                                                          |
+| 9   | **Honey-Pot Proposer**         | Generates decoy proposals when competitor probes are detected                                                                      |
+| 10  | **Autonomy Engine**            | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                                         |
+| 11  | **Product Sync**               | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary                      |
+| 12  | **Approval Queue**             | Every write action goes through prepare → approve → execute → audit                                                                |
+| 13  | **ML Business Tools**          | 16 tools for real MercadoLibre data (listings, fees, visits, orders, ads, pricing automation, promotions, quality, relist, images) |
+| 14  | **Background Ingestion**       | 6h worker that snapshots ALL listings/visits/orders into Cortex, detects anomalies, cross-account comparison                       |
+| 15  | **Seasonal Detection**         | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts                                 |
+| 16  | **Cross-Account Intelligence** | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                                              |
+| 17  | **Proactive Alerts**           | Push notifications for visit anomalies, paused listing reuse, seasonal preparation, cross-account gaps                             |
+| 18  | **DeepSeek Inference**         | Daily business intelligence: feeds Cortex data to DeepSeek for insight generation                                                  |
+| 19  | **Actionable Proposals**       | prepare_action with 10 action kinds, data-driven proposals with estimated profit impact                                            |
+| 20  | **Listing Quality**            | Audits listing score (0-100) via /performance API, surfaces OPPORTUNITY/WARNING rules by variable                                  |
+| 21  | **Relist Intelligence**        | Detects closed/paused listings eligible for relist (<60 days), preserves visits/questions/sales history                            |
+| 22  | **Image Pipeline**             | Pre-publish image diagnostic (white_background, text_logo, watermark) + upload to ML CDN via API                                   |
+| 23  | **Pricing Intelligence**       | Read-only pricing automation rules, history, and competitive price suggestions per item/catalog                                    |
+| 24  | **Promotions Intelligence**    | Read-only seller campaign discovery, item promotion participation, boosted offers, coupon budgets, pre-negotiated offers           |
 
 ## Stack
 
@@ -190,9 +190,9 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | **LLM**      | DeepSeek v4 Flash/Pro                        | 1M context window, ~98% cache discount, OpenAI-compatible |
 | **Memory**   | SQLite (better-sqlite3) + recursive CTEs     | Zero external services, ~400 lines TS                     |
 | **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction          |
-| **Bot**      | Telegram (grammY, proactive messaging) | Natural language interface, no UI needed                  |
+| **Bot**      | Telegram (grammY, proactive messaging)       | Natural language interface, no UI needed                  |
 | **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Stubbed project tool surface for compatible clients       |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 905+ tests, guarded platform support                        |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 905+ tests, guarded platform support                      |
 | **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                              |
 
 ## Philosophy
