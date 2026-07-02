@@ -42,7 +42,9 @@ function mockSnapshot<T>(overrides: {
   };
 }
 
-function mockReader(snapshots: Record<string, OperationalReadModelSnapshot<unknown> | null>): OperationalReadModelReader {
+function mockReader(
+  snapshots: Record<string, OperationalReadModelSnapshot<unknown> | null>,
+): OperationalReadModelReader {
   /* eslint-disable @typescript-eslint/require-await */
   return {
     async findEvidence(query: OperationalEvidenceQuery) {
@@ -201,7 +203,16 @@ describe("OperationalDailyDataSource", () => {
       }),
       reputation: mockSnapshot({
         kind: "reputation",
-        data: { level: "Silver", rating: 4.0, openClaims: 0, mediationClaims: 0, pendingResponse: 0, resolvedThisMonth: 0, claimRate: 0, avgResponseTimeHours: 0 },
+        data: {
+          level: "Silver",
+          rating: 4.0,
+          openClaims: 0,
+          mediationClaims: 0,
+          pendingResponse: 0,
+          resolvedThisMonth: 0,
+          claimRate: 0,
+          avgResponseTimeHours: 0,
+        },
         evidenceId: "evt-rep-1",
         capturedAt: "2026-06-30T10:00:00Z",
         freshnessStatus: "stale",

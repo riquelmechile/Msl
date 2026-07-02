@@ -19,7 +19,9 @@ function mockEvidence(overrides: Partial<OperationalEvidence> = {}): Operational
   };
 }
 
-function mockReader(evidences: Record<string, OperationalEvidence | null>): OperationalReadModelReader {
+function mockReader(
+  evidences: Record<string, OperationalEvidence | null>,
+): OperationalReadModelReader {
   /* eslint-disable @typescript-eslint/require-await */
   return {
     async findEvidence(query: OperationalEvidenceQuery) {
@@ -39,7 +41,11 @@ describe("OperationalEvidenceProvider", () => {
   it("returns formatted context for cost-supplier lane with listing and order evidence", async () => {
     const reader = mockReader({
       listing: mockEvidence({ evidenceId: "evt-42", snapshotKind: "listing" }),
-      order: mockEvidence({ evidenceId: "evt-99", snapshotKind: "order", capturedAt: new Date("2026-07-02T08:00:00Z") }),
+      order: mockEvidence({
+        evidenceId: "evt-99",
+        snapshotKind: "order",
+        capturedAt: new Date("2026-07-02T08:00:00Z"),
+      }),
     });
 
     const provider = new OperationalEvidenceProvider(reader);
@@ -153,7 +159,10 @@ describe("OperationalEvidenceProvider", () => {
       claim: mockEvidence({ evidenceId: "evt-claim", snapshotKind: "claim" }),
       stock: mockEvidence({ evidenceId: "evt-stk", snapshotKind: "stock" }),
       pricing: mockEvidence({ evidenceId: "evt-price", snapshotKind: "pricing" }),
-      "product-ads-insights": mockEvidence({ evidenceId: "evt-ads", snapshotKind: "product-ads-insights" }),
+      "product-ads-insights": mockEvidence({
+        evidenceId: "evt-ads",
+        snapshotKind: "product-ads-insights",
+      }),
     });
 
     const provider = new OperationalEvidenceProvider(reader);
@@ -172,7 +181,10 @@ describe("OperationalEvidenceProvider", () => {
     // product → [listing], campaign → [product-ads-insights], outcome → [order, claim]
     const reader = mockReader({
       listing: mockEvidence({ evidenceId: "evt-prod", snapshotKind: "listing" }),
-      "product-ads-insights": mockEvidence({ evidenceId: "evt-ads", snapshotKind: "product-ads-insights" }),
+      "product-ads-insights": mockEvidence({
+        evidenceId: "evt-ads",
+        snapshotKind: "product-ads-insights",
+      }),
       order: mockEvidence({ evidenceId: "evt-ord", snapshotKind: "order" }),
       claim: mockEvidence({ evidenceId: "evt-claim", snapshotKind: "claim" }),
     });

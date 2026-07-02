@@ -127,8 +127,10 @@ describe("actorIntegration — CEO strategy guardrail after actor simulation", (
 
     // Now the user confirms — the mock should return a confirmation.
     const result = await agent.converse("dale", state);
-    // The mock returns a confirmation response for "dale".
-    expect(result.response).toMatch(/confirmada|perfecto|ejecutará/i);
+    // The mock accepts the approval only as safety-reviewed preparation, not execution.
+    expect(result.response).toMatch(/^⚠️ Requiere tu revisión/);
+    expect(result.response).toMatch(/aprobación para investigación\/preparación acotada/i);
+    expect(result.response).toMatch(/noMutationExecuted: true/i);
   });
 });
 

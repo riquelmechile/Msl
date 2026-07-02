@@ -844,4 +844,3 @@ describe("buildMessages — blockC injection", () => {
     expect(messages[1]!.content).toContain(hugeBlockC);
   });
 });
-

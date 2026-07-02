@@ -111,19 +111,19 @@ User message (Spanish)
 
 ## Key design decisions
 
-| Decision                | Choice                                  | Tradeoff                                                                        |
-| ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------- |
-| **Hexagonal domain**    | `@msl/domain` has zero I/O dependencies | Tests run instantly. Every adapter is swappable.                                |
-| **SQLite Cortex**       | Recursive CTEs for spreading activation | No graph DB dependency. Single file. ~400 lines.                                |
-| **3-block cache**       | DeepSeek prefix-anchored cache          | ~98% cost reduction. Stable lane prefixes (CEO, Cost, Market, Creative) with refreshable context. |
-| **CEO lanes**           | `@msl/agent/lanes.ts` — 4 specialist lanes | CEO coordinates cache-resident specialists; `delegate_to_subagent` as OpenAI function tool. |
-| **Operational read model** | SQLite snapshots + checkpoints per seller | 5 entity kinds (listings, claims, questions, orders, messages) + reputation trends. Local-first reads. |
-| **Darwinian learning**  | Spreading-activation outcome propagation | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes. |
-| **Hybrid parser**       | Regex fast-path for strategy CRUD       | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns. |
-| **Hybrid parser**       | Regex fast-path for strategy CRUD       | 80% of natural commands bypass LLM entirely. Zero API cost.                     |
-| **Calibrated distrust** | Agent verifies its own proposals        | Catches hallucinated actions before user sees them. 6 checks per proposal.      |
-| **MCP protocol**        | Stdio server with 6 stubbed tools       | Compatible clients can exercise the current demo tool surface.                  |
-| **No framework**        | Plain TypeScript + OpenAI SDK           | No LangChain, no Mastra, no abstractions. Direct API access.                    |
+| Decision                   | Choice                                     | Tradeoff                                                                                                          |
+| -------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **Hexagonal domain**       | `@msl/domain` has zero I/O dependencies    | Tests run instantly. Every adapter is swappable.                                                                  |
+| **SQLite Cortex**          | Recursive CTEs for spreading activation    | No graph DB dependency. Single file. ~400 lines.                                                                  |
+| **3-block cache**          | DeepSeek prefix-anchored cache             | ~98% cost reduction. Stable lane prefixes (CEO, Cost, Market, Creative) with refreshable context.                 |
+| **CEO lanes**              | `@msl/agent/lanes.ts` — 4 specialist lanes | CEO coordinates cache-resident specialists; `delegate_to_subagent` as OpenAI function tool.                       |
+| **Operational read model** | SQLite snapshots + checkpoints per seller  | 5 entity kinds (listings, claims, questions, orders, messages) + reputation trends. Local-first reads.            |
+| **Darwinian learning**     | Spreading-activation outcome propagation   | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes. |
+| **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.              |
+| **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost.                                                       |
+| **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                        |
+| **MCP protocol**           | Stdio server with 6 stubbed tools          | Compatible clients can exercise the current demo tool surface.                                                    |
+| **No framework**           | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                      |
 
 ## Directory tree
 
