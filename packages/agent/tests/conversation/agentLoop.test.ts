@@ -6,6 +6,7 @@ import {
   createDeepSeekClient,
   estimateTokens,
   extractPromptCacheTelemetry,
+  buildMessages,
 } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
@@ -753,3 +754,94 @@ describe("estimateTokens", () => {
     expect(tokens).toBeLessThan(120);
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildMessages with blockC (Block C injection)
+// ---------------------------------------------------------------------------
+
+describe("buildMessages — blockC injection", () => {
+  const systemPrompt = "Eres Plasticov, asistente comercial.";
+  const userMessage = "¿Cómo van las ventas?";
+
+  it("injects blockC into user message content", () => {
+    const blockC = "## Contexto Cortex\nNodo ventas activado";
+    const state = makeState({ messages: [] });
+
+    const messages = buildMessages(systemPrompt, state, userMessage, blockC);
+
+    // Last message should be user with blockC appended.
+    const userMsg = messages[messages.length - 1]!;
+    expect(userMsg.role).toBe("user");
+    expect(userMsg.content).toContain(userMessage);
+    expect(userMsg.content).toContain(blockC);
+    expect(userMsg.content).toContain("\n\n");
+  });
+
+  it("preserves existing behavior when blockC is omitted", () => {
+    const state = makeState({ messages: [] });
+
+    const messages = buildMessages(systemPrompt, state, userMessage);
+
+    const userMsg = messages[messages.length - 1]!;
+    expect(userMsg.role).toBe("user");
+    expect(userMsg.content).toBe(userMessage);
+    // No extra injected text.
+    expect(userMsg.content).not.toContain("Contexto Cortex");
+  });
+
+  it("preserves existing behavior when blockC is empty string", () => {
+    const state = makeState({ messages: [] });
+
+    const messages = buildMessages(systemPrompt, state, userMessage, "");
+
+    const userMsg = messages[messages.length - 1]!;
+    expect(userMsg.content).toBe(userMessage);
+  });
+
+  it("includes conversation history before the latest user message", () => {
+    const state = makeState({
+      messages: [
+        { role: "user", content: "Hola", timestamp: new Date() },
+        { role: "assistant", content: "¿En qué te puedo ayudar?", timestamp: new Date() },
+      ],
+    });
+
+    const messages = buildMessages(systemPrompt, state, userMessage, "blockC text");
+
+    expect(messages).toHaveLength(4); // system + 2 history + user
+    expect(messages[0]!.role).toBe("system");
+    expect(messages[1]!.role).toBe("user");
+    expect(messages[1]!.content).toBe("Hola");
+    expect(messages[2]!.role).toBe("assistant");
+    expect(messages[3]!.role).toBe("user");
+    expect(messages[3]!.content).toContain("blockC text");
+  });
+
+  it("system prompt is token-0 anchored and does NOT contain blockC", () => {
+    const blockC = "## Evidencia operacional\n[listing] evt-42";
+    const state = makeState({ messages: [] });
+
+    const messages = buildMessages(systemPrompt, state, userMessage, blockC);
+
+    // Block C must NOT be in the system prompt (token-0 prefix cache).
+    expect(messages[0]!.role).toBe("system");
+    expect(messages[0]!.content).not.toContain("evt-42");
+    expect(messages[0]!.content).not.toContain("Evidencia operacional");
+  });
+
+  it("token budget still enforced with blockC", () => {
+    // Create a very large blockC that should push over the token budget.
+    const hugeBlockC = "x".repeat(4_000_000); // ~1M tokens
+    const state = makeState({
+      messages: [],
+      contextWindowLimit: 4,
+    });
+
+    // Should not throw — token budget enforcement should handle it.
+    const messages = buildMessages(systemPrompt, state, userMessage, hugeBlockC);
+
+    expect(messages).toHaveLength(2); // system + user (history evicted)
+    expect(messages[1]!.content).toContain(hugeBlockC);
+  });
+});
+

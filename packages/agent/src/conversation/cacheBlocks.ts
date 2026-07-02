@@ -70,13 +70,18 @@ const defaultDataSource: DailyDataSource = {
  * Accepts an optional {@link DailyDataSource} implementation.
  * When omitted, falls back to hardcoded placeholder data.
  *
+ * When the data source provides `getFreshnessNotes()`, operational
+ * snapshot timestamps are appended so the LLM can reason about staleness.
+ *
  * ~15K token budget — keeps the prefix cache valid across conversations.
  *
  * TTL: 24 hours. Must be refreshed daily to keep the prefix cache valid.
  * DeepSeek prefix cache anchors at token 0; keeping Block A+B identical
  * across all conversations for the same seller achieves >90% cache hit rate.
  */
-export function buildDailyAggregates(source?: DailyDataSource): string {
+export function buildDailyAggregates(
+  source?: DailyDataSource & { getFreshnessNotes?(): string },
+): string {
   const ds = source ?? defaultDataSource;
   const categories = ds.getCategoryStats();
   const monthlyVolume = ds.getMonthlyVolume();
@@ -91,7 +96,7 @@ export function buildDailyAggregates(source?: DailyDataSource): string {
     )
     .join("\n");
 
-  return `## Contexto diario — Plasticov / Maustian (24h, refrescado automáticamente)
+  let result = `## Contexto diario — Plasticov / Maustian (24h, refrescado automáticamente)
 
 ### Métricas del día
 - Fecha: ${todaySpanish()}
@@ -130,6 +135,16 @@ ${categoryLines}
 2. Revisar los 8 artículos con alta rotación y stock bajo
 3. Evaluar margen en 89 listings con precio sobre el promedio
 4. Preparar envíos pendientes (5 órdenes sin despachar)`;
+
+  // Append operational freshness metadata when available.
+  if (source?.getFreshnessNotes) {
+    const freshness = source.getFreshnessNotes();
+    if (freshness) {
+      result += `\n\n### Actualización de datos\n${freshness}`;
+    }
+  }
+
+  return result;
 }
 
 /**

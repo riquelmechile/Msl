@@ -63,6 +63,9 @@ import {
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
 import type { CacheTelemetry, LaneId, LaneOutput } from "./lanes.js";
+import type { OperationalReadModelReader } from "@msl/memory";
+import type { OperationalEvidenceProvider } from "./operationalEvidenceProvider.js";
+import { injectCortexContext } from "./cacheBlocks.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -177,6 +180,23 @@ export type AgentLoopConfig = {
    * observability (OpenTelemetry-ready).
    */
   metrics?: MetricsCollector;
+  /**
+   * Optional operational read-model reader. When provided alongside an
+   * {@link OperationalDailyDataSource}, Block B daily aggregates can be
+   * populated from the operational DB instead of hardcoded placeholders.
+   */
+  operationalReader?: OperationalReadModelReader;
+  /**
+   * Optional operational evidence provider. When provided alongside
+   * {@link laneId}, per-lane operational evidence is injected into
+   * Block C alongside Cortex context on every turn.
+   */
+  evidenceProvider?: OperationalEvidenceProvider;
+  /**
+   * Active lane ID for per-lane evidence injection into Block C.
+   * Required when {@link evidenceProvider} is configured.
+   */
+  laneId?: LaneId;
 };
 
 /**
@@ -510,7 +530,25 @@ ${strategyLines.join("\n")}`;
       const systemPrompt = degradationMsg
         ? `${getSystemPrompt()}\n\n${degradationMsg}`
         : getSystemPrompt();
-      const llmMessages = buildMessages(systemPrompt, state, userMessage);
+
+      // --- Build Block C: Cortex context + per-lane operational evidence ---
+      let blockC = "";
+      if (config.engine) {
+        blockC = injectCortexContext(userMessage, config.engine);
+      }
+      if (config.evidenceProvider && config.laneId) {
+        const operationalEvidence = await config.evidenceProvider.getEvidenceForLane(
+          config.laneId,
+          state.sessionMetadata.sellerId,
+        );
+        if (operationalEvidence) {
+          blockC = blockC
+            ? `${blockC}\n\n## Evidencia operacional\n\n${operationalEvidence}`
+            : `## Evidencia operacional\n\n${operationalEvidence}`;
+        }
+      }
+
+      const llmMessages = buildMessages(systemPrompt, state, userMessage, blockC);
 
       // --- Send to LLM ---
       let llmResponse = await client.chat(llmMessages);
@@ -759,7 +797,25 @@ ${strategyLines.join("\n")}`;
       const systemPrompt = degradationMsg
         ? `${getSystemPrompt()}\n\n${degradationMsg}`
         : getSystemPrompt();
-      const llmMessages = buildMessages(systemPrompt, state, userMessage);
+
+      // --- Build Block C: Cortex context + per-lane operational evidence ---
+      let blockC = "";
+      if (config.engine) {
+        blockC = injectCortexContext(userMessage, config.engine);
+      }
+      if (config.evidenceProvider && config.laneId) {
+        const operationalEvidence = await config.evidenceProvider.getEvidenceForLane(
+          config.laneId,
+          state.sessionMetadata.sellerId,
+        );
+        if (operationalEvidence) {
+          blockC = blockC
+            ? `${blockC}\n\n## Evidencia operacional\n\n${operationalEvidence}`
+            : `## Evidencia operacional\n\n${operationalEvidence}`;
+        }
+      }
+
+      const llmMessages = buildMessages(systemPrompt, state, userMessage, blockC);
 
       // --- Stream from LLM ---
       for await (const chunk of client.stream(llmMessages)) {
@@ -1507,10 +1563,11 @@ export function resolveTurnOutcome(
  * and current user message.  Enforces a token budget to prevent exceeding
  * the context window.
  */
-function buildMessages(
+export function buildMessages(
   systemPrompt: string,
   state: ConversationState,
   userMessage: string,
+  blockC?: string,
 ): Array<{ role: string; content: string }> {
   const systemMsg: Array<{ role: string; content: string }> = [
     { role: "system", content: systemPrompt },
@@ -1524,8 +1581,9 @@ function buildMessages(
     }
   }
 
-  // Current user message.
-  const userMsg = { role: "user" as const, content: userMessage };
+  // Current user message with optional Block C injected.
+  const userContent = blockC ? `${userMessage}\n\n${blockC}` : userMessage;
+  const userMsg = { role: "user" as const, content: userContent };
 
   const allMessages = [...systemMsg, ...historyMsgs, userMsg];
 
