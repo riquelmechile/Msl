@@ -5,6 +5,7 @@ export type ReadSnapshotKind =
   | "listing"
   | "listing-prices"
   | "product-ads-insights"
+  | "pricing"
   | "order"
   | "claim"
   | "message"

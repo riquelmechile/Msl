@@ -1,5 +1,5 @@
 import type { OperationalReadModelReader } from "@msl/memory";
-import type { BusinessSignalKind, SellerId } from "@msl/domain";
+import type { BusinessSignalKind, OperationalEvidenceCompleteness, SellerId } from "@msl/domain";
 import type { LaneId } from "./lanes.js";
 import { getLaneContract } from "./lanes.js";
 
@@ -44,9 +44,14 @@ function formatEvidenceLine(
   evidenceId: string,
   capturedAt: string,
   freshnessStatus: "fresh" | "stale",
+  completeness: OperationalEvidenceCompleteness,
 ): string {
   const age = ageDescription(capturedAt);
   const iso = stripMillis(capturedAt);
+  if (kind === "pricing") {
+    const label = completeness === "complete" ? "evidence-only" : "limited-evidence";
+    return `[pricing:${label}] ${evidenceId} captured=${iso} (${freshnessStatus}, ${age})`;
+  }
   return `[${kind}] ${evidenceId} captured=${iso} (${freshnessStatus}, ${age})`;
 }
 
@@ -123,6 +128,7 @@ export class OperationalEvidenceProvider {
             evidence.evidenceId,
             evidence.capturedAt.toISOString(),
             evidence.freshnessStatus,
+            evidence.completeness,
           ),
         );
       }

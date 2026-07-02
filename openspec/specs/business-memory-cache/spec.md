@@ -75,8 +75,8 @@ The system MUST support small, fresh-enough snapshots for listings, orders, mess
 
 ### Requirement: Operational Business Read Model
 
-The system MUST maintain a local SQLite operational read model for listings, claims, questions, orders, messages, reputation, and `product-ads-insights` snapshots, separate from Cortex durable learning, backed by `@msl/memory` with deterministic evidence IDs, freshness/completeness/confidence metadata, and per-kind ingestion checkpoints.
-(Previously: operational read model covered listings, claims, questions, orders, messages, and reputation only.)
+The system MUST maintain a local SQLite operational read model for listings, claims, questions, orders, messages, reputation, `product-ads-insights`, and `pricing` snapshots, separate from Cortex durable learning, backed by `@msl/memory` with deterministic evidence IDs, freshness/completeness/confidence metadata, and per-kind ingestion checkpoints.
+(Previously: operational read model covered listings, claims, questions, orders, messages, reputation, and `product-ads-insights` snapshots only.)
 
 #### Scenario: Fresh-enough local snapshot used across entity kinds
 
@@ -126,8 +126,8 @@ The system MUST treat DeepSeek prompt caching as a cost optimization only; durab
 
 ### Requirement: SQLite Operational Snapshot Persistence
 
-The system MUST persist operational snapshots of any entity kind (listing, claim, question, order, message, reputation, `product-ads-insights`) in `@msl/memory` via `better-sqlite3` with columns: `seller_id`, `item_id`, `kind`, `data` (JSON), `source`, `captured_at`, `freshness`, `completeness`, `confidence`, `evidence_id` (deterministic format `orm:{kind}:{sellerId}:{itemId}:{capturedAt}`; for reputation, `itemId` SHALL be the snapshot period; for `product-ads-insights`, `itemId` SHALL identify the seller-level date range). The store MUST use WAL mode and accept an injected `Database.Database` handle. Reads MUST be local-first when `fresh + complete + non-low confidence`.
-(Previously: persisted operational kinds excluded `product-ads-insights`.)
+The system MUST persist operational snapshots of any entity kind (listing, claim, question, order, message, reputation, `product-ads-insights`, `pricing`) in `@msl/memory` via `better-sqlite3` with columns: `seller_id`, `item_id`, `kind`, `data` (JSON), `source`, `captured_at`, `freshness`, `completeness`, `confidence`, `evidence_id`. Evidence IDs MUST be deterministic as `orm:{kind}:{sellerId}:{itemId}:{capturedAt}`; for reputation, `itemId` SHALL be the snapshot period; for `product-ads-insights`, `itemId` SHALL identify the seller-level date range. Reads MUST be local-first when `fresh + complete + non-low confidence`.
+(Previously: persisted operational kinds excluded `pricing`.)
 
 #### Scenario: Fresh operational snapshot served from local store
 
@@ -143,7 +143,8 @@ The system MUST persist operational snapshots of any entity kind (listing, claim
 
 ### Requirement: Ingestion Checkpoints
 
-The system MUST persist ingestion checkpoints per `seller_id` and `kind` so background sync resumes from the last `captured_at` without re-ingesting the full catalog or repeatedly replaying seller-level snapshot kinds such as `product-ads-insights`. For seller-level Product Ads snapshots, the date range identity SHALL live in the snapshot `item_id`, not in the checkpoint key.
+The system MUST persist ingestion checkpoints per `seller_id` and `kind` so background sync records the last successful per-kind batch without re-ingesting the full catalog or repeatedly replaying seller-level snapshot kinds such as `product-ads-insights`. `pricing` ingestion MUST use its own checkpoint as a cadence marker, while deterministic bounded item rotation prevents repeatedly reading only the first catalog items.
+(Previously: checkpoints did not mention `pricing` price-to-win ingestion.)
 
 #### Scenario: Checkpoint resume after partial ingestion
 - GIVEN a checkpoint exists for seller "Plasticov", kind "listing"
@@ -155,6 +156,12 @@ The system MUST persist ingestion checkpoints per `seller_id` and `kind` so back
 - GIVEN a seller-level `product-ads-insights` snapshot is persisted successfully
 - WHEN the ingestion cycle completes that kind
 - THEN the system MUST update the `product-ads-insights` checkpoint for that seller
+
+#### Scenario: Pricing checkpoint and rate guard
+- GIVEN `pricing` ingestion already processed a bounded item batch
+- WHEN the next background cycle runs
+- THEN it MUST use the `pricing` checkpoint to record cadence
+- AND it MUST use deterministic bounded rotation instead of replaying the full catalog or always reading the same first items
 
 ### Requirement: Cache-Efficient Summary Aggregates
 
@@ -168,7 +175,8 @@ The system MUST produce compact summary aggregates (count, min, max, top-N by re
 
 ### Requirement: Multi-Kind Operational Ingestion
 
-The system MUST ingest claims, questions, orders, messages, reputation, and `product-ads-insights` snapshots by kind. Processors SHALL follow the `processSellerListings` pattern per kind. Product Ads ingestion MUST be safe-read only, preserve `noMutationExecuted`, persist ROAS-oriented metadata, and treat disabled/no-permission Product Ads states as graceful no-data.
+The system MUST ingest claims, questions, orders, messages, reputation, `product-ads-insights`, and `pricing` snapshots by kind. Processors SHALL follow the `processSellerListings` pattern per kind. `pricing` ingestion MUST be safe-read only, call existing price-to-win reads with a bounded per-cycle item cap, persist catalog competition fields when available, preserve `noMutationExecuted`, and treat unsupported, unauthorized, non-catalog, or no-data items as graceful skips.
+(Previously: ingestion kinds excluded `pricing` catalog competition snapshots.)
 
 #### Scenario: All operational entity types ingested
 
@@ -183,6 +191,20 @@ The system MUST ingest claims, questions, orders, messages, reputation, and `pro
 - WHEN Product Ads ingestion runs
 - THEN the cycle MUST skip that seller snapshot as no-data without failing
 - AND it MUST NOT execute mutations
+
+#### Scenario: Bounded price-to-win ingestion
+
+- GIVEN a seller has more catalog items than the configured `pricing` cap
+- WHEN `pricing` ingestion runs
+- THEN it MUST read at most the configured item cap
+- AND persist successful price-to-win results as `pricing` snapshots
+
+#### Scenario: Unsupported catalog competition skipped safely
+
+- GIVEN an item is unsupported, unauthorized, non-catalog, or returns no price-to-win data
+- WHEN `pricing` ingestion reads that item
+- THEN the cycle MUST skip or mark partial evidence without failing
+- AND it MUST NOT mutate prices or generate AI images
 
 ### Requirement: Per-Kind Ingestion Tuning
 

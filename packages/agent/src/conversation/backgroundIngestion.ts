@@ -7,6 +7,7 @@ import type {
   MlcMessageSummary,
   MlcOrderSummary,
   MlcPerformanceSummary,
+  MlcPriceToWinSummary,
   MlcProductAdsInsights,
   MlcQuestionSummary,
   MlcReputationSummary,
@@ -39,6 +40,8 @@ export type BackgroundIngestionConfig = {
    * an ingestion checkpoint is saved after the listing loop.
    */
   operationalStore?: OperationalReadModelWriter;
+  /** Maximum catalog competition items read per seller cycle. Default: 20. */
+  pricingMaxItemsPerCycle?: number;
 };
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -73,6 +76,7 @@ export const KIND_FRESHNESS_TTL = {
   message: 6 * 60 * 60 * 1000, // 6h — low velocity
   reputation: 6 * 60 * 60 * 1000, // 6h — low velocity
   "product-ads-insights": 24 * 60 * 60 * 1000, // 24h — seller-level ads snapshot
+  pricing: 6 * 60 * 60 * 1000, // 6h — catalog competition snapshot
 };
 
 /** Default max pages per entity kind. Configurable per kind to guard rate budget. */
@@ -84,6 +88,9 @@ export const KIND_DEFAULT_MAX_PAGES = {
   reputation: 1, // single snapshot per cycle
   "product-ads-insights": 1, // single seller-level snapshot per cycle
 };
+
+/** Default max price-to-win reads per seller cycle. */
+export const PRICING_MAX_ITEMS_PER_CYCLE = 20;
 
 // ── Pagination helpers ─────────────────────────────────────────────────
 
@@ -191,6 +198,38 @@ function isGracefulProductAdsNoDataError(error: unknown): boolean {
   return /unauthori[sz]ed|forbidden|not.?found|no.?advertiser|advertiser|disabled/.test(message);
 }
 
+export function isGracefulPricingNoDataError(error: unknown): boolean {
+  if (!isRecord(error)) {
+    const message = String(error).toLowerCase();
+    return /unauthori[sz]ed|forbidden|not.?found|catalog|price.?to.?win|no.?data|unsupported/.test(
+      message,
+    );
+  }
+
+  const status = Number(error.status ?? error.statusCode ?? error.code);
+  if ([401, 403, 404].includes(status)) return true;
+
+  const message = metadataString(error.message).toLowerCase();
+  return /unauthori[sz]ed|forbidden|not.?found|catalog|price.?to.?win|no.?data|unsupported/.test(
+    message,
+  );
+}
+
+function hasUsablePriceToWinData(
+  data: MlcPriceToWinSummary | undefined,
+): data is MlcPriceToWinSummary {
+  if (!data || !data.itemId) return false;
+  return (
+    data.priceToWin !== undefined ||
+    data.currentPrice !== undefined ||
+    data.status !== undefined ||
+    data.reason !== undefined ||
+    data.catalogProductId !== undefined ||
+    data.winner !== undefined ||
+    data.boosts.length > 0
+  );
+}
+
 function categoryBreakdownFromMetadata(
   value: unknown,
 ): Array<{ categoryId: string; orderCount: number; totalAmount: number }> {
@@ -230,6 +269,46 @@ function firstProductAdsInsights(
   const raw: unknown = data;
   if (Array.isArray(raw)) return raw.find(isMlcProductAdsInsights);
   return isMlcProductAdsInsights(raw) ? raw : undefined;
+}
+
+function firstPriceToWinSummary(
+  data: MlcPriceToWinSummary | ReadonlyArray<MlcPriceToWinSummary>,
+): MlcPriceToWinSummary | undefined {
+  const raw: unknown = data;
+  if (Array.isArray(raw)) return raw.find(isRecord) as MlcPriceToWinSummary | undefined;
+  return isRecord(raw) ? (raw as MlcPriceToWinSummary) : undefined;
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+export function selectRotatedPricingListings(
+  sellerId: string,
+  listings: ReadonlyArray<MlcListingSummary>,
+  maxItems: number,
+  checkpointCapturedAt?: string,
+): ReadonlyArray<MlcListingSummary> {
+  if (maxItems <= 0) return [];
+
+  const candidates = listings
+    .filter((listing) => typeof listing.id === "string" && listing.id.length > 0)
+    .slice()
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  if (candidates.length <= maxItems) return candidates;
+
+  const seed = `${sellerId}:${checkpointCapturedAt ?? "initial"}`;
+  const start = hashString(seed) % candidates.length;
+
+  return Array.from(
+    { length: maxItems },
+    (_, index) => candidates[(start + index) % candidates.length]!,
+  );
 }
 
 function normalizeVisitsDetail(
@@ -893,6 +972,87 @@ export async function processSellerProductAds(
     }
     throw err;
   }
+}
+
+export async function processSellerPricing(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  listings: ReadonlyArray<MlcListingSummary>,
+): Promise<{ persisted: number; skipped: number }> {
+  if (!config.operationalStore || typeof config.mlcClient.getItemPriceToWin !== "function") {
+    return { persisted: 0, skipped: 0 };
+  }
+
+  const maxItems = config.pricingMaxItemsPerCycle ?? PRICING_MAX_ITEMS_PER_CYCLE;
+  const checkpoint = await config.operationalStore.getCheckpoint(sellerId, "pricing");
+  const batch = selectRotatedPricingListings(
+    sellerId,
+    listings,
+    maxItems,
+    checkpoint?.last_captured_at,
+  );
+  let persisted = 0;
+  let skipped = 0;
+
+  for (const listing of batch) {
+    const itemId = listing.id;
+    let snapshot: Awaited<ReturnType<NonNullable<MlcApiClient["getItemPriceToWin"]>>>;
+
+    try {
+      snapshot = await config.mlcClient.getItemPriceToWin(sellerId, itemId);
+    } catch (err) {
+      if (isGracefulPricingNoDataError(err)) {
+        skipped++;
+        continue;
+      }
+      skipped++;
+      continue;
+    }
+
+    const data = firstPriceToWinSummary(snapshot.data);
+    if (!hasUsablePriceToWinData(data)) {
+      skipped++;
+      continue;
+    }
+
+    const capturedAt = new Date().toISOString();
+    const capturedAtDate = new Date(capturedAt);
+    const completeness = snapshot.completeness;
+
+    await config.operationalStore.upsertSnapshot({
+      sellerId,
+      kind: "pricing",
+      source: "mercadolibre-api",
+      data: {
+        ...data,
+        noMutationExecuted: true,
+      },
+      completeness,
+      freshness: {
+        ...snapshot.freshness,
+        signalKind: "pricing",
+        capturedAt: capturedAtDate,
+        maxAgeMs: KIND_FRESHNESS_TTL.pricing,
+        status: snapshot.freshness.status,
+      },
+      confidence: snapshot.confidence,
+      evidence: {
+        evidenceId: `orm:pricing:${sellerId}:${itemId}:${capturedAt}`,
+        snapshotKind: "pricing",
+        sellerId,
+        entityId: itemId,
+        capturedAt: capturedAtDate,
+        freshnessStatus: snapshot.freshness.status,
+        completeness,
+        source: "operational-read-model",
+      },
+    });
+    persisted++;
+  }
+
+  await config.operationalStore.upsertCheckpoint(sellerId, "pricing", new Date().toISOString());
+
+  return { persisted, skipped };
 }
 
 // ── Orders processor (refactored from ingestOrderSnapshots) ────────
@@ -2153,6 +2313,9 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
         sellerListingMap.set(sellerId, result.listings);
         totalListings += result.listings.length;
         alerts.push(...result.alerts);
+
+        // ── Pricing competition ─────────────────────────────
+        await processSellerPricing(config, sellerId, result.listings);
 
         // ── Orders ─────────────────────────────────────────
         const orderResult = await processSellerOrders(config, sellerId, sellerName);

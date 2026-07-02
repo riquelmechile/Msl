@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   processSellerListings,
+  processSellerPricing,
   processSellerProductAds,
+  selectRotatedPricingListings,
   paginateAll,
   KIND_FRESHNESS_TTL,
   KIND_DEFAULT_MAX_PAGES,
+  PRICING_MAX_ITEMS_PER_CYCLE,
 } from "../../src/conversation/backgroundIngestion.js";
 import type {
   BackgroundIngestionConfig,
@@ -20,6 +23,8 @@ import type {
   MlcListingSummary,
   MlcListingsSnapshot,
   MlcOrderSummary,
+  MlcPriceToWinSnapshot,
+  MlcPriceToWinSummary,
   MlcProductAdsInsights,
   MlcProductAdsInsightsSnapshot,
   MlcQuestionSummary,
@@ -349,6 +354,7 @@ describe("KIND_FRESHNESS_TTL", () => {
     expect(KIND_FRESHNESS_TTL.message).toBe(6 * 60 * 60 * 1000);
     expect(KIND_FRESHNESS_TTL.reputation).toBe(6 * 60 * 60 * 1000);
     expect(KIND_FRESHNESS_TTL["product-ads-insights"]).toBe(24 * 60 * 60 * 1000);
+    expect(KIND_FRESHNESS_TTL.pricing).toBe(6 * 60 * 60 * 1000);
   });
 });
 
@@ -535,6 +541,235 @@ describe("processSellerProductAds", () => {
     expect(await operationalStore.getCheckpoint("plasticov", "product-ads-insights")).toBeNull();
   });
 });
+
+describe("processSellerPricing", () => {
+  let db: Database.Database;
+  let operationalStore: OperationalReadModel;
+  let baseConfig: BackgroundIngestionConfig;
+
+  function priceToWinSnapshot(
+    itemId: string,
+    overrides: Partial<MlcPriceToWinSnapshot> = {},
+  ): MlcPriceToWinSnapshot {
+    return {
+      sellerId: "plasticov",
+      kind: "pricing",
+      source: "mercadolibre-api",
+      data: {
+        itemId,
+        currentPrice: 12000,
+        priceToWin: 11500,
+        status: "winning",
+        catalogProductId: "MLC999",
+        boosts: [],
+      } satisfies MlcPriceToWinSummary,
+      completeness: "complete",
+      freshness: {
+        source: "mercadolibre-api",
+        signalKind: "pricing",
+        risk: "medium",
+        capturedAt: new Date("2026-07-01T12:00:00Z"),
+        maxAgeMs: 6 * 60 * 60 * 1000,
+        status: "fresh",
+      },
+      confidence: "high",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    const engine = createGraphEngine(":memory:");
+    db = engine.db;
+    operationalStore = createSqliteOperationalReadModel(db);
+    baseConfig = {
+      mlcClient: mockMlcApiClient([]),
+      engine,
+      sendProactiveMessage: vi.fn().mockResolvedValue(undefined),
+      listActiveChats: vi.fn().mockResolvedValue([]),
+      sellerIds: ["plasticov"],
+      operationalStore,
+    };
+  });
+
+  it("selects a deterministic rotated batch bounded by the configured cap", () => {
+    const listings: MlcListingSummary[] = ["MLC5", "MLC1", "MLC3", "MLC2", "MLC4"].map((id) => ({
+      id,
+    }));
+
+    const first = selectRotatedPricingListings("plasticov", listings, 2, "2026-07-01T00:00:00Z");
+    const second = selectRotatedPricingListings("plasticov", listings, 2, "2026-07-01T00:00:00Z");
+
+    expect(first).toEqual(second);
+    expect(first).toHaveLength(2);
+    expect(first.every((listing) => listing.id.startsWith("MLC"))).toBe(true);
+    expect(PRICING_MAX_ITEMS_PER_CYCLE).toBe(20);
+  });
+
+  it("calls price-to-win reads only up to the configured cap", async () => {
+    const listings: MlcListingSummary[] = ["MLC1", "MLC2", "MLC3"].map((id) => ({ id }));
+    const getItemPriceToWin = vi
+      .fn()
+      .mockImplementation((_sellerId: string, itemId: string) =>
+        Promise.resolve(priceToWinSnapshot(itemId)),
+      );
+
+    await processSellerPricing(
+      {
+        ...baseConfig,
+        pricingMaxItemsPerCycle: 2,
+        mlcClient: { ...baseConfig.mlcClient, getItemPriceToWin },
+      },
+      "plasticov",
+      listings,
+    );
+
+    expect(getItemPriceToWin).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists pricing snapshots with evidence IDs and read-only metadata", async () => {
+    const getItemPriceToWin = vi.fn().mockResolvedValue(priceToWinSnapshot("MLC123"));
+    const relistItem = vi.fn();
+    const uploadImage = vi.fn();
+    const getPromotionItems = vi.fn();
+
+    await expect(
+      processSellerPricing(
+        {
+          ...baseConfig,
+          mlcClient: {
+            ...baseConfig.mlcClient,
+            getItemPriceToWin,
+            relistItem,
+            uploadImage,
+            getPromotionItems,
+          },
+        },
+        "plasticov",
+        [{ id: "MLC123" }],
+      ),
+    ).resolves.toEqual({ persisted: 1, skipped: 0 });
+
+    const snapshot = await operationalStore.readSnapshot<
+      MlcPriceToWinSummary & { noMutationExecuted: true }
+    >({
+      sellerId: "plasticov",
+      snapshotKind: "pricing",
+      entityId: "MLC123",
+    });
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot!.evidence.evidenceId).toMatch(/^orm:pricing:plasticov:MLC123:/);
+    expect(snapshot!.kind).toBe("pricing");
+    expect(Array.isArray(snapshot!.data)).toBe(false);
+    const data = snapshot!.data as MlcPriceToWinSummary & { noMutationExecuted: true };
+    expect(data.noMutationExecuted).toBe(true);
+    expect(snapshot!.freshness.status).toBe("fresh");
+    expect(relistItem).not.toHaveBeenCalled();
+    expect(uploadImage).not.toHaveBeenCalled();
+    expect(getPromotionItems).not.toHaveBeenCalled();
+  });
+
+  it("writes the pricing checkpoint only after the bounded batch completes", async () => {
+    const getItemPriceToWin = vi
+      .fn()
+      .mockImplementation((_sellerId: string, itemId: string) =>
+        Promise.resolve(priceToWinSnapshot(itemId)),
+      );
+    const upsertSnapshot = vi.fn().mockResolvedValue(undefined);
+    const upsertCheckpoint = vi.fn().mockResolvedValue(undefined);
+
+    await processSellerPricing(
+      {
+        ...baseConfig,
+        pricingMaxItemsPerCycle: 2,
+        mlcClient: { ...baseConfig.mlcClient, getItemPriceToWin },
+        operationalStore: { ...operationalStore, upsertSnapshot, upsertCheckpoint },
+      },
+      "plasticov",
+      [{ id: "MLC1" }, { id: "MLC2" }],
+    );
+
+    expect(upsertSnapshot).toHaveBeenCalledTimes(2);
+    expect(upsertCheckpoint).toHaveBeenCalledWith("plasticov", "pricing", expect.any(String));
+    expect(upsertCheckpoint.mock.invocationCallOrder[0]).toBeGreaterThan(
+      upsertSnapshot.mock.invocationCallOrder[1]!,
+    );
+  });
+
+  it("does not checkpoint when pricing snapshot persistence fails", async () => {
+    const upsertCheckpoint = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      processSellerPricing(
+        {
+          ...baseConfig,
+          mlcClient: {
+            ...baseConfig.mlcClient,
+            getItemPriceToWin: vi.fn().mockResolvedValue(priceToWinSnapshot("MLC123")),
+          },
+          operationalStore: {
+            ...operationalStore,
+            upsertSnapshot: vi.fn().mockRejectedValue(new Error("write failed")),
+            upsertCheckpoint,
+          },
+        },
+        "plasticov",
+        [{ id: "MLC123" }],
+      ),
+    ).rejects.toThrow("write failed");
+    expect(upsertCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, "unauthorized"],
+    [403, "forbidden"],
+    [404, "not found"],
+  ])("skips graceful HTTP %i pricing failures", async (status, message) => {
+    const err = Object.assign(new Error(message), { status });
+
+    await expect(
+      processSellerPricing(
+        {
+          ...baseConfig,
+          mlcClient: {
+            ...baseConfig.mlcClient,
+            getItemPriceToWin: vi.fn().mockRejectedValue(err),
+          },
+        },
+        "plasticov",
+        [{ id: "MLC123" }],
+      ),
+    ).resolves.toEqual({ persisted: 0, skipped: 1 });
+    expect(await operationalStore.getCheckpoint("plasticov", "pricing")).not.toBeNull();
+  });
+
+  it("skips no-data pricing snapshots without failing", async () => {
+    await expect(
+      processSellerPricing(
+        {
+          ...baseConfig,
+          mlcClient: {
+            ...baseConfig.mlcClient,
+            getItemPriceToWin: vi.fn().mockResolvedValue(
+              priceToWinSnapshot("MLC123", {
+                data: { itemId: "MLC123", boosts: [] },
+                completeness: "partial",
+                confidence: "low",
+              }),
+            ),
+          },
+        },
+        "plasticov",
+        [{ id: "MLC123" }],
+      ),
+    ).resolves.toEqual({ persisted: 0, skipped: 1 });
+
+    expect(
+      db.prepare("SELECT COUNT(*) as cnt FROM operational_snapshots WHERE kind = ?").get("pricing"),
+    ).toEqual({ cnt: 0 });
+  });
+});
+
 describe("operational store checkpoint resume", () => {
   let db: Database.Database;
   let operationalStore: OperationalReadModel;

@@ -75,7 +75,7 @@ describe("OperationalEvidenceProvider", () => {
     const listingCount = (result.match(/\[listing\]/g) ?? []).length;
     expect(listingCount).toBe(1);
     expect(result).toContain("[order]");
-    expect(result).toContain("[pricing]");
+    expect(result).toContain("[pricing:evidence-only]");
   });
 
   it("returns empty string for unknown lane", async () => {
@@ -174,10 +174,89 @@ describe("OperationalEvidenceProvider", () => {
     expect(result).toContain("[order]");
     expect(result).toContain("[claim]");
     expect(result).toContain("[stock]");
-    expect(result).toContain("[pricing]");
+    expect(result).toContain("[pricing:evidence-only]");
     expect(result).toContain("[product-ads-insights]");
     expect(result).toContain("orm:product-ads-insights:seller-1:2026-06-01_2026-07-01");
     expect(result).toContain("captured=2026-07-02T10:00:00Z");
+  });
+
+  it("returns read-only pricing evidence for market-catalog lane", async () => {
+    const reader = mockReader({
+      listing: null,
+      order: null,
+      claim: null,
+      stock: null,
+      pricing: mockEvidence({
+        evidenceId: "orm:pricing:seller-1:MLC123:2026-07-02T10:00:00.000Z",
+        snapshotKind: "pricing",
+        capturedAt: new Date("2026-07-02T10:00:00Z"),
+      }),
+      "product-ads-insights": null,
+    });
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getEvidenceForLane("market-catalog", "seller-1");
+
+    expect(result).toContain("[pricing:evidence-only]");
+    expect(result).toContain("orm:pricing:seller-1:MLC123");
+    expect(result).toContain("captured=2026-07-02T10:00:00Z");
+    expect(result).not.toMatch(/update|promotion|image generation/i);
+  });
+
+  it("returns read-only pricing evidence for margin evidence on cost-supplier lane", async () => {
+    const reader = mockReader({
+      listing: null,
+      order: null,
+      pricing: mockEvidence({
+        evidenceId: "orm:pricing:seller-1:MLC999:2026-07-02T10:00:00.000Z",
+        snapshotKind: "pricing",
+        capturedAt: new Date("2026-07-02T10:00:00Z"),
+      }),
+    });
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getEvidenceForLane("cost-supplier", "seller-1");
+
+    expect(result).toContain("[pricing:evidence-only]");
+    expect(result).toContain("orm:pricing:seller-1:MLC999");
+    expect(result).not.toContain("[listing]");
+    expect(result).not.toContain("[order]");
+  });
+
+  it("omits missing pricing evidence without failing market or margin lanes", async () => {
+    const reader = mockReader({
+      listing: null,
+      order: null,
+      claim: null,
+      stock: null,
+      pricing: null,
+      "product-ads-insights": null,
+    });
+
+    const provider = new OperationalEvidenceProvider(reader);
+
+    await expect(provider.getEvidenceForLane("market-catalog", "seller-1")).resolves.toBe("");
+    await expect(provider.getEvidenceForLane("cost-supplier", "seller-1")).resolves.toBe("");
+  });
+
+  it("labels partial pricing evidence as limited context without failing", async () => {
+    const reader = mockReader({
+      listing: null,
+      order: null,
+      pricing: mockEvidence({
+        evidenceId: "orm:pricing:seller-1:MLC777:2026-07-02T10:00:00.000Z",
+        snapshotKind: "pricing",
+        completeness: "partial",
+        capturedAt: new Date("2026-07-02T10:00:00Z"),
+      }),
+    });
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getEvidenceForLane("cost-supplier", "seller-1");
+
+    expect(result).toContain("[pricing:limited-evidence]");
+    expect(result).toContain("orm:pricing:seller-1:MLC777");
+    expect(result).not.toMatch(/update|promotion|image generation/i);
   });
 
   it("returns evidence for creative-commercial lane", async () => {

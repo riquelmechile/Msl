@@ -10,7 +10,7 @@ import type {
   OperationalReadModelSnapshot,
 } from "../src/operationalReadModel.js";
 import { decideReadSnapshotFreshness } from "../src/index.js";
-import type { MlcListingSummary } from "@msl/mercadolibre";
+import type { MlcListingSummary, MlcPriceToWinSummary } from "@msl/mercadolibre";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -55,6 +55,58 @@ function makeListingSnapshot(
     evidence: {
       evidenceId: `orm:listing:${sellerId}:${itemId}:${capturedAt.toISOString()}`,
       snapshotKind: "listing",
+      sellerId,
+      entityId: itemId,
+      capturedAt,
+      freshnessStatus,
+      completeness,
+      source: "operational-read-model",
+    },
+  };
+}
+
+function makePricingSnapshot(
+  overrides: Partial<{
+    sellerId: string;
+    itemId: string;
+    capturedAt: Date;
+    freshnessStatus: "fresh" | "stale";
+    completeness: "complete" | "partial";
+    confidence: "low" | "medium" | "high";
+  }> = {},
+): OperationalReadModelSnapshot<MlcPriceToWinSummary & { noMutationExecuted: true }> {
+  const sellerId = overrides.sellerId ?? "plasticov";
+  const itemId = overrides.itemId ?? "MLC123";
+  const capturedAt = overrides.capturedAt ?? new Date("2026-07-01T12:00:00Z");
+  const freshnessStatus = overrides.freshnessStatus ?? "fresh";
+  const completeness = overrides.completeness ?? "complete";
+  const confidence = overrides.confidence ?? "high";
+
+  return {
+    sellerId,
+    kind: "pricing",
+    source: "mercadolibre-api",
+    data: {
+      itemId,
+      currentPrice: 1000,
+      priceToWin: 950,
+      status: "competing",
+      boosts: [],
+      noMutationExecuted: true,
+    },
+    completeness,
+    freshness: {
+      source: "mercadolibre-api",
+      signalKind: "pricing",
+      risk: "medium",
+      capturedAt,
+      maxAgeMs: 6 * 60 * 60 * 1000,
+      status: freshnessStatus,
+    },
+    confidence,
+    evidence: {
+      evidenceId: `orm:pricing:${sellerId}:${itemId}:${capturedAt.toISOString()}`,
+      snapshotKind: "pricing",
       sellerId,
       entityId: itemId,
       capturedAt,
@@ -144,6 +196,33 @@ describe("createSqliteOperationalReadModel", () => {
     const data = result!.data as MlcListingSummary;
     expect(data.id).toBe("MLC123");
     expect(data.title).toBe("Test Product");
+  });
+
+  it("upserts a pricing snapshot and reads durable read-only evidence", async () => {
+    const snap = makePricingSnapshot();
+    await store.upsertSnapshot(snap);
+
+    const result = await store.readSnapshot<MlcPriceToWinSummary & { noMutationExecuted: true }>({
+      sellerId: "plasticov",
+      snapshotKind: "pricing",
+      entityId: "MLC123",
+    });
+    const evidence = await store.findEvidence({
+      sellerId: "plasticov",
+      snapshotKind: "pricing",
+      entityId: "MLC123",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.kind).toBe("pricing");
+    expect(Array.isArray(result!.data)).toBe(false);
+    const data = result!.data as MlcPriceToWinSummary & { noMutationExecuted: true };
+    expect(data.noMutationExecuted).toBe(true);
+    expect(data.priceToWin).toBe(950);
+    expect(result!.evidence.evidenceId).toMatch(/^orm:pricing:plasticov:MLC123:/);
+    expect(evidence).not.toBeNull();
+    expect(evidence!.snapshotKind).toBe("pricing");
+    expect(evidence!.evidenceId).toBe(snap.evidence.evidenceId);
   });
 
   it("upsert replaces an existing row for the same (seller_id, item_id, kind)", async () => {
