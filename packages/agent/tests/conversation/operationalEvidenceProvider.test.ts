@@ -160,8 +160,10 @@ describe("OperationalEvidenceProvider", () => {
       stock: mockEvidence({ evidenceId: "evt-stk", snapshotKind: "stock" }),
       pricing: mockEvidence({ evidenceId: "evt-price", snapshotKind: "pricing" }),
       "product-ads-insights": mockEvidence({
-        evidenceId: "evt-ads",
+        evidenceId:
+          "orm:product-ads-insights:seller-1:2026-06-01_2026-07-01:2026-07-02T10:00:00.000Z",
         snapshotKind: "product-ads-insights",
+        capturedAt: new Date("2026-07-02T10:00:00Z"),
       }),
     });
 
@@ -174,6 +176,8 @@ describe("OperationalEvidenceProvider", () => {
     expect(result).toContain("[stock]");
     expect(result).toContain("[pricing]");
     expect(result).toContain("[product-ads-insights]");
+    expect(result).toContain("orm:product-ads-insights:seller-1:2026-06-01_2026-07-01");
+    expect(result).toContain("captured=2026-07-02T10:00:00Z");
   });
 
   it("returns evidence for creative-commercial lane", async () => {
@@ -182,8 +186,10 @@ describe("OperationalEvidenceProvider", () => {
     const reader = mockReader({
       listing: mockEvidence({ evidenceId: "evt-prod", snapshotKind: "listing" }),
       "product-ads-insights": mockEvidence({
-        evidenceId: "evt-ads",
+        evidenceId:
+          "orm:product-ads-insights:seller-1:2026-06-01_2026-07-01:2026-07-02T10:00:00.000Z",
         snapshotKind: "product-ads-insights",
+        capturedAt: new Date("2026-07-02T10:00:00Z"),
       }),
       order: mockEvidence({ evidenceId: "evt-ord", snapshotKind: "order" }),
       claim: mockEvidence({ evidenceId: "evt-claim", snapshotKind: "claim" }),
@@ -196,6 +202,8 @@ describe("OperationalEvidenceProvider", () => {
     expect(result).toContain("[product-ads-insights]");
     expect(result).toContain("[order]");
     expect(result).toContain("[claim]");
+    expect(result).toContain("orm:product-ads-insights:seller-1:2026-06-01_2026-07-01");
+    expect(result).toContain("captured=2026-07-02T10:00:00Z");
   });
 
   it("includes evidence IDs and timestamps per spec scenario", async () => {

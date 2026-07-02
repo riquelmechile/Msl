@@ -7,6 +7,7 @@ import type {
   MlcMessageSummary,
   MlcOrderSummary,
   MlcPerformanceSummary,
+  MlcProductAdsInsights,
   MlcQuestionSummary,
   MlcReputationSummary,
   MlcVisitsDetail,
@@ -71,6 +72,7 @@ export const KIND_FRESHNESS_TTL = {
   question: 2 * 60 * 60 * 1000, // 2h — medium velocity
   message: 6 * 60 * 60 * 1000, // 6h — low velocity
   reputation: 6 * 60 * 60 * 1000, // 6h — low velocity
+  "product-ads-insights": 24 * 60 * 60 * 1000, // 24h — seller-level ads snapshot
 };
 
 /** Default max pages per entity kind. Configurable per kind to guard rate budget. */
@@ -80,6 +82,7 @@ export const KIND_DEFAULT_MAX_PAGES = {
   question: 100,
   message: 100,
   reputation: 1, // single snapshot per cycle
+  "product-ads-insights": 1, // single seller-level snapshot per cycle
 };
 
 // ── Pagination helpers ─────────────────────────────────────────────────
@@ -142,6 +145,10 @@ function isMlcPerformanceSummary(value: unknown): value is MlcPerformanceSummary
   return isRecord(value) && typeof value.entityId === "string";
 }
 
+function isMlcProductAdsInsights(value: unknown): value is MlcProductAdsInsights {
+  return isRecord(value) && value.noMutationExecuted === true && value.performanceMetric === "roas";
+}
+
 function normalizeListings(
   data: ReadonlyArray<MlcListingSummary> | MlcListingSummary,
 ): ReadonlyArray<MlcListingSummary> {
@@ -153,6 +160,35 @@ function metadataString(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return fallback;
+}
+
+function defaultProductAdsDateRange(now = new Date()): { dateFrom: string; dateTo: string } {
+  const dateTo = now.toISOString().slice(0, 10);
+  const start = new Date(now);
+  start.setUTCDate(start.getUTCDate() - 30);
+  const dateFrom = start.toISOString().slice(0, 10);
+  return { dateFrom, dateTo };
+}
+
+function productAdsEntityId(dateFrom: string | undefined, dateTo: string | undefined): string {
+  return `${dateFrom ?? "open"}_${dateTo ?? "open"}`;
+}
+
+function productAdsEvidenceId(sellerId: string, entityId: string, capturedAt: string): string {
+  return `orm:product-ads-insights:${sellerId}:${entityId}:${capturedAt}`;
+}
+
+function isGracefulProductAdsNoDataError(error: unknown): boolean {
+  if (!isRecord(error)) {
+    const message = String(error).toLowerCase();
+    return /unauthori[sz]ed|forbidden|not.?found|no.?advertiser|advertiser|disabled/.test(message);
+  }
+
+  const status = Number(error.status ?? error.statusCode ?? error.code);
+  if ([401, 403, 404].includes(status)) return true;
+
+  const message = metadataString(error.message).toLowerCase();
+  return /unauthori[sz]ed|forbidden|not.?found|no.?advertiser|advertiser|disabled/.test(message);
 }
 
 function categoryBreakdownFromMetadata(
@@ -186,6 +222,14 @@ function firstPerformanceSummary(
   const raw: unknown = data;
   if (Array.isArray(raw)) return raw.find(isMlcPerformanceSummary);
   return isMlcPerformanceSummary(raw) ? raw : undefined;
+}
+
+function firstProductAdsInsights(
+  data: MlcProductAdsInsights | ReadonlyArray<MlcProductAdsInsights>,
+): MlcProductAdsInsights | undefined {
+  const raw: unknown = data;
+  if (Array.isArray(raw)) return raw.find(isMlcProductAdsInsights);
+  return isMlcProductAdsInsights(raw) ? raw : undefined;
 }
 
 function normalizeVisitsDetail(
@@ -783,6 +827,71 @@ async function processSellerReputation(
       err instanceof Error ? err.message : String(err),
     );
     return { alerts };
+  }
+}
+
+export async function processSellerProductAds(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+): Promise<{ persisted: boolean }> {
+  if (!config.operationalStore || typeof config.mlcClient.getProductAdsInsights !== "function") {
+    return { persisted: false };
+  }
+
+  try {
+    const defaultRange = defaultProductAdsDateRange();
+    const snapshot = await config.mlcClient.getProductAdsInsights(sellerId, {
+      ...defaultRange,
+      limit: 50,
+      offset: 0,
+    });
+
+    const data = firstProductAdsInsights(snapshot.data);
+    if (!data) return { persisted: false };
+    const dateFrom = data.dateFrom ?? defaultRange.dateFrom;
+    const dateTo = data.dateTo ?? defaultRange.dateTo;
+    const entityId = productAdsEntityId(dateFrom, dateTo);
+    const capturedAt = new Date().toISOString();
+    const capturedAtDate = new Date(capturedAt);
+
+    await config.operationalStore.upsertSnapshot({
+      sellerId,
+      kind: "product-ads-insights",
+      source: "mercadolibre-api",
+      data: {
+        ...data,
+        noMutationExecuted: true,
+        performanceMetric: "roas",
+      },
+      completeness: snapshot.completeness,
+      freshness: {
+        ...snapshot.freshness,
+        signalKind: "product-ads-insights",
+        capturedAt: capturedAtDate,
+        maxAgeMs: KIND_FRESHNESS_TTL["product-ads-insights"],
+        status: snapshot.freshness.status,
+      },
+      confidence: snapshot.confidence,
+      evidence: {
+        evidenceId: productAdsEvidenceId(sellerId, entityId, capturedAt),
+        snapshotKind: "product-ads-insights",
+        sellerId,
+        entityId,
+        capturedAt: capturedAtDate,
+        freshnessStatus: snapshot.freshness.status,
+        completeness: snapshot.completeness,
+        source: "operational-read-model",
+      },
+    });
+
+    await config.operationalStore.upsertCheckpoint(sellerId, "product-ads-insights", capturedAt);
+
+    return { persisted: true };
+  } catch (err) {
+    if (isGracefulProductAdsNoDataError(err)) {
+      return { persisted: false };
+    }
+    throw err;
   }
 }
 
@@ -2065,6 +2174,9 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
         // ── Reputation ─────────────────────────────────────
         const reputationResult = await processSellerReputation(config, sellerId, sellerName);
         alerts.push(...reputationResult.alerts);
+
+        // ── Product Ads ────────────────────────────────────
+        await processSellerProductAds(config, sellerId);
       } catch (err) {
         console.error(
           `[background-ingestion] Failed to process seller ${sellerId}:`,

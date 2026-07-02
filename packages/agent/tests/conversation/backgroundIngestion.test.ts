@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   processSellerListings,
+  processSellerProductAds,
   paginateAll,
   KIND_FRESHNESS_TTL,
   KIND_DEFAULT_MAX_PAGES,
@@ -19,6 +20,8 @@ import type {
   MlcListingSummary,
   MlcListingsSnapshot,
   MlcOrderSummary,
+  MlcProductAdsInsights,
+  MlcProductAdsInsightsSnapshot,
   MlcQuestionSummary,
   MlcReputationSummary,
 } from "@msl/mercadolibre";
@@ -339,12 +342,13 @@ describe("paginateAll", () => {
 // ── Freshness TTL constants ──────────────────────────────────────────
 
 describe("KIND_FRESHNESS_TTL", () => {
-  it("has TTLs for all five entity kinds", () => {
+  it("has TTLs for all supported operational entity kinds", () => {
     expect(KIND_FRESHNESS_TTL.claim).toBe(60 * 60 * 1000);
     expect(KIND_FRESHNESS_TTL.order).toBe(60 * 60 * 1000);
     expect(KIND_FRESHNESS_TTL.question).toBe(2 * 60 * 60 * 1000);
     expect(KIND_FRESHNESS_TTL.message).toBe(6 * 60 * 60 * 1000);
     expect(KIND_FRESHNESS_TTL.reputation).toBe(6 * 60 * 60 * 1000);
+    expect(KIND_FRESHNESS_TTL["product-ads-insights"]).toBe(24 * 60 * 60 * 1000);
   });
 });
 
@@ -353,11 +357,182 @@ describe("KIND_DEFAULT_MAX_PAGES", () => {
     expect(KIND_DEFAULT_MAX_PAGES.reputation).toBe(1);
   });
 
+  it("defaults Product Ads to 1 page (single seller-level snapshot per cycle)", () => {
+    expect(KIND_DEFAULT_MAX_PAGES["product-ads-insights"]).toBe(1);
+  });
+
   it("defaults claims, orders, questions, and messages to 100 pages", () => {
     expect(KIND_DEFAULT_MAX_PAGES.claim).toBe(100);
     expect(KIND_DEFAULT_MAX_PAGES.order).toBe(100);
     expect(KIND_DEFAULT_MAX_PAGES.question).toBe(100);
     expect(KIND_DEFAULT_MAX_PAGES.message).toBe(100);
+  });
+});
+
+describe("processSellerProductAds", () => {
+  let db: Database.Database;
+  let operationalStore: OperationalReadModel;
+  let baseConfig: BackgroundIngestionConfig;
+
+  function productAdsSnapshot(overrides: Partial<MlcProductAdsInsightsSnapshot> = {}) {
+    return {
+      sellerId: "plasticov",
+      kind: "product-ads-insights",
+      source: "mercadolibre-api",
+      data: {
+        advertiser: { id: "adv-1", siteId: "MLC", productId: "PADS" },
+        dateFrom: "2026-06-01",
+        dateTo: "2026-07-01",
+        campaigns: [{ id: "campaign-1", metrics: { roas: 4.2, cost: 1000 } }],
+        ads: [{ id: "ad-1", itemId: "MLC123", metrics: { roas: 3.7 } }],
+        noMutationExecuted: true,
+        performanceMetric: "roas",
+        transitionalMetrics: { acosTargetDeprecatedAfter: "2026-03-30" },
+      },
+      completeness: "complete",
+      freshness: {
+        source: "mercadolibre-api",
+        signalKind: "product-ads-insights",
+        risk: "medium",
+        capturedAt: new Date("2026-07-01T12:00:00Z"),
+        maxAgeMs: 24 * 60 * 60 * 1000,
+        status: "fresh",
+      },
+      confidence: "high",
+      ...overrides,
+    } satisfies MlcProductAdsInsightsSnapshot;
+  }
+
+  beforeEach(() => {
+    const engine = createGraphEngine(":memory:");
+    db = engine.db;
+    operationalStore = createSqliteOperationalReadModel(db);
+    baseConfig = {
+      mlcClient: mockMlcApiClient([]),
+      engine,
+      sendProactiveMessage: vi.fn().mockResolvedValue(undefined),
+      listActiveChats: vi.fn().mockResolvedValue([]),
+      sellerIds: ["plasticov"],
+      operationalStore,
+    };
+  });
+
+  it("persists Product Ads insights with date-range entity ID and ROAS metadata", async () => {
+    const getProductAdsInsights = vi.fn().mockResolvedValue(productAdsSnapshot());
+    const config = {
+      ...baseConfig,
+      mlcClient: { ...baseConfig.mlcClient, getProductAdsInsights },
+    };
+
+    await expect(processSellerProductAds(config, "plasticov")).resolves.toEqual({
+      persisted: true,
+    });
+
+    expect(getProductAdsInsights).toHaveBeenCalledOnce();
+    expect(getProductAdsInsights).toHaveBeenCalledWith(
+      "plasticov",
+      expect.objectContaining({ limit: 50, offset: 0 }),
+    );
+
+    const snapshot = await operationalStore.readSnapshot<MlcProductAdsInsights>({
+      sellerId: "plasticov",
+      snapshotKind: "product-ads-insights",
+      entityId: "2026-06-01_2026-07-01",
+    });
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot!.evidence.evidenceId).toMatch(
+      /^orm:product-ads-insights:plasticov:2026-06-01_2026-07-01:/,
+    );
+    expect(Array.isArray(snapshot!.data)).toBe(false);
+    const data = snapshot!.data as MlcProductAdsInsights;
+    expect(data.noMutationExecuted).toBe(true);
+    expect(data.performanceMetric).toBe("roas");
+    expect(data.transitionalMetrics.acosTargetDeprecatedAfter).toBe("2026-03-30");
+    expect(snapshot!.freshness.status).toBe("fresh");
+  });
+
+  it("writes the Product Ads checkpoint only after snapshot persistence succeeds", async () => {
+    const getProductAdsInsights = vi.fn().mockResolvedValue(productAdsSnapshot());
+    const upsertSnapshot = vi.fn().mockResolvedValue(undefined);
+    const upsertCheckpoint = vi.fn().mockResolvedValue(undefined);
+    const config = {
+      ...baseConfig,
+      mlcClient: { ...baseConfig.mlcClient, getProductAdsInsights },
+      operationalStore: { ...operationalStore, upsertSnapshot, upsertCheckpoint },
+    };
+
+    await processSellerProductAds(config, "plasticov");
+
+    expect(upsertSnapshot).toHaveBeenCalledOnce();
+    expect(upsertCheckpoint).toHaveBeenCalledWith(
+      "plasticov",
+      "product-ads-insights",
+      expect.any(String),
+    );
+    expect(upsertCheckpoint.mock.invocationCallOrder[0]).toBeGreaterThan(
+      upsertSnapshot.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("does not checkpoint when Product Ads snapshot persistence fails", async () => {
+    const getProductAdsInsights = vi.fn().mockResolvedValue(productAdsSnapshot());
+    const upsertCheckpoint = vi.fn().mockResolvedValue(undefined);
+    const config = {
+      ...baseConfig,
+      mlcClient: { ...baseConfig.mlcClient, getProductAdsInsights },
+      operationalStore: {
+        ...operationalStore,
+        upsertSnapshot: vi.fn().mockRejectedValue(new Error("write failed")),
+        upsertCheckpoint,
+      },
+    };
+
+    await expect(processSellerProductAds(config, "plasticov")).rejects.toThrow("write failed");
+    expect(upsertCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it("skips missing Product Ads client without snapshots or checkpoints", async () => {
+    const result = await processSellerProductAds(baseConfig, "plasticov");
+
+    expect(result).toEqual({ persisted: false });
+    expect(
+      db
+        .prepare("SELECT COUNT(*) as cnt FROM operational_snapshots WHERE kind = ?")
+        .get("product-ads-insights"),
+    ).toEqual({ cnt: 0 });
+    expect(await operationalStore.getCheckpoint("plasticov", "product-ads-insights")).toBeNull();
+  });
+
+  it.each([401, 403, 404])("treats Product Ads HTTP %i as graceful no-data", async (status) => {
+    const err = Object.assign(new Error(`Product Ads ${status}`), { status });
+    const config = {
+      ...baseConfig,
+      mlcClient: {
+        ...baseConfig.mlcClient,
+        getProductAdsInsights: vi.fn().mockRejectedValue(err),
+      },
+    };
+
+    await expect(processSellerProductAds(config, "plasticov")).resolves.toEqual({
+      persisted: false,
+    });
+    expect(await operationalStore.getCheckpoint("plasticov", "product-ads-insights")).toBeNull();
+  });
+
+  it("treats missing advertiser errors as graceful no-data", async () => {
+    const config = {
+      ...baseConfig,
+      mlcClient: {
+        ...baseConfig.mlcClient,
+        getProductAdsInsights: vi.fn().mockRejectedValue(new Error("no advertiser account")),
+      },
+    };
+
+    await expect(processSellerProductAds(config, "plasticov")).resolves.toEqual({
+      persisted: false,
+    });
+    expect(await operationalStore.getCheckpoint("plasticov", "product-ads-insights")).toBeNull();
   });
 });
 describe("operational store checkpoint resume", () => {

@@ -75,8 +75,8 @@ The system MUST support small, fresh-enough snapshots for listings, orders, mess
 
 ### Requirement: Operational Business Read Model
 
-The system MUST maintain a local SQLite operational read model for listings, claims, questions, orders, messages, and reputation snapshots, separate from Cortex durable learning, backed by `@msl/memory` with deterministic evidence IDs, freshness/completeness/confidence metadata, and per-kind ingestion checkpoints.
-(Previously: catalog/listings only; expanded to all five entity kinds.)
+The system MUST maintain a local SQLite operational read model for listings, claims, questions, orders, messages, reputation, and `product-ads-insights` snapshots, separate from Cortex durable learning, backed by `@msl/memory` with deterministic evidence IDs, freshness/completeness/confidence metadata, and per-kind ingestion checkpoints.
+(Previously: operational read model covered listings, claims, questions, orders, messages, and reputation only.)
 
 #### Scenario: Fresh-enough local snapshot used across entity kinds
 
@@ -126,8 +126,8 @@ The system MUST treat DeepSeek prompt caching as a cost optimization only; durab
 
 ### Requirement: SQLite Operational Snapshot Persistence
 
-The system MUST persist operational snapshots of any entity kind (listing, claim, question, order, message, reputation) in `@msl/memory` via `better-sqlite3` with columns: `seller_id`, `item_id`, `kind`, `data` (JSON), `source`, `captured_at`, `freshness`, `completeness`, `confidence`, `evidence_id` (deterministic format `orm:{kind}:{sellerId}:{itemId}:{capturedAt}`; for reputation, `itemId` SHALL be the snapshot period). The store MUST use WAL mode and accept an injected `Database.Database` handle. Reads MUST be local-first when `fresh + complete + non-low confidence`.
-(Previously: listing/catalog only; expanded to all entity kinds with reputation period semantics.)
+The system MUST persist operational snapshots of any entity kind (listing, claim, question, order, message, reputation, `product-ads-insights`) in `@msl/memory` via `better-sqlite3` with columns: `seller_id`, `item_id`, `kind`, `data` (JSON), `source`, `captured_at`, `freshness`, `completeness`, `confidence`, `evidence_id` (deterministic format `orm:{kind}:{sellerId}:{itemId}:{capturedAt}`; for reputation, `itemId` SHALL be the snapshot period; for `product-ads-insights`, `itemId` SHALL identify the seller-level date range). The store MUST use WAL mode and accept an injected `Database.Database` handle. Reads MUST be local-first when `fresh + complete + non-low confidence`.
+(Previously: persisted operational kinds excluded `product-ads-insights`.)
 
 #### Scenario: Fresh operational snapshot served from local store
 
@@ -143,13 +143,18 @@ The system MUST persist operational snapshots of any entity kind (listing, claim
 
 ### Requirement: Ingestion Checkpoints
 
-The system MUST persist ingestion checkpoints per `seller_id`, `kind`, and filter status so background sync resumes from the last `captured_at` without re-ingesting the full catalog.
+The system MUST persist ingestion checkpoints per `seller_id` and `kind` so background sync resumes from the last `captured_at` without re-ingesting the full catalog or repeatedly replaying seller-level snapshot kinds such as `product-ads-insights`. For seller-level Product Ads snapshots, the date range identity SHALL live in the snapshot `item_id`, not in the checkpoint key.
 
 #### Scenario: Checkpoint resume after partial ingestion
 - GIVEN a checkpoint exists for seller "Plasticov", kind "listing"
 - WHEN background ingestion runs
 - THEN it MUST start queries after the checkpoint timestamp
 - AND it MUST update the checkpoint on successful batch completion
+
+#### Scenario: Product Ads checkpoint after persistence
+- GIVEN a seller-level `product-ads-insights` snapshot is persisted successfully
+- WHEN the ingestion cycle completes that kind
+- THEN the system MUST update the `product-ads-insights` checkpoint for that seller
 
 ### Requirement: Cache-Efficient Summary Aggregates
 
@@ -163,28 +168,21 @@ The system MUST produce compact summary aggregates (count, min, max, top-N by re
 
 ### Requirement: Multi-Kind Operational Ingestion
 
-The system MUST ingest claims, questions, orders, messages, and reputation snapshots by kind. Processors SHALL follow the `processSellerListings` pattern per kind. Summary fields:
+The system MUST ingest claims, questions, orders, messages, reputation, and `product-ads-insights` snapshots by kind. Processors SHALL follow the `processSellerListings` pattern per kind. Product Ads ingestion MUST be safe-read only, preserve `noMutationExecuted`, persist ROAS-oriented metadata, and treat disabled/no-permission Product Ads states as graceful no-data.
 
-| Kind | Fields |
-|------|--------|
-| claim | id, type, stage, status, date, resolution |
-| question | id, text, answer_text, status, date, outcome |
-| order | id, status, date, total, buyer_id |
-| message | id, role, date, snippet (≤500 chars), status |
-| reputation | level, color, power_seller_status, transactions, claims_rate, metrics_period — one snapshot per cycle |
+#### Scenario: All operational entity types ingested
 
-#### Scenario: All five entity types ingested
-
-- GIVEN a seller with data across all five entity kinds
+- GIVEN a seller with data across supported operational kinds
 - WHEN background ingestion runs a full cycle
-- THEN all five kinds MUST be ingested with correct summary fields
+- THEN all available kinds MUST be ingested with correct summary fields
 - AND the store MUST contain independent snapshots per kind
 
-#### Scenario: Unknown kind is skipped
+#### Scenario: Product Ads unavailable
 
-- GIVEN an API returns an entity with an unrecognized kind
-- WHEN the ingestion processor encounters it
-- THEN it MUST skip that entity and log the unknown kind without failing the cycle
+- GIVEN Product Ads is disabled or unauthorized for a seller
+- WHEN Product Ads ingestion runs
+- THEN the cycle MUST skip that seller snapshot as no-data without failing
+- AND it MUST NOT execute mutations
 
 ### Requirement: Per-Kind Ingestion Tuning
 
