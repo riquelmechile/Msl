@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <code>1026+ tests</code> ·
+  <code>1104+ tests</code> ·
   <code>TypeScript 5.8</code> ·
   <code>Node ≥22</code> ·
   <code>DeepSeek v4</code> ·
@@ -25,7 +25,7 @@ MSL is a proactive AI agent that manages your MercadoLibre Chile business throug
 git clone https://github.com/riquelmechile/Msl.git
 cd Msl
 npm install
-npm test          # 1026+ tests in 36 files
+npm test          # 1104+ tests in 41 files
 npm run dev       # http://127.0.0.1:3000
 ```
 
@@ -74,7 +74,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                    | Secret values in Git, or mutation execution without approval gates.        |
 | MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                  | Manual raw token setup or account role guessing.                           |
 | Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.   | Business hierarchy between accounts or general-purpose bidirectional sync. |
-| MCP tools          | MCP exposes 7 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices).                      | Production business-operation execution through MCP.                       |
+| MCP tools          | MCP exposes 30 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration).                      | Production business-operation execution through MCP.                       |
 | ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram. | Real-time MercadoLibre data without OAuth tokens for every role.           |
 | CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                           | Secrets in CI; use GitHub Secrets/platform secrets.                        |
 
@@ -107,7 +107,9 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  └──────────────────────────┬─────────────────────────────────────┘ │
 │          ┌──────────────────┴──────────────────┐                     │
 │          │  Background Ingestion Worker (6h)   │  DeepSeek Inference │
-│          │  Multi-seller snapshots → Cortex    │  Daily insights     │
+│          │  Listings, ads, pricing, claims,    │  Daily insights     │
+│          │  questions, orders, messages,       │                     │
+│          │  reputation, returns snapshots      │                     │
 │          └─────────────────────────────────────┘                     │
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │              Cache Strategy (3-block prefix-anchored)           │ │
@@ -147,7 +149,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  @msl/bot  │  │ @msl/mcp │  │@msl/     │
 │  Telegram  │  │ Stdio    │  │workers   │
 │  grammY    │  │ MCP srv  │  │Insights  │
-│  Proactive │  │7 tools   │  │Creative  │
+│  Proactive │  │30 tools  │  │Creative  │
 │  alerts    │  │          │  │Sync jobs │
 │  Multi-    │  │          │  │Ingestion │
 │  seller    │  │          │  │worker    │
@@ -187,6 +189,9 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 26  | **Operational Read Model**     | SQLite-backed full business context: listings, claims, questions, orders, messages, reputation snapshots with per-seller lane isolation and freshness TTLs                                   |
 | 27  | **Darwinian Cortex Learning**  | Spreading-activation outcome propagation: approved proposals strengthen activated constellation edges (+0.10), rejected weaken all (−0.15); learning generalizes across shared concept edges |
 | 28  | **DeepSeek Tool Smoke**        | Opt-in official DeepSeek V4 tool-call validation with forced delegate_to_subagent, synthetic user_id lane isolation, and cache telemetry                                                     |
+| 29  | **Product Ads Evidence**       | Background ingestion persists `product-ads-insights` operational snapshots with ROAS metadata, checkpoints, and safe-read-only semantics; CEO/campaign/market lanes cite durable ad evidence |
+| 30  | **Catalog Competition**        | Bounded rotated `price_to_win` ingestion as `pricing` operational snapshots with deterministic evidence IDs; market/margin lanes retrieve durable competition evidence                      |
+| 31  | **Returns Evidence**           | 3 safe-read return tools (detail, reviews, return-cost) via MercadoLibre post-purchase API and MCP; MLC-to-confirm degradation; no mutation, upload, or refund execution                  |
 
 ## Stack
 
@@ -198,7 +203,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction          |
 | **Bot**      | Telegram (grammY, proactive messaging)       | Natural language interface, no UI needed                  |
 | **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Stubbed project tool surface for compatible clients       |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 1026+ tests, guarded platform support                     |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 1104+ tests, guarded platform support                     |
 | **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                              |
 
 ## Philosophy
@@ -223,7 +228,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 ## Verification
 
 ```bash
-npm test              # 905+ Vitest tests in 36 files (unit + integration)
+npm test              # 1104+ Vitest tests in 41 files (unit + integration)
 npm run test:e2e      # Playwright E2E (auto-skipped on unsupported platforms)
 npm run typecheck     # TypeScript strict mode — zero tolerance
 npm run lint          # ESLint with typed rules
