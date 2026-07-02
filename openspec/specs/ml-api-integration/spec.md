@@ -221,12 +221,12 @@ Four new entries SHALL be added to the MercadoLibre Capability Classification Ma
 
 | Area | Classification | Endpoint | Site support | Runtime surface |
 |------|----------------|----------|-------------|-----------------|
-| Claims search/detail | `safe-read` | `GET /post-purchase/v1/claims/search`, `GET /post-purchase/v1/claims/{id}` | MLC-confirmed | `read-tool` |
-| Shipping status | `safe-read` | `GET /marketplace/shipments/{id}` | MLC-confirmed | `read-tool` |
-| MCP tool wiring (Slice 2) | Infrastructure | N/A — exposes Slice 1+2 via MCP | N/A | `read-tool` / `prepared-action` |
-| Image orchestration flow | `prepare-only` | Multi-step: diagnose → upload → associate → check | MLC-confirmed | `prepared-action` |
+| Claims search/detail | `safe-read` | `GET /post-purchase/v1/claims/search`, `GET /post-purchase/v1/claims/{id}`, 4 sub-resources | MLC-to-confirm | `read-tool` |
+| Shipping status | `safe-read` | `GET /marketplace/shipments/{id}` (x-format-new: true) | MLC-to-confirm | `read-tool` |
+| MCP tool wiring (Slice 1) | Infrastructure | N/A (MCP layer only) | N/A | `read-tool` / `prepared-action` |
+| Image orchestration flow | `prepare-only` | Multi-step: diagnose → upload → associate → check | MLC-to-confirm | `prepared-action` |
 
-#### Scenario: Slice 2 entries follow established classification contract
+#### Scenario: New entries follow established classification contract
 
 - GIVEN claims, shipping, MCP wiring, and image orchestration are added to the matrix
 - WHEN the system evaluates runtime behavior for each
@@ -234,7 +234,7 @@ Four new entries SHALL be added to the MercadoLibre Capability Classification Ma
 - AND `safe-read` entries MUST follow existing read-tool patterns with no approval requirements
 - AND `prepare-only` entries MUST require `requiresApproval: true` with no direct MCP execution
 
-#### Scenario: MLC support is to-be-confirmed for new endpoints
+#### Scenario: MLC support is to-be-confirmed
 
 - GIVEN the documentation does not yet explicitly confirm MLC support for claims and shipping
 - WHEN the entries are classified
@@ -289,6 +289,6 @@ Four claim sub-resource entries and image orchestration entry SHALL be added:
 |------|----------------|----------|-------------|-----------------|
 | Claim messages | `safe-read` | `GET /post-purchase/v1/claims/{id}/messages` | MLC-to-confirm | `read-tool` |
 | Claim expected resolutions | `safe-read` | `GET /post-purchase/v1/claims/{id}/expected_resolutions` | MLC-to-confirm | `read-tool` |
-| Claim reputation impact | `safe-read` | `GET /post-purchase/v1/claims/{id}/affects_reputation` | MLC-to-confirm | `read-tool` |
+| Claim reputation impact | `safe-read` | `GET /post-purchase/v1/claims/{id}/affects-reputation` | MLC-to-confirm | `read-tool` |
 | Claim status history | `safe-read` | `GET /post-purchase/v1/claims/{id}/status_history` | MLC-to-confirm | `read-tool` |
 | Image associate + orchestration | `prepare-only` | `POST /items/{id}/pictures` + multi-step flow | MLC-to-confirm | `prepared-action` |

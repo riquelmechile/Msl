@@ -92,7 +92,7 @@ The system MUST expose a typed read for claim expected resolutions via `GET /pos
 
 ### Requirement: Claim Affects Reputation
 
-The system MUST expose a typed read for reputation impact via `GET /post-purchase/v1/claims/{id}/affects_reputation`. The snapshot SHALL return a boolean flag and optional reason string.
+The system MUST expose a typed read for reputation impact via `GET /post-purchase/v1/claims/{id}/affects-reputation`. The snapshot SHALL return a boolean flag and optional reason string.
 
 #### Scenario: Claim affects reputation
 
