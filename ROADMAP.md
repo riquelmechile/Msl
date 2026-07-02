@@ -127,12 +127,3 @@ Phase 0         Phase 1         Phase 2         Phase 3         Phases 4-7f     
 | Operational DB  | SQLite (better-sqlite3)  | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product-ads-insights, pricing) with per-seller lane isolation, freshness TTLs, and ingestion checkpoints                                                                                                                                                                                                                                                                                                                                                                                                       |
 | CEO Lanes       | `@msl/agent/lanes.ts`    | 4 cache-resident specialist lanes (CEO, Cost/Supplier, Market/Catalog, Creative/Commercial) with stable token-0 DeepSeek prefixes, delegate_to_subagent tool, and Phase 1 dale = investigation/preparation only                                                                                                                                                                                                                                                                                                                                                                         |
 | Cortex Learning | Spreading activation     | Darwinian outcome propagation through activated constellations: approvals +0.10, rejections −0.15; learning generalizes across shared concept edges; audit trail via persistent outcome nodes                                                                                                                                                                                                                                                                                                                                                                                           |
-
-## What the old El Sindicato projects taught us
-
-- ❌ 44 tools + 6 plugins before stable core = failure
-- ❌ EventBus (MeliManager) as central hub = bottleneck
-- ❌ 11 LLM backends with ModelRouter = complexity explosion
-- ✅ Start with ONE agent, ONE memory system, ONE LLM
-- ✅ Grow organically: cell → tissue → organ → organism
-- ✅ Safety gates are invisible infrastructure, not the product

@@ -15,7 +15,7 @@
 
 ## What it does
 
-MSL is a proactive AI agent that manages your MercadoLibre Chile business through natural conversation in Spanish. It reads real-time data from the MercadoLibre API (listings, fees, visits, orders, ads), persists historical business data in a neural graph memory (Cortex), runs background ingestion every 6 hours, detects anomalies and seasonal patterns, compares cross-account performance (Plasticov ↔ Maustian), uses DeepSeek to infer business insights, and proposes concrete profit-maximizing actions — all through natural conversation. Every action requires your explicit "dale" before execution.
+MSL is a proactive conversational AI agent for MercadoLibre Chile. It ingests your business data (listings, orders, ads, pricing, claims, reputation), builds durable operational evidence in a local SQLite read model, runs a neural graph memory (Cortex) for learning, coordinates 4 cache-resident CEO specialist lanes powered by DeepSeek, and proposes concrete profit-maximizing actions — all through natural Spanish conversation. Every action requires your explicit "dale" before execution.
 
 **Business context:** Plasticov and Maustian are separate MercadoLibre Chile seller accounts used as parallel commercial channels. Each account can carry independent prices, listing types, titles, and exposure strategies for the same or similar products. Fulfillment is product-level: some products use owned stock and others are supplier-sourced/arbitrage.
 
@@ -173,8 +173,8 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 10  | **Autonomy Engine**            | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                                                                                                   |
 | 11  | **Product Sync**               | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary                                                                                |
 | 12  | **Approval Queue**             | Every write action goes through prepare → approve → execute → audit                                                                                                                          |
-| 13  | **ML Business Tools**          | 16 tools for real MercadoLibre data (listings, fees, visits, orders, ads, pricing automation, promotions, quality, relist, images)                                                           |
-| 14  | **Background Ingestion**       | 6h worker that snapshots ALL listings/visits/orders into Cortex, detects anomalies, cross-account comparison                                                                                 |
+| 13  | **ML Business Tools**          | 30 tools for real MercadoLibre data: listings, fees, orders, ads, pricing, promotions, quality, relist, images, visits, claims, returns, shipping, moderation, notices, orchestration          |
+| 14  | **Background Ingestion**       | 6h worker ingesting 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing) into operational DB with per-kind checkpoints and freshness TTLs        |
 | 15  | **Seasonal Detection**         | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts                                                                                           |
 | 16  | **Cross-Account Intelligence** | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                                                                                                        |
 | 17  | **Proactive Alerts**           | Push notifications for visit anomalies, paused listing reuse, seasonal preparation, cross-account gaps                                                                                       |
@@ -212,18 +212,9 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 
 **2. Safety gates are invisible infrastructure, not the product.** The seller never thinks about guardrails, approval queues, or audit trails. They just say "dale" when they agree. Everything else happens automatically behind the scenes.
 
-**3. Organic growth: cell → tissue → organ → organism.** Start with ONE agent, ONE memory system, ONE LLM. No plugin architectures, no multi-backend complexity, no premature framework scaffolding. Each new capability (actors, probes, autonomy) grows from the previous stable core.
+**3. Organic growth: cell → tissue → organ → organism.** Start with ONE agent, ONE memory system, ONE LLM. No plugin architectures, no multi-backend complexity, no premature framework scaffolding.
 
-**4. Profit maximization is the ONLY KPI.** Every tool, every insight, every proposal serves one goal: more net profit for the seller. The agent doesn't optimize for clicks, views, or sales volume — only for utilidad neta. Data infra exists to surface the highest-margin opportunities first.
-
-## What the old El Sindicato projects taught us
-
-| Failed pattern                          | What we learned                                |
-| --------------------------------------- | ---------------------------------------------- |
-| 44 tools + 6 plugins before stable core | Start with ONE thing that works                |
-| EventBus as central hub (MeliManager)   | Hexagonal domain is the only durable core      |
-| 11 LLM backends with ModelRouter        | Commit to ONE model, swap later if needed      |
-| Features before safety                  | Safety gates are non-negotiable infrastructure |
+**4. Profit maximization is the ONLY KPI.** Every tool, every insight, every proposal serves one goal: more net profit for the seller. Data infra exists to surface the highest-margin opportunities first.
 
 ## Verification
 
