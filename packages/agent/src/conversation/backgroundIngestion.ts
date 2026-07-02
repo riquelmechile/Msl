@@ -1,6 +1,17 @@
 import OpenAI from "openai";
-import type { GraphEngine } from "@msl/memory";
-import type { MlcApiClient, MlcListingSummary, MlcPerformanceSummary, MlcVisitsDetail } from "@msl/mercadolibre";
+import type { GraphEngine, OperationalReadModelWriter } from "@msl/memory";
+import type {
+  MlcApiClient,
+  MlcClaimSummary,
+  MlcListingSummary,
+  MlcMessageSummary,
+  MlcOrderSummary,
+  MlcPerformanceSummary,
+  MlcQuestionSummary,
+  MlcReputationSummary,
+  MlcVisitsDetail,
+  MlcVisitsSummary,
+} from "@msl/mercadolibre";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -20,6 +31,13 @@ export type BackgroundIngestionConfig = {
    * When absent, insight generation is silently skipped.
    */
   deepseekApiKey?: string;
+  /**
+   * Optional operational read-model store for dual-writing listing
+   * snapshots outside Cortex. When set, every listing snapshot is
+   * persisted to the operational store before the Cortex node, and
+   * an ingestion checkpoint is saved after the listing loop.
+   */
+  operationalStore?: OperationalReadModelWriter;
 };
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -40,17 +58,134 @@ const QUALITY_LOW_SCORE_THRESHOLD = 70;
 const RELIST_WINDOW_DAYS = 55; // 60-day limit minus 5-day buffer
 const RELIST_EXPIRING_DAYS = 7; // warn when relist window closes within 7 days
 
+// ── Per-kind freshness TTLs ────────────────────────────────────────────
+
+/**
+ * Maximum age (in milliseconds) after which a snapshot is considered stale.
+ * Used to gate re-ingestion: a processor skips the fetch if the checkpoint
+ * is younger than the kind's TTL.
+ */
+export const KIND_FRESHNESS_TTL = {
+  claim: 60 * 60 * 1000, // 1h — high velocity
+  order: 60 * 60 * 1000, // 1h — high velocity
+  question: 2 * 60 * 60 * 1000, // 2h — medium velocity
+  message: 6 * 60 * 60 * 1000, // 6h — low velocity
+  reputation: 6 * 60 * 60 * 1000, // 6h — low velocity
+};
+
+/** Default max pages per entity kind. Configurable per kind to guard rate budget. */
+export const KIND_DEFAULT_MAX_PAGES = {
+  claim: 100,
+  order: 100,
+  question: 100,
+  message: 100,
+  reputation: 1, // single snapshot per cycle
+};
+
+// ── Pagination helpers ─────────────────────────────────────────────────
+
+export type PaginationConfig = { maxPages: number; pageSize?: number };
+
+/**
+ * Generic pagination helper: fetches all pages up to `maxPages` or until
+ * exhaustion (fewer results than `pageSize` returned).
+ *
+ * @param fetchPage — function that takes an offset and returns `{ total, results }`.
+ * @param config   — `maxPages` caps total pages; `pageSize` defaults to 200.
+ * @returns accumulated results across all fetched pages.
+ */
+export async function paginateAll<T>(
+  fetchPage: (offset: number) => Promise<{ total: number; results: T[] }>,
+  config: PaginationConfig,
+): Promise<T[]> {
+  const pageSize = config.pageSize ?? 200;
+  const allResults: T[] = [];
+  let pagesFetched = 0;
+  let offset = 0;
+
+  while (pagesFetched < config.maxPages) {
+    const { total, results } = await fetchPage(offset);
+
+    if (results.length === 0) break;
+
+    allResults.push(...results);
+    pagesFetched++;
+
+    // Stop if we've received all results or the page was incomplete.
+    if (allResults.length >= total || results.length < pageSize) break;
+
+    offset += pageSize;
+  }
+
+  return allResults;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function todayLabel(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isMlcListingSummary(value: unknown): value is MlcListingSummary {
+  return isRecord(value);
+}
+
+function isMlcVisitsSummary(value: unknown): value is MlcVisitsSummary {
+  return isRecord(value) && typeof value.itemId === "string";
+}
+
+function isMlcPerformanceSummary(value: unknown): value is MlcPerformanceSummary {
+  return isRecord(value) && typeof value.entityId === "string";
+}
+
 function normalizeListings(
   data: ReadonlyArray<MlcListingSummary> | MlcListingSummary,
 ): ReadonlyArray<MlcListingSummary> {
-  if (Array.isArray(data)) return data;
+  if (Array.isArray(data)) return data.filter(isMlcListingSummary);
   return [data as MlcListingSummary];
+}
+
+function metadataString(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return fallback;
+}
+
+function categoryBreakdownFromMetadata(
+  value: unknown,
+): Array<{ categoryId: string; orderCount: number; totalAmount: number }> {
+  if (!Array.isArray(value)) return [];
+  const breakdown: Array<{ categoryId: string; orderCount: number; totalAmount: number }> = [];
+  for (const entry of value as unknown[]) {
+    if (!isRecord(entry)) continue;
+    const record = entry;
+    breakdown.push({
+      categoryId: metadataString(record.categoryId, "unknown"),
+      orderCount: Number(record.orderCount ?? 0),
+      totalAmount: Number(record.totalAmount ?? 0),
+    });
+  }
+  return breakdown;
+}
+
+function firstVisitsSummary(
+  data: MlcVisitsSummary | ReadonlyArray<MlcVisitsSummary>,
+): MlcVisitsSummary | undefined {
+  const raw: unknown = data;
+  if (Array.isArray(raw)) return raw.find(isMlcVisitsSummary);
+  return isMlcVisitsSummary(raw) ? raw : undefined;
+}
+
+function firstPerformanceSummary(
+  data: MlcPerformanceSummary | ReadonlyArray<MlcPerformanceSummary>,
+): MlcPerformanceSummary | undefined {
+  const raw: unknown = data;
+  if (Array.isArray(raw)) return raw.find(isMlcPerformanceSummary);
+  return isMlcPerformanceSummary(raw) ? raw : undefined;
 }
 
 function normalizeVisitsDetail(
@@ -70,8 +205,18 @@ function pctChange(current: number, previous: number): number | null {
  * Simple token-overlap ratio for cross-account listing matching.
  */
 function titleSimilarity(a: string, b: string): number {
-  const tokensA = new Set(a.toLowerCase().split(/\s+/).filter((t) => t.length >= 2));
-  const tokensB = new Set(b.toLowerCase().split(/\s+/).filter((t) => t.length >= 2));
+  const tokensA = new Set(
+    a
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2),
+  );
+  const tokensB = new Set(
+    b
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2),
+  );
   if (tokensA.size === 0 || tokensB.size === 0) return 0;
   let overlap = 0;
   for (const t of tokensA) {
@@ -82,12 +227,12 @@ function titleSimilarity(a: string, b: string): number {
 
 // ── Core: process one seller's listings and visits ─────────────────────
 
-interface SellerProcessResult {
+type SellerProcessResult = {
   listings: ReadonlyArray<MlcListingSummary>;
   alerts: string[];
-}
+};
 
-async function processSellerListings(
+export async function processSellerListings(
   config: BackgroundIngestionConfig,
   sellerId: string,
   sellerName: string,
@@ -103,6 +248,36 @@ async function processSellerListings(
 
     const capturedAt = new Date().toISOString();
     const snapshotLabel = `listing_snapshot_${itemId}_${todayLabel()}`;
+
+    // ── Operational store dual-write ─────────────────────────
+    if (config.operationalStore) {
+      await config.operationalStore.upsertSnapshot({
+        sellerId,
+        kind: "listing",
+        source: "mercadolibre-api",
+        data: listing,
+        completeness: "complete",
+        freshness: {
+          source: "mercadolibre-api",
+          signalKind: "listing",
+          risk: "medium",
+          capturedAt: new Date(capturedAt),
+          maxAgeMs: 60 * 60 * 1000,
+          status: "fresh",
+        },
+        confidence: "high",
+        evidence: {
+          evidenceId: `orm:listing:${sellerId}:${itemId}:${capturedAt}`,
+          snapshotKind: "listing",
+          sellerId,
+          entityId: itemId,
+          capturedAt: new Date(capturedAt),
+          freshnessStatus: "fresh",
+          completeness: "complete",
+          source: "operational-read-model",
+        },
+      });
+    }
 
     // ── Create listing snapshot node ─────────────────────────
     config.engine.getOrCreateNode(snapshotLabel, {
@@ -127,22 +302,17 @@ async function processSellerListings(
     });
 
     // Index 0 is the one we just created, index 1 is the previous
-    const prevSnapshot =
-      previousSnapshots.length >= 2 ? previousSnapshots[1] : null;
+    const prevSnapshot = previousSnapshots.length >= 2 ? previousSnapshots[1] : null;
 
     if (prevSnapshot?.metadata) {
-      const prevMeta = prevSnapshot.metadata as Record<string, unknown>;
+      const prevMeta = prevSnapshot.metadata;
 
       // ── Detect paused with sales history ──────────────────
       const newStatus = listing.status ?? "unknown";
-      const prevStatus = String(prevMeta.status ?? "unknown");
+      const prevStatus = metadataString(prevMeta.status, "unknown");
       const salesCount = Number(prevMeta.salesCount ?? 0);
 
-      if (
-        newStatus === "paused" &&
-        prevStatus !== "paused" &&
-        salesCount > 0
-      ) {
+      if (newStatus === "paused" && prevStatus !== "paused" && salesCount > 0) {
         alerts.push(
           `${itemId} (${sellerName}) se pausó. Tenía ${salesCount} ventas — ¿reutilizar?`,
         );
@@ -171,13 +341,8 @@ async function processSellerListings(
     // ── Visits snapshot ─────────────────────────────────────
     if (typeof config.mlcClient.getItemVisits === "function") {
       try {
-        const visitsSnapshot = await config.mlcClient.getItemVisits(
-          sellerId,
-          itemId,
-        );
-        const visitsSummary = Array.isArray(visitsSnapshot.data)
-          ? visitsSnapshot.data[0]
-          : visitsSnapshot.data;
+        const visitsSnapshot = await config.mlcClient.getItemVisits(sellerId, itemId);
+        const visitsSummary = firstVisitsSummary(visitsSnapshot.data);
 
         if (visitsSummary) {
           const detail = normalizeVisitsDetail(visitsSummary.visitsDetail);
@@ -204,10 +369,7 @@ async function processSellerListings(
           if (recentVisits.length >= TREND_WINDOW) {
             const values = recentVisits
               .slice(0, TREND_WINDOW)
-              .map(
-                (n) =>
-                  (n.metadata as Record<string, unknown>).totalVisits as number,
-              )
+              .map((n) => Number(n.metadata.totalVisits ?? 0))
               .filter((v) => typeof v === "number" && v > 0);
 
             if (values.length >= TREND_WINDOW) {
@@ -224,16 +386,12 @@ async function processSellerListings(
               const last = values[values.length - 1]!;
 
               if (trendingUp) {
-                const pct = Math.round(
-                  ((first - last) / last) * 100,
-                );
+                const pct = Math.round(((first - last) / last) * 100);
                 alerts.push(
                   `📈 ${itemId} (${sellerName}) lleva ${TREND_WINDOW} períodos subiendo (+${pct}% total) — tendencia alcista confirmada`,
                 );
               } else if (trendingDown) {
-                const pct = Math.round(
-                  ((last - first) / last) * 100,
-                );
+                const pct = Math.round(((last - first) / last) * 100);
                 alerts.push(
                   `📉 ${itemId} (${sellerName}) lleva ${TREND_WINDOW} períodos bajando (${pct}% total) — tendencia bajista`,
                 );
@@ -248,14 +406,10 @@ async function processSellerListings(
             limit: 2,
           });
 
-          const prevVisit =
-            previousVisits.length >= 2 ? previousVisits[1] : null;
+          const prevVisit = previousVisits.length >= 2 ? previousVisits[1] : null;
 
           if (prevVisit?.metadata) {
-            const prevVisitMeta = prevVisit.metadata as Record<
-              string,
-              unknown
-            >;
+            const prevVisitMeta = prevVisit.metadata;
             const prevTotal = Number(prevVisitMeta.totalVisits ?? 0);
 
             if (prevTotal > 0) {
@@ -281,12 +435,360 @@ async function processSellerListings(
     }
   }
 
+  // ── Operational store checkpoint ─────────────────────────
+  if (config.operationalStore) {
+    await config.operationalStore.upsertCheckpoint(sellerId, "listing", new Date().toISOString());
+  }
+
   return { listings, alerts };
 }
 
-// ── Order history snapshots ────────────────────────────────────────────
+const PAGE_SIZE = 200;
 
-async function ingestOrderSnapshots(
+// ── Claims processor ────────────────────────────────────────────────
+
+async function processSellerClaims(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  sellerName: string,
+): Promise<{ alerts: string[]; claimCount: number }> {
+  const alerts: string[] = [];
+
+  if (typeof config.mlcClient.searchClaims !== "function") return { alerts, claimCount: 0 };
+
+  try {
+    const claims = await paginateAll<MlcClaimSummary>(
+      (offset) =>
+        config.mlcClient.searchClaims!(sellerId, { limit: PAGE_SIZE, offset }).then((snap) => ({
+          total: snap.data.paging.total,
+          results: [...snap.data.results],
+        })),
+      { maxPages: KIND_DEFAULT_MAX_PAGES.claim, pageSize: PAGE_SIZE },
+    );
+
+    for (const claim of claims) {
+      const itemId = claim.id;
+      if (!itemId) continue;
+      const capturedAt = new Date().toISOString();
+      const evidenceId = `orm:claim:${sellerId}:${itemId}:${capturedAt}`;
+
+      if (config.operationalStore) {
+        await config.operationalStore.upsertSnapshot({
+          sellerId,
+          kind: "claim",
+          source: "mercadolibre-api",
+          data: claim,
+          completeness: "complete",
+          freshness: {
+            source: "mercadolibre-api",
+            signalKind: "claim",
+            risk: "critical",
+            capturedAt: new Date(capturedAt),
+            maxAgeMs: KIND_FRESHNESS_TTL.claim,
+            status: "fresh",
+          },
+          confidence: "high",
+          evidence: {
+            evidenceId,
+            snapshotKind: "claim",
+            sellerId,
+            entityId: itemId,
+            capturedAt: new Date(capturedAt),
+            freshnessStatus: "fresh",
+            completeness: "complete",
+            source: "operational-read-model",
+          },
+        });
+      }
+
+      // Cortex node
+      const label = `claim_snapshot_${itemId}_${todayLabel()}`;
+      config.engine.getOrCreateNode(label, {
+        type: "claim_snapshot",
+        itemId,
+        sellerId,
+        sellerName,
+        status: claim.status ?? "",
+        stage: claim.stage ?? "",
+        type_: claim.type ?? "",
+        dateCreated: claim.dateCreated ?? "",
+        capturedAt,
+      });
+    }
+
+    if (config.operationalStore) {
+      await config.operationalStore.upsertCheckpoint(sellerId, "claim", new Date().toISOString());
+    }
+
+    return { alerts, claimCount: claims.length };
+  } catch (err) {
+    console.error(
+      `[background-ingestion] Failed to process claims for seller ${sellerId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return { alerts, claimCount: 0 };
+  }
+}
+
+// ── Questions processor ─────────────────────────────────────────────
+
+async function processSellerQuestions(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  sellerName: string,
+): Promise<{ alerts: string[]; questionCount: number }> {
+  const alerts: string[] = [];
+
+  if (typeof config.mlcClient.getQuestions !== "function") return { alerts, questionCount: 0 };
+
+  try {
+    const questions = await paginateAll<MlcQuestionSummary>(
+      (offset) =>
+        config.mlcClient.getQuestions!(sellerId, { limit: PAGE_SIZE, offset }).then((snap) => ({
+          total: snap.data.paging.total,
+          results: [...snap.data.results],
+        })),
+      { maxPages: KIND_DEFAULT_MAX_PAGES.question, pageSize: PAGE_SIZE },
+    );
+
+    for (const question of questions) {
+      const itemId = question.id;
+      if (!itemId) continue;
+      const capturedAt = new Date().toISOString();
+      const evidenceId = `orm:question:${sellerId}:${itemId}:${capturedAt}`;
+
+      if (config.operationalStore) {
+        await config.operationalStore.upsertSnapshot({
+          sellerId,
+          kind: "question",
+          source: "mercadolibre-api",
+          data: question,
+          completeness: "complete",
+          freshness: {
+            source: "mercadolibre-api",
+            signalKind: "question",
+            risk: "medium",
+            capturedAt: new Date(capturedAt),
+            maxAgeMs: KIND_FRESHNESS_TTL.question,
+            status: "fresh",
+          },
+          confidence: "high",
+          evidence: {
+            evidenceId,
+            snapshotKind: "question",
+            sellerId,
+            entityId: itemId,
+            capturedAt: new Date(capturedAt),
+            freshnessStatus: "fresh",
+            completeness: "complete",
+            source: "operational-read-model",
+          },
+        });
+      }
+
+      const label = `question_snapshot_${itemId}_${todayLabel()}`;
+      config.engine.getOrCreateNode(label, {
+        type: "question_snapshot",
+        itemId,
+        sellerId,
+        sellerName,
+        text: question.text ?? "",
+        answerText: question.answerText ?? "",
+        status: question.status ?? "",
+        dateCreated: question.dateCreated ?? "",
+        capturedAt,
+      });
+    }
+
+    if (config.operationalStore) {
+      await config.operationalStore.upsertCheckpoint(
+        sellerId,
+        "question",
+        new Date().toISOString(),
+      );
+    }
+
+    return { alerts, questionCount: questions.length };
+  } catch (err) {
+    console.error(
+      `[background-ingestion] Failed to process questions for seller ${sellerId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return { alerts, questionCount: 0 };
+  }
+}
+
+// ── Messages processor ──────────────────────────────────────────────
+
+async function processSellerMessages(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  sellerName: string,
+): Promise<{ alerts: string[]; messageCount: number }> {
+  const alerts: string[] = [];
+
+  try {
+    const messages = await paginateAll<MlcMessageSummary>(
+      (offset) =>
+        config.mlcClient.getMessages(sellerId, { limit: PAGE_SIZE, offset }).then((snap) => ({
+          total: snap.paging?.total ?? 0,
+          results: Array.isArray(snap.data)
+            ? (snap.data as unknown as MlcMessageSummary[])
+            : [snap.data as MlcMessageSummary],
+        })),
+      { maxPages: KIND_DEFAULT_MAX_PAGES.message, pageSize: PAGE_SIZE },
+    );
+
+    for (const message of messages) {
+      const itemId = message.id;
+      if (!itemId) continue;
+      const capturedAt = new Date().toISOString();
+      const evidenceId = `orm:message:${sellerId}:${itemId}:${capturedAt}`;
+
+      if (config.operationalStore) {
+        await config.operationalStore.upsertSnapshot({
+          sellerId,
+          kind: "message",
+          source: "mercadolibre-api",
+          data: {
+            id: message.id,
+            role: message.fromUserId ? "buyer" : "unknown",
+            date: message.createdAt,
+            snippet: (message.subject ?? "").slice(0, 500),
+            status: message.status,
+          },
+          completeness: "complete",
+          freshness: {
+            source: "mercadolibre-api",
+            signalKind: "message",
+            risk: "critical",
+            capturedAt: new Date(capturedAt),
+            maxAgeMs: KIND_FRESHNESS_TTL.message,
+            status: "fresh",
+          },
+          confidence: "high",
+          evidence: {
+            evidenceId,
+            snapshotKind: "message",
+            sellerId,
+            entityId: itemId,
+            capturedAt: new Date(capturedAt),
+            freshnessStatus: "fresh",
+            completeness: "complete",
+            source: "operational-read-model",
+          },
+        });
+      }
+
+      const label = `message_snapshot_${itemId}_${todayLabel()}`;
+      config.engine.getOrCreateNode(label, {
+        type: "message_snapshot",
+        itemId,
+        sellerId,
+        sellerName,
+        subject: message.subject ?? "",
+        status: message.status ?? "",
+        fromUserId: message.fromUserId ?? "",
+        createdAt: message.createdAt ?? "",
+        capturedAt,
+      });
+    }
+
+    if (config.operationalStore) {
+      await config.operationalStore.upsertCheckpoint(sellerId, "message", new Date().toISOString());
+    }
+
+    return { alerts, messageCount: messages.length };
+  } catch (err) {
+    console.error(
+      `[background-ingestion] Failed to process messages for seller ${sellerId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return { alerts, messageCount: 0 };
+  }
+}
+
+// ── Reputation processor ────────────────────────────────────────────
+
+async function processSellerReputation(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  sellerName: string,
+): Promise<{ alerts: string[] }> {
+  const alerts: string[] = [];
+
+  try {
+    const snap = await config.mlcClient.getReputation(sellerId);
+    const reputation = snap.data as MlcReputationSummary;
+    const capturedAt = new Date().toISOString();
+    const period = reputation.metricPeriodDays ?? 60;
+    const periodLabel = `${period}d`;
+    const evidenceId = `orm:reputation:${sellerId}:${periodLabel}:${capturedAt}`;
+
+    if (config.operationalStore) {
+      await config.operationalStore.upsertSnapshot({
+        sellerId,
+        kind: "reputation",
+        source: "mercadolibre-api",
+        data: reputation,
+        completeness: "complete",
+        freshness: {
+          source: "mercadolibre-api",
+          signalKind: "reputation",
+          risk: "critical",
+          capturedAt: new Date(capturedAt),
+          maxAgeMs: KIND_FRESHNESS_TTL.reputation,
+          status: "fresh",
+        },
+        confidence: "high",
+        evidence: {
+          evidenceId,
+          snapshotKind: "reputation",
+          sellerId,
+          entityId: periodLabel,
+          capturedAt: new Date(capturedAt),
+          freshnessStatus: "fresh",
+          completeness: "complete",
+          source: "operational-read-model",
+        },
+      });
+    }
+
+    const label = `reputation_snapshot_${sellerId}_${todayLabel()}`;
+    config.engine.getOrCreateNode(label, {
+      type: "reputation_snapshot",
+      sellerId,
+      sellerName,
+      level: reputation.level ?? "",
+      powerSellerStatus: reputation.powerSellerStatus ?? "",
+      completedTransactions: reputation.completedTransactions ?? 0,
+      totalTransactions: reputation.totalTransactions ?? 0,
+      claimsRate: reputation.claimsRate ?? 0,
+      metricPeriodDays: period,
+      capturedAt,
+    });
+
+    if (config.operationalStore) {
+      await config.operationalStore.upsertCheckpoint(
+        sellerId,
+        "reputation",
+        new Date().toISOString(),
+      );
+    }
+
+    return { alerts };
+  } catch (err) {
+    console.error(
+      `[background-ingestion] Failed to process reputation for seller ${sellerId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return { alerts };
+  }
+}
+
+// ── Orders processor (refactored from ingestOrderSnapshots) ────────
+
+async function processSellerOrders(
   config: BackgroundIngestionConfig,
   sellerId: string,
   sellerName: string,
@@ -294,10 +796,18 @@ async function ingestOrderSnapshots(
   const alerts: string[] = [];
 
   try {
-    const ordersSnapshot = await config.mlcClient.getOrders(sellerId);
-    const orders = ordersSnapshot.data;
+    const orders = await paginateAll<MlcOrderSummary>(
+      (offset) =>
+        config.mlcClient.getOrders(sellerId, { limit: PAGE_SIZE, offset }).then((snap) => ({
+          total: snap.paging?.total ?? 0,
+          results: Array.isArray(snap.data)
+            ? (snap.data as unknown as MlcOrderSummary[])
+            : [snap.data as MlcOrderSummary],
+        })),
+      { maxPages: KIND_DEFAULT_MAX_PAGES.order, pageSize: PAGE_SIZE },
+    );
 
-    if (!Array.isArray(orders) || orders.length === 0) {
+    if (orders.length === 0) {
       return { alerts, orderCount: 0, totalAmount: 0 };
     }
 
@@ -308,26 +818,19 @@ async function ingestOrderSnapshots(
     const categoryMap = new Map<string, { orderCount: number; totalAmount: number }>();
 
     for (const order of orders) {
-      const amount = order.totalAmount ?? 0;
+      const amount = Number(order.totalAmount ?? 0);
       totalAmount += amount;
 
-      // Look up category from listing snapshots
-      // We use seller-scoped listing snapshots; if an order's items are not
-      // in our snapshots yet, category is "unknown".
       const listingSnaps = config.engine.queryByMetadata({
         type: "listing_snapshot",
         sellerId,
         limit: 1,
       });
 
-      // Use the first listing snapshot category as fallback — in practice,
-      // most orders for a seller come from that seller's listings.
       let catId = "unknown";
       const firstSnap = listingSnaps[0];
       if (firstSnap) {
-        catId = String(
-          (firstSnap.metadata as Record<string, unknown>).categoryId ?? "unknown",
-        );
+        catId = metadataString(firstSnap.metadata.categoryId, "unknown");
       }
 
       const existing = categoryMap.get(catId);
@@ -337,16 +840,46 @@ async function ingestOrderSnapshots(
       } else {
         categoryMap.set(catId, { orderCount: 1, totalAmount: amount });
       }
+
+      // ── Operational store dual-write per order ─────────────
+      if (config.operationalStore) {
+        const evidenceId = `orm:order:${sellerId}:${order.id}:${capturedAt}`;
+        await config.operationalStore.upsertSnapshot({
+          sellerId,
+          kind: "order",
+          source: "mercadolibre-api",
+          data: order,
+          completeness: "complete",
+          freshness: {
+            source: "mercadolibre-api",
+            signalKind: "order",
+            risk: "critical",
+            capturedAt: new Date(capturedAt),
+            maxAgeMs: KIND_FRESHNESS_TTL.order,
+            status: "fresh",
+          },
+          confidence: "high",
+          evidence: {
+            evidenceId,
+            snapshotKind: "order",
+            sellerId,
+            entityId: order.id,
+            capturedAt: new Date(capturedAt),
+            freshnessStatus: "fresh",
+            completeness: "complete",
+            source: "operational-read-model",
+          },
+        });
+      }
     }
 
-    const categoryBreakdown = Array.from(categoryMap.entries()).map(
-      ([categoryId, data]) => ({
-        categoryId,
-        orderCount: data.orderCount,
-        totalAmount: data.totalAmount,
-      }),
-    );
+    const categoryBreakdown = Array.from(categoryMap.entries()).map(([categoryId, data]) => ({
+      categoryId,
+      orderCount: data.orderCount,
+      totalAmount: data.totalAmount,
+    }));
 
+    // ── Cortex aggregated order snapshot (preserved from existing path) ─
     const orderLabel = `order_snapshot_${sellerId}_${todayLabel()}`;
     config.engine.getOrCreateNode(orderLabel, {
       type: "order_snapshot",
@@ -368,10 +901,15 @@ async function ingestOrderSnapshots(
       );
     }
 
+    if (config.operationalStore) {
+      await config.operationalStore.upsertCheckpoint(sellerId, "order", new Date().toISOString());
+    }
+
     return { alerts, orderCount: orders.length, totalAmount };
-  } catch {
+  } catch (err) {
     console.error(
-      `[background-ingestion] Failed to fetch orders for seller ${sellerId}`,
+      `[background-ingestion] Failed to process orders for seller ${sellerId}:`,
+      err instanceof Error ? err.message : String(err),
     );
     return { alerts, orderCount: 0, totalAmount: 0 };
   }
@@ -379,11 +917,11 @@ async function ingestOrderSnapshots(
 
 // ── Cross-account comparison ───────────────────────────────────────────
 
-interface CrossAccountMatch {
+type CrossAccountMatch = {
   plasticovItem: MlcListingSummary;
   maustianItem: MlcListingSummary;
   similarity: number;
-}
+};
 
 function matchCrossAccountListings(
   plasticovListings: ReadonlyArray<MlcListingSummary>,
@@ -436,14 +974,14 @@ function matchCrossAccountListings(
 
     if (bestMatch) {
       matches.push(bestMatch);
-      usedMaustianIds.add(bestMatch.maustianItem.id!);
+      usedMaustianIds.add(bestMatch.maustianItem.id);
     }
   }
 
   return matches;
 }
 
-async function runCrossAccountComparison(
+function runCrossAccountComparison(
   config: BackgroundIngestionConfig,
   plasticovId: string,
   plasticovName: string,
@@ -451,28 +989,20 @@ async function runCrossAccountComparison(
   maustianId: string,
   maustianName: string,
   maustianListings: ReadonlyArray<MlcListingSummary>,
-): Promise<string[]> {
+): string[] {
   const alerts: string[] = [];
   const matches = matchCrossAccountListings(plasticovListings, maustianListings);
 
-  const matchedMaustianIds = new Set(
-    matches.map((m) => m.maustianItem.id!).filter(Boolean),
-  );
+  const matchedMaustianIds = new Set(matches.map((m) => m.maustianItem.id).filter(Boolean));
   const unmatchedPlasticov = plasticovListings.filter(
-    (l) =>
-      l.id &&
-      !matches.some(
-        (m) => m.plasticovItem.id === l.id,
-      ),
+    (l) => l.id && !matches.some((m) => m.plasticovItem.id === l.id),
   );
-  const unmatchedMaustian = maustianListings.filter(
-    (l) => l.id && !matchedMaustianIds.has(l.id),
-  );
+  const unmatchedMaustian = maustianListings.filter((l) => l.id && !matchedMaustianIds.has(l.id));
 
   // Process matches
   for (const match of matches) {
-    const pId = match.plasticovItem.id!;
-    const mId = match.maustianItem.id!;
+    const pId = match.plasticovItem.id;
+    const mId = match.maustianItem.id;
     const pLabel = `listing_snapshot_${pId}_${todayLabel()}`;
     const mLabel = `listing_snapshot_${mId}_${todayLabel()}`;
 
@@ -506,18 +1036,8 @@ async function runCrossAccountComparison(
     const pVisitsNode = pVisits[0];
     const mVisitsNode = mVisits[0];
 
-    const pTotal =
-      pVisitsNode
-        ? Number(
-            (pVisitsNode.metadata as Record<string, unknown>).totalVisits ?? 0,
-          )
-        : 0;
-    const mTotal =
-      mVisitsNode
-        ? Number(
-            (mVisitsNode.metadata as Record<string, unknown>).totalVisits ?? 0,
-          )
-        : 0;
+    const pTotal = pVisitsNode ? Number(pVisitsNode.metadata.totalVisits ?? 0) : 0;
+    const mTotal = mVisitsNode ? Number(mVisitsNode.metadata.totalVisits ?? 0) : 0;
 
     if (pTotal > 0 || mTotal > 0) {
       alerts.push(
@@ -556,12 +1076,7 @@ async function runCrossAccountComparison(
       limit: 1,
     });
     const visitsNode = visits[0];
-    const totalVisits =
-      visitsNode
-        ? Number(
-            (visitsNode.metadata as Record<string, unknown>).totalVisits ?? 0,
-          )
-        : 0;
+    const totalVisits = visitsNode ? Number(visitsNode.metadata.totalVisits ?? 0) : 0;
     if (totalVisits > 0) {
       alerts.push(
         `🔄 ${listing.id} (${plasticovName}, ${totalVisits} visitas) no tiene equivalente en ${maustianName} — ¿sincronizar?`,
@@ -581,9 +1096,7 @@ async function runCrossAccountComparison(
 
 // ── Seasonal pattern detection ─────────────────────────────────────────
 
-async function runSeasonalAnalysis(
-  config: BackgroundIngestionConfig,
-): Promise<string[]> {
+function runSeasonalAnalysis(config: BackgroundIngestionConfig): string[] {
   const alerts: string[] = [];
   const now = new Date();
 
@@ -595,8 +1108,8 @@ async function runSeasonalAnalysis(
 
   const firstMarker = markerNodes[0];
   if (firstMarker) {
-    const markerMeta = firstMarker.metadata as Record<string, unknown>;
-    const lastRun = String(markerMeta.lastRun ?? "");
+    const markerMeta = firstMarker.metadata;
+    const lastRun = metadataString(markerMeta.lastRun);
     if (lastRun) {
       const lastRunDate = new Date(lastRun);
       const daysSince = (now.getTime() - lastRunDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -637,14 +1150,9 @@ async function runSeasonalAnalysis(
   const byCategoryMonth = new Map<string, MonthlyData[]>();
 
   for (const snap of orderSnaps) {
-    const meta = snap.metadata as Record<string, unknown>;
-    const capturedAt = String(meta.capturedAt ?? "");
-    const breakdown =
-      (meta.categoryBreakdown as Array<{
-        categoryId: string;
-        orderCount: number;
-        totalAmount: number;
-      }>) ?? [];
+    const meta = snap.metadata;
+    const capturedAt = metadataString(meta.capturedAt);
+    const breakdown = categoryBreakdownFromMetadata(meta.categoryBreakdown);
 
     const date = new Date(capturedAt);
     if (isNaN(date.getTime())) continue;
@@ -699,10 +1207,7 @@ async function runSeasonalAnalysis(
         monthlyAvgValue > globalAvg * SEASONAL_PEAK_MULTIPLIER &&
         data.years.length >= 2
       ) {
-        const confidence = Math.min(
-          1.0,
-          (monthlyAvgValue / globalAvg - 1) * 0.5 + 0.5,
-        );
+        const confidence = Math.min(1.0, (monthlyAvgValue / globalAvg - 1) * 0.5 + 0.5);
 
         const patternLabel = `seasonal_pattern_${categoryId}_${month}`;
         config.engine.getOrCreateNode(patternLabel, {
@@ -719,15 +1224,11 @@ async function runSeasonalAnalysis(
         const peakMonth = month;
         const currentMonth = now.getMonth();
         const monthsUntilPeak =
-          peakMonth >= currentMonth
-            ? peakMonth - currentMonth
-            : 12 - currentMonth + peakMonth;
+          peakMonth >= currentMonth ? peakMonth - currentMonth : 12 - currentMonth + peakMonth;
         const daysUntilPeak = monthsUntilPeak * 30;
 
         if (daysUntilPeak <= SEASONAL_ADVANCE_DAYS && daysUntilPeak >= 0) {
-          const pctAbove = Math.round(
-            ((monthlyAvgValue - globalAvg) / globalAvg) * 100,
-          );
+          const pctAbove = Math.round(((monthlyAvgValue - globalAvg) / globalAvg) * 100);
           alerts.push(
             `📅 Estacionalidad detectada: ${categoryId} pico en mes ${month + 1}. ` +
               `Últimos ${data.years.length} años: +${pctAbove}% órdenes vs promedio. ` +
@@ -749,7 +1250,7 @@ async function runSeasonalAnalysis(
 
 // ── Pruning ────────────────────────────────────────────────────────────
 
-async function pruneSnapshots(config: BackgroundIngestionConfig): Promise<void> {
+function pruneSnapshots(config: BackgroundIngestionConfig): void {
   const db = config.engine.db;
 
   // Prune listing_snapshot per item (keep last 30)
@@ -760,9 +1261,9 @@ async function pruneSnapshots(config: BackgroundIngestionConfig): Promise<void> 
 
   const byItem = new Map<string, Array<{ id: number; capturedAt: string }>>();
   for (const node of listingNodes) {
-    const meta = node.metadata as Record<string, unknown>;
-    const itemId = String(meta.itemId ?? "");
-    const capturedAt = String(meta.capturedAt ?? "");
+    const meta = node.metadata;
+    const itemId = metadataString(meta.itemId);
+    const capturedAt = metadataString(meta.capturedAt);
     if (!itemId) continue;
     let entries = byItem.get(itemId);
     if (!entries) {
@@ -791,9 +1292,9 @@ async function pruneSnapshots(config: BackgroundIngestionConfig): Promise<void> 
 
   const byVisitItem = new Map<string, Array<{ id: number; capturedAt: string }>>();
   for (const node of visitNodes) {
-    const meta = node.metadata as Record<string, unknown>;
-    const itemId = String(meta.itemId ?? "");
-    const capturedAt = String(meta.capturedAt ?? "");
+    const meta = node.metadata;
+    const itemId = metadataString(meta.itemId);
+    const capturedAt = metadataString(meta.capturedAt);
     if (!itemId) continue;
     let entries = byVisitItem.get(itemId);
     if (!entries) {
@@ -821,12 +1322,8 @@ async function pruneSnapshots(config: BackgroundIngestionConfig): Promise<void> 
 
   if (orderNodes.length > ORDER_SNAPSHOT_KEEP_TOTAL) {
     orderNodes.sort((a, b) => {
-      const aTime = String(
-        (a.metadata as Record<string, unknown>).capturedAt ?? "",
-      );
-      const bTime = String(
-        (b.metadata as Record<string, unknown>).capturedAt ?? "",
-      );
+      const aTime = metadataString(a.metadata.capturedAt);
+      const bTime = metadataString(b.metadata.capturedAt);
       return bTime.localeCompare(aTime);
     });
     const toDelete = orderNodes.slice(ORDER_SNAPSHOT_KEEP_TOTAL);
@@ -954,9 +1451,9 @@ function buildDailyContext(
 
   for (const n of listingNodes) {
     const m = n.metadata;
-    const status = String(m.status ?? "unknown");
+    const status = metadataString(m.status, "unknown");
     byStatus[status] = (byStatus[status] ?? 0) + 1;
-    const cat = String(m.categoryId ?? "");
+    const cat = metadataString(m.categoryId);
     if (cat && cat !== "unknown") {
       byCategory[cat] = (byCategory[cat] ?? 0) + 1;
     }
@@ -976,7 +1473,7 @@ function buildDailyContext(
   const byVisitItem = new Map<string, number[]>();
   for (const n of visitNodes) {
     const m = n.metadata;
-    const itemId = String(m.itemId ?? "unknown");
+    const itemId = metadataString(m.itemId, "unknown");
     const visits = Number(m.totalVisits ?? 0);
     let values = byVisitItem.get(itemId);
     if (!values) {
@@ -1013,21 +1510,17 @@ function buildDailyContext(
     totalOrders += Number(m.totalOrders ?? 0);
     totalAmount += Number(m.totalAmount ?? 0);
 
-    const breakdown = m.categoryBreakdown as
-      | Array<{ categoryId: string; orderCount: number; totalAmount: number }>
-      | undefined;
-    if (breakdown) {
-      for (const cat of breakdown) {
-        const existing = byOrderCategory[cat.categoryId];
-        if (existing) {
-          existing.orderCount += cat.orderCount;
-          existing.totalAmount += cat.totalAmount;
-        } else {
-          byOrderCategory[cat.categoryId] = {
-            orderCount: cat.orderCount,
-            totalAmount: cat.totalAmount,
-          };
-        }
+    const breakdown = categoryBreakdownFromMetadata(m.categoryBreakdown);
+    for (const cat of breakdown) {
+      const existing = byOrderCategory[cat.categoryId];
+      if (existing) {
+        existing.orderCount += cat.orderCount;
+        existing.totalAmount += cat.totalAmount;
+      } else {
+        byOrderCategory[cat.categoryId] = {
+          orderCount: cat.orderCount,
+          totalAmount: cat.totalAmount,
+        };
       }
     }
   }
@@ -1053,12 +1546,12 @@ function buildDailyContext(
 
   const pByStatus: Record<string, number> = {};
   for (const n of plasticovListings) {
-    const s = String(n.metadata.status ?? "unknown");
+    const s = metadataString(n.metadata.status, "unknown");
     pByStatus[s] = (pByStatus[s] ?? 0) + 1;
   }
   const mByStatus: Record<string, number> = {};
   for (const n of maustianListings) {
-    const s = String(n.metadata.status ?? "unknown");
+    const s = metadataString(n.metadata.status, "unknown");
     mByStatus[s] = (mByStatus[s] ?? 0) + 1;
   }
 
@@ -1126,17 +1619,23 @@ async function runQualityChecks(
     { itemId: string; sellerId: string; sellerName: string; title: string; capturedAt: string }
   >();
   for (const snap of listingSnaps) {
-    const m = snap.metadata as Record<string, unknown>;
-    const itemId = String(m.itemId ?? "");
-    const status = String(m.status ?? "");
+    const m = snap.metadata;
+    const itemId = metadataString(m.itemId);
+    const status = metadataString(m.status);
     if (!itemId || status !== "active") continue;
-    const sellerId = String(m.sellerId ?? "");
-    const sellerName = String(m.sellerName ?? sellerId);
-    const title = String(m.title ?? "");
-    const snapCapturedAt = String(m.capturedAt ?? "");
+    const sellerId = metadataString(m.sellerId);
+    const sellerName = metadataString(m.sellerName, sellerId);
+    const title = metadataString(m.title);
+    const snapCapturedAt = metadataString(m.capturedAt);
     const existing = newestPerItem.get(itemId);
     if (!existing || snapCapturedAt > existing.capturedAt) {
-      newestPerItem.set(itemId, { itemId, sellerId, sellerName, title, capturedAt: snapCapturedAt });
+      newestPerItem.set(itemId, {
+        itemId,
+        sellerId,
+        sellerName,
+        title,
+        capturedAt: snapCapturedAt,
+      });
     }
   }
 
@@ -1153,9 +1652,9 @@ async function runQualityChecks(
 
   const latestQualityPerItem = new Map<string, string>(); // itemId → capturedAt
   for (const snap of qualitySnaps) {
-    const qm = snap.metadata as Record<string, unknown>;
-    const itemId = String(qm.itemId ?? "");
-    const qCapturedAt = String(qm.capturedAt ?? "");
+    const qm = snap.metadata;
+    const itemId = metadataString(qm.itemId);
+    const qCapturedAt = metadataString(qm.capturedAt);
     if (!itemId) continue;
     const existing = latestQualityPerItem.get(itemId);
     if (!existing || qCapturedAt > existing) {
@@ -1186,11 +1685,12 @@ async function runQualityChecks(
   // ── Check each candidate ────────────────────────────────────
   for (const candidate of batch) {
     try {
-      const perfSnapshot = await config.mlcClient.getItemPerformance!(
+      const perfSnapshot = await config.mlcClient.getItemPerformance(
         candidate.sellerId,
         candidate.itemId,
       );
-      const data = perfSnapshot.data as MlcPerformanceSummary;
+      const data = firstPerformanceSummary(perfSnapshot.data);
+      if (!data) continue;
 
       // Count pending OPPORTUNITY rules across all buckets
       let pendingOpportunities = 0;
@@ -1225,7 +1725,7 @@ async function runQualityChecks(
       });
       const prevQuality = prevQualitySnaps.length >= 2 ? prevQualitySnaps[1] : null;
       if (prevQuality?.metadata) {
-        const prevMeta = prevQuality.metadata as Record<string, unknown>;
+        const prevMeta = prevQuality.metadata;
         const prevScore = Number(prevMeta.score ?? 0);
         if (prevScore > 0) {
           const drop = prevScore - data.score;
@@ -1249,9 +1749,7 @@ async function runQualityChecks(
           }
         }
         const weakSummary =
-          weakAreas.length > 0
-            ? weakAreas.slice(0, 3).join(", ")
-            : "múltiples áreas";
+          weakAreas.length > 0 ? weakAreas.slice(0, 3).join(", ") : "múltiples áreas";
         alerts.push(
           `⚠️ ${candidate.itemId} score ${data.score}/100. ${weakSummary}. Corregilo para no perder exposición.`,
         );
@@ -1272,6 +1770,8 @@ async function runQualityChecks(
   return { alerts, checkedCount: batch.length };
 }
 
+void runQualityChecks;
+
 // ── Phase 8: Relist opportunities ──────────────────────────────────────
 
 /**
@@ -1288,9 +1788,10 @@ async function runQualityChecks(
  * Also surfaces paused listings with sales history as potential relist
  * candidates (close → relist path).
  */
-async function runRelistChecks(
-  config: BackgroundIngestionConfig,
-): Promise<{ alerts: string[]; opportunitiesFound: number }> {
+function runRelistChecks(config: BackgroundIngestionConfig): {
+  alerts: string[];
+  opportunitiesFound: number;
+} {
   const alerts: string[] = [];
   const capturedAt = new Date().toISOString();
   const now = new Date();
@@ -1321,20 +1822,28 @@ async function runRelistChecks(
     }>
   >();
   for (const snap of allSnaps) {
-    const m = snap.metadata as Record<string, unknown>;
-    const itemId = String(m.itemId ?? "");
-    const status = String(m.status ?? "");
-    const sellerId = String(m.sellerId ?? "");
-    const sellerName = String(m.sellerName ?? sellerId);
-    const title = String(m.title ?? "");
-    const snapCapturedAt = String(m.capturedAt ?? "");
+    const m = snap.metadata;
+    const itemId = metadataString(m.itemId);
+    const status = metadataString(m.status);
+    const sellerId = metadataString(m.sellerId);
+    const sellerName = metadataString(m.sellerName, sellerId);
+    const title = metadataString(m.title);
+    const snapCapturedAt = metadataString(m.capturedAt);
     if (!itemId) continue;
     let entries = byItem.get(itemId);
     if (!entries) {
       entries = [];
       byItem.set(itemId, entries);
     }
-    entries.push({ id: snap.id, itemId, sellerId, sellerName, title, status, capturedAt: snapCapturedAt });
+    entries.push({
+      id: snap.id,
+      itemId,
+      sellerId,
+      sellerName,
+      title,
+      status,
+      capturedAt: snapCapturedAt,
+    });
   }
 
   let opportunitiesFound = 0;
@@ -1351,7 +1860,6 @@ async function runRelistChecks(
       // (scan from newest to oldest, find the earliest contiguous "closed")
       let closeDateStr = latest.capturedAt;
       for (let i = entries.length - 1; i >= 0; i--) {
-        const e = entries[i]!;
         // Check if this snapshot and all newer ones are "closed"
         let allClosedSince = true;
         for (let j = i; j < entries.length; j++) {
@@ -1392,7 +1900,7 @@ async function runRelistChecks(
         limit: 1,
       });
       if (visitNodes.length > 0) {
-        const vm = visitNodes[0]!.metadata as Record<string, unknown>;
+        const vm = visitNodes[0]!.metadata;
         const totalVisits = Number(vm.totalVisits ?? 0);
         if (totalVisits > 0) hadSalesHistory = true;
       }
@@ -1403,7 +1911,7 @@ async function runRelistChecks(
         limit: 100,
       });
       for (const on of orderNodes) {
-        const om = on.metadata as Record<string, unknown>;
+        const om = on.metadata;
         const orders = Number(om.totalOrders ?? 0);
         if (orders > 0) {
           salesCount += orders;
@@ -1413,20 +1921,16 @@ async function runRelistChecks(
 
       // ── Suggest relist price ─────────────────────────────────
       // Use the last known price from the listing snapshot
-      const lastMeta = entries[0]!;
-      const suggestedPrice = Number(
-        ((entries.find((e) => e.status === "active") ?? lastMeta) as { price?: unknown })
-          .price ?? 0,
-      );
       // Actually the snapshot metadata has price in it — parse from latest snapshot
       let lastPrice = 0;
-      for (const e of entries) {
-        const snapNode = config.engine.queryByMetadata({ type: "listing_snapshot", itemId, limit: 1 });
-        if (snapNode.length > 0) {
-          const sm = snapNode[0]!.metadata as Record<string, unknown>;
-          lastPrice = Number(sm.price ?? 0);
-          break;
-        }
+      const snapNode = config.engine.queryByMetadata({
+        type: "listing_snapshot",
+        itemId,
+        limit: 1,
+      });
+      if (snapNode.length > 0) {
+        const sm = snapNode[0]!.metadata;
+        lastPrice = Number(sm.price ?? 0);
       }
 
       // ── Persist relist opportunity node ──────────────────────
@@ -1478,7 +1982,7 @@ async function runRelistChecks(
       });
       let totalVisits = 0;
       for (const vn of visitNodes) {
-        const vm = vn.metadata as Record<string, unknown>;
+        const vm = vn.metadata;
         totalVisits += Number(vm.totalVisits ?? 0);
       }
 
@@ -1498,6 +2002,8 @@ async function runRelistChecks(
   return { alerts, opportunitiesFound };
 }
 
+void runRelistChecks;
+
 // ── Worker ─────────────────────────────────────────────────────────────
 
 /**
@@ -1507,9 +2013,7 @@ async function runRelistChecks(
  *
  * Returns a `stop` handle to cancel the interval timer.
  */
-export function startBackgroundIngestion(
-  config: BackgroundIngestionConfig,
-): { stop: () => void } {
+export function startBackgroundIngestion(config: BackgroundIngestionConfig): { stop: () => void } {
   const intervalMs = config.intervalMs ?? 6 * 60 * 60 * 1000; // 6 hours
   const sellerNames = config.sellerNames ?? {};
 
@@ -1536,23 +2040,31 @@ export function startBackgroundIngestion(
 
       try {
         // ── Listings & visits ──────────────────────────────
-        const result = await processSellerListings(
-          config,
-          sellerId,
-          sellerName,
-        );
+        const result = await processSellerListings(config, sellerId, sellerName);
         sellerListingMap.set(sellerId, result.listings);
         totalListings += result.listings.length;
         alerts.push(...result.alerts);
 
         // ── Orders ─────────────────────────────────────────
-        const orderResult = await ingestOrderSnapshots(
-          config,
-          sellerId,
-          sellerName,
-        );
+        const orderResult = await processSellerOrders(config, sellerId, sellerName);
         totalOrders += orderResult.orderCount;
         alerts.push(...orderResult.alerts);
+
+        // ── Claims ─────────────────────────────────────────
+        const claimsResult = await processSellerClaims(config, sellerId, sellerName);
+        alerts.push(...claimsResult.alerts);
+
+        // ── Questions ──────────────────────────────────────
+        const questionsResult = await processSellerQuestions(config, sellerId, sellerName);
+        alerts.push(...questionsResult.alerts);
+
+        // ── Messages ───────────────────────────────────────
+        const messagesResult = await processSellerMessages(config, sellerId, sellerName);
+        alerts.push(...messagesResult.alerts);
+
+        // ── Reputation ─────────────────────────────────────
+        const reputationResult = await processSellerReputation(config, sellerId, sellerName);
+        alerts.push(...reputationResult.alerts);
       } catch (err) {
         console.error(
           `[background-ingestion] Failed to process seller ${sellerId}:`,
@@ -1574,7 +2086,7 @@ export function startBackgroundIngestion(
 
       if (firstListings && secondListings) {
         try {
-          const crossAlerts = await runCrossAccountComparison(
+          const crossAlerts = runCrossAccountComparison(
             config,
             firstId,
             firstName,
@@ -1595,7 +2107,7 @@ export function startBackgroundIngestion(
 
     // ── Phase 3: Seasonal pattern detection ──────────────────
     try {
-      const seasonalAlerts = await runSeasonalAnalysis(config);
+      const seasonalAlerts = runSeasonalAnalysis(config);
       alerts.push(...seasonalAlerts);
     } catch (err) {
       console.error(
@@ -1606,7 +2118,7 @@ export function startBackgroundIngestion(
 
     // ── Phase 4: Pruning ─────────────────────────────────────
     try {
-      await pruneSnapshots(config);
+      pruneSnapshots(config);
     } catch (err) {
       console.error(
         "[background-ingestion] Pruning failed:",
@@ -1654,8 +2166,7 @@ export function startBackgroundIngestion(
 
         if (insights) {
           const chatIds = await config.listActiveChats();
-          const insightMessage =
-            `🧠 <b>Análisis DeepSeek del negocio</b>\n\n${insights}`;
+          const insightMessage = `🧠 <b>Análisis DeepSeek del negocio</b>\n\n${insights}`;
 
           for (const chatId of chatIds) {
             try {

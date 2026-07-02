@@ -1,7 +1,13 @@
 import type { GraphEngine } from "@msl/memory";
 import type { TraversalResult } from "@msl/memory";
 
+import type { LaneContract } from "./lanes.js";
 import type { ConversationMessage } from "./types.js";
+
+export type LanePromptBlocks = {
+  stablePrefix: string;
+  refreshableContext: string;
+};
 
 /**
  * Interface for the daily business data source (Block B).
@@ -245,6 +251,26 @@ export function assembleMessages(
   messages.push({ role: "user", content: userContent });
 
   return messages;
+}
+
+export function buildLanePromptBlocks(
+  lane: LaneContract,
+  refreshableContext: string,
+): LanePromptBlocks {
+  return {
+    stablePrefix: lane.stablePrefix,
+    refreshableContext,
+  };
+}
+
+export function assembleLaneMessages(
+  lane: LaneContract,
+  refreshableContext: string,
+  history: ConversationMessage[],
+  userMessage: string,
+): Array<{ role: string; content: string }> {
+  const blocks = buildLanePromptBlocks(lane, refreshableContext);
+  return assembleMessages(blocks.stablePrefix, "", blocks.refreshableContext, history, userMessage);
 }
 
 /**

@@ -224,9 +224,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     };
 
     ingestionHandle = startBackgroundIngestion(
-      deepseekApiKey
-        ? { ...baseConfig, deepseekApiKey }
-        : baseConfig,
+      deepseekApiKey ? { ...baseConfig, deepseekApiKey } : baseConfig,
     );
   }
 
@@ -236,8 +234,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
       ingestionHandle?.stop();
       await botHandle.stop();
     },
-    sendProactiveMessage: (chatId, text) =>
-      botHandle.sendProactiveMessage(chatId, text),
+    sendProactiveMessage: (chatId, text) => botHandle.sendProactiveMessage(chatId, text),
     listActiveChats: () => botHandle.listActiveChats(),
   };
 }
@@ -290,6 +287,7 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
         `• Análisis de catálogo\n` +
         `• Competidores y tendencias\n` +
         `• Historial de ventas\n\n` +
+        `Cuando digas "dale", en esta fase solo apruebo investigación o preparación acotada: no publico, no modifico Mercado Libre, no cobro pagos y no mando mensajes a clientes.\n\n` +
         `Simplemente escribime lo que necesitás, por ejemplo:\n` +
         `_"¿qué margen tengo en zapatillas?"_\n` +
         `_"analizá mi stock actual"_\n\n` +
@@ -368,15 +366,17 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
       await bot.api.sendMessage(chatId, text, { parse_mode: "HTML" });
     },
 
-    async listActiveChats(): Promise<number[]> {
-      if (!sessionStore) return [];
+    listActiveChats(): Promise<number[]> {
+      if (!sessionStore) return Promise.resolve([]);
       const sessions = sessionStore.listActive();
-      return sessions
-        .map((s) => {
-          const match = /^telegram:[^:]+:(\d+)$/.exec(s.id);
-          return match ? parseInt(match[1]!, 10) : null;
-        })
-        .filter((id): id is number => id !== null);
+      return Promise.resolve(
+        sessions
+          .map((s) => {
+            const match = /^telegram:[^:]+:(\d+)$/.exec(s.id);
+            return match ? parseInt(match[1]!, 10) : null;
+          })
+          .filter((id): id is number => id !== null),
+      );
     },
   };
 }

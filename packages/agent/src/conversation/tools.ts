@@ -16,6 +16,7 @@ import {
   detectViewAnomalies as defaultDetectViewAnomalies,
 } from "./probeDetector.js";
 import { proposeDecoy as defaultProposeDecoy } from "./honeyPotProposer.js";
+import { getLaneContract, type LaneId } from "./lanes.js";
 
 /** Function signature for the actor simulator (injected for testability). */
 type SimulateActorFn = typeof defaultSimulateActor;
@@ -40,6 +41,12 @@ type MetadataNode = {
   label: string;
   metadata: Record<string, unknown>;
 };
+
+function metadataString(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return fallback;
+}
 
 /** Valid types for the `dataType` parameter. */
 const BUSINESS_DATA_TYPES = [
@@ -89,8 +96,8 @@ function buildQueryFilters(args: Record<string, unknown>): {
 function aggregateVisitTrends(nodes: MetadataNode[]): Record<string, unknown> {
   const byItem = new Map<string, Array<{ date: string; totalVisits: number }>>();
   for (const node of nodes) {
-    const itemId = String(node.metadata.itemId ?? "unknown");
-    const capturedAt = String(node.metadata.capturedAt ?? "");
+    const itemId = metadataString(node.metadata.itemId, "unknown");
+    const capturedAt = metadataString(node.metadata.capturedAt);
     const totalVisits = Number(node.metadata.totalVisits ?? 0);
     let entries = byItem.get(itemId);
     if (!entries) {
@@ -128,10 +135,10 @@ function aggregateListingStats(nodes: MetadataNode[]): Record<string, unknown> {
   let priceCount = 0;
 
   for (const node of nodes) {
-    const status = String(node.metadata.status ?? "unknown");
+    const status = metadataString(node.metadata.status, "unknown");
     byStatus[status] = (byStatus[status] ?? 0) + 1;
 
-    const catId = String(node.metadata.categoryId ?? "");
+    const catId = metadataString(node.metadata.categoryId);
     if (catId && catId !== "" && catId !== "unknown") {
       byCategory[catId] = (byCategory[catId] ?? 0) + 1;
     }
@@ -247,9 +254,7 @@ export function createGetBusinessContextTool(engine: GraphEngine): ToolDefinitio
             ? args.dataType
             : "all";
         const months = typeof args.months === "number" && args.months > 0 ? args.months : 3;
-        const after = new Date(
-          Date.now() - months * 30 * 24 * 60 * 60 * 1000,
-        ).toISOString();
+        const after = new Date(Date.now() - months * 30 * 24 * 60 * 60 * 1000).toISOString();
 
         const context: Record<string, unknown> = {};
         const userFilters = buildQueryFilters(args);
@@ -491,6 +496,56 @@ export function createPrepareActionTool(): ToolDefinition {
       };
 
       return proposal;
+    },
+  };
+}
+
+export function createDelegateToSubagentTool(): ToolDefinition {
+  return {
+    name: "delegate_to_subagent",
+    description:
+      "Prepara una delegación proposal-only a una lane especialista. No ejecuta acciones, " +
+      "no muta MercadoLibre y devuelve advertencias de límite con evidence IDs.",
+    parameters: {
+      type: "object",
+      properties: {
+        laneId: {
+          type: "string",
+          enum: ["cost-supplier", "market-catalog", "creative-commercial"],
+        },
+        scope: { type: "string" },
+        requestedAction: { type: "string" },
+        evidenceIds: { type: "array", items: { type: "string" } },
+      },
+      required: ["laneId", "scope"],
+    },
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
+      const laneId = typeof args.laneId === "string" ? (args.laneId as LaneId) : "cost-supplier";
+      const lane = getLaneContract(laneId);
+      const evidenceIds = Array.isArray(args.evidenceIds)
+        ? args.evidenceIds.filter((id): id is string => typeof id === "string")
+        : [];
+      const requestedAction = typeof args.requestedAction === "string" ? args.requestedAction : "";
+      const boundaryWarnings = [...lane.boundaries];
+
+      if (
+        /publish|publicar|mutar|mutation|precio|price|mensaje|payment|pago|sii/i.test(
+          requestedAction,
+        )
+      ) {
+        boundaryWarnings.push(
+          "Requested productive effect was blocked: Phase 1 delegation may investigate or prepare only.",
+        );
+      }
+
+      return {
+        laneId: lane.laneId,
+        status: "proposal-only",
+        scope: typeof args.scope === "string" ? args.scope : "bounded investigation",
+        evidenceIds,
+        boundaryWarnings,
+        noMutationExecuted: true,
+      };
     },
   };
 }

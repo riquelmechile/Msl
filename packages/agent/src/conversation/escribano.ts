@@ -29,12 +29,15 @@ const KEYWORD_TO_LABEL: Record<string, string> = {
 };
 
 /**
- * El Escribano — Memory Scribe agent (Phase 1: rule-based observer).
+ * El Escribano — Memory Scribe agent (Darwinian Hebbian observer).
  *
  * Observes every conversation turn and autonomously applies Hebbian
- * learning to the Cortex neural graph: strengthening edges on confirmed
- * proposals, weakening on guardrail rejections, and incrementing
- * co-occurrence on strategy-domain mentions.
+ * learning to the Cortex neural graph: on confirmed or rejected proposals,
+ * traverses the full activated constellation and adjusts ALL edges together
+ * (reinforce +0.10 for approved, penalize −0.15 for rejected). Records a
+ * persistent `proposal_outcome` node for every outcome turn, even when the
+ * constellation is empty. Guardrail-blocked turns still trigger targeted
+ * penalization via `#handleGuardrailRejection`.
  *
  * Injected into the agent loop via {@link EscribanoConfig} in
  * {@link AgentLoopConfig.escribano}. Runs synchronously, zero API cost.
@@ -78,8 +81,37 @@ export class EscribanoObserver {
     // Find the last user message (the one that triggered this turn).
     const lastUserMsg = [...newState.messages].reverse().find((m) => m.role === "user");
 
-    if (outcome === "confirmed" && proposal) {
-      this.#handleConfirmation(proposal);
+    // ── Constellation-wide Darwinian propagation (confirmed / rejected) ──
+    // Supersedes the old targeted #handleConfirmation — one outcome now
+    // adjusts ALL edges in the activated constellation together.
+    if (outcome === "confirmed" || outcome === "rejected") {
+      const traversal = this.#engine.traverse();
+
+      for (const edge of traversal.traversedEdges) {
+        try {
+          if (outcome === "confirmed") {
+            this.#engine.reinforceEdge(edge.source, edge.target);
+          } else {
+            this.#engine.penalizeEdge(edge.source, edge.target);
+          }
+        } catch {
+          // Edge may have been pruned between traversal and adjustment — skip.
+        }
+      }
+
+      // Always persist an outcome node, even with zero edges.
+      const timestamp = new Date().toISOString();
+      const sellerId = newState.sessionMetadata.sellerId;
+      try {
+        this.#engine.createNode(`proposal_outcome_${timestamp}`, {
+          type: "proposal_outcome",
+          outcome,
+          sellerId,
+          timestamp,
+        });
+      } catch {
+        // Node creation failure is non-fatal.
+      }
     }
 
     if (outcome === "blocked") {
@@ -139,15 +171,6 @@ export class EscribanoObserver {
   }
 
   // ── Private detectors ──────────────────────────────────────────
-
-  /** Hebbian reinforcement: confirmed proposal strengthens edges on involved concept nodes. */
-  #handleConfirmation(proposal: AgentProposal): void {
-    const conceptLabel = this.#proposalToConceptLabel(proposal);
-    const sourceId = this.#getOrCreateConcept(conceptLabel);
-    const targetId = this.#getOrCreateConcept("CEO_decision");
-
-    this.#ensureAndReinforce(sourceId, targetId);
-  }
 
   /** Hebbian penalization: guardrail-blocked proposals weaken edges on rejected-proposal → rejection nodes. */
   #handleGuardrailRejection(proposal: AgentProposal | undefined, _response: string): void {
@@ -357,14 +380,18 @@ export class EscribanoObserver {
     // check_claims returns { paging, results: [...] }
     // check_claim_detail returns { claim: {...}, messages, ... }
     const claims: Record<string, unknown>[] = [];
-    if (Array.isArray(data?.results)) {
+    const record =
+      typeof data === "object" && data !== null ? (data as Record<string, unknown>) : undefined;
+    if (Array.isArray(record?.results)) {
       // check_claims result
-      for (const c of data.results as Record<string, unknown>[]) {
-        claims.push(c);
+      for (const claim of record.results) {
+        if (typeof claim === "object" && claim !== null) {
+          claims.push(claim as Record<string, unknown>);
+        }
       }
-    } else if (typeof data?.claim === "object" && data.claim !== null) {
+    } else if (typeof record?.claim === "object" && record.claim !== null) {
       // check_claim_detail result — single claim
-      claims.push(data.claim as Record<string, unknown>);
+      claims.push(record.claim as Record<string, unknown>);
     }
 
     if (claims.length === 0) return;

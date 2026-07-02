@@ -31,8 +31,14 @@ export type {
   AgentLoopConfig,
   LlmClient,
   StrategyStore,
+  OpenAiFunctionToolDefinition,
 } from "./conversation/agentLoop.js";
-export { createAgentLoop } from "./conversation/agentLoop.js";
+export {
+  createAgentLoop,
+  createOpenAiToolDefinitions,
+  hasRejectionPattern,
+  resolveTurnOutcome,
+} from "./conversation/agentLoop.js";
 export { buildSystemPrompt } from "./conversation/systemPrompt.js";
 
 // ── Observability (metrics + structured logging) ──────────────────
@@ -79,10 +85,14 @@ export type { ToolDefinition } from "./conversation/tools.js";
 export {
   createGetBusinessContextTool,
   createPrepareActionTool,
+  createDelegateToSubagentTool,
   createSimulateActorTool,
   createDetectProbesTool,
   createProposeHoneyPotTool,
 } from "./conversation/tools.js";
+
+export type { LaneContract, LaneOutput, CacheTelemetry, LaneId } from "./conversation/lanes.js";
+export { LANE_CONTRACTS, getLaneContract } from "./conversation/lanes.js";
 
 // ── Sync tools ──────────────────────────────────────────────────────
 export {

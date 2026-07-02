@@ -23,7 +23,11 @@ import type { AutonomyEngine } from "./autonomyEngine.js";
 import { selfVerify } from "./selfVerify.js";
 import { parseStrategy } from "./strategyParser.js";
 import type { ToolDefinition } from "./tools.js";
-import { createDetectProbesTool, createProposeHoneyPotTool } from "./tools.js";
+import {
+  createDelegateToSubagentTool,
+  createDetectProbesTool,
+  createProposeHoneyPotTool,
+} from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
 import {
   createSyncProductTool,
@@ -58,6 +62,7 @@ import {
   createPrepareImageFlowTool,
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
+import type { CacheTelemetry, LaneId, LaneOutput } from "./lanes.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -189,6 +194,47 @@ export type LlmClient = {
   stream(messages: Array<{ role: string; content: string }>): AsyncIterable<StreamingChunk>;
 };
 
+export type OpenAiFunctionToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
+export function createOpenAiToolDefinitions(
+  tools: Iterable<ToolDefinition>,
+): OpenAiFunctionToolDefinition[] {
+  return Array.from(tools, (tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    },
+  }));
+}
+
+export function extractPromptCacheTelemetry(input: {
+  provider: string;
+  model: string;
+  laneId: LaneId;
+  usage?: Record<string, unknown> | null;
+  credentialRef?: string;
+  measuredAt?: string;
+}): CacheTelemetry {
+  return {
+    provider: input.provider,
+    model: input.model,
+    laneId: input.laneId,
+    promptCacheHitTokens: readNumericCounter(input.usage, "prompt_cache_hit_tokens"),
+    promptCacheMissTokens: readNumericCounter(input.usage, "prompt_cache_miss_tokens"),
+    ...(input.credentialRef ? { credentialRef: input.credentialRef } : {}),
+    measuredAt: input.measuredAt ?? new Date().toISOString(),
+  };
+}
+
 /**
  * Creates an agent loop instance.
  *
@@ -231,6 +277,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
         },
       ),
     );
+  }
+  if (!toolMap.has("delegate_to_subagent")) {
+    toolMap.set("delegate_to_subagent", createDelegateToSubagentTool());
   }
 
   // ── Sync tools ────────────────────────────────────────────────────
@@ -330,7 +379,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
   // Real client is used only when the caller has not explicitly requested the mock.
   const client: LlmClient =
     openai && !config.mockClient
-      ? createRealClient(openai, model)
+      ? createRealClient(openai, model, toolMap)
       : config.mockClient
         ? createMockClient(toolMap)
         : createNoopClient();
@@ -567,11 +616,13 @@ ${strategyLines.join("\n")}`;
       }
 
       // If the user said "dale" / "sí" / "ok" and there's a pending proposal
-      // in the state, confirm execution.
+      // in the state, Phase 1 advances preparation only. It never executes
+      // productive external effects.
       if (isConfirmation(userMessage)) {
         const pendingProposal = extractPendingProposal(state.messages);
         if (pendingProposal) {
           proposal = pendingProposal;
+          responseText = buildPhaseOneNoMutationResponse(pendingProposal.naturalSummary);
         }
       }
 
@@ -593,18 +644,9 @@ ${strategyLines.join("\n")}`;
             return blockAndRespond(state, userMessage, honeyPotCheck.reason);
           }
 
-          // Persist confirmed honey-pot execution to Cortex.
-          if (isConfirmation(userMessage) && config.engine) {
-            config.engine.storeProbeResult({
-              proposalId: pendingDecoyProposal.id,
-              probeType: pendingDecoyProposal.type,
-              description: pendingDecoyProposal.description,
-              outcome: {
-                success: true,
-                learnedAt: new Date().toISOString(),
-              },
-            });
-            // Clear the pending decoy after storing.
+          if (isConfirmation(userMessage)) {
+            // Phase 1 confirmation is preparation-only; do not persist an executed
+            // honey-pot result or imply external deployment.
             pendingDecoyProposal = null;
           }
         }
@@ -658,7 +700,7 @@ ${strategyLines.join("\n")}`;
 
       // --- Escribano memory scribe: observe turn outcome ---
       if (config.escribano && config.engine) {
-        const outcome = resolveTurnOutcome(userMessage, proposal, responseText);
+        const outcome = resolveTurnOutcome(userMessage, proposal, responseText, state);
         config.escribano.observeTurn(state, updatedState, responseText, proposal, outcome);
         metrics?.record("escribano.observation", 1, { outcome });
       }
@@ -980,13 +1022,20 @@ export function createDeepSeekClient(): OpenAI | null {
  * Uses the DeepSeek API via `baseURL: "https://api.deepseek.com"`,
  * which is compatible with the OpenAI chat completions protocol.
  */
-function createRealClient(openai: OpenAI, model: string): LlmClient {
+function createRealClient(
+  openai: OpenAI,
+  model: string,
+  toolMap: Map<string, ToolDefinition>,
+): LlmClient {
+  const openAiTools = createOpenAiToolDefinitions(toolMap.values());
+
   return {
     async chat(messages) {
       const completion = await openai.chat.completions.create({
         model,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
         messages: messages as any,
+        ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: false,
       });
 
@@ -1016,6 +1065,7 @@ function createRealClient(openai: OpenAI, model: string): LlmClient {
         model,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
         messages: messages as any,
+        ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: true,
       });
 
@@ -1244,6 +1294,10 @@ function mockChat(
   }
 
   // Intent-based routing (mock behavior, no real LLM call).
+  if (/\b(?:ceo|socio|deleg|investig|stock|campaña|catalogo|catálogo)\b/i.test(lastUser)) {
+    return Promise.resolve({ content: buildCeoDelegationProposal() });
+  }
+
   if (/precio|margen/.test(lastUser)) {
     return Promise.resolve({
       content:
@@ -1270,8 +1324,8 @@ function mockChat(
   if (/dale|sí\b|sí,|ok\b|confirmo|confirmar|ejecutá|ejecutar/i.test(lastUser)) {
     return Promise.resolve({
       content:
-        "¡Perfecto! La acción fue confirmada y quedó registrada. " +
-        "Se ejecutará en los próximos minutos. ¿Necesitás algo más?",
+        "Listo: lo tomo como aprobación para investigar o preparar dentro del alcance. " +
+        "No ejecuté ninguna mutación externa ni productiva. noMutationExecuted: true",
     });
   }
 
@@ -1328,18 +1382,122 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function readNumericCounter(
+  usage: Record<string, unknown> | null | undefined,
+  key: "prompt_cache_hit_tokens" | "prompt_cache_miss_tokens",
+): number | null {
+  const value = usage?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function buildPhaseOneNoMutationResponse(summary: string): string {
+  return (
+    "Listo: tomo ese 'dale' como aprobación para investigación/preparación acotada, no como ejecución.\n\n" +
+    `Propuesta: ${summary}\n` +
+    "Límite Phase 1: no publiqué, no modifiqué MercadoLibre, no cobré pagos, no contacté SII y no envié mensajes a clientes.\n" +
+    "noMutationExecuted: true"
+  );
+}
+
+function buildCeoDelegationProposal(): string {
+  const outputs: LaneOutput[] = [
+    {
+      laneId: "cost-supplier",
+      recommendation:
+        "Necesito costo, proveedor y margen objetivo antes de confirmar rentabilidad.",
+      missingInputs: ["costo", "proveedor", "margen objetivo"],
+      risks: ["No confirmar profit sin evidencia de costo."],
+      evidenceIds: ["cost:pending"],
+      freshness: "unknown",
+      cacheTelemetry: extractPromptCacheTelemetry({
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        laneId: "cost-supplier",
+        usage: null,
+        measuredAt: "unavailable",
+      }),
+      boundaryWarnings: ["Investigación solamente; sin mutaciones productivas."],
+    },
+    {
+      laneId: "market-catalog",
+      recommendation: "Priorizar stock bajo y listings con oportunidad de visibilidad.",
+      missingInputs: [],
+      risks: ["La evidencia local puede estar parcial o desactualizada."],
+      evidenceIds: ["catalog:local-snapshot", "stock:critical-items"],
+      freshness: "partial",
+      boundaryWarnings: ["Usar evidencia local antes de leer remoto."],
+    },
+    {
+      laneId: "creative-commercial",
+      recommendation: "Preparar borrador comercial, sin publicar ni enviar campañas.",
+      missingInputs: [],
+      risks: ["Validar margen antes de prometer descuento."],
+      evidenceIds: ["creative:draft-only"],
+      freshness: "unknown",
+      boundaryWarnings: ["Draft only; never publish in Phase 1."],
+    },
+  ];
+  const evidenceIds = [...new Set(outputs.flatMap((output) => output.evidenceIds))];
+  const risks = [...new Set(outputs.flatMap((output) => output.risks))];
+
+  return (
+    "Como CEO/Socio, preparé una propuesta combinada con las lanes especialistas.\n\n" +
+    "Recomendación: avanzar con una investigación acotada de margen, stock y campaña antes de ejecutar cualquier cambio.\n" +
+    "Rationale: Market/Catalog ve oportunidades, Creative puede preparar borradores, y Cost/Supplier requiere datos de costo/proveedor antes de confirmar rentabilidad.\n" +
+    `Riesgos: ${risks.join("; ")}\n` +
+    `Evidence IDs: ${evidenceIds.join(", ")}\n` +
+    "No ejecuté mutaciones externas: no publiqué, no modifiqué MercadoLibre, no cobré pagos, no contacté SII y no envié mensajes a clientes.\n" +
+    "noMutationExecuted: true"
+  );
+}
+
+/**
+ * Detects standalone Spanish rejection patterns in a user message.
+ *
+ * Word-boundary-anchored regex matching: `no`, `cancelá`, `cancela`,
+ * `cancelar`, `rechazo`, `no quiero`. Avoids false positives from
+ * partial matches (e.g. "tecnología", "novedad").
+ *
+ * Uses explicit whitespace/string boundaries instead of `\b` because
+ * JavaScript `\b` does not recognise accented characters (á, é, í, ó, ú, ñ)
+ * as word characters.
+ */
+export function hasRejectionPattern(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+  return (
+    /(?:^|\s)no quiero(?:\s|$)/i.test(lower) ||
+    /(?:^|\s)cancel[aá](?:\s|$)/i.test(lower) ||
+    /(?:^|\s)cancelar(?:\s|$)/i.test(lower) ||
+    /(?:^|\s)rechazo(?:\s|$)/i.test(lower) ||
+    /(?:^|\s)no(?:\s|$)/i.test(lower)
+  );
+}
+
 /**
  * Resolve the conversation turn outcome for the Escribano observer.
  *
- * Determines whether the turn involved a confirmed proposal, a guardrail
- * rejection (blocked response), or neither.
+ * Determines whether the turn involved a confirmed proposal, a seller
+ * rejection (Darwinian feedback), a guardrail rejection (blocked response),
+ * or neither.
+ *
+ * @param state — Optional conversation state used to detect pending proposals
+ *   for rejection detection when the direct `proposal` parameter is undefined.
  */
-function resolveTurnOutcome(
+export function resolveTurnOutcome(
   userMessage: string,
   proposal: AgentProposal | undefined,
   responseText: string,
+  state?: ConversationState,
 ): TurnOutcome {
   if (responseText.startsWith("⛔")) return "blocked";
+
+  // Darwinian rejection: standalone Spanish negation after a pending proposal.
+  // Check both the direct proposal (fresh LLM output) and the conversation
+  // history for a pending proposal from a previous turn.
+  const effectiveProposal =
+    proposal ?? (state ? extractPendingProposal(state.messages) : undefined);
+  if (hasRejectionPattern(userMessage) && effectiveProposal) return "rejected";
+
   if (isConfirmation(userMessage) && proposal) return "confirmed";
   return "none";
 }
