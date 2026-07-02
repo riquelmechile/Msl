@@ -58,14 +58,33 @@ The orchestration flow MUST be classified as `prepare-only`. It SHALL NOT execut
 | Runtime surface | `prepared-action` |
 | Confidence | Medium |
 
----
+### Requirement: Associate Image to Item Client Method
 
-## ADDED: Runtime Implementation (Slice 3)
+The system MUST expose `associateImageToItem(sellerId, input)` on `MlcApiClient` that reads the current item's pictures array and returns an associative summary. This is a safe-read operation that prepares the association data without executing the PUT.
 
-### Requirement: Image Associate Client Method
+#### Scenario: Item has existing pictures
 
-The client MUST expose `associateImageToItem(sellerId, { itemId, pictureId })` returning `MlcImageAssociateSnapshot`.
+- GIVEN a valid MLC item with existing pictures
+- WHEN `associateImageToItem(sellerId, { itemId, pictureId })` is called
+- THEN the summary MUST return the itemId, pictureId, and current status
+- AND `noMutationExecuted` MUST be `true`
 
 ### Requirement: Image Orchestration Prepared Action
 
-The MCP tool surface MUST expose `prepare_image_orchestration` as a prepare-only tool accepting `{ sellerId, itemId, pictureUrl, categoryId, title? }`. It SHALL construct a multi-step flow (diagnose → upload → associate → check) without executing any mutations, returning `MlcImageOrchestrationSummary` with `requiresApproval: true` and `noMutationExecuted: true`.
+The system MUST define a prepared action `prepare_image_orchestration` that encodes the 4-step flow (diagnose → upload → associate → check) as a typed summary. The action SHALL NOT execute any mutations.
+
+#### Scenario: Orchestration flow prepared
+
+- GIVEN itemId, pictureUrl, categoryId, and optional title
+- WHEN `prepare_image_orchestration` is invoked
+- THEN it MUST return `MlcImageOrchestrationSummary` with 4 steps
+- AND each mutation step (upload, associate) MUST declare `requiresApproval: true`
+- AND `noMutationExecuted` MUST be `true`
+
+#### Scenario: Orchestration requires approval
+
+- GIVEN an orchestration flow is prepared
+- WHEN the runtime evaluates the action metadata
+- THEN `requiresApproval` MUST be `true`
+- AND the runtime surface MUST be `prepared-action` only
+- AND the action MUST NOT execute any MercadoLibre API mutations

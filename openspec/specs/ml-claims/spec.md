@@ -63,22 +63,49 @@ The capability MUST be classified as `safe-read` with runtime surface `read-tool
 | Runtime surface | `read-tool` |
 | Confidence | Medium |
 
----
+### Requirement: Claim Messages Sub-Resource
 
-## ADDED: Claim Sub-Resources (Slice 3)
+The system MUST expose a typed read for claim messages via `GET /post-purchase/v1/claims/{id}/messages`. The snapshot SHALL return `ReadonlyArray<MlcClaimMessage>` with seller scope, freshness, confidence, and `noMutationExecuted: true`.
 
-### Requirement: Claim Messages Read
+#### Scenario: Claim has messages
 
-The client MUST expose `getClaimMessages(sellerId, claimId)` returning `MlcClaimMessagesSnapshot` with message history.
+- GIVEN a valid claim ID with message history
+- WHEN `getClaimMessages(sellerId, claimId)` is called
+- THEN the snapshot MUST return typed messages with sender/receiver roles
+- AND `noMutationExecuted` MUST be `true`
 
-### Requirement: Expected Resolutions Read
+#### Scenario: Claim has no messages
 
-The client MUST expose `getClaimExpectedResolutions(sellerId, claimId)` returning available resolution options.
+- GIVEN a claim without messages
+- WHEN messages sub-resource is read
+- THEN it MUST return an empty array with `completeness: "complete"`
 
-### Requirement: Reputation Impact Read
+### Requirement: Claim Expected Resolutions
 
-The client MUST expose `getClaimAffectsReputation(sellerId, claimId)` returning whether the claim affects seller reputation.
+The system MUST expose a typed read for claim expected resolutions via `GET /post-purchase/v1/claims/{id}/expected_resolutions`. The snapshot SHALL return resolution proposals with id, status, reason.
 
-### Requirement: Status History Read
+#### Scenario: Claim has resolution proposals
 
-The client MUST expose `getClaimStatusHistory(sellerId, claimId)` returning chronological status transitions.
+- GIVEN a claim with expected resolution proposals
+- WHEN `getClaimExpectedResolutions(sellerId, claimId)` is called
+- THEN each proposal SHALL include id, status, reason, and dateCreated
+
+### Requirement: Claim Affects Reputation
+
+The system MUST expose a typed read for reputation impact via `GET /post-purchase/v1/claims/{id}/affects_reputation`. The snapshot SHALL return a boolean flag and optional reason string.
+
+#### Scenario: Claim affects reputation
+
+- GIVEN a claim that impacts seller reputation
+- WHEN `getClaimAffectsReputation(sellerId, claimId)` is called
+- THEN the snapshot MUST return `{ affects_reputation: true, reason?: string }`
+
+### Requirement: Claim Status History
+
+The system MUST expose a typed read for claim status history via `GET /post-purchase/v1/claims/{id}/status_history`. The snapshot SHALL return an array of status/date entries.
+
+#### Scenario: Claim has status transitions
+
+- GIVEN a claim that moved through multiple statuses
+- WHEN `getClaimStatusHistory(sellerId, claimId)` is called
+- THEN the snapshot MUST return chronological status/date entries
