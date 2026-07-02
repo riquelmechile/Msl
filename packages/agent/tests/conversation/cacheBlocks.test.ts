@@ -3,9 +3,12 @@ import { GraphEngine, createGraphEngine } from "@msl/memory";
 
 import {
   buildDailyAggregates,
+  buildLanePromptBlocks,
   injectCortexContext,
+  assembleLaneMessages,
   assembleMessages,
 } from "../../src/conversation/cacheBlocks.js";
+import { COST_SUPPLIER_LANE } from "../../src/conversation/lanes.js";
 import type { ConversationMessage } from "../../src/conversation/types.js";
 
 describe("buildDailyAggregates (Block B)", () => {
@@ -35,6 +38,32 @@ describe("buildDailyAggregates (Block B)", () => {
   it("includes priority suggestions", () => {
     const block = buildDailyAggregates();
     expect(block).toMatch(/prioridades/i);
+  });
+});
+
+describe("lane prompt blocks", () => {
+  it("keeps volatile evidence outside the token-0 stable prefix", () => {
+    const volatileEvidence = "Evidence ID cost:123 stock changed at 2026-07-01 with price $15.000";
+    const blocks = buildLanePromptBlocks(COST_SUPPLIER_LANE, volatileEvidence);
+
+    expect(blocks.stablePrefix).toContain("Cost/Supplier");
+    expect(blocks.stablePrefix).not.toContain("cost:123");
+    expect(blocks.stablePrefix).not.toContain("$15.000");
+    expect(blocks.refreshableContext).toContain("cost:123");
+  });
+
+  it("assembles lane messages with the stable lane prefix at token zero", () => {
+    const messages = assembleLaneMessages(
+      COST_SUPPLIER_LANE,
+      "Evidence ID cost:123",
+      [],
+      "¿Es rentable?",
+    );
+
+    expect(messages[0]!.role).toBe("system");
+    expect(messages[0]!.content.startsWith(COST_SUPPLIER_LANE.stablePrefix)).toBe(true);
+    expect(messages[0]!.content).not.toContain("cost:123");
+    expect(messages[1]!.content).toContain("cost:123");
   });
 });
 

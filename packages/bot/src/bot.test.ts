@@ -140,6 +140,21 @@ describe("createTelegramBot (grammY)", () => {
     expect(mocks.mockCommand).toHaveBeenCalledWith("help", expect.any(Function));
   });
 
+  it("explains that dale only approves bounded preparation in Phase 1 help copy", async () => {
+    createTelegramBot(config);
+    const handler = mocks.mockCommand.mock.calls.find(([command]) => command === "help")?.[1] as
+      | ((ctx: { reply: (message: string, options?: unknown) => Promise<void> }) => Promise<void>)
+      | undefined;
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await handler!({ reply });
+
+    const message = reply.mock.calls[0]?.[0] as string;
+    expect(message).toMatch(/dale/i);
+    expect(message).toMatch(/investigación|preparación/i);
+    expect(message).toMatch(/no publico|no modifico Mercado Libre|no cobro/i);
+  });
+
   it("registers text message handler", () => {
     createTelegramBot(config);
     expect(mocks.mockOn).toHaveBeenCalledWith("message:text", expect.any(Function));

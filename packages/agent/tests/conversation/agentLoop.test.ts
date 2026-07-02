@@ -5,6 +5,7 @@ import {
   createAgentLoop,
   createDeepSeekClient,
   estimateTokens,
+  extractPromptCacheTelemetry,
 } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
@@ -68,14 +69,16 @@ describe("createAgentLoop — mock client", () => {
     const state = makeState();
     const result = await agent.converse("dale", state);
 
-    expect(result.response).toMatch(/confirmada|perfecto|ejecutará/i);
+    expect(result.response).toMatch(/investigar|preparar|noMutationExecuted/i);
+    expect(result.response).not.toMatch(/ejecutará/i);
   });
 
   it("detects 'sí' confirmation and returns execution confirmation", async () => {
     const state = makeState();
     const result = await agent.converse("sí, confirmo", state);
 
-    expect(result.response).toMatch(/confirmada|perfecto|ejecutará/i);
+    expect(result.response).toMatch(/investigar|preparar|noMutationExecuted/i);
+    expect(result.response).not.toMatch(/ejecutará/i);
   });
 
   it("accumulates messages in conversation state", async () => {
@@ -139,7 +142,7 @@ describe("createAgentLoop — mock client", () => {
       name: "simulate_actor",
       description: "Stub actor simulation",
       parameters: { type: "object", properties: {} },
-      execute: async () => {
+      execute: () => {
         if (returnError) return { error: "upstream failed" };
         return {
           actorType: "competidor",
@@ -237,7 +240,47 @@ describe("createAgentLoop — pending proposal extraction", () => {
     // Should have a proposal extracted from the history.
     expect(result.proposal).toBeDefined();
     expect(result.proposal!.naturalSummary).toMatch(/MLC-42|precio/);
-    expect(result.response).toMatch(/confirmada|perfecto/i);
+    expect(result.response).toMatch(/noMutationExecuted|preparación/i);
+  });
+
+  it("returns a CEO combined Spanish delegation proposal with evidence and no mutation", async () => {
+    const state = makeState();
+    const result = await agent.converse("dale investigá stock, margen y campaña como CEO", state);
+
+    expect(result.response).toMatch(/Recomendación/i);
+    expect(result.response).toMatch(/Riesgos/i);
+    expect(result.response).toMatch(/Evidence IDs/i);
+    expect(result.response).toMatch(/No ejecuté mutaciones externas|noMutationExecuted/i);
+  });
+});
+
+describe("extractPromptCacheTelemetry", () => {
+  it("associates DeepSeek cache counters with the lane", () => {
+    const telemetry = extractPromptCacheTelemetry({
+      provider: "deepseek",
+      model: "deepseek-v4",
+      laneId: "market-catalog",
+      usage: { prompt_cache_hit_tokens: 120, prompt_cache_miss_tokens: 40 },
+      measuredAt: "2026-07-01T00:00:00.000Z",
+    });
+
+    expect(telemetry).toMatchObject({
+      laneId: "market-catalog",
+      promptCacheHitTokens: 120,
+      promptCacheMissTokens: 40,
+    });
+  });
+
+  it("degrades safely when cache counters are missing", () => {
+    const telemetry = extractPromptCacheTelemetry({
+      provider: "deepseek",
+      model: "deepseek-v4",
+      laneId: "ceo",
+      usage: {},
+    });
+
+    expect(telemetry.promptCacheHitTokens).toBeNull();
+    expect(telemetry.promptCacheMissTokens).toBeNull();
   });
 });
 
@@ -641,7 +684,7 @@ describe("honey-pot tools — agent loop integration", () => {
     engine.db.close();
   });
 
-  it("stores probe result in Cortex after confirmed dale execution", async () => {
+  it("does not store probe result in Cortex after Phase 1 dale preparation", async () => {
     const engine = createGraphEngine(":memory:");
     const probeStrategy = makeProbeStrategy();
     const agent = createAgentLoop({
@@ -658,11 +701,11 @@ describe("honey-pot tools — agent loop integration", () => {
     // Step 2: confirm with dale
     await agent.converse("dale", state);
 
-    // Verify Cortex has the probe result stored.
+    // Verify Cortex has no executed probe result stored in Phase 1.
     const rows = engine.db.prepare("SELECT * FROM probe_results").all() as Array<
       Record<string, unknown>
     >;
-    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows).toHaveLength(0);
 
     engine.db.close();
   });

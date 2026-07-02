@@ -3,12 +3,14 @@ import { GraphEngine, createGraphEngine } from "@msl/memory";
 
 import {
   createGetBusinessContextTool,
+  createDelegateToSubagentTool,
   createPrepareActionTool,
   createSimulateActorTool,
   createDetectProbesTool,
   createProposeHoneyPotTool,
 } from "../../src/conversation/tools.js";
 import type { ToolDefinition } from "../../src/conversation/tools.js";
+import { createOpenAiToolDefinitions } from "../../src/conversation/agentLoop.js";
 import type { DecoyProposal, ProbeAlert, Strategy } from "../../src/conversation/types.js";
 import type { GuardResult } from "../../src/conversation/guardrails.js";
 import { simulateActor } from "../../src/conversation/actorSimulator.js";
@@ -75,7 +77,7 @@ describe("createGetBusinessContextTool", () => {
   });
 
   it("returns structured listings data when Cortex has listing snapshots", async () => {
-    const item1 = engine.createNode("listing_snapshot_MLC1_2026-07-01", {
+    engine.createNode("listing_snapshot_MLC1_2026-07-01", {
       type: "listing_snapshot",
       itemId: "MLC1",
       sellerId: "plasticov",
@@ -173,7 +175,10 @@ describe("createGetBusinessContextTool", () => {
     expect(orders.totalOrders).toBe(5);
     expect(orders.totalAmount).toBe(50000);
 
-    const byCategory = orders.byCategory as Record<string, { orderCount: number; totalAmount: number }>;
+    const byCategory = orders.byCategory as Record<
+      string,
+      { orderCount: number; totalAmount: number }
+    >;
     expect(byCategory.MLC1743).toBeDefined();
     expect(byCategory.MLC1743!.orderCount).toBe(3);
   });
@@ -340,6 +345,50 @@ describe("createPrepareActionTool", () => {
     // Should be roughly 24h (allow some slack for test execution time).
     expect(diffMs).toBeGreaterThan(23 * 60 * 60 * 1000);
     expect(diffMs).toBeLessThan(25 * 60 * 60 * 1000);
+  });
+});
+
+describe("createDelegateToSubagentTool", () => {
+  it("is serializable as an OpenAI-compatible function tool for DeepSeek submission", () => {
+    const [schema] = createOpenAiToolDefinitions([createDelegateToSubagentTool()]);
+
+    expect(schema).toMatchObject({
+      type: "function",
+      function: {
+        name: "delegate_to_subagent",
+        parameters: {
+          type: "object",
+          required: ["laneId", "scope"],
+        },
+      },
+    });
+    expect(schema?.function.parameters).not.toHaveProperty("execute");
+
+    const properties = schema?.function.parameters.properties as Record<string, unknown>;
+    expect(properties.laneId).toMatchObject({
+      type: "string",
+      enum: ["cost-supplier", "market-catalog", "creative-commercial"],
+    });
+  });
+
+  it("returns proposal-only lane boundary warnings and evidence IDs without execution", async () => {
+    const tool = createDelegateToSubagentTool();
+    const result = await tool.execute({
+      laneId: "creative-commercial",
+      scope: "prepare campaign draft",
+      requestedAction: "publicar campaña",
+      evidenceIds: ["creative:1", "stock:2"],
+    });
+
+    expect(result).toMatchObject({
+      laneId: "creative-commercial",
+      status: "proposal-only",
+      evidenceIds: ["creative:1", "stock:2"],
+      noMutationExecuted: true,
+    });
+    expect(result.boundaryWarnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/blocked|Phase 1|publish|publicar/i)]),
+    );
   });
 });
 

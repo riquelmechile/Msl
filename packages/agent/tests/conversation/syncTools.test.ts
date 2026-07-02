@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+/* eslint-disable @typescript-eslint/require-await */
+
 import type {
   ProductSyncEngine,
   SyncResult,
@@ -91,7 +93,6 @@ function createStubSyncEngine(): ProductSyncEngine & {
     _syncProductCalls,
     _syncAllCalls,
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     async syncProduct(
       sourceSellerId: string,
       targetSellerId: string,
@@ -108,7 +109,6 @@ function createStubSyncEngine(): ProductSyncEngine & {
       };
     },
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     async syncAll(
       sourceSellerId: string,
       targetSellerId: string,
@@ -187,7 +187,6 @@ function createStubMlClient(): MlClient {
   };
 
   return {
-    // eslint-disable-next-line @typescript-eslint/require-await
     getItems: async () => ({
       sellerId: "test",
       kind: "listing",
@@ -197,7 +196,6 @@ function createStubMlClient(): MlClient {
       freshness: {} as never,
       confidence: "high",
     }),
-    // eslint-disable-next-line @typescript-eslint/require-await
     getItem: async () =>
       ({
         id: "MLC1001",
@@ -210,7 +208,6 @@ function createStubMlClient(): MlClient {
         pictures: [],
         attributes: [],
       }) satisfies MlItem,
-    // eslint-disable-next-line @typescript-eslint/require-await
     getOrders: async () => ({
       sellerId: "test",
       kind: "order",
@@ -220,17 +217,15 @@ function createStubMlClient(): MlClient {
       freshness: {} as never,
       confidence: "high",
     }),
-    // eslint-disable-next-line @typescript-eslint/require-await
     getQuestions: async () => ({
       sellerId: "test",
       kind: "message",
       source: "mercadolibre-api",
-      data: [],
+      data: { paging: { total: 0, offset: 0, limit: 0 }, results: [] },
       completeness: "complete",
       freshness: {} as never,
       confidence: "high",
     }),
-    // eslint-disable-next-line @typescript-eslint/require-await
     publishItem: async () =>
       ({
         id: "MLC-NEW-1",
@@ -238,7 +233,6 @@ function createStubMlClient(): MlClient {
         status: "active",
         capturedAt: "2026-06-26T10:00:00Z",
       }) satisfies MlWriteSnapshot,
-    // eslint-disable-next-line @typescript-eslint/require-await
     updateItem: async () =>
       ({
         id: "MLC1001",
@@ -246,13 +240,11 @@ function createStubMlClient(): MlClient {
         status: "active",
         capturedAt: "2026-06-26T10:00:00Z",
       }) satisfies MlWriteSnapshot,
-    // eslint-disable-next-line @typescript-eslint/require-await
     getCategories: async () => ({
       sellerId: "test",
       data: [],
       capturedAt: "2026-06-26T10:00:00Z",
     }),
-    // eslint-disable-next-line @typescript-eslint/require-await
     getUserInfo: async () =>
       ({
         sellerId: "test",
@@ -701,7 +693,6 @@ describe("createCheckAccountTool — unit", () => {
   it("returns error when getUserInfo throws", async () => {
     const brokenClient: MlClient = {
       ...createStubMlClient(),
-      // eslint-disable-next-line @typescript-eslint/require-await
       getUserInfo: async () => {
         throw new Error("Network failure");
       },
@@ -803,21 +794,12 @@ describe("price intelligence tools — unit", () => {
   });
 
   it("returns partial errors when optional pricing endpoints are unavailable", async () => {
-    const {
-      getItemSalePrice: _getItemSalePrice,
-      getItemPrices: _getItemPrices,
-      getItemPriceToWin: _getItemPriceToWin,
-      getPricingAutomation: _getPricingAutomation,
-      getPricingAutomationItems: _getPricingAutomationItems,
-      ...clientWithoutPricingEndpoints
-    } = createStubMlcPriceClient();
-    void [
-      _getItemSalePrice,
-      _getItemPrices,
-      _getItemPriceToWin,
-      _getPricingAutomation,
-      _getPricingAutomationItems,
-    ];
+    const clientWithoutPricingEndpoints = { ...createStubMlcPriceClient() };
+    delete clientWithoutPricingEndpoints.getItemSalePrice;
+    delete clientWithoutPricingEndpoints.getItemPrices;
+    delete clientWithoutPricingEndpoints.getItemPriceToWin;
+    delete clientWithoutPricingEndpoints.getPricingAutomation;
+    delete clientWithoutPricingEndpoints.getPricingAutomationItems;
     const tool = createCheckPriceIntelligenceTool(clientWithoutPricingEndpoints);
 
     const result = await tool.execute({ sellerId: "plasticov", itemId: "MLC1001" });
@@ -865,13 +847,10 @@ describe("price intelligence tools — unit", () => {
 
     const result = await tool.execute({ sellerId: "plasticov", itemId: "MLC1001" });
 
-    expect(result.partialErrors).toEqual([
-      {
-        endpoint: "price_to_win",
-        message: expect.stringContaining("Bearer [REDACTED]"),
-      },
-    ]);
-    const partialError = (result.partialErrors as Array<{ message: string }>)[0]!;
+    const partialError = (result.partialErrors as Array<{ endpoint: string; message: string }>)[0]!;
+    expect(result.partialErrors).toHaveLength(1);
+    expect(partialError).toMatchObject({ endpoint: "price_to_win" });
+    expect(partialError.message).toContain("Bearer [REDACTED]");
     expect(partialError.message).toContain("access_token=[REDACTED]");
     expect(partialError.message).toContain('"client_secret":"[REDACTED]"');
     expect(partialError.message).toContain('"password":"[REDACTED]"');

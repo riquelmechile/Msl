@@ -63,7 +63,14 @@ describe("EscribanoObserver", () => {
   });
 
   describe("observeTurn — confirmation (dale)", () => {
-    it("creates concept nodes and reinforces edge on confirmed proposal", () => {
+    it("reinforces all edges in traversed constellation on confirmed proposal", () => {
+      // Seed nodes and edges so traverse() returns a non-empty constellation.
+      const nodeA = engine.createNode("concept_A");
+      const nodeB = engine.createNode("concept_B");
+      const nodeC = engine.createNode("concept_C");
+      engine.createEdge(nodeA.id, nodeB.id);
+      engine.createEdge(nodeB.id, nodeC.id);
+
       const prevState = makeState([userMsg("dale"), asstMsg("¿Bajo el precio?")]);
       const newState = makeState([
         userMsg("dale"),
@@ -77,13 +84,17 @@ describe("EscribanoObserver", () => {
 
       observer.observeTurn(prevState, newState, "✅ Acción confirmada.", proposal, "confirmed");
 
-      expect(reinforceSpy).toHaveBeenCalled();
+      // Both edges in the constellation should be reinforced.
+      expect(reinforceSpy).toHaveBeenCalledTimes(2);
 
-      // Verify concept nodes exist
-      const proposalNode = engine.findOrCreateConceptNode("proposal_price_change");
-      const ceoNode = engine.findOrCreateConceptNode("CEO_decision");
-      expect(proposalNode.id).toBeGreaterThan(0);
-      expect(ceoNode.id).toBeGreaterThan(0);
+      // An outcome node should be recorded.
+      const outcomeNodes = engine.queryByMetadata({ type: "proposal_outcome" });
+      expect(outcomeNodes.length).toBe(1);
+      expect(outcomeNodes[0]!.metadata).toMatchObject({
+        type: "proposal_outcome",
+        outcome: "confirmed",
+        sellerId: "seller-1",
+      });
     });
 
     it("does nothing when outcome is 'none' even with a proposal", () => {
@@ -92,11 +103,59 @@ describe("EscribanoObserver", () => {
 
       const reinforceSpy = vi.spyOn(engine, "reinforceEdge");
       const penalizeSpy = vi.spyOn(engine, "penalizeEdge");
+      const createNodeSpy = vi.spyOn(engine, "createNode");
 
       observer.observeTurn(state, state, "Respuesta normal.", proposal, "none");
 
       expect(reinforceSpy).not.toHaveBeenCalled();
       expect(penalizeSpy).not.toHaveBeenCalled();
+      // No outcome node for "none" turns
+      const outcomeCalls = createNodeSpy.mock.calls.filter(
+        ([label]) => typeof label === "string" && label.startsWith("proposal_outcome_"),
+      );
+      expect(outcomeCalls).toHaveLength(0);
+    });
+  });
+
+  describe("observeTurn — rejection (constellation)", () => {
+    it("penalizes all edges in traversed constellation on rejected proposal", () => {
+      // Seed nodes and edges so traverse() returns a non-empty constellation.
+      const nodeX = engine.createNode("concept_X");
+      const nodeY = engine.createNode("concept_Y");
+      const nodeZ = engine.createNode("concept_Z");
+      engine.createEdge(nodeX.id, nodeY.id);
+      engine.createEdge(nodeY.id, nodeZ.id);
+
+      const prevState = makeState([userMsg("no"), asstMsg("¿Bajo el precio?")]);
+      const newState = makeState([
+        userMsg("no"),
+        asstMsg("¿Bajo el precio?"),
+        userMsg("no"),
+        asstMsg("Entendido, no ejecuto la acción."),
+      ]);
+      const proposal = makeProposal("price-change");
+
+      const penalizeSpy = vi.spyOn(engine, "penalizeEdge");
+
+      observer.observeTurn(
+        prevState,
+        newState,
+        "Entendido, no ejecuto la acción.",
+        proposal,
+        "rejected",
+      );
+
+      // Both edges in the constellation should be penalized.
+      expect(penalizeSpy).toHaveBeenCalledTimes(2);
+
+      // An outcome node should be recorded.
+      const outcomeNodes = engine.queryByMetadata({ type: "proposal_outcome" });
+      expect(outcomeNodes.length).toBe(1);
+      expect(outcomeNodes[0]!.metadata).toMatchObject({
+        type: "proposal_outcome",
+        outcome: "rejected",
+        sellerId: "seller-1",
+      });
     });
   });
 
@@ -215,18 +274,12 @@ describe("EscribanoObserver", () => {
 
       const issues = engine.queryByMetadata({ type: "tool_issue" });
 
-      expect(issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            label: "tool_issue_check_price_intelligence",
-            metadata: expect.objectContaining({
-              toolName: "check_price_intelligence",
-              status: "error",
-              error: "pricing automation unavailable",
-            }),
-          }),
-        ]),
-      );
+      const issue = issues.find((node) => node.label === "tool_issue_check_price_intelligence");
+      expect(issue?.metadata).toMatchObject({
+        toolName: "check_price_intelligence",
+        status: "error",
+        error: "pricing automation unavailable",
+      });
     });
 
     it("records returned partial errors without requiring metrics", () => {
@@ -236,18 +289,12 @@ describe("EscribanoObserver", () => {
 
       const issues = engine.queryByMetadata({ type: "tool_issue" });
 
-      expect(issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            label: "tool_issue_check_price_intelligence",
-            metadata: expect.objectContaining({
-              toolName: "check_price_intelligence",
-              status: "partial",
-              partialErrors: [expect.objectContaining({ endpoint: "price_to_win" })],
-            }),
-          }),
-        ]),
-      );
+      const issue = issues.find((node) => node.label === "tool_issue_check_price_intelligence");
+      expect(issue?.metadata).toMatchObject({
+        toolName: "check_price_intelligence",
+        status: "partial",
+        partialErrors: [expect.objectContaining({ endpoint: "price_to_win" })],
+      });
     });
 
     it("sanitizes returned tool issue metadata before persistence", () => {
@@ -323,6 +370,11 @@ describe("EscribanoObserver", () => {
 
   describe("findOrCreateConceptNode idempotency (via observer)", () => {
     it("reuses cached concept node ids across multiple observeTurn calls", () => {
+      // Seed an edge so the constellation is non-empty and propagation runs.
+      const nodeA = engine.createNode("concept_A");
+      const nodeB = engine.createNode("concept_B");
+      engine.createEdge(nodeA.id, nodeB.id);
+
       const state = makeState([
         userMsg("dale"),
         asstMsg("¿Bajo el precio?"),
@@ -335,15 +387,9 @@ describe("EscribanoObserver", () => {
       observer.observeTurn(state, state, "✅ Confirmado.", proposal, "confirmed");
       observer.observeTurn(state, state, "✅ Confirmado.", proposal, "confirmed");
 
-      // CEO_decision should have exactly one node
-      const ceoNode = engine.findOrCreateConceptNode("CEO_decision");
-      expect(ceoNode.id).toBeGreaterThan(0);
-
-      // Verify no duplicates by counting nodes with that label
-      const rows = engine.db
-        .prepare("SELECT COUNT(*) as cnt FROM nodes WHERE label = 'CEO_decision'")
-        .get() as { cnt: number };
-      expect(rows.cnt).toBe(1);
+      // Verify both turns produced outcome nodes (not deduplicated in graph).
+      const outcomeNodes = engine.queryByMetadata({ type: "proposal_outcome" });
+      expect(outcomeNodes.length).toBe(2);
     });
   });
 });
