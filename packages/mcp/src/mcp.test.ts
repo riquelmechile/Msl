@@ -1111,6 +1111,46 @@ describe("MCP Server", () => {
     });
   });
 
+  it("prepare_answer auth gate blocks invalid API key before preparation", async () => {
+    vi.stubEnv("MSL_MCP_API_KEY", "secret-key-42");
+    const prepareAnswer = vi.fn();
+
+    createMcpServer({
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+        getModerationStatus: vi.fn(),
+        getNotices: vi.fn(),
+        prepareAnswer,
+        searchClaims: vi.fn(),
+        getClaimDetail: vi.fn(),
+        getShipmentStatus: vi.fn(),
+      },
+    });
+
+    const cb = registeredTools.get("prepare_answer");
+    expect(cb).toBeDefined();
+
+    const result = (await cb!({
+      sellerId: "ML-test",
+      questionId: "Q-9876",
+      text: "Thank you for your question!",
+      msl_api_key: "wrong",
+    })) as { content: { text: string }[]; isError?: boolean };
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+    expect(result.isError).toBe(true);
+    expect(prepareAnswer).not.toHaveBeenCalled();
+    expect(parsed).toMatchObject({ status: "blocked", reason: "unauthorized" });
+
+    vi.unstubAllEnvs();
+  });
+
   it("read_claims tool calls searchClaims with filters", async () => {
     const searchClaims = vi.fn().mockResolvedValue({
       kind: "business-signal",

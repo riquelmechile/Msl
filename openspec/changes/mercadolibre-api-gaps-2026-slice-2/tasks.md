@@ -41,7 +41,7 @@ Chain strategy: pending
 - [x] 2.1 Add 3 optional method signatures to `MlcApiClient` interface (after `prepareAnswer`, line ~817): `searchClaims?`, `getClaimDetail?`, `getShipmentStatus?`. Follow `getNotices?`/`getModerationStatus?` signature patterns. (4 sub-resource methods deferred to PR #2.)
 - [x] 2.2 Add `searchClaims(sellerId, options?)` to `createMlcReadMethods` (after `prepareAnswer`, line ~3230): `GET /post-purchase/v1/claims/search` with optional `limit`/`offset`/`status`/`sort` query params → `normalizeClaimsSearch`.
 - [x] 2.3 Add `getClaimDetail(sellerId, claimId)` → `GET /post-purchase/v1/claims/{claimId}` → `normalizeClaimDetail`.
-- [ ] 2.4 Add 4 claim sub-resource methods: `getClaimMessages` → `/post-purchase/v1/claims/{claimId}/messages`, `getClaimExpectedResolutions` → `.../expected_resolutions`, `getClaimAffectsReputation` → `.../affects-reputation`, `getClaimStatusHistory` → `.../status_history`. Each returns `MlcReadSnapshot` with `noMutationExecuted: true`. **Deferred to PR #2.**
+- [x] 2.4 Add 4 claim sub-resource methods: `getClaimMessages` → `/post-purchase/v1/claims/{claimId}/messages`, `getClaimExpectedResolutions` → `.../expected_resolutions`, `getClaimAffectsReputation` → `.../affects-reputation`, `getClaimStatusHistory` → `.../status_history`. Each returns `MlcReadSnapshot` with `noMutationExecuted: true`.
 - [x] 2.5 Add `getShipmentStatus(sellerId, shipmentId)` → `GET /marketplace/shipments/{shipmentId}` with `x-format-new: true` header → `normalizeShipmentStatus`.
 
 ## Phase 3: MCP Tool Wiring

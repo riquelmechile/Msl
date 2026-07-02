@@ -211,6 +211,7 @@ export type MlcImageOrchestrationInput = {
   pictureUrl: string;
   categoryId: string;
   title?: string;
+  diagnostic?: { hasIssues: boolean; details?: unknown };
 };
 
 export type MlcImageOrchestrationStep = {
@@ -297,6 +298,12 @@ export type MlcClaimSummary = {
 export type MlcClaimsSearchResult = {
   paging: { total: number; offset: number; limit: number };
   results: ReadonlyArray<MlcClaimSummary>;
+};
+
+export type MlcRateLimitBlockedMetadata = {
+  reason: "rate-limited";
+  httpStatus: 429;
+  retryAttempted: false;
 };
 
 export type MlcQuestionsSearchResult = {
@@ -723,14 +730,28 @@ export type MlcModerationStatusSnapshot = MlcSingleReadSnapshot<MlcModerationSta
 export type MlcNoticesSnapshot = MlcSingleReadSnapshot<MlcNoticesSummary>;
 export type MlcAnswerSnapshot = MlcSingleReadSnapshot<MlcAnswerSummary>;
 
-export type MlcClaimsSearchSnapshot = MlcSingleReadSnapshot<MlcClaimsSearchResult>;
+export type MlcClaimsSearchSnapshot = MlcSingleReadSnapshot<MlcClaimsSearchResult> & {
+  blockedMetadata?: MlcRateLimitBlockedMetadata;
+  noMutationExecuted?: true;
+};
 export type MlcQuestionsSnapshot = MlcSingleReadSnapshot<MlcQuestionsSearchResult>;
 export type MlcClaimDetailSnapshot = MlcSingleReadSnapshot<MlcClaimDetailSummary>;
-export type MlcClaimMessagesSnapshot = MlcSingleReadSnapshot<MlcClaimMessagesSummary>;
-export type MlcClaimResolutionsSnapshot = MlcSingleReadSnapshot<MlcClaimResolutionsSummary>;
-export type MlcClaimReputationSnapshot = MlcSingleReadSnapshot<MlcClaimReputationSummary>;
-export type MlcClaimStatusHistorySnapshot = MlcSingleReadSnapshot<MlcClaimStatusHistorySummary>;
-export type MlcShipmentStatusSnapshot = MlcSingleReadSnapshot<MlcShipmentStatusSummary>;
+export type MlcClaimMessagesSnapshot = MlcSingleReadSnapshot<MlcClaimMessagesSummary> & {
+  noMutationExecuted: true;
+};
+export type MlcClaimResolutionsSnapshot = MlcSingleReadSnapshot<MlcClaimResolutionsSummary> & {
+  noMutationExecuted: true;
+};
+export type MlcClaimReputationSnapshot = MlcSingleReadSnapshot<MlcClaimReputationSummary> & {
+  noMutationExecuted: true;
+};
+export type MlcClaimStatusHistorySnapshot = MlcSingleReadSnapshot<MlcClaimStatusHistorySummary> & {
+  noMutationExecuted: true;
+};
+export type MlcShipmentStatusSnapshot = MlcSingleReadSnapshot<MlcShipmentStatusSummary> & {
+  blockedMetadata?: MlcRateLimitBlockedMetadata;
+  noMutationExecuted?: true;
+};
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -775,6 +796,7 @@ export type MercadoLibreApiRequest = {
   query?: Readonly<Record<string, string>>;
   headers?: Readonly<Record<string, string>>;
   body?: unknown;
+  retryOnRateLimit?: boolean;
 };
 
 export type MercadoLibreApiTransport = {
@@ -933,6 +955,7 @@ export type MlcProductAdsInsightsOptions = {
 type MlcReadRequestOptions = {
   method?: "POST" | "PUT";
   body?: unknown;
+  retryOnRateLimit?: boolean;
 };
 
 type MlcReadRequest = (
@@ -1864,6 +1887,7 @@ function normalizeClaimMessages(input: {
     completeness,
     freshness: createFreshness("business-signal", input.now),
     confidence: snapshotConfidence(completeness, messages.length),
+    noMutationExecuted: true,
   };
 }
 
@@ -1901,6 +1925,32 @@ function normalizeClaimExpectedResolutions(input: {
     completeness,
     freshness: createFreshness("business-signal", input.now),
     confidence: snapshotConfidence(completeness, expected_resolutions.length),
+    noMutationExecuted: true,
+  };
+}
+
+function isRateLimitError(error: unknown): boolean {
+  return error instanceof Error && /\b429\b|rate[- ]?limit/i.test(error.message);
+}
+
+function rateLimitBlockedMetadata(): MlcRateLimitBlockedMetadata {
+  return { reason: "rate-limited", httpStatus: 429, retryAttempted: false };
+}
+
+function normalizeRateLimitedClaimsSearch(input: {
+  sellerId: string;
+  now: Date;
+}): MlcClaimsSearchSnapshot {
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data: { paging: { total: 0, offset: 0, limit: 0 }, results: [] },
+    completeness: "partial",
+    freshness: createFreshness("business-signal", input.now),
+    confidence: "low",
+    blockedMetadata: rateLimitBlockedMetadata(),
+    noMutationExecuted: true,
   };
 }
 
@@ -1925,6 +1975,7 @@ function normalizeClaimAffectsReputation(input: {
     completeness,
     freshness: createFreshness("business-signal", input.now),
     confidence: completeness === "complete" ? "high" : "low",
+    noMutationExecuted: true,
   };
 }
 
@@ -1960,6 +2011,7 @@ function normalizeClaimStatusHistory(input: {
     completeness,
     freshness: createFreshness("business-signal", input.now),
     confidence: snapshotConfidence(completeness, history.length),
+    noMutationExecuted: true,
   };
 }
 
@@ -1969,10 +2021,14 @@ export function normalizeImageOrchestration(input: {
   pictureUrl: string;
   categoryId: string;
   title?: string;
+  diagnostic?: { hasIssues: boolean; details?: unknown };
   now: Date;
 }): MlcSingleReadSnapshot<MlcImageOrchestrationSummary> {
+  const diagnosticFailed = input.diagnostic?.hasIssues === true;
   const steps: ReadonlyArray<MlcImageOrchestrationStep> = [
-    { step: "diagnose", status: "pending" },
+    diagnosticFailed
+      ? { step: "diagnose", status: "failed", result: input.diagnostic?.details }
+      : { step: "diagnose", status: "pending" },
     { step: "upload", status: "pending" },
     { step: "associate", status: "pending" },
     { step: "check", status: "pending" },
@@ -2031,6 +2087,23 @@ function normalizeShipmentStatus(input: {
     completeness,
     freshness: createFreshness("business-signal", input.now),
     confidence: snapshotConfidence(completeness, id !== undefined ? 1 : 0),
+  };
+}
+
+function normalizeRateLimitedShipmentStatus(input: {
+  sellerId: string;
+  now: Date;
+}): MlcShipmentStatusSnapshot {
+  return {
+    sellerId: input.sellerId,
+    kind: "business-signal",
+    source: "mercadolibre-api",
+    data: { id: "", status: "rate-limited" },
+    completeness: "partial",
+    freshness: createFreshness("business-signal", input.now),
+    confidence: "low",
+    blockedMetadata: rateLimitBlockedMetadata(),
+    noMutationExecuted: true,
   };
 }
 
@@ -3514,25 +3587,42 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       if (options?.offset !== undefined) query.offset = String(options.offset);
       if (options?.status !== undefined) query.status = options.status;
       if (options?.sort !== undefined) query.sort = options.sort;
-      const payload = await input.request(
-        sellerId,
-        "/post-purchase/v1/claims/search",
-        Object.keys(query).length > 0 ? query : undefined,
-      );
-      return normalizeClaimsSearch({ sellerId, payload, now: input.now() });
+      try {
+        const payload = await input.request(
+          sellerId,
+          "/post-purchase/v1/claims/search",
+          Object.keys(query).length > 0 ? query : undefined,
+          undefined,
+          { retryOnRateLimit: false },
+        );
+        return normalizeClaimsSearch({ sellerId, payload, now: input.now() });
+      } catch (error) {
+        if (isRateLimitError(error)) {
+          return normalizeRateLimitedClaimsSearch({ sellerId, now: input.now() });
+        }
+        throw error;
+      }
     },
     getClaimDetail: async (sellerId, claimId) => {
       const payload = await input.request(sellerId, `/post-purchase/v1/claims/${claimId}`);
       return normalizeClaimDetail({ sellerId, payload, now: input.now() });
     },
     getShipmentStatus: async (sellerId, shipmentId) => {
-      const payload = await input.request(
-        sellerId,
-        `/marketplace/shipments/${shipmentId}`,
-        undefined,
-        { "x-format-new": "true" },
-      );
-      return normalizeShipmentStatus({ sellerId, payload, now: input.now() });
+      try {
+        const payload = await input.request(
+          sellerId,
+          `/marketplace/shipments/${shipmentId}`,
+          undefined,
+          { "x-format-new": "true" },
+          { retryOnRateLimit: false },
+        );
+        return normalizeShipmentStatus({ sellerId, payload, now: input.now() });
+      } catch (error) {
+        if (isRateLimitError(error)) {
+          return normalizeRateLimitedShipmentStatus({ sellerId, now: input.now() });
+        }
+        throw error;
+      }
     },
     getClaimMessages: async (sellerId, claimId) => {
       const payload = await input.request(sellerId, `/post-purchase/v1/claims/${claimId}/messages`);
@@ -3548,7 +3638,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
     getClaimAffectsReputation: async (sellerId, claimId) => {
       const payload = await input.request(
         sellerId,
-        `/post-purchase/v1/claims/${claimId}/affects_reputation`,
+        `/post-purchase/v1/claims/${claimId}/affects-reputation`,
       );
       return normalizeClaimAffectsReputation({ sellerId, payload, now: input.now() });
     },
@@ -3642,6 +3732,9 @@ export function createMlcApiClient(input: {
     if (reqOptions?.body !== undefined) {
       apiRequest.body = reqOptions.body;
     }
+    if (reqOptions?.retryOnRateLimit !== undefined) {
+      apiRequest.retryOnRateLimit = reqOptions.retryOnRateLimit;
+    }
 
     return input.transport.request(apiRequest);
   };
@@ -3704,6 +3797,9 @@ export function createOAuthMlcApiClient(input: {
     if (reqOptions?.body !== undefined) {
       apiRequest.body = reqOptions.body;
     }
+    if (reqOptions?.retryOnRateLimit !== undefined) {
+      apiRequest.retryOnRateLimit = reqOptions.retryOnRateLimit;
+    }
 
     return input.transport.request(apiRequest);
   };
@@ -3720,8 +3816,9 @@ const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 100;
 const MAX_DELAY_MS = 30_000;
 
-function shouldRetry(status: number): boolean {
-  return status === 429 || status >= 500;
+function shouldRetry(status: number, options?: { retryOnRateLimit?: boolean }): boolean {
+  if (status === 429) return options?.retryOnRateLimit !== false;
+  return status >= 500;
 }
 
 /**
@@ -3732,7 +3829,11 @@ function shouldRetry(status: number): boolean {
  * thundering-herd retry storms.  Network errors (connection refused,
  * DNS failure) are also retried.
  */
-async function fetchWithBackoff(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithBackoff(
+  url: string,
+  init: RequestInit,
+  options?: { retryOnRateLimit?: boolean },
+): Promise<Response> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -3748,11 +3849,11 @@ async function fetchWithBackoff(url: string, init: RequestInit): Promise<Respons
     try {
       const response = await fetch(url, init);
 
-      if (!shouldRetry(response.status) || attempt === MAX_RETRIES) {
+      if (!shouldRetry(response.status, options) || attempt === MAX_RETRIES) {
         return response;
       }
 
-      // Will retry on 429 or 5xx
+      // Will retry on 429 unless disabled by the caller, and on 5xx.
       lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
     } catch (err) {
       lastError = err;
@@ -3789,7 +3890,13 @@ export function createMercadoLibreApiFetchTransport(): MercadoLibreApiTransport 
         }
       }
 
-      const response = await fetchWithBackoff(url, init);
+      const response = await fetchWithBackoff(
+        url,
+        init,
+        request.retryOnRateLimit === undefined
+          ? undefined
+          : { retryOnRateLimit: request.retryOnRateLimit },
+      );
 
       if (!response.ok) {
         throw new Error(

@@ -2739,8 +2739,41 @@ describe("getShipmentStatus", () => {
         method: "GET",
         path: "/marketplace/shipments/41567890123",
         headers: { "x-format-new": "true" },
+        retryOnRateLimit: false,
       }),
     );
+  });
+
+  it("surfaces shipment 429 as rate-limited without retry", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi
+      .fn<MercadoLibreApiTransport["request"]>()
+      .mockRejectedValue(
+        new Error("ML API GET /marketplace/shipments/41567890123 failed: 429 Too Many Requests"),
+      );
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    const result = await client.getShipmentStatus!("seller-1", "41567890123");
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ retryOnRateLimit: false }));
+    expect(result).toMatchObject({
+      completeness: "partial",
+      confidence: "low",
+      noMutationExecuted: true,
+      blockedMetadata: { reason: "rate-limited", httpStatus: 429, retryAttempted: false },
+      data: { status: "rate-limited" },
+    });
   });
 
   it("passes search claims with status filter", async () => {
@@ -2768,8 +2801,41 @@ describe("getShipmentStatus", () => {
         method: "GET",
         path: "/post-purchase/v1/claims/search",
         query: { status: "open", limit: "5" },
+        retryOnRateLimit: false,
       }),
     );
+  });
+
+  it("surfaces claims search 429 as rate-limited without retry", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi
+      .fn<MercadoLibreApiTransport["request"]>()
+      .mockRejectedValue(
+        new Error("ML API GET /post-purchase/v1/claims/search failed: 429 Too Many Requests"),
+      );
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport: { request }, now });
+
+    const result = await client.searchClaims!("seller-1", { status: "open" });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ retryOnRateLimit: false }));
+    expect(result).toMatchObject({
+      completeness: "partial",
+      confidence: "low",
+      noMutationExecuted: true,
+      blockedMetadata: { reason: "rate-limited", httpStatus: 429, retryAttempted: false },
+      data: { results: [] },
+    });
   });
 });
 
@@ -2783,26 +2849,27 @@ describe("getClaimMessages", () => {
 
   it("parses claim messages with sender/receiver roles", async () => {
     const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn().mockResolvedValue({
+      messages: [
+        {
+          id: "msg-1",
+          from: "buyer",
+          to: "seller",
+          message: "Where is my package?",
+          date_created: "2026-06-28T10:00:00Z",
+        },
+        {
+          id: "msg-2",
+          from: "seller",
+          to: "buyer",
+          message: "Shipped yesterday",
+          date_created: "2026-06-29T14:00:00Z",
+          attachments: ["invoice.pdf"],
+        },
+      ],
+    });
     const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue({
-        messages: [
-          {
-            id: "msg-1",
-            from: "buyer",
-            to: "seller",
-            message: "Where is my package?",
-            date_created: "2026-06-28T10:00:00Z",
-          },
-          {
-            id: "msg-2",
-            from: "seller",
-            to: "buyer",
-            message: "Shipped yesterday",
-            date_created: "2026-06-29T14:00:00Z",
-            attachments: ["invoice.pdf"],
-          },
-        ],
-      }),
+      request,
     };
     const tokenState: OAuthTokenState = {
       sellerId,
@@ -2820,6 +2887,7 @@ describe("getClaimMessages", () => {
 
     expect(result.kind).toBe("business-signal");
     expect(result.source).toBe("mercadolibre-api");
+    expect(result.noMutationExecuted).toBe(true);
     expect(result.completeness).toBe("complete");
     expect(result.data.messages).toHaveLength(2);
     const firstMessage = present(result.data.messages[0]);
@@ -2829,6 +2897,9 @@ describe("getClaimMessages", () => {
     expect(firstMessage.to).toBe("seller");
     expect(firstMessage.message).toBe("Where is my package?");
     expect(secondMessage.attachments).toEqual(["invoice.pdf"]);
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/post-purchase/v1/claims/C-1001/messages" }),
+    );
   });
 
   it("returns empty messages with complete confidence", async () => {
@@ -2888,23 +2959,24 @@ describe("getClaimExpectedResolutions", () => {
 
   it("parses expected resolution proposals with id, status, reason", async () => {
     const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn().mockResolvedValue({
+      expected_resolutions: [
+        {
+          id: "res-1",
+          status: "available",
+          reason: "product_not_received",
+          description: "Provide proof of delivery",
+        },
+        {
+          id: "res-2",
+          status: "pending",
+          reason: "damaged_product",
+          description: "Accept return",
+        },
+      ],
+    });
     const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue({
-        expected_resolutions: [
-          {
-            id: "res-1",
-            status: "available",
-            reason: "product_not_received",
-            description: "Provide proof of delivery",
-          },
-          {
-            id: "res-2",
-            status: "pending",
-            reason: "damaged_product",
-            description: "Accept return",
-          },
-        ],
-      }),
+      request,
     };
     const tokenState: OAuthTokenState = {
       sellerId,
@@ -2921,6 +2993,7 @@ describe("getClaimExpectedResolutions", () => {
     const result = await client.getClaimExpectedResolutions!("seller-1", "C-2001");
 
     expect(result.kind).toBe("business-signal");
+    expect(result.noMutationExecuted).toBe(true);
     expect(result.completeness).toBe("complete");
     expect(result.data.expected_resolutions).toHaveLength(2);
     const firstResolution = present(result.data.expected_resolutions[0]);
@@ -2928,6 +3001,35 @@ describe("getClaimExpectedResolutions", () => {
     expect(firstResolution.status).toBe("available");
     expect(firstResolution.reason).toBe("product_not_received");
     expect(firstResolution.description).toBe("Provide proof of delivery");
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/post-purchase/v1/claims/C-2001/expected_resolutions",
+      }),
+    );
+  });
+
+  it("returns complete empty result when a claim has no expected resolutions", async () => {
+    const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn().mockResolvedValue({ expected_resolutions: [] });
+    const transport: MercadoLibreApiTransport = { request };
+    const tokenState: OAuthTokenState = {
+      sellerId,
+      site: "MLC",
+      accessToken: "tok",
+      refreshToken: "rt",
+      scopes: ["read"],
+      status: "connected",
+      connectedAt: new Date("2026-07-01T11:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T13:00:00.000Z"),
+    };
+    const client = createMlcApiClient({ tokenState, transport, now });
+
+    const result = await client.getClaimExpectedResolutions!("seller-1", "C-2002");
+
+    expect(result.completeness).toBe("complete");
+    expect(result.confidence).toBe("medium");
+    expect(result.noMutationExecuted).toBe(true);
+    expect(result.data.expected_resolutions).toEqual([]);
   });
 });
 
@@ -2937,11 +3039,12 @@ describe("getClaimAffectsReputation", () => {
 
   it("returns reputation impact when claim affects reputation", async () => {
     const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn().mockResolvedValue({
+      affects_reputation: true,
+      reason: "mediator completed review",
+    });
     const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue({
-        affects_reputation: true,
-        reason: "mediator completed review",
-      }),
+      request,
     };
     const tokenState: OAuthTokenState = {
       sellerId,
@@ -2958,10 +3061,14 @@ describe("getClaimAffectsReputation", () => {
     const result = await client.getClaimAffectsReputation!("seller-1", "C-3001");
 
     expect(result.kind).toBe("business-signal");
+    expect(result.noMutationExecuted).toBe(true);
     expect(result.completeness).toBe("complete");
     expect(result.confidence).toBe("high");
     expect(result.data.affects_reputation).toBe(true);
     expect(result.data.reason).toBe("mediator completed review");
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/post-purchase/v1/claims/C-3001/affects-reputation" }),
+    );
   });
 });
 
@@ -2971,14 +3078,15 @@ describe("getClaimStatusHistory", () => {
 
   it("parses chronological status/date entries", async () => {
     const { createMlcApiClient } = await import("./index.js");
+    const request = vi.fn().mockResolvedValue({
+      history: [
+        { status: "open", date: "2026-06-28T10:00:00Z" },
+        { status: "under_review", date: "2026-06-29T14:00:00Z" },
+        { status: "resolved", date: "2026-07-01T08:00:00Z" },
+      ],
+    });
     const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue({
-        history: [
-          { status: "open", date: "2026-06-28T10:00:00Z" },
-          { status: "under_review", date: "2026-06-29T14:00:00Z" },
-          { status: "resolved", date: "2026-07-01T08:00:00Z" },
-        ],
-      }),
+      request,
     };
     const tokenState: OAuthTokenState = {
       sellerId,
@@ -2995,6 +3103,7 @@ describe("getClaimStatusHistory", () => {
     const result = await client.getClaimStatusHistory!("seller-1", "C-4001");
 
     expect(result.kind).toBe("business-signal");
+    expect(result.noMutationExecuted).toBe(true);
     expect(result.completeness).toBe("complete");
     expect(result.confidence).toBe("high");
     expect(result.data.history).toHaveLength(3);
@@ -3005,6 +3114,9 @@ describe("getClaimStatusHistory", () => {
     expect(secondHistory.status).toBe("under_review");
     expect(thirdHistory.status).toBe("resolved");
     expect(firstHistory.date).toBe("2026-06-28T10:00:00Z");
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/post-purchase/v1/claims/C-4001/status_history" }),
+    );
   });
 });
 
@@ -3101,5 +3213,30 @@ describe("normalizeImageOrchestration", () => {
     expect(result.kind).toBe("listing");
     expect(result.completeness).toBe("complete");
     expect(result.confidence).toBe("high");
+  });
+
+  it("surfaces diagnostic failure details and does not advance upload", async () => {
+    const { normalizeImageOrchestration } = await import("./index.js");
+    const now = new Date("2026-07-01T12:00:00.000Z");
+
+    const result = normalizeImageOrchestration({
+      sellerId: "seller-1",
+      itemId: "MLC1001",
+      pictureUrl: "https://example.com/image.jpg",
+      categoryId: "MLC1000",
+      now,
+      diagnostic: {
+        hasIssues: true,
+        details: { code: "invalid-background", message: "Background is not allowed" },
+      },
+    });
+
+    expect(result.data.noMutationExecuted).toBe(true);
+    expect(result.data.steps[0]).toEqual({
+      step: "diagnose",
+      status: "failed",
+      result: { code: "invalid-background", message: "Background is not allowed" },
+    });
+    expect(result.data.steps[1]).toEqual({ step: "upload", status: "pending" });
   });
 });
