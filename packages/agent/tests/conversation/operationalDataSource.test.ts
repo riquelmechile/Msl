@@ -55,6 +55,9 @@ function mockReader(
       const snap = snapshots[query.snapshotKind];
       return (snap as OperationalReadModelSnapshot<TData> | null) ?? null;
     },
+    async listSnapshots() {
+      return [];
+    },
   };
   /* eslint-enable @typescript-eslint/require-await */
 }

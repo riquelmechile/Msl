@@ -145,6 +145,7 @@ describe("operational read-model boundaries", () => {
     const reader: OperationalReadModelReader = {
       findEvidence: () => Promise.resolve(null),
       readSnapshot: () => Promise.resolve(null),
+      listSnapshots: () => Promise.resolve([]),
     };
 
     await expect(

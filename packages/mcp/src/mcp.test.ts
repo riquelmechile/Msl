@@ -43,6 +43,40 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
 const { createMcpServer, startMcpServer } = await import("../src/index.js");
 const { createMcpRuntimeDependencies } = await import("../src/runtimeDependencies.js");
 
+function stableSerializeTestValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerializeTestValue(item)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerializeTestValue(entryValue)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function approvedPublishInputSnapshot(overrides: Record<string, unknown> = {}) {
+  return stableSerializeTestValue({
+    attributes: [{ id: "BRAND", value_name: "Generic" }],
+    available_quantity: 10,
+    buying_mode: "buy_it_now",
+    category_id: "MLC1000",
+    condition: "new",
+    currency_id: "CLP",
+    descriptions: [{ plain_text: "Source item" }],
+    listing_type_id: "gold_special",
+    pictures: [{ source: "https://example.test/item.jpg" }],
+    price: 15000,
+    title: "Source item",
+    ...overrides,
+  });
+}
+
 function makeApprovalDependencies(
   save = vi.fn<ApprovalQueueRepository["save"]>().mockResolvedValue(undefined),
 ) {
@@ -123,6 +157,7 @@ function makeSyncProductQueueEntry(
       { field: "mutationExecuted", from: null, to: false },
       { field: "preview.status", from: null, to: "available" },
       { field: "preview.price", from: 10000, to: 15000 },
+      { field: "publishInput.snapshot.v1", from: null, to: approvedPublishInputSnapshot() },
     ],
     rationale: "Prepare a seller-approved Plasticov to Maustian product sync proposal.",
     expiresAt: new Date("2026-01-02T00:00:00.000Z"),
@@ -2736,6 +2771,257 @@ describe("MCP Server", () => {
     const mcpSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
     expect(mcpSource).not.toContain("ProductSyncEngine");
     expect(mcpSource).not.toContain("sync_all");
+  });
+
+  it("execute_sync_product publishes only the approved exact live preview and reserves execution first", async () => {
+    const entry = makeApprovedSyncProductQueueEntry();
+    const { prepareWrite } = makeApprovalDependencies();
+    const approval = makeApprovalRecord(entry);
+    const callOrder: string[] = [];
+    vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+    vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(approval);
+    vi.mocked(prepareWrite.repository.saveApproval).mockImplementation(() => {
+      callOrder.push("reserve");
+      return Promise.resolve();
+    });
+    const publishItem = vi.fn().mockImplementation(() => {
+      callOrder.push("publish");
+      return Promise.resolve({ id: "MLC2001", permalink: "https://example.test/MLC2001" });
+    });
+
+    createMcpServer({
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "maustian-seller",
+        site: "MLC",
+      },
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn().mockResolvedValue(makeSourceItem({ price: 10000 })),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      executeWrite: { publishItem, updateItem: vi.fn() },
+    });
+
+    const result = (await registeredTools.get("execute_sync_product")!({
+      actionId: entry.action.id,
+    })) as { content: { text: string }[] };
+
+    expect(parseToolResult(result)).toMatchObject({
+      status: "executed",
+      actionId: "redacted",
+      itemId: "MLC2001",
+      sourcePrice: 10000,
+      targetPrice: 15000,
+      mutationExecuted: true,
+    });
+    expect(prepareWrite.repository.saveApproval).toHaveBeenCalledWith({
+      ...approval,
+      executionStatus: "executed",
+    });
+    expect(callOrder).toEqual(["reserve", "publish"]);
+  });
+
+  it("execute_sync_product blocks when live source preview drifts from seller approval", async () => {
+    const entry = makeApprovedSyncProductQueueEntry();
+    const { prepareWrite } = makeApprovalDependencies();
+    vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+    vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(makeApprovalRecord(entry));
+    const publishItem = vi.fn();
+
+    createMcpServer({
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "maustian-seller",
+        site: "MLC",
+      },
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn().mockResolvedValue(makeSourceItem({ price: 20000 })),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      executeWrite: { publishItem, updateItem: vi.fn() },
+    });
+
+    const result = (await registeredTools.get("execute_sync_product")!({
+      actionId: entry.action.id,
+    })) as { content: { text: string }[] };
+
+    expect(parseToolResult(result)).toMatchObject({
+      status: "blocked",
+      reason: "preview-drift-detected",
+      mutationExecuted: false,
+    });
+    expect(prepareWrite.repository.saveApproval).not.toHaveBeenCalled();
+    expect(publishItem).not.toHaveBeenCalled();
+  });
+
+  it("execute_sync_product blocks when a non-preview published field drifts from approval", async () => {
+    const entry = makeApprovedSyncProductQueueEntry();
+    const { prepareWrite } = makeApprovalDependencies();
+    vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+    vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(makeApprovalRecord(entry));
+    const publishItem = vi.fn();
+
+    createMcpServer({
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "maustian-seller",
+        site: "MLC",
+      },
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn().mockResolvedValue(makeSourceItem({ title: "Changed source title" })),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      executeWrite: { publishItem, updateItem: vi.fn() },
+    });
+
+    const result = (await registeredTools.get("execute_sync_product")!({
+      actionId: entry.action.id,
+    })) as { content: { text: string }[] };
+
+    expect(parseToolResult(result)).toMatchObject({
+      status: "blocked",
+      reason: "preview-drift-detected",
+      mutationExecuted: false,
+    });
+    expect(prepareWrite.repository.saveApproval).not.toHaveBeenCalled();
+    expect(publishItem).not.toHaveBeenCalled();
+  });
+
+  it("execute_sync_product repeats seller-scope validation before reading or publishing", async () => {
+    const entry = makeApprovedSyncProductQueueEntry();
+    const { prepareWrite } = makeApprovalDependencies();
+    vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+    vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(makeApprovalRecord(entry));
+    const getItem = vi.fn();
+    const publishItem = vi.fn();
+
+    createMcpServer({
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "unauthorized-target-seller",
+        site: "MLC",
+      },
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem,
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+      executeWrite: { publishItem, updateItem: vi.fn() },
+    });
+
+    const result = (await registeredTools.get("execute_sync_product")!({
+      actionId: entry.action.id,
+    })) as { content: { text: string }[] };
+
+    expect(parseToolResult(result)).toMatchObject({
+      status: "blocked",
+      reason: "seller-scope-mismatch",
+      mutationExecuted: false,
+    });
+    expect(getItem).not.toHaveBeenCalled();
+    expect(prepareWrite.repository.saveApproval).not.toHaveBeenCalled();
+    expect(publishItem).not.toHaveBeenCalled();
+  });
+
+  it("execute_sync_product blocks publish when execution reservation cannot be saved", async () => {
+    const entry = makeApprovedSyncProductQueueEntry();
+    const { prepareWrite } = makeApprovalDependencies();
+    vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+    vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(makeApprovalRecord(entry));
+    vi.mocked(prepareWrite.repository.saveApproval).mockRejectedValue(new Error("db down"));
+    const publishItem = vi.fn();
+
+    createMcpServer({
+      prepareWrite,
+      accountRoles: {
+        sourceSellerId: "plasticov-seller",
+        targetSellerId: "maustian-seller",
+        site: "MLC",
+      },
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn().mockResolvedValue(makeSourceItem({ price: 10000 })),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      executeWrite: { publishItem, updateItem: vi.fn() },
+    });
+
+    const result = (await registeredTools.get("execute_sync_product")!({
+      actionId: entry.action.id,
+    })) as { content: { text: string }[] };
+
+    expect(parseToolResult(result)).toMatchObject({
+      status: "blocked",
+      reason: "storage-unavailable",
+      mutationExecuted: false,
+    });
+    expect(publishItem).not.toHaveBeenCalled();
+  });
+
+  it("execute_sync_product treats already executed approvals as idempotent no-publish blocks", async () => {
+    const entry = makeApprovedSyncProductQueueEntry();
+    const { prepareWrite } = makeApprovalDependencies();
+    vi.mocked(prepareWrite.repository.findAction).mockResolvedValue(entry);
+    vi.mocked(prepareWrite.repository.findApproval).mockResolvedValue(
+      makeApprovalRecord(entry, { executionStatus: "executed" }),
+    );
+    const publishItem = vi.fn();
+
+    createMcpServer({
+      prepareWrite,
+      mlcClient: {
+        getListings: vi.fn(),
+        getItem: vi.fn(),
+        getOrders: vi.fn(),
+        getMessages: vi.fn(),
+        getReputation: vi.fn(),
+        getCategoryAttributes: vi.fn(),
+        getCategoryTechnicalSpecs: vi.fn(),
+      },
+      executeWrite: { publishItem, updateItem: vi.fn() },
+    });
+
+    const result = (await registeredTools.get("execute_sync_product")!({
+      actionId: entry.action.id,
+    })) as { content: { text: string }[] };
+
+    expect(parseToolResult(result)).toMatchObject({
+      status: "blocked",
+      reason: "already-executed",
+      mutationExecuted: false,
+    });
+    expect(publishItem).not.toHaveBeenCalled();
   });
 
   it("read_sync_product_status rejects unauthenticated requests before repository lookup", async () => {

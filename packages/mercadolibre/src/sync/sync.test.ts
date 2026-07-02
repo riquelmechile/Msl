@@ -196,7 +196,7 @@ describe("Strategy Applier", () => {
     if (result.applied) {
       expect(result.item.title).toBe("Producto de prueba");
       expect(result.item.category_id).toBe("MLC1000");
-      expect(result.item.pictures).toEqual(["https://example.com/img.jpg"]);
+      expect(result.item.pictures).toEqual([{ source: "https://example.com/img.jpg" }]);
       expect(result.item.attributes).toEqual([{ id: "BRAND", value_name: "Genérica" }]);
     }
   });
@@ -238,6 +238,133 @@ describe("Strategy Applier", () => {
     ]);
 
     expect(preview).toEqual({ status: "unavailable", reason: "strategy-unavailable" });
+  });
+
+  it("preserves variations with individual margin-applied prices", () => {
+    // Simula una lona de camión con 3 medidas diferentes, cada una con precio distinto
+    const item = makeItem({
+      price: 10000,
+      variations: [
+        {
+          id: 1,
+          attribute_combinations: [
+            { name: "Tamaño", value_name: "2m x 3m" },
+          ],
+          price: 10000,
+          available_quantity: 5,
+          sold_quantity: 0,
+          picture_ids: ["pic-1"],
+        },
+        {
+          id: 2,
+          attribute_combinations: [
+            { name: "Tamaño", value_name: "3m x 4m" },
+          ],
+          price: 18000,
+          available_quantity: 3,
+          sold_quantity: 0,
+          picture_ids: ["pic-2"],
+        },
+        {
+          id: 3,
+          attribute_combinations: [
+            { name: "Tamaño", value_name: "4m x 6m" },
+          ],
+          price: 35000,
+          available_quantity: 2,
+          sold_quantity: 0,
+          picture_ids: ["pic-3"],
+        },
+      ],
+    });
+
+    const strategy: MarginStrategy = { type: "margin", percentage: 0.30 };
+    const result = applyStrategies(item, [strategy]);
+
+    expect(result.applied).toBe(true);
+    if (result.applied) {
+      // Base price: 10000 * 1.30 = 13000
+      expect(result.item.price).toBe(13000);
+
+      // Individual variation prices
+      expect(result.item.variations).toHaveLength(3);
+      if (result.item.variations) {
+        // 2m x 3m: 10000 * 1.30 = 13000
+        expect(result.item.variations[0]!.price).toBe(13000);
+        expect(result.item.variations[0]!.available_quantity).toBe(5);
+        expect(result.item.variations[0]!.attribute_combinations[0]!.value_name).toBe("2m x 3m");
+
+        // 3m x 4m: 18000 * 1.30 = 23400
+        expect(result.item.variations[1]!.price).toBe(23400);
+        expect(result.item.variations[1]!.available_quantity).toBe(3);
+
+        // 4m x 6m: 35000 * 1.30 = 45500
+        expect(result.item.variations[2]!.price).toBe(45500);
+        expect(result.item.variations[2]!.available_quantity).toBe(2);
+      }
+    }
+  });
+
+  it("applies stock strategy to each variation individually", () => {
+    const item = makeItem({
+      variations: [
+        {
+          id: 1,
+          attribute_combinations: [{ name: "Color", value_name: "Negro" }],
+          price: 1000,
+          available_quantity: 50,
+          sold_quantity: 0,
+          picture_ids: [],
+        },
+        {
+          id: 2,
+          attribute_combinations: [{ name: "Color", value_name: "Blanco" }],
+          price: 1000,
+          available_quantity: 100,
+          sold_quantity: 0,
+          picture_ids: [],
+        },
+      ],
+    });
+
+    const strategy: StockStrategy = { type: "stock", limit: 10 };
+    const result = applyStrategies(item, [strategy]);
+
+    expect(result.applied).toBe(true);
+    if (result.applied && result.item.variations) {
+      expect(result.item.variations[0]!.available_quantity).toBe(10);
+      expect(result.item.variations[1]!.available_quantity).toBe(10);
+    }
+  });
+
+  it("preserves shipping and sale_terms from source item", () => {
+    const item = makeItem({
+      shipping: { mode: "me2", free_shipping: true, logistic_type: "drop_off" },
+      sale_terms: [
+        { id: "WARRANTY_TYPE", value_id: "2230280", value_name: "Garantía del vendedor" },
+        { id: "WARRANTY_TIME", value_name: "6 meses" },
+      ],
+      warranty: "Garantía del vendedor: 6 meses",
+      currency_id: "CLP",
+      buying_mode: "buy_it_now",
+      listing_type_id: "gold_pro",
+      condition: "new",
+      catalog_product_id: "MLC12345",
+    });
+
+    const result = applyStrategies(item, []);
+
+    expect(result.applied).toBe(true);
+    if (result.applied) {
+      expect(result.item.shipping).toEqual(item.shipping);
+      expect(result.item.sale_terms).toEqual(item.sale_terms);
+      expect(result.item.warranty).toBe("Garantía del vendedor: 6 meses");
+      expect(result.item.currency_id).toBe("CLP");
+      expect(result.item.buying_mode).toBe("buy_it_now");
+      expect(result.item.listing_type_id).toBe("gold_pro");
+      expect(result.item.condition).toBe("new");
+      expect(result.item.catalog_product_id).toBe("MLC12345");
+    }
   });
 });
 
@@ -654,6 +781,20 @@ describe("Product Sync Engine", () => {
       getUserInfo: async () => ({
         sellerId: "",
         data: { id: 0, nickname: "", points: 0, level: "", status: "" },
+        capturedAt: new Date().toISOString(),
+      }),
+      // eslint-disable-next-line @typescript-eslint/require-await
+      relistItem: async () => ({
+        id: "MLC-RELIST-STUB",
+        permalink: "https://example.com/MLC-RELIST-STUB",
+        status: "active",
+        capturedAt: new Date().toISOString(),
+      }),
+      // eslint-disable-next-line @typescript-eslint/require-await
+      createCatalogListing: async () => ({
+        id: "MLC-CAT-STUB",
+        permalink: "https://example.com/MLC-CAT-STUB",
+        status: "active",
         capturedAt: new Date().toISOString(),
       }),
     };

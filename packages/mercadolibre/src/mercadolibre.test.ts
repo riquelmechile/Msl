@@ -4,6 +4,7 @@ import type { CacheFreshness, ReadSnapshot } from "@msl/domain";
 
 import {
   assertCompleteMlcItem,
+  buildNewItemFromMlItem,
   createMlcApiClient,
   createMlClient,
   createOAuthManager,
@@ -18,6 +19,7 @@ import {
   type MlcReadSnapshotFreshness,
   type MercadoLibreApiTransport,
   type MlcPromotionItemsSummary,
+  type MlItem,
   type OAuthManager,
   type OAuthTokenState,
 } from "./index.js";
@@ -1873,9 +1875,13 @@ describe("MlClient (stub mode)", () => {
       title: "Nuevo producto",
       category_id: "MLC1000",
       price: 9900,
+      currency_id: "CLP",
       available_quantity: 10,
-      pictures: ["https://example.com/img.jpg"],
-      description: "Descripción de prueba",
+      buying_mode: "buy_it_now",
+      listing_type_id: "gold_special",
+      condition: "new",
+      pictures: [{ source: "https://example.com/img.jpg" }],
+      descriptions: [{ plain_text: "Descripción de prueba" }],
       attributes: [{ id: "BRAND", value_name: "Marca X" }],
     });
 
@@ -1942,6 +1948,60 @@ describe("MlClient (stub mode)", () => {
   it("throws on API call for unknown seller", async () => {
     const { client } = await setupClient();
     await expect(client.getItems("unknown-seller")).rejects.toThrow("No stored token");
+  });
+
+  it("relistItem returns write snapshot in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const result = await client.relistItem("seller-1", "MLC1001", {
+      price: 12000,
+      quantity: 5,
+      listing_type_id: "gold_special",
+    });
+
+    expect(result.id).toBeDefined();
+    expect(result.permalink).toContain("mercadolibre");
+    expect(result.status).toBe("active");
+    expect(result.capturedAt).toBeDefined();
+  });
+
+  it("relistItem sends variations payload in stub mode", async () => {
+    const { client } = await setupClient("seller-2");
+    const result = await client.relistItem("seller-2", "MLC2001", {
+      price: 15000,
+      quantity: 3,
+      variations: [
+        { id: 1000, price: 5000, quantity: 1 },
+        { id: 1001, price: 7000, quantity: 2 },
+      ],
+    });
+
+    expect(result.id).toBeDefined();
+    expect(result.status).toBe("active");
+  });
+
+  it("createCatalogListing returns write snapshot in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const result = await client.createCatalogListing("seller-1", {
+      item_id: "MLC1001",
+      catalog_product_id: "MLC6005934",
+    });
+
+    expect(result.id).toBeDefined();
+    expect(result.permalink).toContain("mercadolibre");
+    expect(result.status).toBe("active");
+    expect(result.capturedAt).toBeDefined();
+  });
+
+  it("createCatalogListing receives variation_id in stub mode", async () => {
+    const { client } = await setupClient("seller-1");
+    const result = await client.createCatalogListing("seller-1", {
+      item_id: "MLC1001",
+      catalog_product_id: "MLC6005934",
+      variation_id: 5000,
+    });
+
+    expect(result.id).toBeDefined();
+    expect(result.status).toBe("active");
   });
 });
 
@@ -3718,5 +3778,350 @@ describe("normalizeImageOrchestration", () => {
         expect(path).not.toContain("/ai");
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildNewItemFromMlItem with variations and catalog fields
+// ---------------------------------------------------------------------------
+
+describe("buildNewItemFromMlItem", () => {
+  it("maps pictures from MlItem { url } to NewItem { source }", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Zapatillas Running",
+      price: 29990,
+      available_quantity: 10,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [
+        { url: "https://example.com/img1.jpg" },
+        { url: "https://example.com/img2.jpg" },
+      ],
+      attributes: [{ id: "BRAND", value_name: "Nike" }],
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.pictures).toEqual([
+      { source: "https://example.com/img1.jpg" },
+      { source: "https://example.com/img2.jpg" },
+    ]);
+  });
+
+  it("preserves variations from the source MlItem", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Remera con variantes",
+      price: 10000,
+      available_quantity: 20,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [{ url: "https://example.com/img.jpg" }],
+      attributes: [{ id: "BRAND", value_name: "Adidas" }],
+      variations: [
+        {
+          id: 1000,
+          attribute_combinations: [
+            { name: "Color", value_id: "52049", value_name: "Negro" },
+            { name: "Talle", value_id: "123", value_name: "M" },
+          ],
+          price: 10000,
+          available_quantity: 4,
+          sold_quantity: 0,
+          picture_ids: ["pic-1"],
+          attributes: [
+            { id: "SELLER_SKU", value_name: "REM-NEG-M" },
+          ],
+        },
+        {
+          id: 1001,
+          attribute_combinations: [
+            { name: "Color", value_id: "52005", value_name: "Marrón" },
+            { name: "Talle", value_id: "124", value_name: "L" },
+          ],
+          price: 15000,
+          available_quantity: 2,
+          sold_quantity: 1,
+          picture_ids: ["pic-2", "pic-3"],
+        },
+      ],
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.variations).toHaveLength(2);
+
+    const variation0 = present(result.variations?.[0]);
+    expect(variation0.price).toBe(10000);
+    expect(variation0.available_quantity).toBe(4);
+    expect(variation0.picture_ids).toEqual(["pic-1"]);
+    expect(variation0.attribute_combinations).toEqual([
+      { name: "Color", value_id: "52049", value_name: "Negro" },
+      { name: "Talle", value_id: "123", value_name: "M" },
+    ]);
+    expect(variation0.attributes).toEqual([
+      { id: "SELLER_SKU", value_name: "REM-NEG-M" },
+    ]);
+
+    const variation1 = present(result.variations?.[1]);
+    expect(variation1.price).toBe(15000);
+    expect(variation1.available_quantity).toBe(2);
+    expect(variation1.picture_ids).toEqual(["pic-2", "pic-3"]);
+    expect(variation1.attributes).toBeUndefined();
+  });
+
+  it("allows overrides to set catalog_product_id and catalog_listing", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Producto base",
+      price: 5000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+    };
+
+    const result = buildNewItemFromMlItem(source, {
+      catalog_product_id: "MLC6005934",
+      catalog_listing: true,
+    });
+
+    expect(result.catalog_product_id).toBe("MLC6005934");
+    expect(result.catalog_listing).toBe(true);
+  });
+
+  it("preserves catalog_product_id from source MlItem", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Producto catálogo",
+      price: 5000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+      catalog_product_id: "MLC777",
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.catalog_product_id).toBe("MLC777");
+  });
+
+  it("allows overrides to override individual variation prices and quantities", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item con variantes",
+      price: 10000,
+      available_quantity: 20,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [{ url: "https://example.com/img.jpg" }],
+      attributes: [],
+      variations: [
+        {
+          id: 1000,
+          attribute_combinations: [{ name: "Color", value_id: "1", value_name: "Rojo" }],
+          price: 10000,
+          available_quantity: 4,
+          sold_quantity: 0,
+          picture_ids: [],
+        },
+      ],
+    };
+
+    // Override the overall price
+    const result = buildNewItemFromMlItem(source, { price: 12000 });
+
+    expect(result.price).toBe(12000);
+    expect(result.variations).toHaveLength(1);
+    // Variations preserve their original prices
+    expect(present(result.variations?.[0]).price).toBe(10000);
+  });
+
+  it("preserves shipping from source MlItem", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item con envío",
+      price: 10000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+      shipping: {
+        mode: "me2",
+        free_shipping: false,
+        logistic_type: "drop_off",
+        tags: ["self_service_in"],
+        dimensions: null,
+      },
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.shipping).toEqual({
+      mode: "me2",
+      free_shipping: false,
+      logistic_type: "drop_off",
+      tags: ["self_service_in"],
+      dimensions: null,
+    });
+  });
+
+  it("preserves sale_terms from source MlItem", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item con garantía",
+      price: 10000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+      sale_terms: [
+        { id: "WARRANTY_TYPE", value_id: "2230280", value_name: "Garantía del vendedor" },
+        { id: "WARRANTY_TIME", value_name: "3 meses" },
+      ],
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.sale_terms).toEqual([
+      { id: "WARRANTY_TYPE", value_id: "2230280", value_name: "Garantía del vendedor" },
+      { id: "WARRANTY_TIME", value_name: "3 meses" },
+    ]);
+  });
+
+  it("preserves warranty from source MlItem", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item con garantía",
+      price: 10000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+      warranty: "Garantía del vendedor: 12 meses",
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.warranty).toBe("Garantía del vendedor: 12 meses");
+  });
+
+  it("uses source currency_id as default instead of hardcoded CLP", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item en USD",
+      price: 100,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+      currency_id: "USD",
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.currency_id).toBe("USD");
+  });
+
+  it("falls back to CLP when source has no currency_id", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item sin moneda explícita",
+      price: 10000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.currency_id).toBe("CLP");
+  });
+
+  it("uses source buying_mode, listing_type_id, and condition as defaults", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item usado subasta",
+      price: 5000,
+      available_quantity: 1,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+      buying_mode: "auction",
+      listing_type_id: "gold_premium",
+      condition: "used",
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.buying_mode).toBe("auction");
+    expect(result.listing_type_id).toBe("gold_premium");
+    expect(result.condition).toBe("used");
+  });
+
+  it("falls back to defaults when source has no buying_mode, listing_type_id, or condition", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item sin metadatos",
+      price: 10000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+    };
+
+    const result = buildNewItemFromMlItem(source);
+
+    expect(result.buying_mode).toBe("buy_it_now");
+    expect(result.listing_type_id).toBe("gold_special");
+    expect(result.condition).toBe("new");
+  });
+
+  it("allows overrides to supersede source shipping and sale_terms", () => {
+    const source: MlItem = {
+      id: "MLC1001",
+      title: "Item",
+      price: 10000,
+      available_quantity: 5,
+      category_id: "MLC1000",
+      seller_id: 12345,
+      status: "active",
+      pictures: [],
+      attributes: [],
+      shipping: { mode: "me2", free_shipping: false },
+      sale_terms: [{ id: "WARRANTY_TYPE", value_name: "Vendedor" }],
+    };
+
+    const result = buildNewItemFromMlItem(source, {
+      shipping: { mode: "me1", free_shipping: true },
+      sale_terms: [{ id: "WARRANTY_TYPE", value_name: "Fabricante" }],
+    });
+
+    expect(result.shipping).toEqual({ mode: "me1", free_shipping: true });
+    expect(result.sale_terms).toEqual([{ id: "WARRANTY_TYPE", value_name: "Fabricante" }]);
   });
 });

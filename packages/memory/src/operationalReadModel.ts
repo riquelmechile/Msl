@@ -52,6 +52,11 @@ export type OperationalReadModelReader = {
   readSnapshot<TData>(
     query: OperationalEvidenceQuery,
   ): Promise<OperationalReadModelSnapshot<TData> | null>;
+  listSnapshots<TData>(
+    sellerId: string,
+    kind: string,
+    options?: { limit?: number; status?: string; categoryId?: string },
+  ): Promise<Array<{ itemId: string; data: TData; capturedAt: string; freshness: string }>>;
 };
 
 export type OperationalReadModelWriter = {
@@ -177,6 +182,13 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
     WHERE seller_id = ? AND kind = ?
   `);
 
+  const listSnapshotsStmt = db.prepare(`
+    SELECT * FROM operational_snapshots
+    WHERE seller_id = ? AND kind = ?
+    ORDER BY captured_at DESC
+    LIMIT ?
+  `);
+
   function matchesFreshnessFilter(
     row: SnapshotRow,
     filter: "fresh" | "allow-stale-with-warning" | undefined,
@@ -241,6 +253,37 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
         confidence: row.confidence as ReadSnapshotConfidence,
         evidence: operationalEvidenceFromRow(row),
       };
+    },
+
+    async listSnapshots<TData>(
+      sellerId: string,
+      kind: string,
+      options?: { limit?: number; status?: string; categoryId?: string },
+    ): Promise<Array<{ itemId: string; data: TData; capturedAt: string; freshness: string }>> {
+      const limit = options?.limit ?? 200;
+      const rows = listSnapshotsStmt.all(sellerId, kind, limit) as SnapshotRow[];
+
+      return rows
+        .map(row => {
+          let data: TData;
+          try {
+            data = JSON.parse(row.data_json) as TData;
+          } catch {
+            return null;
+          }
+
+          // Client-side filtering
+          if (options?.status && (data as Record<string, unknown>)?.status !== options.status) return null;
+          if (options?.categoryId && (data as Record<string, unknown>)?.category_id !== options.categoryId) return null;
+
+          return {
+            itemId: row.item_id,
+            data,
+            capturedAt: row.captured_at,
+            freshness: row.freshness,
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null);
     },
 
     async upsertSnapshot<TData>(snapshot: OperationalReadModelSnapshot<TData>): Promise<void> {

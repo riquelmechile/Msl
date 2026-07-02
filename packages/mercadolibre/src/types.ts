@@ -1,5 +1,42 @@
 // Types for dual-account ML API integration (PR 1+2)
 
+export type MlShipping = {
+  mode?: string;
+  local_pick_up?: boolean;
+  free_shipping?: boolean;
+  logistic_type?: string;
+  dimensions?: string | null;
+  tags?: string[];
+};
+
+export type MlSaleTerm = {
+  id: string;
+  name?: string;
+  value_id?: string | null;
+  value_name?: string;
+};
+
+export type MlItemVariation = {
+  id: number;
+  attribute_combinations: Array<{
+    id?: string;
+    name?: string;
+    value_id?: string;
+    value_name?: string;
+  }>;
+  price: number;
+  available_quantity: number;
+  sold_quantity: number;
+  picture_ids: string[];
+  catalog_product_id?: string | null;
+  attributes?: Array<{
+    id: string;
+    name?: string;
+    value_id?: string | null;
+    value_name?: string;
+  }>;
+};
+
 export type MlItem = {
   id: string;
   title: string;
@@ -10,16 +47,52 @@ export type MlItem = {
   status: "active" | "paused" | "closed";
   pictures: Array<{ url: string }>;
   attributes: Array<{ id: string; value_name: string }>;
+  variations?: MlItemVariation[];
+  catalog_product_id?: string | null;
+  catalog_listing?: boolean;
+  shipping?: MlShipping;
+  sale_terms?: MlSaleTerm[];
+  currency_id?: string;
+  buying_mode?: string;
+  listing_type_id?: string;
+  condition?: string;
+  warranty?: string;
+  permalink?: string;
+  domain_id?: string;
 };
 
 export type NewItem = {
   title: string;
   category_id: string;
   price: number;
+  currency_id: string;
   available_quantity: number;
-  pictures: string[];
-  description: string;
-  attributes: Array<{ id: string; value_name: string }>;
+  buying_mode: string;
+  listing_type_id: string;
+  condition: string;
+  pictures: Array<{ source: string }>;
+  descriptions?: Array<{ plain_text: string }>;
+  attributes?: Array<{ id: string; value_name: string }>;
+  warranty?: string;
+  video_id?: string;
+  shipping?: MlShipping;
+  sale_terms?: MlSaleTerm[];
+  variations?: Array<{
+    attribute_combinations: Array<{
+      name?: string;
+      value_id?: string;
+      value_name?: string;
+    }>;
+    price: number;
+    available_quantity: number;
+    picture_ids?: string[];
+    attributes?: Array<{
+      id: string;
+      value_name?: string;
+    }>;
+  }>;
+  catalog_product_id?: string;
+  catalog_listing?: boolean;
 };
 
 export type MlOrder = {

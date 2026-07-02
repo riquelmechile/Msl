@@ -19,8 +19,10 @@ import {
   type RiskLevel,
 } from "@msl/domain";
 import {
+  applyStrategies,
   assertCompleteMlcItem,
   assertPlasticovToMaustianDirection,
+  buildNewItemFromMlItem,
   getMlAccountRoleConfig,
   normalizeImageOrchestration,
   normalizeMlcItemId,
@@ -29,7 +31,9 @@ import {
   type MlcApiClient,
   type MlcImageOrchestrationSummary,
   type MlItem,
+  type MlWriteSnapshot,
   type MlAccountRoleConfig,
+  type NewItem,
   type Strategy,
 } from "@msl/mercadolibre";
 import { z } from "zod";
@@ -163,6 +167,11 @@ const mcpReadSyncProductExecutionReadinessInputSchema = {
   msl_api_key: z.string().optional(),
 };
 
+const mcpExecuteSyncProductInputSchema = {
+  actionId: z.string(),
+  msl_api_key: z.string().optional(),
+};
+
 const mcpReadProductAdsInsightsInputSchema = {
   sellerId: z.string(),
   dateFrom: z.string().optional(),
@@ -229,6 +238,11 @@ type ApproveSyncProductProposalInput = {
 };
 
 type ReadSyncProductExecutionReadinessInput = {
+  actionId?: unknown;
+  msl_api_key?: string;
+};
+
+type ExecuteSyncProductInput = {
   actionId?: unknown;
   msl_api_key?: string;
 };
@@ -344,6 +358,33 @@ type ApproveSyncProductProposalApprovedResponse = {
 type ApproveSyncProductProposalResponse =
   | ApproveSyncProductProposalApprovedResponse
   | ApproveSyncProductProposalUnavailableResponse;
+
+type ExecuteSyncProductResultResponse = {
+  status: "executed";
+  actionId: "redacted";
+  itemId: string;
+  permalink: string;
+  sourcePrice: number;
+  targetPrice: number;
+  strategiesApplied: number;
+  mutationExecuted: true;
+};
+
+type ExecuteSyncProductBlockedResponse = {
+  status: "blocked";
+  actionId: "redacted";
+  reason: string;
+  details?: string;
+  mutationExecuted: false;
+};
+
+type ExecuteSyncProductErrorResponse = {
+  status: "error";
+  actionId: "redacted";
+  reason: string;
+  details: string;
+  mutationExecuted: false;
+};
 
 function trimmedString(value: unknown): string | undefined {
   return typeof value === "string" ? value.trim() : undefined;
@@ -753,6 +794,48 @@ function previewExactChanges(preview: SyncProductPreview): ExactChange[] {
   ];
 }
 
+const APPROVED_PUBLISH_INPUT_SNAPSHOT_FIELD = "publishInput.snapshot.v1";
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function approvedPublishInputSnapshot(newItem: NewItem): string {
+  return stableSerialize(newItem);
+}
+
+function publishInputExactChange(newItem: NewItem): ExactChange {
+  return {
+    field: APPROVED_PUBLISH_INPUT_SNAPSHOT_FIELD,
+    from: null,
+    to: approvedPublishInputSnapshot(newItem),
+  };
+}
+
+function compareStoredPublishInput(input: {
+  entry: ApprovalQueueEntry;
+  newItem: NewItem;
+}): "matched" | "drifted" {
+  const storedSnapshot = input.entry.action.exactChange.find(
+    (change) => change.field === APPROVED_PUBLISH_INPUT_SNAPSHOT_FIELD,
+  )?.to;
+
+  return storedSnapshot === approvedPublishInputSnapshot(input.newItem) ? "matched" : "drifted";
+}
+
 function unavailableSyncProductStatus(): ReadSyncProductStatusUnavailableResponse {
   return {
     status: "unavailable",
@@ -1155,6 +1238,7 @@ const syncProductExecutionReadinessFoundation = {
   approvalBindingMatches,
   uniqueReadinessReasons,
   compareStoredPreview,
+  compareStoredPublishInput,
   validateSellerAccountScope,
   validateTargetAvailability,
   idempotencyCandidateFor,
@@ -1448,6 +1532,31 @@ export function createMcpServer(config: McpServerConfig = {}) {
         sourceSellerId,
         itemId: safeItemId,
       });
+      const publishInputChanges: ExactChange[] = [];
+      if (preview.status === "available" && config.syncPreview) {
+        try {
+          const sourceItem = assertCompleteMlcItem(
+            await config.syncPreview.getSourceItem(sourceSellerId, safeItemId),
+          );
+          const strategies = await config.syncPreview.getStrategies();
+          if (areStrategies(strategies)) {
+            const applied = applyStrategies(sourceItem, strategies);
+            if (applied.applied) {
+              publishInputChanges.push(
+                publishInputExactChange(
+                  buildNewItemFromMlItem(sourceItem, {
+                    price: applied.item.price,
+                    available_quantity: applied.item.available_quantity,
+                  }),
+                ),
+              );
+            }
+          }
+        } catch {
+          // The preview remains the approval-facing evidence; without a publish
+          // input snapshot, execution will fail closed on drift comparison.
+        }
+      }
       const prepareTool = createPreparedActionTool(config.prepareWrite);
       let response: Awaited<ReturnType<typeof prepareTool.execute>>;
       try {
@@ -1462,6 +1571,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
             { field: "syncIntent", from: null, to: "prepare-only product sync proposal" },
             { field: "mutationExecuted", from: null, to: false },
             ...previewExactChanges(preview),
+            ...publishInputChanges,
           ],
           rationale,
           expiresAt: parsedExpiresAt,
@@ -1577,6 +1687,329 @@ export function createMcpServer(config: McpServerConfig = {}) {
       );
     },
   );
+
+  // ── execute_sync_product ───────────────────────────────────────────
+  if (config.executeWrite) {
+    server.registerTool(
+      "execute_sync_product",
+      {
+        description:
+          "Executes an approved sync_product proposal by publishing/updating the target listing on MercadoLibre.",
+        inputSchema: mcpExecuteSyncProductInputSchema,
+      },
+    async (request) => {
+      const execRequest = request as ExecuteSyncProductInput;
+      if (!validateApiKey(execRequest.msl_api_key)) {
+        return unauthorizedResult();
+      }
+
+      const actionId = trimmedString(execRequest.actionId);
+      if (!actionId || !config.prepareWrite) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "invalid-request",
+          details: "Missing actionId or prepare-write runtime.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      if (!config.executeWrite) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "write-unavailable",
+          details: "Execute write capability is not available in this MCP runtime.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      // ── Look up proposal ──────────────────────────────────────────
+      let entry: ApprovalQueueEntry | null;
+      try {
+        entry = await config.prepareWrite.repository.findAction(actionId);
+      } catch {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "storage-unavailable",
+          details: "Approval storage is unavailable.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      if (!isSupportedSyncProductProposal(entry)) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "proposal-not-found",
+          details: "Proposal not found or not a supported sync_product proposal.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      // ── Validate approval state ────────────────────────────────────
+      const now = config.prepareWrite.clock.now();
+      if (entry.action.approvalStatus !== "approved" || entry.status !== "approved") {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "not-approved",
+          details: "Proposal has not been approved.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      if (approvalExpired(entry, now)) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "proposal-expired",
+          details: "Proposal has expired.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      let approval: ApprovalRecord | null;
+      try {
+        approval = await config.prepareWrite.repository.findApproval(actionId);
+      } catch {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "storage-unavailable",
+          details: "Approval storage is unavailable.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      if (approval?.executionStatus === "executed") {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "already-executed",
+          details: "This proposal has already been executed.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      if (!approvalBindingMatches(entry, approval)) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "approval-binding-mismatch",
+          details: "Approval binding does not match the current proposal state.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      const boundApproval = approval;
+      if (boundApproval === null) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "approval-binding-mismatch",
+          details: "Approval binding does not match the current proposal state.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      // ── Get source item ────────────────────────────────────────────
+      const sourceSellerId = entry.action.exactChange.find(
+        (change) => change.field === "sourceSellerId",
+      )?.to;
+      const targetSellerId = entry.action.exactChange.find(
+        (change) => change.field === "targetSellerId",
+      )?.to;
+
+      if (typeof sourceSellerId !== "string" || typeof targetSellerId !== "string") {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "invalid-proposal",
+          details: "Proposal is missing source or target seller IDs.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      let executionRoleConfig: MlAccountRoleConfig;
+      try {
+        executionRoleConfig = config.accountRoles ?? getMlAccountRoleConfig();
+      } catch {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "seller-scope-mismatch",
+          details: "MercadoLibre account roles are not configured for this execution boundary.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      const executionRoleFailure = validateMlcRoleConfig(executionRoleConfig);
+      if (
+        executionRoleFailure ||
+        validateSellerAccountScope({ entry, roleConfig: executionRoleConfig }) !== null
+      ) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "seller-scope-mismatch",
+          details:
+            "Execution seller scope does not match the configured Plasticov to Maustian MLC boundary.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      if (!config.mlcClient) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "read-unavailable",
+          details: "MercadoLibre read client is not available.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      let sourceItem: MlItem;
+      try {
+        sourceItem = await config.mlcClient.getItem(
+          sourceSellerId,
+          entry.action.target.listingId,
+        );
+      } catch (err) {
+        return jsonResult({
+          status: "error",
+          actionId: "redacted",
+          reason: "source-read-failed",
+          details: `Could not read source item: ${err instanceof Error ? err.message : String(err)}`,
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductErrorResponse);
+      }
+
+      // ── Get strategies ─────────────────────────────────────────────
+      let strategies: Strategy[];
+      if (config.syncPreview) {
+        try {
+          strategies = await config.syncPreview.getStrategies();
+          if (!areStrategies(strategies)) {
+            strategies = [];
+          }
+        } catch {
+          strategies = [];
+        }
+      } else {
+        strategies = [];
+      }
+
+      // ── Apply strategies ───────────────────────────────────────────
+      const applied = applyStrategies(sourceItem, strategies);
+      if (!applied.applied) {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "strategy-blocked",
+          details: `Strategy application blocked the item: ${applied.reason}`,
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      const livePreview = previewStrategyChanges(sourceItem, strategies);
+      const executablePreview: SyncProductPreview =
+        livePreview.status === "available"
+          ? { ...livePreview, evidenceSource: "read-only-item" }
+          : livePreview;
+      const previewState = compareStoredPreview({ entry, preview: executablePreview });
+      if (executablePreview.status === "unavailable" || previewState !== "matched") {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "preview-drift-detected",
+          details:
+            "Live source data no longer matches the seller-approved sync_product preview.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      const newItem = buildNewItemFromMlItem(sourceItem, {
+        price: applied.item.price,
+        available_quantity: applied.item.available_quantity,
+      });
+
+      if (compareStoredPublishInput({ entry, newItem }) !== "matched") {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "preview-drift-detected",
+          details:
+            "Live publish input no longer matches the seller-approved sync_product snapshot.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      const executingApproval: ApprovalRecord = {
+        ...boundApproval,
+        executionStatus: "executed",
+      };
+
+      try {
+        await config.prepareWrite.repository.saveApproval(executingApproval);
+      } catch {
+        return jsonResult({
+          status: "blocked",
+          actionId: "redacted",
+          reason: "storage-unavailable",
+          details: "Execution status could not be reserved before publishing.",
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductBlockedResponse);
+      }
+
+      // ── Execute write ──────────────────────────────────────────────
+      let writeSnapshot: MlWriteSnapshot;
+      try {
+        writeSnapshot = await config.executeWrite.publishItem(
+          targetSellerId,
+          newItem,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        let reason = "publish-failed";
+        let details = message;
+
+        if (/401|403/i.test(message)) {
+          reason = "token-error";
+          details = "OAuth token expired or revoked. Reconnect the seller account.";
+        } else if (/429/i.test(message)) {
+          reason = "rate-limited";
+          details = "MercadoLibre API rate limit reached. Retry after the rate window resets.";
+        } else if (/400/i.test(message)) {
+          reason = "validation-error";
+          details = `MercadoLibre rejected the item: ${message}`;
+        }
+
+        return jsonResult({
+          status: "error",
+          actionId: "redacted",
+          reason,
+          details,
+          mutationExecuted: false,
+        } satisfies ExecuteSyncProductErrorResponse);
+      }
+
+      const strategiesApplied = strategies.length;
+
+      return jsonResult({
+        status: "executed",
+        actionId: "redacted",
+        itemId: writeSnapshot.id,
+        permalink: writeSnapshot.permalink,
+        sourcePrice: sourceItem.price,
+        targetPrice: newItem.price,
+        strategiesApplied,
+        mutationExecuted: true,
+      } satisfies ExecuteSyncProductResultResponse);
+    },
+  );
+  }
 
   // ── check_account ─────────────────────────────────────────────────
   server.registerTool(
@@ -2222,6 +2655,14 @@ export type McpServerConfig = {
   prepareWrite?: {
     repository: ApprovalQueueRepository;
     clock: Clock;
+  };
+  executeWrite?: {
+    publishItem(sellerId: string, item: NewItem): Promise<MlWriteSnapshot>;
+    updateItem(
+      sellerId: string,
+      itemId: string,
+      updates: Partial<NewItem>,
+    ): Promise<MlWriteSnapshot>;
   };
 };
 

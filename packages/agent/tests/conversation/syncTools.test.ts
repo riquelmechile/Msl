@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 /* eslint-disable @typescript-eslint/require-await */
 
@@ -25,9 +25,14 @@ import {
   createFindAutomatedPriceItemsTool,
   createReadSellerPromotionsTool,
   createReadItemPromotionsTool,
+  createCreateListingTool,
+  createUpdateListingTool,
+  createChangeItemStatusTool,
+  createManageVariationsTool,
+  createReadMyCatalogTool,
 } from "../../src/conversation/syncTools.js";
 import { createAgentLoop } from "../../src/conversation/agentLoop.js";
-import { createGraphEngine } from "@msl/memory";
+import { createGraphEngine, type OperationalReadModelReader } from "@msl/memory";
 import type { ConversationState } from "../../src/conversation/types.js";
 
 // ---------------------------------------------------------------------------
@@ -251,6 +256,20 @@ function createStubMlClient(): MlClient {
         data: userInfo,
         capturedAt: "2026-06-26T10:00:00Z",
       }) satisfies MlUserSnapshot,
+    relistItem: async () =>
+      ({
+        id: "MLC-RELIST-1",
+        permalink: "https://articulo.mercadolibre.cl/MLC-RELIST-1",
+        status: "active",
+        capturedAt: "2026-06-26T10:00:00Z",
+      }) satisfies MlWriteSnapshot,
+    createCatalogListing: async () =>
+      ({
+        id: "MLC-CATALOG-1",
+        permalink: "https://articulo.mercadolibre.cl/MLC-CATALOG-1",
+        status: "active",
+        capturedAt: "2026-06-26T10:00:00Z",
+      }) satisfies MlWriteSnapshot,
   };
 }
 
@@ -998,6 +1017,96 @@ describe("price intelligence tools — unit", () => {
           },
         ],
       },
+    });
+  });
+});
+
+describe("listing mutation and local catalog tools — unit", () => {
+  it("exposes create_listing and blocks direct execution before seller approval", async () => {
+    const publishItem = vi.fn<NonNullable<MlClient["publishItem"]>>().mockResolvedValue({
+      id: "MLC-NEW-1",
+      permalink: "https://articulo.mercadolibre.cl/MLC-NEW-1",
+      status: "active",
+      capturedAt: "2026-06-26T10:00:00Z",
+    });
+    const tool = createCreateListingTool({ ...createStubMlClient(), publishItem });
+
+    const result = await tool.execute({
+      sellerId: "maustian",
+      title: "New product",
+      category_id: "MLC1000",
+      price: 12990,
+      pictures: [{ source: "https://example.test/picture.jpg" }],
+    });
+
+    expect(tool.name).toBe("create_listing");
+    expect(result).toMatchObject({ status: "approval_required", tool: "create_listing" });
+    expect(publishItem).not.toHaveBeenCalled();
+  });
+
+  it("executes update_listing, change_item_status, and manage_variations after approval", async () => {
+    const updateItem = vi.fn<NonNullable<MlClient["updateItem"]>>().mockResolvedValue({
+      id: "MLC1001",
+      permalink: "https://articulo.mercadolibre.cl/MLC1001",
+      status: "active",
+      capturedAt: "2026-06-26T10:00:00Z",
+    });
+    const mlClient: MlClient = { ...createStubMlClient(), updateItem };
+
+    await expect(
+      createUpdateListingTool(mlClient, undefined, { approvedExecution: true }).execute({
+        sellerId: "maustian",
+        itemId: "MLC1001",
+        price: 15990,
+      }),
+    ).resolves.toMatchObject({ status: "updated", itemId: "MLC1001", fields: ["price"] });
+
+    await expect(
+      createChangeItemStatusTool(mlClient, undefined, { approvedExecution: true }).execute({
+        sellerId: "maustian",
+        itemId: "MLC1001",
+        status: "paused",
+      }),
+    ).resolves.toMatchObject({ status: "ok", itemId: "MLC1001", newStatus: "paused" });
+
+    await expect(
+      createManageVariationsTool(mlClient, undefined, { approvedExecution: true }).execute({
+        sellerId: "maustian",
+        itemId: "MLC1001",
+        action: "add",
+        attributes: [{ name: "Size", value_name: "M" }],
+        price: 15990,
+        available_quantity: 3,
+      }),
+    ).resolves.toMatchObject({ status: "updated", itemId: "MLC1001", action: "add" });
+
+    expect(updateItem).toHaveBeenCalledWith("maustian", "MLC1001", { price: 15990 });
+    expect(updateItem).toHaveBeenCalledWith("maustian", "MLC1001", { status: "paused" });
+    const variationUpdate = updateItem.mock.calls[2]?.[2] as { variations?: unknown } | undefined;
+    expect(Array.isArray(variationUpdate?.variations)).toBe(true);
+  });
+
+  it("reads read_my_catalog from the local operational model without ML API calls", async () => {
+    const listSnapshots = vi.fn<OperationalReadModelReader["listSnapshots"]>().mockResolvedValue([
+      {
+        itemId: "MLC1001",
+        data: { title: "Catalog item", status: "active", price: 12990, currency_id: "CLP" },
+        capturedAt: "2026-07-02T00:00:00.000Z",
+        freshness: "fresh",
+      },
+    ]);
+    const reader = {
+      listSnapshots,
+    } as unknown as OperationalReadModelReader;
+
+    const tool = createReadMyCatalogTool(reader);
+    const result = await tool.execute({ sellerId: "maustian", status: "active" });
+
+    expect(tool.name).toBe("read_my_catalog");
+    expect(result).toMatchObject({ sellerId: "maustian", total: 1, active: 1 });
+    expect(listSnapshots).toHaveBeenCalledWith("maustian", "listing", {
+      limit: 200,
+      status: "active",
     });
   });
 });

@@ -31,6 +31,9 @@ function mockReader(
     async readSnapshot() {
       return null;
     },
+    async listSnapshots() {
+      return [];
+    },
   };
   /* eslint-enable @typescript-eslint/require-await */
 }

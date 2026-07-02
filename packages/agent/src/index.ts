@@ -80,6 +80,8 @@ export type { BackgroundIngestionConfig } from "./conversation/backgroundIngesti
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";
 
+export { OperationalEvidenceProvider } from "./conversation/operationalEvidenceProvider.js";
+
 // ── Tools (function-calling) ────────────────────────────────────────
 export type { ToolDefinition } from "./conversation/tools.js";
 export {

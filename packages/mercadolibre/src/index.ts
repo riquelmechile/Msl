@@ -1045,8 +1045,11 @@ export type {
   MlCategory,
   MlCategoriesSnapshot,
   MlItem,
+  MlItemVariation,
   MlOrder,
   MlQuestion,
+  MlSaleTerm,
+  MlShipping,
   MlUserInfo,
   MlUserSnapshot,
   MlWriteSnapshot,
@@ -1070,6 +1073,104 @@ export {
   type MlAccountRole,
   type MlAccountRoleConfig,
 } from "./accountRoles.js";
+
+// ---------------------------------------------------------------------------
+// buildNewItemFromMlItem
+// ---------------------------------------------------------------------------
+
+/**
+ * Constructs a valid {@link NewItem} from a source {@link MlItem} with
+ * optional overrides for price, stock, title, and other listing fields.
+ *
+ * Uses source.item defaults (currency_id, buying_mode, listing_type_id,
+ * condition) when available and falls back to CLP / buy_it_now /
+ * gold_special / new when the source item does not carry explicit values.
+ */
+export function buildNewItemFromMlItem(
+  sourceItem: MlItem,
+  overrides?: Partial<NewItem>,
+): NewItem {
+  // Map pictures: { url } -> { source }
+  const pictures =
+    overrides?.pictures ??
+    (sourceItem.pictures?.map((p) => ({ source: p.url })) ?? []);
+
+  // Map variations if present
+  const variations = sourceItem.variations?.map((v) => {
+    const combinations = v.attribute_combinations.map((ac) => {
+      const combo: Record<string, string> = {};
+      if (ac.name !== undefined) combo.name = ac.name;
+      if (ac.value_id !== undefined) combo.value_id = ac.value_id;
+      if (ac.value_name !== undefined) combo.value_name = ac.value_name;
+      return combo;
+    });
+    const attrs = v.attributes?.map((a) => {
+      const attr: Record<string, string> = { id: a.id };
+      if (a.value_name !== undefined) attr.value_name = a.value_name;
+      return attr as { id: string; value_name?: string };
+    });
+    return {
+      attribute_combinations: combinations,
+      price: v.price,
+      available_quantity: v.available_quantity,
+      picture_ids: v.picture_ids,
+      ...(attrs?.length ? { attributes: attrs } : {}),
+    };
+  });
+
+  const item: NewItem = {
+    title: overrides?.title ?? sourceItem.title,
+    category_id: overrides?.category_id ?? sourceItem.category_id,
+    price: overrides?.price ?? sourceItem.price,
+    currency_id: overrides?.currency_id ?? sourceItem.currency_id ?? "CLP",
+    available_quantity: overrides?.available_quantity ?? sourceItem.available_quantity,
+    buying_mode: overrides?.buying_mode ?? sourceItem.buying_mode ?? "buy_it_now",
+    listing_type_id: overrides?.listing_type_id ?? sourceItem.listing_type_id ?? "gold_special",
+    condition: overrides?.condition ?? sourceItem.condition ?? "new",
+    pictures: overrides?.pictures ?? pictures,
+  };
+
+  // Optional fields — only include when present to keep payload clean
+  if (overrides?.descriptions?.length || sourceItem.title) {
+    item.descriptions = overrides?.descriptions ?? [{ plain_text: sourceItem.title }];
+  }
+  if (overrides?.attributes?.length) {
+    item.attributes = overrides.attributes;
+  } else if (sourceItem.attributes?.length) {
+    item.attributes = sourceItem.attributes.map((a) => ({ id: a.id, value_name: a.value_name }));
+  }
+  if (variations?.length) {
+    item.variations = variations;
+  }
+  if (overrides?.catalog_product_id) {
+    item.catalog_product_id = overrides.catalog_product_id;
+  } else if (sourceItem.catalog_product_id) {
+    item.catalog_product_id = sourceItem.catalog_product_id;
+  }
+  if (overrides?.catalog_listing) {
+    item.catalog_listing = overrides.catalog_listing;
+  }
+  if (overrides?.warranty) {
+    item.warranty = overrides.warranty;
+  } else if (sourceItem.warranty) {
+    item.warranty = sourceItem.warranty;
+  }
+  if (overrides?.shipping) {
+    item.shipping = overrides.shipping;
+  } else if (sourceItem.shipping) {
+    item.shipping = sourceItem.shipping;
+  }
+  if (overrides?.sale_terms?.length) {
+    item.sale_terms = overrides.sale_terms;
+  } else if (sourceItem.sale_terms?.length) {
+    item.sale_terms = sourceItem.sale_terms;
+  }
+  if (overrides?.video_id) {
+    item.video_id = overrides.video_id;
+  }
+
+  return item;
+}
 
 // ---------------------------------------------------------------------------
 // Sync engine exports
@@ -3869,7 +3970,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
           { retryOnRateLimit: false },
         );
         return normalizeClaimReturn({ sellerId, claimId, payload, now: input.now() });
-      } catch (error) {
+      } catch {
         return degradedReturnSnapshot<MlcClaimReturnSummary, MlcClaimReturnSnapshot>({
           sellerId,
           now: input.now(),
@@ -3889,7 +3990,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
           { retryOnRateLimit: false },
         );
         return normalizeReturnReviews({ sellerId, returnId, payload, now: input.now() });
-      } catch (error) {
+      } catch {
         return degradedReturnSnapshot<MlcReturnReviewsSummary, MlcReturnReviewsSnapshot>({
           sellerId,
           now: input.now(),
@@ -3909,7 +4010,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
           { retryOnRateLimit: false },
         );
         return normalizeClaimReturnCost({ sellerId, claimId, payload, now: input.now() });
-      } catch (error) {
+      } catch {
         return degradedReturnSnapshot<MlcClaimReturnCostSummary, MlcClaimReturnCostSnapshot>({
           sellerId,
           now: input.now(),
@@ -4470,12 +4571,45 @@ const MOCK_ITEM_PAYLOAD = {
   status: "active",
   pictures: [{ url: "https://http2.mlstatic.com/D_IMG_1.jpg" }],
   attributes: [{ id: "BRAND", value_name: "Genérica" }],
+  currency_id: "CLP",
+  buying_mode: "buy_it_now",
+  listing_type_id: "gold_special",
+  condition: "new",
+  warranty: "Garantía del vendedor: 3 meses",
+  shipping: {
+    mode: "me2",
+    free_shipping: false,
+    logistic_type: "drop_off",
+    tags: [],
+  },
+  sale_terms: [
+    { id: "WARRANTY_TYPE", value_id: "2230280", value_name: "Garantía del vendedor" },
+    { id: "WARRANTY_TIME", value_name: "3 meses" },
+  ],
   permalink: "https://articulo.mercadolibre.cl/MLC1001",
+  domain_id: "MLC-TEST",
 };
 
 // ---------------------------------------------------------------------------
 // New MlClient type with write operations
 // ---------------------------------------------------------------------------
+
+export type MlRelistInput = {
+  price?: number;
+  quantity?: number;
+  listing_type_id?: string;
+  variations?: Array<{
+    id: number;
+    price?: number;
+    quantity?: number;
+  }>;
+};
+
+export type MlCatalogListingInput = {
+  item_id: string;
+  catalog_product_id: string;
+  variation_id?: number;
+};
 
 export type MlClient = {
   // Read operations
@@ -4486,6 +4620,8 @@ export type MlClient = {
   // Write operations
   publishItem(sellerId: string, item: NewItem): Promise<MlWriteSnapshot>;
   updateItem(sellerId: string, itemId: string, updates: Partial<NewItem>): Promise<MlWriteSnapshot>;
+  relistItem(sellerId: string, itemId: string, input: MlRelistInput): Promise<MlWriteSnapshot>;
+  createCatalogListing(sellerId: string, input: MlCatalogListingInput): Promise<MlWriteSnapshot>;
   // Metadata operations
   getCategories(sellerId: string, categoryId?: string): Promise<MlCategoriesSnapshot>;
   getUserInfo(sellerId: string): Promise<MlUserSnapshot>;
@@ -4562,11 +4698,51 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
     // POST /items
     if (_method === "POST" && path === "/items") {
       const newItem = body as NewItem | undefined;
+      const mockId = "MLC-MOCK-9999";
       return {
-        id: "MLC-MOCK-9999",
-        permalink: "https://articulo.mercadolibre.cl/MLC-MOCK-9999",
+        id: mockId,
+        permalink: `https://articulo.mercadolibre.cl/${mockId}`,
         status: "active",
         ...(newItem ? { title: newItem.title } : {}),
+        ...(newItem?.variations?.length
+          ? {
+              variations: newItem.variations.map((v, i) => ({
+                id: 1000 + i,
+                price: v.price,
+                available_quantity: v.available_quantity,
+                attribute_combinations: v.attribute_combinations,
+                picture_ids: v.picture_ids ?? [],
+                sold_quantity: 0,
+              })),
+            }
+          : {}),
+        ...(newItem?.catalog_listing ? { catalog_listing: true } : {}),
+        ...(newItem?.catalog_product_id
+          ? { catalog_product_id: newItem.catalog_product_id }
+          : {}),
+      };
+    }
+
+    // POST /items/{id}/relist
+    if (_method === "POST" && path.includes("/relist")) {
+      const mockId = "MLC-RELIST-9999";
+      return {
+        id: mockId,
+        permalink: `https://articulo.mercadolibre.cl/${mockId}`,
+        status: "active",
+        parent_item_id: path.split("/")[2],
+      };
+    }
+
+    // POST /items/catalog_listings
+    if (_method === "POST" && path === "/items/catalog_listings") {
+      const mockId = "MLC-CATALOG-9999";
+      return {
+        id: mockId,
+        permalink: `https://articulo.mercadolibre.cl/${mockId}`,
+        status: "active",
+        catalog_listing: true,
+        ...(body && typeof body === "object" ? { catalog_product_id: (body as Record<string, unknown>).catalog_product_id } : {}),
       };
     }
 
@@ -4627,6 +4803,16 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
 
     updateItem: async (sellerId, itemId, updates) => {
       const payload = await apiRequestJson(sellerId, "PUT", `/items/${itemId}`, undefined, updates);
+      return normalizeWriteResponse({ sellerId, payload, now });
+    },
+
+    relistItem: async (sellerId, itemId, input) => {
+      const payload = await apiRequestJson(sellerId, "POST", `/items/${itemId}/relist`, undefined, input);
+      return normalizeWriteResponse({ sellerId, payload, now });
+    },
+
+    createCatalogListing: async (sellerId, input) => {
+      const payload = await apiRequestJson(sellerId, "POST", "/items/catalog_listings", undefined, input);
       return normalizeWriteResponse({ sellerId, payload, now });
     },
 

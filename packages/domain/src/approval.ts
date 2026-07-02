@@ -10,7 +10,7 @@ export type ApprovalRecord = {
   approvedAt: Date;
   exactChangeAccepted: PreparedAction["exactChange"];
   riskAccepted: PreparedAction["riskLevel"];
-  executionStatus: "not-executed";
+  executionStatus: "not-executed" | "executed";
 };
 
 export type ApprovalDecision =

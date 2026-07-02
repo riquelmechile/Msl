@@ -73,14 +73,19 @@ export function applyStrategies(item: MlItem, strategies: Strategy[]): StrategyA
   }
 
   // --- 2. Margin ---
-  let price = item.price;
   const margin = strategies.find((s): s is MarginStrategy => s.type === "margin");
-  if (margin) {
-    price = Math.round(item.price * (1 + margin.percentage));
-  }
 
   // --- 3. Pricing rules ---
   const pricingRule = strategies.find((s): s is PricingRuleStrategy => s.type === "pricing_rule");
+
+  // --- 4. Stock ---
+  const stock = strategies.find((s): s is StockStrategy => s.type === "stock");
+
+  // Apply margin + pricing to base item price
+  let price = item.price;
+  if (margin) {
+    price = Math.round(item.price * (1 + margin.percentage));
+  }
   if (pricingRule) {
     if (pricingRule.floor !== undefined && price < pricingRule.floor) {
       price = pricingRule.floor;
@@ -90,9 +95,8 @@ export function applyStrategies(item: MlItem, strategies: Strategy[]): StrategyA
     }
   }
 
-  // --- 4. Stock ---
+  // Apply stock to base item quantity
   let available_quantity = item.available_quantity;
-  const stock = strategies.find((s): s is StockStrategy => s.type === "stock");
   if (stock) {
     if (stock.available_quantity !== undefined) {
       available_quantity = stock.available_quantity;
@@ -102,18 +106,106 @@ export function applyStrategies(item: MlItem, strategies: Strategy[]): StrategyA
     }
   }
 
+  // Apply strategies to each variation independently
+  const variations = item.variations?.map((v) => {
+    let varPrice = v.price;
+    if (margin) {
+      varPrice = Math.round(v.price * (1 + margin.percentage));
+    }
+    if (pricingRule) {
+      if (pricingRule.floor !== undefined && varPrice < pricingRule.floor) {
+        varPrice = pricingRule.floor;
+      }
+      if (pricingRule.cap !== undefined && varPrice > pricingRule.cap) {
+        varPrice = pricingRule.cap;
+      }
+    }
+
+    let varQty = v.available_quantity;
+    if (stock) {
+      if (stock.available_quantity !== undefined) {
+        varQty = stock.available_quantity;
+      }
+      if (stock.limit !== undefined && varQty > stock.limit) {
+        varQty = stock.limit;
+      }
+    }
+
+    const variation: NewItem["variations"] extends Array<infer T> | undefined ? T : never = {
+      attribute_combinations: v.attribute_combinations.map((ac) => ({
+        name: ac.name,
+        value_id: ac.value_id,
+        value_name: ac.value_name,
+      })),
+      price: varPrice,
+      available_quantity: varQty,
+    } as NewItem["variations"] extends Array<infer T> | undefined ? T : never;
+
+    // Attach optional variation fields
+    const vRecord = variation as Record<string, unknown>;
+    if (v.picture_ids?.length) {
+      vRecord.picture_ids = v.picture_ids;
+    }
+    if (v.attributes?.length) {
+      vRecord.attributes = v.attributes.map((a) => ({
+        id: a.id,
+        value_name: a.value_name,
+      }));
+    }
+
+    return variation;
+  });
+
+  // Build NewItem preserving all source metadata
+  const pictures = item.pictures.map((p) => ({ source: p.url }));
+
   const newItem: NewItem = {
     title: item.title,
     category_id: item.category_id,
     price,
+    currency_id: item.currency_id ?? "CLP",
     available_quantity,
-    pictures: item.pictures.map((p) => p.url),
-    description: item.title, // Default description from title
-    attributes: item.attributes.map((a) => ({
-      id: a.id,
-      value_name: a.value_name,
-    })),
+    buying_mode: item.buying_mode ?? "buy_it_now",
+    listing_type_id: item.listing_type_id ?? "gold_special",
+    condition: item.condition ?? "new",
+    pictures,
   };
+
+  // Optional fields — attached via Record cast to stay exactOptionalPropertyTypes-safe
+  const ni = newItem as Record<string, unknown>;
+
+  // Descriptions: use source title as plain_text if no explicit description
+  ni.descriptions = [{ plain_text: item.title }];
+
+  // Attributes from source
+  if (item.attributes?.length) {
+    ni.attributes = item.attributes.map((a) => ({ id: a.id, value_name: a.value_name }));
+  }
+
+  // Variations with strategy-applied prices/quantities
+  if (variations?.length) {
+    ni.variations = variations;
+  }
+
+  // Preserve shipping configuration
+  if (item.shipping) {
+    ni.shipping = item.shipping;
+  }
+
+  // Preserve sale terms (warranty, manufacturing time, etc.)
+  if (item.sale_terms?.length) {
+    ni.sale_terms = item.sale_terms;
+  }
+
+  // Preserve warranty text
+  if (item.warranty) {
+    ni.warranty = item.warranty;
+  }
+
+  // Preserve catalog product ID for catalog listings
+  if (item.catalog_product_id) {
+    ni.catalog_product_id = item.catalog_product_id;
+  }
 
   return { applied: true, item: newItem };
 }

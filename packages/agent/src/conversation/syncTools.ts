@@ -1,4 +1,4 @@
-import type { GraphEngine } from "@msl/memory";
+import type { GraphEngine, OperationalReadModelReader } from "@msl/memory";
 import type {
   MlClient,
   MlAccountRoleConfig,
@@ -16,6 +16,8 @@ import type {
   MlcSellerPromotionsSnapshot,
   MlcVisitsSnapshot,
   MlcVisitsTimeWindowSnapshot,
+  NewItem,
+  MlWriteSnapshot,
   ProductSyncEngine,
   SyncResult,
   SyncReport,
@@ -71,7 +73,7 @@ type PriceIntelligenceEndpointSpec<K extends PriceIntelligenceEndpointKey> = {
   read: () => Promise<PriceIntelligenceEndpointResult[K]>;
 };
 
-function approvalRequired(tool: "sync_product" | "sync_all"): Record<string, unknown> {
+function approvalRequired(tool: "sync_product" | "sync_all" | "create_listing"): Record<string, unknown> {
   return {
     status: "approval_required",
     tool,
@@ -3063,4 +3065,822 @@ export function createPrepareImageFlowTool(mlcClient: MlcApiClient): ToolDefinit
       }
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// create_listing tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `create_listing` tool.
+ *
+ * Allows the CEO to create a brand-new MercadoLibre listing from scratch
+ * via natural conversation. Supports full ML API capabilities: variations
+ * with individual prices/stock/pictures, catalog listings, shipping config,
+ * sale terms, and all item metadata.
+ *
+ * Follows the same approval pipeline as sync_product: first call returns
+ * approval_required with preview, second call with approvedExecution executes
+ * via mlClient.publishItem().
+ *
+ * @param mlClient — the `MlClient` instance for publishing.
+ * @param cortex — optional Cortex GraphEngine for persisting creation-outcome nodes.
+ * @returns a `create_listing` tool definition compatible with OpenAI function calling.
+ */
+export function createCreateListingTool(
+  mlClient: MlClient,
+  cortex?: GraphEngine,
+  options: SyncToolOptions = {},
+): ToolDefinition {
+  return {
+    name: "create_listing",
+    description:
+      "Crea una publicación NUEVA en MercadoLibre desde cero. " +
+      "Usá esta herramienta cuando el vendedor quiera publicar un producto " +
+      "que NO existe todavía en ninguna cuenta. Soporta variantes (color, " +
+      "talle, medida) con precio, stock y fotos individuales. También soporta " +
+      "publicaciones de catálogo. IMPORTANTE: solo se ejecuta si el vendedor " +
+      "confirma con 'dale'. Antes de llamarla, asegurate de tener título, " +
+      "categoría, precio y al menos una foto.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description:
+            "ID de la cuenta donde publicar. Ej: 'plasticov' o 'maustian'.",
+        },
+        title: {
+          type: "string",
+          description: "Título de la publicación en español.",
+        },
+        category_id: {
+          type: "string",
+          description: "ID de categoría de MercadoLibre. Ej: 'MLC1743'.",
+        },
+        price: {
+          type: "number",
+          description: "Precio base de la publicación en CLP.",
+        },
+        currency_id: {
+          type: "string",
+          description: "Moneda. Por defecto 'CLP' para Chile.",
+        },
+        available_quantity: {
+          type: "number",
+          description: "Cantidad disponible total.",
+        },
+        buying_mode: {
+          type: "string",
+          description:
+            "Modo de compra: 'buy_it_now' (Compra inmediata).",
+        },
+        listing_type_id: {
+          type: "string",
+          description:
+            "Tipo de publicación: 'gold_pro' (Premium), 'gold_special' (Clásica), 'free' (Gratuita).",
+        },
+        condition: {
+          type: "string",
+          description: "Condición: 'new' (Nuevo), 'used' (Usado).",
+        },
+        pictures: {
+          type: "array",
+          description:
+            "URLs de las fotos del producto. Cada elemento: { source: 'https://...' }.",
+          items: {
+            type: "object",
+            properties: {
+              source: { type: "string" },
+            },
+          },
+        },
+        variations: {
+          type: "array",
+          description:
+            "Variantes del producto (color, talle, medida). Cada variante " +
+            "tiene su propio precio, stock, fotos y atributos (SKU, EAN, GTIN). " +
+            "Máximo 100 variantes por publicación (250 en Fashion/Auto Parts).",
+          items: {
+            type: "object",
+            properties: {
+              attribute_combinations: {
+                type: "array",
+                description: "Atributos que diferencian esta variante. Ej: [{ name: 'Tamaño', value_name: '2m x 3m' }].",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    value_id: { type: "string" },
+                    value_name: { type: "string" },
+                  },
+                },
+              },
+              price: {
+                type: "number",
+                description: "Precio de esta variante específica.",
+              },
+              available_quantity: {
+                type: "number",
+                description: "Stock de esta variante.",
+              },
+              picture_ids: {
+                type: "array",
+                items: { type: "string" },
+                description: "IDs o URLs de fotos para esta variante.",
+              },
+              attributes: {
+                type: "array",
+                description: "Atributos por variante: SKU, EAN, GTIN.",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    value_name: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+        attributes: {
+          type: "array",
+          description:
+            "Atributos del producto: marca, modelo, GTIN, etc. Ej: [{ id: 'BRAND', value_name: 'Genérica' }].",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              value_name: { type: "string" },
+            },
+          },
+        },
+        description: {
+          type: "string",
+          description: "Descripción en texto plano del producto.",
+        },
+        shipping: {
+          type: "object",
+          description: "Configuración de envío.",
+          properties: {
+            mode: { type: "string" },
+            free_shipping: { type: "boolean" },
+            logistic_type: { type: "string" },
+          },
+        },
+        sale_terms: {
+          type: "array",
+          description: "Términos de venta: garantía. Ej: [{ id: 'WARRANTY_TYPE', value_name: 'Garantía del vendedor' }].",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              value_name: { type: "string" },
+            },
+          },
+        },
+        warranty: {
+          type: "string",
+          description: "Texto de garantía. Ej: 'Garantía del vendedor: 6 meses'.",
+        },
+        catalog_product_id: {
+          type: "string",
+          description: "ID del producto de catálogo si es publicación de catálogo.",
+        },
+        catalog_listing: {
+          type: "boolean",
+          description: "true si es publicación de catálogo.",
+        },
+      },
+      required: ["sellerId", "title", "category_id", "price", "pictures"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      if (!sellerId) {
+        return { error: "El parámetro 'sellerId' es obligatorio." };
+      }
+
+      if (!options.approvedExecution) {
+        return {
+          status: "approval_required",
+          tool: "create_listing",
+          preview: {
+            title: args.title,
+            category_id: args.category_id,
+            price: args.price,
+            sellerId,
+            variationCount: Array.isArray(args.variations) ? args.variations.length : 0,
+          },
+          error:
+            "La creación de publicaciones requiere confirmación explícita del vendedor ('dale').",
+        };
+      }
+
+      // Build NewItem from arguments
+      const pictures = Array.isArray(args.pictures)
+        ? args.pictures.filter(
+            (p): p is { source: string } =>
+              typeof p === "object" && p !== null && typeof (p as Record<string, unknown>).source === "string",
+          )
+        : [];
+
+      if (pictures.length === 0) {
+        return { error: "Se requiere al menos una foto (pictures)." };
+      }
+
+      const newItem: NewItem = {
+        title: typeof args.title === "string" ? args.title : "",
+        category_id: typeof args.category_id === "string" ? args.category_id : "",
+        price: typeof args.price === "number" ? args.price : 0,
+        currency_id: typeof args.currency_id === "string" ? args.currency_id : "CLP",
+        available_quantity: typeof args.available_quantity === "number" ? args.available_quantity : 1,
+        buying_mode: typeof args.buying_mode === "string" ? args.buying_mode : "buy_it_now",
+        listing_type_id: typeof args.listing_type_id === "string" ? args.listing_type_id : "gold_special",
+        condition: typeof args.condition === "string" ? args.condition : "new",
+        pictures,
+      };
+
+      // Optional fields
+      if (Array.isArray(args.variations) && args.variations.length > 0) {
+        (newItem as Record<string, unknown>).variations = args.variations;
+      }
+      if (Array.isArray(args.attributes) && args.attributes.length > 0) {
+        (newItem as Record<string, unknown>).attributes = args.attributes;
+      }
+      if (typeof args.description === "string" && args.description.length > 0) {
+        (newItem as Record<string, unknown>).descriptions = [{ plain_text: args.description }];
+      }
+      if (args.shipping && typeof args.shipping === "object") {
+        (newItem as Record<string, unknown>).shipping = args.shipping;
+      }
+      if (Array.isArray(args.sale_terms) && args.sale_terms.length > 0) {
+        (newItem as Record<string, unknown>).sale_terms = args.sale_terms;
+      }
+      if (typeof args.warranty === "string") {
+        (newItem as Record<string, unknown>).warranty = args.warranty;
+      }
+      if (typeof args.catalog_product_id === "string") {
+        (newItem as Record<string, unknown>).catalog_product_id = args.catalog_product_id;
+      }
+      if (args.catalog_listing === true) {
+        (newItem as Record<string, unknown>).catalog_listing = true;
+      }
+
+      try {
+        const result: MlWriteSnapshot = await mlClient.publishItem(sellerId, newItem);
+
+        // Cortex integration: store creation outcome
+        if (cortex) {
+          storeCreateOutcome(cortex, result, sellerId, newItem);
+        }
+
+        return {
+          status: "published",
+          itemId: result.id,
+          permalink: result.permalink,
+          title: newItem.title,
+          price: newItem.price,
+          variationCount: Array.isArray(args.variations) ? args.variations.length : 0,
+        };
+      } catch (err) {
+        return {
+          status: "failed",
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// update_listing tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `update_listing` tool.
+ *
+ * Allows the CEO to edit an existing MercadoLibre listing via natural
+ * conversation. Supports partial updates: only the fields provided are
+ * sent to MercadoLibre. Fields not included remain unchanged.
+ *
+ * Follows the same approval pipeline as sync_product: first call returns
+ * approval_required with preview, second call with approvedExecution executes
+ * via mlClient.updateItem().
+ *
+ * @param mlClient — the `MlClient` instance for updates.
+ * @param cortex — optional Cortex GraphEngine for persisting update-outcome nodes.
+ * @returns an `update_listing` tool definition compatible with OpenAI function calling.
+ */
+export function createUpdateListingTool(
+  mlClient: MlClient,
+  cortex?: GraphEngine,
+  options: SyncToolOptions = {},
+): ToolDefinition {
+  return {
+    name: "update_listing",
+    description:
+      "Actualiza una publicación EXISTENTE en MercadoLibre. " +
+      "Usá esta herramienta cuando el vendedor quiera modificar el título, " +
+      "precio, stock, descripción, fotos, envío o garantía de una publicación " +
+      "que ya existe. IMPORTANTE: solo se ejecuta si el vendedor confirma con 'dale'.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID de la cuenta. Ej: 'plasticov' o 'maustian'.",
+        },
+        itemId: {
+          type: "string",
+          description: "ID de la publicación en MercadoLibre. Ej: 'MLC1234'.",
+        },
+        title: { type: "string", description: "Nuevo título (opcional)." },
+        price: { type: "number", description: "Nuevo precio en CLP (opcional)." },
+        available_quantity: { type: "number", description: "Nuevo stock (opcional)." },
+        description: { type: "string", description: "Nueva descripción en texto plano (opcional)." },
+        pictures: {
+          type: "array",
+          items: { type: "object", properties: { source: { type: "string" } } },
+          description: "Nuevas fotos (opcional).",
+        },
+        shipping: {
+          type: "object",
+          properties: { mode: { type: "string" }, free_shipping: { type: "boolean" } },
+          description: "Configuración de envío (opcional).",
+        },
+        warranty: { type: "string", description: "Texto de garantía (opcional)." },
+      },
+      required: ["sellerId", "itemId"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      const itemId = coerceItemId(args.itemId);
+      if (!sellerId || !itemId) return { error: "sellerId e itemId son obligatorios." };
+
+      if (!options.approvedExecution) {
+        return {
+          status: "approval_required",
+          tool: "update_listing",
+          preview: {
+            sellerId,
+            itemId,
+            fields: Object.keys(args).filter(
+              (k) => args[k] !== undefined && k !== "sellerId" && k !== "itemId",
+            ),
+          },
+          error: "La actualización requiere confirmación ('dale').",
+        };
+      }
+
+      // Build updates object — only include fields that were provided.
+      const updates: Record<string, unknown> = {};
+      if (typeof args.title === "string") updates.title = args.title;
+      if (typeof args.price === "number") updates.price = args.price;
+      if (typeof args.available_quantity === "number")
+        updates.available_quantity = args.available_quantity;
+      if (typeof args.description === "string")
+        updates.descriptions = [{ plain_text: args.description }];
+      if (Array.isArray(args.pictures) && args.pictures.length > 0)
+        updates.pictures = args.pictures;
+      if (args.shipping && typeof args.shipping === "object") updates.shipping = args.shipping;
+      if (typeof args.warranty === "string") updates.warranty = args.warranty;
+
+      try {
+        const result = await mlClient.updateItem(
+          sellerId,
+          itemId,
+          updates,
+        );
+        if (cortex) {
+          cortex.createNode(`update_${itemId}_${Date.now()}`, {
+            type: "listing_updated",
+            itemId,
+            sellerId,
+            fields: Object.keys(updates),
+          });
+        }
+        return {
+          status: "updated",
+          itemId: result.id,
+          permalink: result.permalink,
+          fields: Object.keys(updates),
+        };
+      } catch (err) {
+        return { status: "failed", error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// change_item_status tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `change_item_status` tool.
+ *
+ * Allows the CEO to pause, close (finalize), or reactivate an existing
+ * MercadoLibre listing. Closings are irreversible — the tool surfaces an
+ * explicit warning for 'closed' status.
+ *
+ * Follows the same approval pipeline as other mutation tools: first call
+ * returns approval_required, second call with approvedExecution executes.
+ *
+ * Uses mlClient.updateItem() to PUT /items/:id with { status }. The
+ * `status` field is passed via a type cast since `NewItem` does not
+ * include it, but the ML API accepts it as a top-level field.
+ *
+ * @param mlClient — the `MlClient` instance for updates.
+ * @param cortex — optional Cortex GraphEngine for persisting status-change nodes.
+ * @returns a `change_item_status` tool definition compatible with OpenAI function calling.
+ */
+export function createChangeItemStatusTool(
+  mlClient: MlClient,
+  cortex?: GraphEngine,
+  options: SyncToolOptions = {},
+): ToolDefinition {
+  return {
+    name: "change_item_status",
+    description:
+      "Cambia el estado de una publicación: pausar, cerrar (finalizar) o reactivar. " +
+      "Usá 'paused' para pausar temporalmente, 'closed' para finalizar definitivamente, " +
+      "'active' para reactivar una publicación pausada. " +
+      "IMPORTANTE: 'closed' es irreversible. Pedí confirmación explícita antes de cerrar.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: { type: "string", description: "ID de la cuenta." },
+        itemId: { type: "string", description: "ID de la publicación." },
+        status: {
+          type: "string",
+          enum: ["paused", "closed", "active"],
+          description: "Nuevo estado.",
+        },
+      },
+      required: ["sellerId", "itemId", "status"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      const itemId = coerceItemId(args.itemId);
+      if (!sellerId || !itemId) return { error: "sellerId e itemId son obligatorios." };
+
+      const newStatus = args.status as string;
+      if (newStatus !== "paused" && newStatus !== "closed" && newStatus !== "active") {
+        return { error: "status debe ser 'paused', 'closed' o 'active'." };
+      }
+
+      if (!options.approvedExecution) {
+        return {
+          status: "approval_required",
+          tool: "change_item_status",
+          preview: { sellerId, itemId, newStatus },
+          warning:
+            newStatus === "closed"
+              ? "CERRAR es irreversible. La publicación no podrá reactivarse."
+              : undefined,
+          error: "El cambio de estado requiere confirmación ('dale').",
+        };
+      }
+
+      try {
+        const result = await mlClient.updateItem(sellerId, itemId, {
+          status: newStatus,
+        } as Partial<NewItem>);
+        if (cortex) {
+          cortex.createNode(`status_${itemId}_${Date.now()}`, {
+            type: "listing_status_changed",
+            itemId,
+            sellerId,
+            newStatus,
+          });
+        }
+        return { status: "ok", itemId: result.id, newStatus };
+      } catch (err) {
+        return { status: "failed", error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// manage_variations tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `manage_variations` tool.
+ *
+ * Allows the CEO to add, update, or remove variations from an existing
+ * MercadoLibre listing. The tool is self-contained: it first fetches the
+ * current item to access its current variations, applies the requested
+ * change, and PUTs the full variations array back via mlClient.updateItem().
+ *
+ * Follows the approval pipeline: first call returns approval_required
+ * with preview, second call with approvedExecution executes the mutation.
+ *
+ * @param mlClient — the `MlClient` instance for GET/PUT operations.
+ * @param cortex — optional Cortex GraphEngine for persisting variation-change nodes.
+ * @returns a `manage_variations` tool definition compatible with OpenAI function calling.
+ */
+export function createManageVariationsTool(
+  mlClient: MlClient,
+  cortex?: GraphEngine,
+  options: SyncToolOptions = {},
+): ToolDefinition {
+  return {
+    name: "manage_variations",
+    description:
+      "Administra las variantes de una publicación existente: agregar, " +
+      "modificar o eliminar variantes. IMPORTANTE: requiere confirmación ('dale'). " +
+      "Para agregar: action='add', attributes con las combinaciones, price, quantity. " +
+      "Para modificar: action='update', variationId, y campos a cambiar (price, quantity). " +
+      "Para eliminar: action='remove', variationId.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: { type: "string", description: "ID de la cuenta." },
+        itemId: { type: "string", description: "ID de la publicación." },
+        action: {
+          type: "string",
+          enum: ["add", "update", "remove"],
+          description: "Acción: agregar, modificar o eliminar una variante.",
+        },
+        variationId: {
+          type: "number",
+          description: "ID de la variante a modificar o eliminar (requerido para update/remove).",
+        },
+        attributes: {
+          type: "array",
+          description:
+            "Atributos de la nueva variante. Ej: [{ name: 'Tamaño', value_name: '2m x 3m' }].",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              value_id: { type: "string" },
+              value_name: { type: "string" },
+            },
+          },
+        },
+        price: { type: "number", description: "Precio de la variante." },
+        available_quantity: { type: "number", description: "Stock de la variante." },
+        picture_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "IDs de fotos para la variante.",
+        },
+      },
+      required: ["sellerId", "itemId", "action"],
+    },
+    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const sellerId = coerceSellerId(args.sellerId);
+      const itemId = coerceItemId(args.itemId);
+      if (!sellerId || !itemId) return { error: "sellerId e itemId son obligatorios." };
+
+      const action = args.action as string;
+      if (action !== "add" && action !== "update" && action !== "remove") {
+        return { error: "action debe ser 'add', 'update' o 'remove'." };
+      }
+
+      if ((action === "update" || action === "remove") && typeof args.variationId !== "number") {
+        return {
+          error: "variationId es obligatorio para las acciones 'update' y 'remove'.",
+        };
+      }
+
+      if (action === "add") {
+        if (!Array.isArray(args.attributes) || args.attributes.length === 0) {
+          return { error: "attributes es obligatorio para agregar una variante." };
+        }
+        if (typeof args.price !== "number") {
+          return { error: "price es obligatorio para agregar una variante." };
+        }
+        if (typeof args.available_quantity !== "number") {
+          return { error: "available_quantity es obligatorio para agregar una variante." };
+        }
+      }
+
+      if (!options.approvedExecution) {
+        return {
+          status: "approval_required",
+          tool: "manage_variations",
+          preview: { sellerId, itemId, action, variationId: args.variationId },
+          error: "La gestión de variantes requiere confirmación ('dale').",
+        };
+      }
+
+      try {
+        // 1. Fetch current item to get existing variations.
+        const currentItem = await mlClient.getItem(sellerId, itemId);
+        const currentVariations = Array.isArray(
+          (currentItem as Record<string, unknown>).variations,
+        )
+          ? ((currentItem as Record<string, unknown>).variations as Array<Record<string, unknown>>)
+          : [];
+
+        let updatedVariations: Array<Record<string, unknown>> = [];
+
+        switch (action) {
+          case "add": {
+            const newVariation = {
+              attribute_combinations: args.attributes,
+              price: args.price as number,
+              available_quantity: args.available_quantity as number,
+              ...(Array.isArray(args.picture_ids) && (args.picture_ids as string[]).length > 0
+                ? { picture_ids: args.picture_ids }
+                : {}),
+            };
+            updatedVariations = [...currentVariations, newVariation];
+            break;
+          }
+
+          case "update": {
+            const targetId = args.variationId as number;
+            updatedVariations = currentVariations.map((v) => {
+              if (v.id !== targetId) return v;
+              const updated = { ...v };
+              if (typeof args.price === "number") updated.price = args.price;
+              if (typeof args.available_quantity === "number")
+                updated.available_quantity = args.available_quantity;
+              if (Array.isArray(args.picture_ids) && (args.picture_ids as string[]).length > 0)
+                updated.picture_ids = args.picture_ids;
+              return updated;
+            });
+            break;
+          }
+
+          case "remove": {
+            const targetId = args.variationId as number;
+            updatedVariations = currentVariations.filter((v) => v.id !== targetId);
+            break;
+          }
+
+          default:
+            return { error: `Acción desconocida: ${String(action)}` };
+        }
+
+        // 2. PUT the full variations array back.
+        const result = await mlClient.updateItem(sellerId, itemId, {
+          variations: updatedVariations,
+        } as Partial<NewItem>);
+
+        if (cortex) {
+          cortex.createNode(`variation_${itemId}_${Date.now()}`, {
+            type: "variations_managed",
+            itemId,
+            sellerId,
+            action,
+            variationCount: updatedVariations.length,
+          });
+        }
+
+        return {
+          status: "updated",
+          itemId: result.id,
+          permalink: result.permalink,
+          action,
+          variationCount: updatedVariations.length,
+        };
+      } catch (err) {
+        return { status: "failed", error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// read_my_catalog tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the `read_my_catalog` tool.
+ *
+ * Queries the LOCAL operational read model (SQLite snapshots) for a seller's
+ * listing catalog WITHOUT hitting the MercadoLibre API. Returns structured
+ * listing data from background ingestion snapshots — zero rate-limit cost.
+ *
+ * @param reader — the `OperationalReadModelReader` instance for local DB queries.
+ * @returns a `read_my_catalog` tool definition compatible with OpenAI function calling.
+ */
+export function createReadMyCatalogTool(
+  reader: OperationalReadModelReader,
+): ToolDefinition {
+  return {
+    name: "read_my_catalog",
+    description:
+      "Consulta la base de datos LOCAL de productos. NO llama a la API de MercadoLibre — " +
+      "usa los snapshots guardados por la ingesta en segundo plano. " +
+      "Devuelve el catálogo con precios, stock, estado y categoría. " +
+      "Usá esta herramienta para obtener una vista rápida del catálogo sin consumir rate limits. " +
+      "Podés filtrar por cuenta, categoría o estado.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "ID de la cuenta: 'plasticov' o 'maustian'.",
+        },
+        categoryId: {
+          type: "string",
+          description: "Filtrar por ID de categoría (opcional).",
+        },
+        status: {
+          type: "string",
+          enum: ["active", "paused", "closed"],
+          description: "Filtrar por estado (opcional).",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute: async (args: Record<string, unknown>) => {
+      const sellerId = typeof args.sellerId === "string" ? args.sellerId : undefined;
+      if (!sellerId) return { error: "sellerId es obligatorio." };
+
+      try {
+        const snapshots = await reader.listSnapshots<Record<string, unknown>>(
+          sellerId,
+          "listing",
+          {
+            limit: 200,
+            ...(typeof args.status === "string" ? { status: args.status } : {}),
+            ...(typeof args.categoryId === "string" ? { categoryId: args.categoryId } : {}),
+          },
+        );
+
+        if (snapshots.length === 0) {
+          return {
+            sellerId,
+            total: 0,
+            items: [],
+            message: `No hay snapshots locales para ${sellerId}. La ingesta en segundo plano puede no haber corrido aún.`,
+          };
+        }
+
+        const items = snapshots.map(s => {
+          const data = s.data;
+          return {
+            id: s.itemId,
+            title: data.title ?? "Sin título",
+            price: data.price,
+            available_quantity: data.available_quantity,
+            category_id: data.category_id,
+            status: data.status,
+            listing_type_id: data.listing_type_id,
+            variation_count: Array.isArray(data.variations) ? data.variations.length : 0,
+            currency_id: data.currency_id ?? "CLP",
+            captured_at: s.capturedAt,
+            freshness: s.freshness,
+          };
+        });
+
+        return {
+          sellerId,
+          total: items.length,
+          active: items.filter(i => i.status === "active").length,
+          paused: items.filter(i => i.status === "paused").length,
+          closed: items.filter(i => i.status === "closed").length,
+          items,
+        };
+      } catch (err) {
+        return {
+          error: `No se pudo consultar el catálogo local: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  };
+}
+
+function storeCreateOutcome(
+  cortex: GraphEngine,
+  result: MlWriteSnapshot,
+  sellerId: string,
+  item: NewItem,
+): void {
+  const sellerNode = cortex.db
+    .prepare("SELECT id, label FROM nodes WHERE metadata LIKE ?")
+    .get(`%"sellerId":"${sellerId}"%`) as { id: number; label: string } | undefined;
+
+  const sourceId = sellerNode?.id ?? cortex.createNode(`seller_${sellerId}`, {
+    type: "seller_account",
+    sellerId,
+  }).id;
+
+  const outcomeNode = cortex.createNode(
+    `create_${result.id}_${new Date().toISOString().slice(0, 10)}`,
+    {
+      type: "listing_created",
+      itemId: result.id,
+      permalink: result.permalink,
+      title: item.title,
+      price: item.price,
+      variationCount: item.variations?.length ?? 0,
+      sellerId,
+    },
+  );
+
+  try {
+    cortex.createEdge(outcomeNode.id, sourceId);
+    cortex.reinforceEdge(outcomeNode.id, sourceId);
+  } catch {
+    // Edge may already exist — idempotent
+  }
 }

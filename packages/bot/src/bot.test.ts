@@ -87,10 +87,14 @@ vi.mock("@msl/agent", () => ({
   createSessionStore: mocks.mockCreateSessionStore,
   createAutonomyEngine: mocks.mockCreateAutonomyEngine,
   EscribanoObserver: mocks.mockEscribanoObserver,
+  OperationalEvidenceProvider: vi.fn(),
+  startBackgroundIngestion: vi.fn(() => ({ stop: vi.fn() })),
 }));
 
 vi.mock("@msl/memory", () => ({
+  createDatabase: vi.fn(),
   createGraphEngine: mocks.mockCreateGraphEngine,
+  createSqliteOperationalReadModel: vi.fn(),
 }));
 
 import { createTelegramBot, createTelegramBotFromEnv } from "./index.js";

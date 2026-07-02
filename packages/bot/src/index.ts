@@ -9,12 +9,13 @@ import {
   createSessionStore,
   createStrategyStore,
   EscribanoObserver,
+  OperationalEvidenceProvider,
   startBackgroundIngestion,
   type AgentLoopConfig,
   type ConversationState,
   type SessionStore,
 } from "@msl/agent";
-import { createGraphEngine } from "@msl/memory";
+import { createDatabase, createGraphEngine, createSqliteOperationalReadModel } from "@msl/memory";
 import {
   createMlcApiClient,
   createMercadoLibreApiFetchTransport,
@@ -147,6 +148,19 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const engine = cortexPath ? createGraphEngine(cortexPath) : undefined;
   const escribano = engine ? new EscribanoObserver({ engine }) : undefined;
 
+  // ── Operational read model + evidence provider ─────────────
+  // Bridges Cortex (neural graph) and the operational read model
+  // (SQLite snapshots) so the agent can query business evidence
+  // through both paths: Cortex for learned patterns, operational
+  // model for fresh ML API snapshots.
+  const operationalDb = cortexPath ? createDatabase(cortexPath) : undefined;
+  const operationalReadModel = operationalDb
+    ? createSqliteOperationalReadModel(operationalDb)
+    : undefined;
+  const evidenceProvider = operationalReadModel
+    ? new OperationalEvidenceProvider(operationalReadModel)
+    : undefined;
+
   // ── MLC listing-fees client ───────────────────────────────
   const mlcAccessToken = env.MERCADOLIBRE_ACCESS_TOKEN?.trim();
   const mlcRefreshToken = env.MERCADOLIBRE_REFRESH_TOKEN?.trim();
@@ -180,6 +194,11 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   if (engine) agentConfig.engine = engine;
   if (escribano) agentConfig.escribano = escribano;
   if (mlcClient) agentConfig.mlcClient = mlcClient;
+  if (operationalReadModel) agentConfig.operationalReader = operationalReadModel;
+  if (evidenceProvider) {
+    agentConfig.evidenceProvider = evidenceProvider;
+    agentConfig.laneId = "ceo";
+  }
 
   const botConfig: BotConfig = {
     token,
@@ -187,7 +206,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     agentConfig,
   };
   if (sessionStore) botConfig.sessionStore = sessionStore;
-  if (db) botConfig.cleanup = () => db.close();
+  if (db) botConfig.cleanup = () => { db.close(); operationalDb?.close(); };
 
   const botHandle = createTelegramBot(botConfig);
 
@@ -221,6 +240,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
       sellerIds: allSellerIds,
       sellerNames,
       intervalMs: 6 * 60 * 60 * 1000, // 6 hours
+      ...(operationalReadModel ? { operationalStore: operationalReadModel } : {}),
     };
 
     ingestionHandle = startBackgroundIngestion(
@@ -305,6 +325,11 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
 
   // ── Message handler ─────────────────────────────────────
 
+  // Reuse a single AgentLoop instance across all messages so that
+  // EscribanoObserver accumulates turnCount for Darwinian pruning
+  // and conceptCache stays warm, avoiding redundant DB lookups.
+  const agent = createAgentLoop(agentConfig);
+
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text;
     const chatId = String(ctx.chat.id);
@@ -314,8 +339,6 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
     // Typing indicator
     await ctx.replyWithChatAction("typing");
 
-    // Create agent with session-scoped metadata
-    const agent = createAgentLoop(agentConfig);
     const loadedState = config.sessionStore?.load(sessionId);
     const state =
       loadedState && stateBelongsToSeller(loadedState, sellerId)

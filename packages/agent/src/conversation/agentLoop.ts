@@ -26,6 +26,7 @@ import type { ToolDefinition } from "./tools.js";
 import {
   createDelegateToSubagentTool,
   createDetectProbesTool,
+  createGetBusinessContextTool,
   createProposeHoneyPotTool,
 } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
@@ -60,6 +61,11 @@ import {
   createCheckClaimHistoryTool,
   createPrepareAnswerTool,
   createPrepareImageFlowTool,
+  createCreateListingTool,
+  createUpdateListingTool,
+  createChangeItemStatusTool,
+  createManageVariationsTool,
+  createReadMyCatalogTool,
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
 import type { CacheTelemetry, LaneId, LaneOutput } from "./lanes.js";
@@ -291,7 +297,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
       createProposeHoneyPotTool(
         proposeDecoy,
         honeyPotValidator,
-        () => activeStrategies,
+        () => getActiveStrategies(),
         (proposal) => {
           pendingDecoyProposal = proposal;
         },
@@ -300,6 +306,43 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (!toolMap.has("delegate_to_subagent")) {
     toolMap.set("delegate_to_subagent", createDelegateToSubagentTool());
+  }
+
+  // ── Create listing tool (new from scratch) ─────────────────────
+  if (config.mlClient && !toolMap.has("create_listing")) {
+    toolMap.set(
+      "create_listing",
+      createCreateListingTool(config.mlClient, config.engine),
+    );
+  }
+
+  // ── Update listing tool (edit existing) ──────────────────────
+  if (config.mlClient && !toolMap.has("update_listing")) {
+    toolMap.set(
+      "update_listing",
+      createUpdateListingTool(config.mlClient, config.engine),
+    );
+  }
+
+  // ── Change item status tool (pause/close/activate) ───────────
+  if (config.mlClient && !toolMap.has("change_item_status")) {
+    toolMap.set(
+      "change_item_status",
+      createChangeItemStatusTool(config.mlClient, config.engine),
+    );
+  }
+
+  // ── Manage variations tool (add/update/remove) ───────────────
+  if (config.mlClient && !toolMap.has("manage_variations")) {
+    toolMap.set(
+      "manage_variations",
+      createManageVariationsTool(config.mlClient, config.engine),
+    );
+  }
+
+  // ── Read my catalog tool (local operational read model) ──
+  if (config.operationalReader && !toolMap.has("read_my_catalog")) {
+    toolMap.set("read_my_catalog", createReadMyCatalogTool(config.operationalReader));
   }
 
   // ── Sync tools ────────────────────────────────────────────────────
@@ -395,6 +438,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
   if (config.mlcClient && !toolMap.has("prepare_image_flow")) {
     toolMap.set("prepare_image_flow", createPrepareImageFlowTool(config.mlcClient));
   }
+  if (config.engine && !toolMap.has("get_business_context")) {
+    toolMap.set("get_business_context", createGetBusinessContextTool(config.engine));
+  }
 
   // Real client is used only when the caller has not explicitly requested the mock.
   const client: LlmClient =
@@ -417,6 +463,16 @@ export function createAgentLoop(config: AgentLoopConfig) {
    * engine is configured, a `## Nivel de Autonomía Actual` section
    * is prepended so the LLM sees its current level on every turn.
    */
+  function getActiveStrategies(): Strategy[] {
+    // Always refresh from the persistent store when available so that
+    // strategy CRUD operations during a conversation are immediately
+    // reflected in the system prompt and sync safety gates.
+    if (config.store) {
+      return config.store.listActive();
+    }
+    return activeStrategies;
+  }
+
   function getSystemPrompt(): string {
     let prompt = config.systemPrompt;
 
@@ -465,10 +521,11 @@ export function createAgentLoop(config: AgentLoopConfig) {
 Actualmente te encuentro en nivel ${name}. ${levelDesc}`;
     }
 
-    if (activeStrategies.length === 0) {
+    const strategies = getActiveStrategies();
+    if (strategies.length === 0) {
       return prompt;
     }
-    const strategyLines = activeStrategies.map((s) => `- [${s.ruleType}] ${s.ruleText}`);
+    const strategyLines = strategies.map((s) => `- [${s.ruleType}] ${s.ruleText}`);
     return `${prompt}
 
 ## Estrategias del CEO
@@ -566,7 +623,7 @@ ${strategyLines.join("\n")}`;
               // ── Sync safety gate: require active CEO strategies ──
               if (
                 (tc.name === "sync_product" || tc.name === "sync_all") &&
-                activeStrategies.length === 0
+                getActiveStrategies().length === 0
               ) {
                 llmMessages.push({
                   role: "tool",
@@ -666,7 +723,7 @@ ${strategyLines.join("\n")}`;
 
       // --- Strategy guardrail ---
       if (proposal) {
-        const strategyCheck = strategyValidator(proposal, activeStrategies);
+        const strategyCheck = strategyValidator(proposal, getActiveStrategies());
         if (!strategyCheck.passed) {
           return blockAndRespond(state, userMessage, strategyCheck.reason);
         }
@@ -677,7 +734,7 @@ ${strategyLines.join("\n")}`;
             proposal.action.kind === "probe-analysis") &&
           pendingDecoyProposal
         ) {
-          const honeyPotCheck = honeyPotValidator(pendingDecoyProposal, activeStrategies);
+          const honeyPotCheck = honeyPotValidator(pendingDecoyProposal, getActiveStrategies());
           if (!honeyPotCheck.passed) {
             return blockAndRespond(state, userMessage, honeyPotCheck.reason);
           }
@@ -694,7 +751,7 @@ ${strategyLines.join("\n")}`;
           const currentLevel = config.autonomyEngine
             ? (AutonomyLevel[config.autonomyEngine.getCurrentLevel()] ?? "SUGIERE")
             : "SUGIERE";
-          const verifyResult = selfVerify(proposal, activeStrategies, {
+          const verifyResult = selfVerify(proposal, getActiveStrategies(), {
             sellerId: state.sessionMetadata.sellerId,
             currentLevel,
           });
