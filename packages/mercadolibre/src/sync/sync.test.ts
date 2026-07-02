@@ -611,7 +611,7 @@ describe("Product Sync Engine", () => {
         sellerId: "",
         kind: "message",
         source: "mercadolibre-api",
-        data: [],
+        data: { paging: { total: 0, offset: 0, limit: 0 }, results: [] },
         completeness: "complete",
         freshness: {
           source: "mercadolibre-api",

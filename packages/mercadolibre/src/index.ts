@@ -65,6 +65,15 @@ export type MlcMessageSummary = {
   fromUserId?: string;
 };
 
+export type MlcQuestionSummary = {
+  id: string;
+  text?: string;
+  answerText?: string;
+  status?: string;
+  dateCreated?: string;
+  itemId?: string;
+};
+
 export type MlcReputationSummary = {
   level?: string;
   powerSellerStatus?: string;
@@ -198,7 +207,10 @@ export type MlcImageAssociateSummary = { itemId: string; pictureId: string; stat
 export type MlcImageAssociateSnapshot = MlcReadSnapshot<MlcImageAssociateSummary>;
 
 export type MlcImageOrchestrationInput = {
-  itemId: string; pictureUrl: string; categoryId: string; title?: string;
+  itemId: string;
+  pictureUrl: string;
+  categoryId: string;
+  title?: string;
 };
 
 export type MlcImageOrchestrationStep = {
@@ -287,6 +299,11 @@ export type MlcClaimsSearchResult = {
   results: ReadonlyArray<MlcClaimSummary>;
 };
 
+export type MlcQuestionsSearchResult = {
+  paging: { total: number; offset: number; limit: number };
+  results: ReadonlyArray<MlcQuestionSummary>;
+};
+
 export type MlcClaimDetailSummary = {
   claim: MlcClaimSummary;
   messages?: ReadonlyArray<MlcClaimMessage>;
@@ -298,7 +315,10 @@ export type MlcClaimMessagesSummary = { messages: ReadonlyArray<MlcClaimMessage>
 
 export type MlcClaimResolutionsSummary = {
   expected_resolutions: ReadonlyArray<{
-    id?: string; status?: string; reason?: string; description?: string;
+    id?: string;
+    status?: string;
+    reason?: string;
+    description?: string;
   }>;
 };
 
@@ -392,7 +412,7 @@ export type MlcProductAdsInsights = {
   transitionalMetrics: { acosTargetDeprecatedAfter: "2026-03-30" };
 };
 
-export type MlcListingPriceListingTypeId = "gold_pro" | "gold_special" | "free" | string;
+export type MlcListingPriceListingTypeId = string;
 
 export type MlcListingPricesInput = {
   siteId: string;
@@ -473,7 +493,7 @@ export type MlcPriceToWinSummary = {
   itemId: string;
   currentPrice?: number;
   priceToWin?: number;
-  status?: "winning" | "competing" | "sharing_first_place" | "listed" | string;
+  status?: string;
   reason?: string;
   visitShare?: string;
   catalogProductId?: string;
@@ -564,7 +584,7 @@ export type MlcPromotionBenefitsSummary = {
 
 export type MlcPromotionSummary = {
   id: string;
-  type: MlcPromotionType | string;
+  type: string;
   status?: string;
   startDate?: string;
   finishDate?: string;
@@ -627,7 +647,7 @@ export type MlcItemPromotionStockSummary = { remainingStock?: number };
 
 export type MlcItemPromotionSummary = {
   id: string;
-  type?: MlcPromotionType | string;
+  type?: string;
   refId?: string;
   status?: string;
   price?: number;
@@ -656,7 +676,7 @@ export type MlcSellerPromotionsSummary = {
 
 export type MlcPromotionItemsSummary = {
   promotionId: string;
-  promotionType: MlcPromotionType | string;
+  promotionType: string;
   paging: { searchAfter?: string; limit: number; total?: number };
   items: ReadonlyArray<MlcPromotionParticipantSummary>;
 };
@@ -667,8 +687,12 @@ export type MlcItemPromotionsSummary = {
 };
 
 export type MlcListingsSnapshot = MlcReadSnapshot<MlcListingSummary>;
-export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary>;
-export type MlcMessagesSnapshot = MlcReadSnapshot<MlcMessageSummary>;
+export type MlcOrdersSnapshot = MlcReadSnapshot<MlcOrderSummary> & {
+  paging?: { total: number; offset: number; limit: number };
+};
+export type MlcMessagesSnapshot = MlcReadSnapshot<MlcMessageSummary> & {
+  paging?: { total: number; offset: number; limit: number };
+};
 export type MlcReputationSnapshot = MlcReadSnapshot<MlcReputationSummary>;
 export type MlcCategoryAttributesSnapshot = MlcReadSnapshot<MlcCategoryAttributeSummary>;
 export type MlcCategoryTechnicalSpecsSnapshot = MlcReadSnapshot<MlcCategoryTechnicalSpecSummary>;
@@ -691,17 +715,22 @@ export type MlcSellerPromotionsSnapshot = MlcReadSnapshot<MlcSellerPromotionsSum
 export type MlcPromotionDetailSnapshot = MlcReadSnapshot<MlcPromotionSummary>;
 export type MlcPromotionItemsSnapshot = MlcReadSnapshot<MlcPromotionItemsSummary>;
 export type MlcItemPromotionsSnapshot = MlcReadSnapshot<MlcItemPromotionsSummary>;
-export type MlcModerationStatusSnapshot = MlcReadSnapshot<MlcModerationStatusSummary>;
-export type MlcNoticesSnapshot = MlcReadSnapshot<MlcNoticesSummary>;
-export type MlcAnswerSnapshot = MlcReadSnapshot<MlcAnswerSummary>;
+export type MlcSingleReadSnapshot<TData> = Omit<MlcReadSnapshot<TData>, "data"> & {
+  data: TData;
+};
 
-export type MlcClaimsSearchSnapshot = MlcReadSnapshot<MlcClaimsSearchResult>;
-export type MlcClaimDetailSnapshot = MlcReadSnapshot<MlcClaimDetailSummary>;
-export type MlcClaimMessagesSnapshot = MlcReadSnapshot<MlcClaimMessagesSummary>;
-export type MlcClaimResolutionsSnapshot = MlcReadSnapshot<MlcClaimResolutionsSummary>;
-export type MlcClaimReputationSnapshot = MlcReadSnapshot<MlcClaimReputationSummary>;
-export type MlcClaimStatusHistorySnapshot = MlcReadSnapshot<MlcClaimStatusHistorySummary>;
-export type MlcShipmentStatusSnapshot = MlcReadSnapshot<MlcShipmentStatusSummary>;
+export type MlcModerationStatusSnapshot = MlcSingleReadSnapshot<MlcModerationStatusSummary>;
+export type MlcNoticesSnapshot = MlcSingleReadSnapshot<MlcNoticesSummary>;
+export type MlcAnswerSnapshot = MlcSingleReadSnapshot<MlcAnswerSummary>;
+
+export type MlcClaimsSearchSnapshot = MlcSingleReadSnapshot<MlcClaimsSearchResult>;
+export type MlcQuestionsSnapshot = MlcSingleReadSnapshot<MlcQuestionsSearchResult>;
+export type MlcClaimDetailSnapshot = MlcSingleReadSnapshot<MlcClaimDetailSummary>;
+export type MlcClaimMessagesSnapshot = MlcSingleReadSnapshot<MlcClaimMessagesSummary>;
+export type MlcClaimResolutionsSnapshot = MlcSingleReadSnapshot<MlcClaimResolutionsSummary>;
+export type MlcClaimReputationSnapshot = MlcSingleReadSnapshot<MlcClaimReputationSummary>;
+export type MlcClaimStatusHistorySnapshot = MlcSingleReadSnapshot<MlcClaimStatusHistorySummary>;
+export type MlcShipmentStatusSnapshot = MlcSingleReadSnapshot<MlcShipmentStatusSummary>;
 
 export type OAuthTokenState = {
   sellerId: string;
@@ -773,9 +802,19 @@ export type MlcApiClient = {
     options?: { status?: "active" | "paused" | "closed"; listingTypeId?: string },
   ): Promise<MlcListingsSnapshot>;
   getItem(sellerId: string, itemId: string): Promise<MlItem>;
-  getOrders(sellerId: string): Promise<MlcOrdersSnapshot>;
-  getMessages(sellerId: string): Promise<MlcMessagesSnapshot>;
+  getOrders(
+    sellerId: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<MlcOrdersSnapshot>;
+  getMessages(
+    sellerId: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<MlcMessagesSnapshot>;
   getReputation(sellerId: string): Promise<MlcReputationSnapshot>;
+  getQuestions?(
+    sellerId: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<MlcQuestionsSnapshot>;
   getCategoryAttributes(
     sellerId: string,
     categoryId: string,
@@ -821,12 +860,12 @@ export type MlcApiClient = {
   getPromotionDetail?(
     sellerId: string,
     promotionId: string,
-    promotionType: MlcPromotionType | string,
+    promotionType: string,
   ): Promise<MlcPromotionDetailSnapshot>;
   getPromotionItems?(
     sellerId: string,
     promotionId: string,
-    promotionType: MlcPromotionType | string,
+    promotionType: string,
     options?: {
       itemId?: string;
       status?: "started" | "pending" | "candidate";
@@ -865,10 +904,19 @@ export type MlcApiClient = {
   ): Promise<MlcClaimsSearchSnapshot>;
   getClaimDetail?(sellerId: string, claimId: string): Promise<MlcClaimDetailSnapshot>;
   getClaimMessages?(sellerId: string, claimId: string): Promise<MlcClaimMessagesSnapshot>;
-  getClaimExpectedResolutions?(sellerId: string, claimId: string): Promise<MlcClaimResolutionsSnapshot>;
-  getClaimAffectsReputation?(sellerId: string, claimId: string): Promise<MlcClaimReputationSnapshot>;
+  getClaimExpectedResolutions?(
+    sellerId: string,
+    claimId: string,
+  ): Promise<MlcClaimResolutionsSnapshot>;
+  getClaimAffectsReputation?(
+    sellerId: string,
+    claimId: string,
+  ): Promise<MlcClaimReputationSnapshot>;
   getClaimStatusHistory?(sellerId: string, claimId: string): Promise<MlcClaimStatusHistorySnapshot>;
-  associateImageToItem?(sellerId: string, input: MlcImageAssociateInput): Promise<MlcImageAssociateSnapshot>;
+  associateImageToItem?(
+    sellerId: string,
+    input: MlcImageAssociateInput,
+  ): Promise<MlcImageAssociateSnapshot>;
   getShipmentStatus?(sellerId: string, shipmentId: string): Promise<MlcShipmentStatusSnapshot>;
 };
 
@@ -1679,7 +1727,9 @@ function normalizeSingleClaim(record: Readonly<Record<string, unknown>>): MlcCla
   return claim;
 }
 
-function normalizeClaimActions(actions: ReadonlyArray<unknown>): ReadonlyArray<MlcClaimPlayerAction> {
+function normalizeClaimActions(
+  actions: ReadonlyArray<unknown>,
+): ReadonlyArray<MlcClaimPlayerAction> {
   return actions.flatMap((a) => {
     const ar = asRecord(a);
     if (ar === undefined) return [];
@@ -1694,7 +1744,9 @@ function normalizeClaimActions(actions: ReadonlyArray<unknown>): ReadonlyArray<M
   });
 }
 
-function normalizeClaimMessageArray(messages: ReadonlyArray<unknown>): ReadonlyArray<MlcClaimMessage> {
+function normalizeClaimMessageArray(
+  messages: ReadonlyArray<unknown>,
+): ReadonlyArray<MlcClaimMessage> {
   return messages.flatMap((m) => {
     const mr = asRecord(m);
     if (mr === undefined) return [];
@@ -1801,7 +1853,7 @@ function normalizeClaimMessages(input: {
   const messages = normalizeClaimMessageArray(
     Array.isArray(input.payload) ? input.payload : asArray(root?.messages ?? root),
   );
-  const completeness = (Array.isArray(input.payload) || root !== undefined) ? "complete" : "partial";
+  const completeness = Array.isArray(input.payload) || root !== undefined ? "complete" : "partial";
   const data: MlcClaimMessagesSummary = { messages };
 
   return {
@@ -1858,7 +1910,8 @@ function normalizeClaimAffectsReputation(input: {
   now: Date;
 }): MlcClaimReputationSnapshot {
   const record = asRecord(input.payload);
-  const affects_reputation = booleanValue(record?.affects_reputation ?? record?.affectsReputation) ?? false;
+  const affects_reputation =
+    booleanValue(record?.affects_reputation ?? record?.affectsReputation) ?? false;
   const completeness = record !== undefined ? "complete" : "partial";
 
   const data: MlcClaimReputationSummary = { affects_reputation };
@@ -1917,7 +1970,7 @@ export function normalizeImageOrchestration(input: {
   categoryId: string;
   title?: string;
   now: Date;
-}): MlcReadSnapshot<MlcImageOrchestrationSummary> {
+}): MlcSingleReadSnapshot<MlcImageOrchestrationSummary> {
   const steps: ReadonlyArray<MlcImageOrchestrationStep> = [
     { step: "diagnose", status: "pending" },
     { step: "upload", status: "pending" },
@@ -2065,6 +2118,13 @@ function normalizeOrders(input: {
 
   const completeness = complete ? "complete" : "partial";
 
+  const pagingRecord = asRecord(root?.paging);
+  const paging: MlcOrdersSnapshot["paging"] = {
+    total: numberValue(pagingRecord?.total) ?? 0,
+    offset: numberValue(pagingRecord?.offset) ?? 0,
+    limit: numberValue(pagingRecord?.limit) ?? 0,
+  };
+
   return {
     sellerId: input.sellerId,
     kind: "order",
@@ -2073,6 +2133,7 @@ function normalizeOrders(input: {
     completeness,
     freshness: createFreshness("order", input.now),
     confidence: snapshotConfidence(completeness, data.length),
+    paging,
   };
 }
 
@@ -2114,6 +2175,13 @@ function normalizeMessages(input: {
 
   const completeness = complete ? "complete" : "partial";
 
+  const pagingRecord = asRecord(root?.paging);
+  const paging: MlcMessagesSnapshot["paging"] = {
+    total: numberValue(pagingRecord?.total) ?? 0,
+    offset: numberValue(pagingRecord?.offset) ?? 0,
+    limit: numberValue(pagingRecord?.limit) ?? 0,
+  };
+
   return {
     sellerId: input.sellerId,
     kind: "message",
@@ -2122,6 +2190,7 @@ function normalizeMessages(input: {
     completeness,
     freshness: createFreshness("message", input.now),
     confidence: snapshotConfidence(completeness, data.length),
+    paging,
   };
 }
 
@@ -2777,19 +2846,14 @@ function normalizePromotionSummary(raw: unknown): MlcPromotionSummary | undefine
     for (const o of rawOffers) {
       const offer = asRecord(o);
       if (offer === undefined) continue;
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      const normalized = {} as typeof offers[number];
+      const normalized = {} as (typeof offers)[number];
       pushOptional(normalized, "id", stringValue(offer.id) ?? "");
       pushOptional(normalized, "originalPrice", numberValue(offer.original_price));
       pushOptional(normalized, "newPrice", numberValue(offer.new_price));
       pushOptional(normalized, "status", stringValue(offer.status));
       pushOptional(normalized, "startDate", stringValue(offer.start_date));
       pushOptional(normalized, "endDate", stringValue(offer.end_date));
-      pushOptional(
-        normalized,
-        "benefits",
-        normalizePromotionBenefits(asRecord(offer.benefits)),
-      );
+      pushOptional(normalized, "benefits", normalizePromotionBenefits(asRecord(offer.benefits)));
       offers.push(normalized);
     }
     if (offers.length > 0) summary.offers = offers;
@@ -2881,21 +2945,29 @@ function normalizePromotionItems(input: {
       const topCurrency = stringValue(netProceeds.currency);
       if (topAmount !== undefined || topCurrency !== undefined) {
         // Flat shape: { amount, currency }
-        const flat: Record<string, unknown> = {};
+        const flat: { amount?: number; currency?: string } = {};
         pushOptional(flat, "amount", topAmount);
         pushOptional(flat, "currency", topCurrency);
-        item.netProceeds = flat as NonNullable<typeof item.netProceeds>;
+        item.netProceeds = flat;
       } else {
         // Nested shape: { suggested_discounted_price, max_discounted_price, min_discounted_price }
         const suggested = asRecord(netProceeds.suggested_discounted_price);
         const max = asRecord(netProceeds.max_discounted_price);
         const min = asRecord(netProceeds.min_discounted_price);
         if (suggested !== undefined || max !== undefined || min !== undefined) {
-          const nested: Record<string, { amount?: number; currency?: string }> = {};
+          const nested: {
+            suggestedDiscountedPrice?: { amount?: number; currency?: string };
+            maxDiscountedPrice?: { amount?: number; currency?: string };
+            minDiscountedPrice?: { amount?: number; currency?: string };
+          } = {};
           if (suggested !== undefined) {
             nested.suggestedDiscountedPrice = {};
             pushOptional(nested.suggestedDiscountedPrice, "amount", numberValue(suggested.amount));
-            pushOptional(nested.suggestedDiscountedPrice, "currency", stringValue(suggested.currency));
+            pushOptional(
+              nested.suggestedDiscountedPrice,
+              "currency",
+              stringValue(suggested.currency),
+            );
           }
           if (max !== undefined) {
             nested.maxDiscountedPrice = {};
@@ -2907,7 +2979,7 @@ function normalizePromotionItems(input: {
             pushOptional(nested.minDiscountedPrice, "amount", numberValue(min.amount));
             pushOptional(nested.minDiscountedPrice, "currency", stringValue(min.currency));
           }
-          item.netProceeds = nested as unknown as NonNullable<typeof item.netProceeds>;
+          item.netProceeds = nested;
         }
       }
     }
@@ -2916,7 +2988,11 @@ function normalizePromotionItems(input: {
   const paging: MlcPromotionItemsSummary["paging"] = {
     limit: numberValue(pagingRecord?.limit) ?? input.options.limit,
   };
-  pushOptional(paging, "searchAfter", stringValue(pagingRecord?.search_after) ?? stringValue(pagingRecord?.searchAfter));
+  pushOptional(
+    paging,
+    "searchAfter",
+    stringValue(pagingRecord?.search_after) ?? stringValue(pagingRecord?.searchAfter),
+  );
   pushOptional(paging, "total", numberValue(pagingRecord?.total));
   const completeness = root !== undefined && Array.isArray(root.results) ? "complete" : "partial";
 
@@ -3076,20 +3152,20 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       const payload = await input.request(sellerId, `/items/${safeItemId}`);
       return assertCompleteMlcItem(payload);
     },
-    getOrders: (sellerId) =>
-      readMlcSnapshot({
-        sellerId,
-        endpoint: MLC_READ_ENDPOINTS.orders,
-        request: input.request,
-        now: input.now(),
-      }),
-    getMessages: (sellerId) =>
-      readMlcSnapshot({
-        sellerId,
-        endpoint: MLC_READ_ENDPOINTS.messages,
-        request: input.request,
-        now: input.now(),
-      }),
+    getOrders: async (sellerId, options) => {
+      const query: Record<string, string> = { seller: sellerId, site: "MLC" };
+      if (options?.limit !== undefined) query.limit = String(options.limit);
+      if (options?.offset !== undefined) query.offset = String(options.offset);
+      const payload = await input.request(sellerId, "/orders/search", query);
+      return normalizeOrders({ sellerId, payload, now: input.now() });
+    },
+    getMessages: async (sellerId, options) => {
+      const query: Record<string, string> = { seller: sellerId, site: "MLC" };
+      if (options?.limit !== undefined) query.limit = String(options.limit);
+      if (options?.offset !== undefined) query.offset = String(options.offset);
+      const payload = await input.request(sellerId, "/messages/search", query);
+      return normalizeMessages({ sellerId, payload, now: input.now() });
+    },
     getReputation: (sellerId) =>
       readMlcSnapshot({
         sellerId,
@@ -3097,6 +3173,13 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         request: input.request,
         now: input.now(),
       }),
+    getQuestions: async (sellerId, options) => {
+      const query: Record<string, string> = { seller: sellerId, site: "MLC" };
+      if (options?.limit !== undefined) query.limit = String(options.limit);
+      if (options?.offset !== undefined) query.offset = String(options.offset);
+      const payload = await input.request(sellerId, "/questions/search", query);
+      return normalizeQuestions({ sellerId, payload, now: input.now() });
+    },
     getCategoryAttributes: async (sellerId, categoryId) => {
       assertMlcCategoryId(categoryId);
       const payload = await input.request(sellerId, `/categories/${categoryId}/attributes`);
@@ -3383,9 +3466,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
     },
     uploadImage: async (sellerId, imageBuffer, filename) => {
       const formData = new FormData();
-      // Node.js Buffer <-> DOM BlobPart type mismatch with SharedArrayBuffer.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument
-      const blob = new Blob([imageBuffer as any], { type: "image/jpeg" });
+      const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/jpeg" });
       formData.append("file", blob, filename);
       const payload = await input.request(
         sellerId,
@@ -3398,10 +3479,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
     },
     getModerationStatus: async (sellerId, itemId) => {
       const safeItemId = assertMlcItemId(itemId);
-      const payload = await input.request(
-        sellerId,
-        `/moderations/last_moderation/${safeItemId}`,
-      );
+      const payload = await input.request(sellerId, `/moderations/last_moderation/${safeItemId}`);
       return normalizeModerationStatus({ sellerId, payload, now: input.now() });
     },
     getNotices: async (sellerId, options) => {
@@ -3415,18 +3493,20 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       );
       return normalizeNotices({ sellerId, payload, now: input.now() });
     },
-    prepareAnswer: async (sellerId, answerInput) => {
+    prepareAnswer: (sellerId, answerInput) => {
       const questionId = answerInput.questionId.trim();
       const text = answerInput.text.trim();
       if (!questionId || !text) {
-        return normalizeAnswer({
-          sellerId,
-          questionId: "",
-          text: "",
-          now: input.now(),
-        });
+        return Promise.resolve(
+          normalizeAnswer({
+            sellerId,
+            questionId: "",
+            text: "",
+            now: input.now(),
+          }),
+        );
       }
-      return normalizeAnswer({ sellerId, questionId, text, now: input.now() });
+      return Promise.resolve(normalizeAnswer({ sellerId, questionId, text, now: input.now() }));
     },
     searchClaims: async (sellerId, options) => {
       const query: Record<string, string> = {};
@@ -3442,10 +3522,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       return normalizeClaimsSearch({ sellerId, payload, now: input.now() });
     },
     getClaimDetail: async (sellerId, claimId) => {
-      const payload = await input.request(
-        sellerId,
-        `/post-purchase/v1/claims/${claimId}`,
-      );
+      const payload = await input.request(sellerId, `/post-purchase/v1/claims/${claimId}`);
       return normalizeClaimDetail({ sellerId, payload, now: input.now() });
     },
     getShipmentStatus: async (sellerId, shipmentId) => {
@@ -3458,10 +3535,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       return normalizeShipmentStatus({ sellerId, payload, now: input.now() });
     },
     getClaimMessages: async (sellerId, claimId) => {
-      const payload = await input.request(
-        sellerId,
-        `/post-purchase/v1/claims/${claimId}/messages`,
-      );
+      const payload = await input.request(sellerId, `/post-purchase/v1/claims/${claimId}/messages`);
       return normalizeClaimMessages({ sellerId, payload, now: input.now() });
     },
     getClaimExpectedResolutions: async (sellerId, claimId) => {
@@ -3704,8 +3778,7 @@ export function createMercadoLibreApiFetchTransport(): MercadoLibreApiTransport 
 
       if (request.body !== undefined && request.method !== "GET") {
         if (request.body instanceof FormData || request.body instanceof Blob) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-          (init as unknown as Record<string, unknown>).body = request.body;
+          init.body = request.body;
           // Let fetch set the Content-Type with boundary for multipart.
         } else if (typeof request.body === "string") {
           init.headers["Content-Type"] = "application/json";
@@ -3871,12 +3944,12 @@ function normalizeQuestions(input: {
   sellerId: string;
   payload: unknown;
   now: Date;
-}): MlcMessagesSnapshot {
+}): MlcQuestionsSnapshot {
   const root = asRecord(input.payload);
   const results = asArray(root?.results ?? root?.questions);
-  let complete = root !== undefined && Array.isArray(root?.results ?? root?.questions);
+  let complete = root !== undefined && Array.isArray(root.results ?? root.questions);
 
-  const data = results.flatMap((item): MlcMessageSummary[] => {
+  const questions = results.flatMap((item): MlcQuestionSummary[] => {
     const record = asRecord(item);
     const id = stringValue(record?.id);
     if (record === undefined || id === undefined) {
@@ -3884,20 +3957,27 @@ function normalizeQuestions(input: {
       return [];
     }
 
-    const from = asRecord(record.from);
-    const fromUserId =
-      stringValue(from?.user_id) ??
-      stringValue(from?.id) ??
-      (numberValue(from?.user_id) !== undefined ? String(from?.user_id) : undefined) ??
-      (numberValue(from?.id) !== undefined ? String(from?.id) : undefined);
-    const summary: MlcMessageSummary = { id };
-    pushOptional(summary, "subject", stringValue(record.text) ?? stringValue(record.subject));
+    const answer = asRecord(record.answer);
+    const summary: MlcQuestionSummary = { id };
+    pushOptional(summary, "text", stringValue(record.text));
+    pushOptional(summary, "answerText", stringValue(answer?.text));
     pushOptional(summary, "status", stringValue(record.status));
-    pushOptional(summary, "createdAt", stringValue(record.date_created));
-    pushOptional(summary, "fromUserId", fromUserId);
+    pushOptional(summary, "dateCreated", stringValue(record.date_created));
+    pushOptional(summary, "itemId", stringValue(record.item_id));
 
     return [summary];
   });
+
+  // /questions/search returns top-level pagination fields (total, limit, offset)
+  // or nested under paging — handle both shapes.
+  const pagingRecord = asRecord(root?.paging);
+  const paging: MlcQuestionsSearchResult["paging"] = {
+    total: numberValue(root?.total) ?? numberValue(pagingRecord?.total) ?? questions.length,
+    offset: numberValue(root?.offset) ?? numberValue(pagingRecord?.offset) ?? 0,
+    limit: numberValue(root?.limit) ?? numberValue(pagingRecord?.limit) ?? questions.length,
+  };
+
+  const searchResult: MlcQuestionsSearchResult = { paging, results: questions };
 
   const completeness = complete ? "complete" : "partial";
 
@@ -3905,10 +3985,10 @@ function normalizeQuestions(input: {
     sellerId: input.sellerId,
     kind: "message",
     source: "mercadolibre-api",
-    data,
+    data: searchResult,
     completeness,
     freshness: createFreshness("message", input.now),
-    confidence: snapshotConfidence(completeness, data.length),
+    confidence: snapshotConfidence(completeness, questions.length),
   };
 }
 
@@ -4000,7 +4080,7 @@ export type MlClient = {
   getItems(sellerId: string): Promise<MlcListingsSnapshot>;
   getItem(sellerId: string, itemId: string): Promise<MlItem>;
   getOrders(sellerId: string): Promise<MlcOrdersSnapshot>;
-  getQuestions(sellerId: string): Promise<MlcMessagesSnapshot>;
+  getQuestions(sellerId: string): Promise<MlcQuestionsSnapshot>;
   // Write operations
   publishItem(sellerId: string, item: NewItem): Promise<MlWriteSnapshot>;
   updateItem(sellerId: string, itemId: string, updates: Partial<NewItem>): Promise<MlWriteSnapshot>;

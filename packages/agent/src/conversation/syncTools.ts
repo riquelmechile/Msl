@@ -20,16 +20,7 @@ import type {
   SyncResult,
   SyncReport,
   MlUserSnapshot,
-  type MlcModerationStatusSummary,
-  type MlcNoticesSummary,
-  type MlcClaimsSearchResult,
-  type MlcClaimDetailSummary,
-  type MlcClaimMessagesSummary,
-  type MlcClaimResolutionsSummary,
-  type MlcClaimReputationSummary,
-  type MlcClaimStatusHistorySummary,
-  type MlcShipmentStatusSummary,
-  type MlcImageOrchestrationSummary,
+  MlcListingSummary,
 } from "@msl/mercadolibre";
 import {
   assertPlasticovToMaustianDirection,
@@ -148,6 +139,20 @@ function coercePromotionId(raw: unknown): string | undefined {
 
 function coercePromotionType(raw: unknown): string | undefined {
   return typeof raw === "string" && raw.length > 0 ? raw : undefined;
+}
+
+function metadataString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function isMlcListingSummary(value: unknown): value is MlcListingSummary {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string"
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -732,10 +737,15 @@ export function createFindPausedListingsTool(mlcClient: MlcApiClient): ToolDefin
       try {
         const snapshot: MlcListingsSnapshot = await mlcClient.getListings(sellerId, options);
 
-        const listings = Array.isArray(snapshot.data) ? snapshot.data : [snapshot.data];
+        const rawListings: unknown = snapshot.data;
+        const listings = Array.isArray(rawListings)
+          ? rawListings.filter(isMlcListingSummary)
+          : isMlcListingSummary(rawListings)
+            ? [rawListings]
+            : [];
 
         // Analyse reuse potential: older listings with stock history are better.
-        const analysed = listings.map((listing) => {
+        const analysed = listings.map((listing): MlcListingSummary & { potentialScore: number } => {
           const hasHistory = listing.title !== undefined && listing.price !== undefined;
           const hasStock = (listing.availableQuantity ?? 0) > 0;
           // Simple heuristic: listings with title+price (indicating prior use)
@@ -1653,7 +1663,7 @@ export function createAuditAllQualityTool(engine: GraphEngine): ToolDefinition {
       },
       required: [],
     },
-    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
       const sellerId = args.sellerId as string | undefined;
       const limit = (args.limit as number) || 10;
 
@@ -1672,9 +1682,9 @@ export function createAuditAllQualityTool(engine: GraphEngine): ToolDefinition {
       const latestPerItem = new Map<string, Record<string, unknown>>();
       for (const node of nodes) {
         const m = node.metadata;
-        const iid = String(m.itemId ?? "");
+        const iid = metadataString(m.itemId);
         const previous = latestPerItem.get(iid);
-        if (!previous || String(m.capturedAt ?? "") > String(previous.capturedAt ?? "")) {
+        if (!previous || metadataString(m.capturedAt) > metadataString(previous.capturedAt)) {
           latestPerItem.set(iid, m);
         }
       }
@@ -1847,7 +1857,7 @@ export function createFindRelistOpportunitiesTool(engine: GraphEngine): ToolDefi
       },
       required: [],
     },
-    execute: async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
       const sellerId = args.sellerId as string | undefined;
       const urgentOnly = args.urgent === true;
 
@@ -2165,7 +2175,7 @@ export function createReadSellerNoticesTool(mlcClient: MlcApiClient): ToolDefini
 
       try {
         const snapshot = await mlcClient.getNotices(sellerId, opts);
-        const data = snapshot.data as MlcNoticesSummary;
+        const data = snapshot.data;
         const titles = data.notices
           .slice(0, 5)
           .map((n) => n.title ?? "(sin título)")
@@ -2247,7 +2257,7 @@ export function createCheckImageModerationTool(mlcClient: MlcApiClient): ToolDef
 
       try {
         const snapshot = await mlcClient.getModerationStatus(sellerId, itemId);
-        const data = snapshot.data as MlcModerationStatusSummary;
+        const data = snapshot.data;
         return {
           ...snapshot,
           hasIssues: data.blocked || data.wordings.length > 0,
@@ -2299,7 +2309,8 @@ export function createCheckClaimsTool(mlcClient: MlcApiClient): ToolDefinition {
         },
         status: {
           type: "string",
-          description: "Filtrar por estado de reclamo: open, closed, under_review, etc. (opcional).",
+          description:
+            "Filtrar por estado de reclamo: open, closed, under_review, etc. (opcional).",
         },
         limit: {
           type: "number",
@@ -2332,7 +2343,7 @@ export function createCheckClaimsTool(mlcClient: MlcApiClient): ToolDefinition {
 
       try {
         const snapshot = await mlcClient.searchClaims(sellerId, opts);
-        const data = snapshot.data as MlcClaimsSearchResult;
+        const data = snapshot.data;
         const openCount = data.results.filter(
           (c) => c.status === "open" || c.status === "under_review",
         ).length;
@@ -2348,8 +2359,7 @@ export function createCheckClaimsTool(mlcClient: MlcApiClient): ToolDefinition {
       } catch (err) {
         return {
           error:
-            `No se pudo buscar reclamos: ` +
-            `${err instanceof Error ? err.message : String(err)}`,
+            `No se pudo buscar reclamos: ` + `${err instanceof Error ? err.message : String(err)}`,
         };
       }
     },
@@ -2413,12 +2423,13 @@ export function createCheckClaimDetailTool(mlcClient: MlcApiClient): ToolDefinit
 
       try {
         const snapshot = await mlcClient.getClaimDetail(sellerId, claimId);
-        const data = snapshot.data as MlcClaimDetailSummary;
+        const data = snapshot.data;
         return {
           ...snapshot,
           messageCount: data.messages?.length ?? 0,
           availableActionCount: data.availableActions?.length ?? 0,
-          summary: `Reclamo ${data.claim.id}: estado "${data.claim.status ?? "desconocido"}", ` +
+          summary:
+            `Reclamo ${data.claim.id}: estado "${data.claim.status ?? "desconocido"}", ` +
             `tipo "${data.claim.type ?? "desconocido"}", ` +
             `${data.messages?.length ?? 0} mensajes, ` +
             `${data.availableActions?.length ?? 0} acciones disponibles.`,
@@ -2477,9 +2488,7 @@ export function createCheckShipmentStatusTool(mlcClient: MlcApiClient): ToolDefi
         };
       }
       const shipmentId =
-        typeof args.shipmentId === "string" && args.shipmentId.length > 0
-          ? args.shipmentId
-          : null;
+        typeof args.shipmentId === "string" && args.shipmentId.length > 0 ? args.shipmentId : null;
       if (!shipmentId) {
         return {
           error: "El parámetro 'shipmentId' es obligatorio y debe ser un string no vacío.",
@@ -2493,10 +2502,12 @@ export function createCheckShipmentStatusTool(mlcClient: MlcApiClient): ToolDefi
 
       try {
         const snapshot = await mlcClient.getShipmentStatus(sellerId, shipmentId);
-        const data = snapshot.data as MlcShipmentStatusSummary;
+        const data = snapshot.data;
         return {
           ...snapshot,
-          friendlyStatus: data.status ? `Estado: ${data.status}${data.substatus ? ` (${data.substatus})` : ""}` : "Estado desconocido",
+          friendlyStatus: data.status
+            ? `Estado: ${data.status}${data.substatus ? ` (${data.substatus})` : ""}`
+            : "Estado desconocido",
           tracking: data.trackingNumber
             ? `Seguimiento: ${data.trackingNumber} (${data.trackingMethod ?? "método desconocido"})`
             : "Sin número de seguimiento",
@@ -2572,7 +2583,7 @@ export function createCheckClaimMessagesTool(mlcClient: MlcApiClient): ToolDefin
 
       try {
         const snapshot = await mlcClient.getClaimMessages(sellerId, claimId);
-        const data = snapshot.data as MlcClaimMessagesSummary;
+        const data = snapshot.data;
         return {
           ...snapshot,
           messageCount: data.messages.length,
@@ -2648,7 +2659,7 @@ export function createCheckClaimResolutionsTool(mlcClient: MlcApiClient): ToolDe
 
       try {
         const snapshot = await mlcClient.getClaimExpectedResolutions(sellerId, claimId);
-        const data = snapshot.data as MlcClaimResolutionsSummary;
+        const data = snapshot.data;
         const resolutionDescs = data.expected_resolutions
           .map((r) => `${r.status ?? "?"}: ${r.description ?? "sin descripción"}`)
           .join(" | ");
@@ -2727,7 +2738,7 @@ export function createCheckClaimReputationTool(mlcClient: MlcApiClient): ToolDef
 
       try {
         const snapshot = await mlcClient.getClaimAffectsReputation(sellerId, claimId);
-        const data = snapshot.data as MlcClaimReputationSummary;
+        const data = snapshot.data;
         return {
           ...snapshot,
           recommendation: data.affects_reputation
@@ -2801,7 +2812,7 @@ export function createCheckClaimHistoryTool(mlcClient: MlcApiClient): ToolDefini
 
       try {
         const snapshot = await mlcClient.getClaimStatusHistory(sellerId, claimId);
-        const data = snapshot.data as MlcClaimStatusHistorySummary;
+        const data = snapshot.data;
         const timeline = data.history
           .map((h) => `${h.status ?? "?"} (${h.date ?? "sin fecha"})`)
           .join(" → ");
@@ -2873,9 +2884,7 @@ export function createPrepareAnswerTool(mlcClient: MlcApiClient): ToolDefinition
         };
       }
       const questionId =
-        typeof args.questionId === "string" && args.questionId.length > 0
-          ? args.questionId
-          : null;
+        typeof args.questionId === "string" && args.questionId.length > 0 ? args.questionId : null;
       if (!questionId) {
         return {
           error: "El parámetro 'questionId' es obligatorio y debe ser un string no vacío.",
@@ -2897,8 +2906,7 @@ export function createPrepareAnswerTool(mlcClient: MlcApiClient): ToolDefinition
         const snapshot = await mlcClient.prepareAnswer(sellerId, { questionId, text });
         return {
           ...snapshot,
-          warning:
-            "⚠️ Esta respuesta NO fue publicada. El vendedor debe aprobarla explícitamente.",
+          warning: "⚠️ Esta respuesta NO fue publicada. El vendedor debe aprobarla explícitamente.",
         };
       } catch (err) {
         return {
@@ -2974,26 +2982,21 @@ export function createPrepareImageFlowTool(mlcClient: MlcApiClient): ToolDefinit
           error: "El parámetro 'sellerId' es obligatorio y debe ser un string no vacío.",
         };
       }
-      const itemId =
-        typeof args.itemId === "string" && args.itemId.length > 0 ? args.itemId : null;
+      const itemId = typeof args.itemId === "string" && args.itemId.length > 0 ? args.itemId : null;
       if (!itemId) {
         return {
           error: "El parámetro 'itemId' es obligatorio y debe ser un string no vacío.",
         };
       }
       const pictureUrl =
-        typeof args.pictureUrl === "string" && args.pictureUrl.length > 0
-          ? args.pictureUrl
-          : null;
+        typeof args.pictureUrl === "string" && args.pictureUrl.length > 0 ? args.pictureUrl : null;
       if (!pictureUrl) {
         return {
           error: "El parámetro 'pictureUrl' es obligatorio y debe ser una URL válida.",
         };
       }
       const categoryId =
-        typeof args.categoryId === "string" && args.categoryId.length > 0
-          ? args.categoryId
-          : null;
+        typeof args.categoryId === "string" && args.categoryId.length > 0 ? args.categoryId : null;
       if (!categoryId) {
         return {
           error: "El parámetro 'categoryId' es obligatorio y debe ser un string no vacío.",
@@ -3017,21 +3020,22 @@ export function createPrepareImageFlowTool(mlcClient: MlcApiClient): ToolDefinit
         const diagSnapshot = await mlcClient.diagnoseImage(sellerId, diagInput);
 
         // Step 2: Build the orchestration summary with diagnose completed.
-        const orchestration = normalizeImageOrchestration({
+        const orchestrationInput = {
           sellerId,
           itemId,
           pictureUrl,
           categoryId,
-          title: typeof args.title === "string" ? args.title : undefined,
           now: new Date(),
-        });
-        const summary = orchestration.data as MlcImageOrchestrationSummary;
+        };
+        if (typeof args.title === "string") {
+          Object.assign(orchestrationInput, { title: args.title });
+        }
+        const orchestration = normalizeImageOrchestration(orchestrationInput);
+        const summary = orchestration.data;
 
         // Mark the diagnose step as completed.
         const updatedSteps = summary.steps.map((s) =>
-          s.step === "diagnose"
-            ? { ...s, status: "completed" as const, result: diagSnapshot }
-            : s,
+          s.step === "diagnose" ? { ...s, status: "completed" as const, result: diagSnapshot } : s,
         );
 
         return {

@@ -940,7 +940,11 @@ describe("MCP Server", () => {
     const cb = registeredTools.get("read_moderation_status");
     expect(cb).toBeDefined();
 
-    const result = (await cb!({ sellerId: "ML-test", itemId: "MLC1001", msl_api_key: "wrong" })) as {
+    const result = (await cb!({
+      sellerId: "ML-test",
+      itemId: "MLC1001",
+      msl_api_key: "wrong",
+    })) as {
       content: { text: string }[];
       isError?: boolean;
     };

@@ -1898,14 +1898,18 @@ export function createMcpServer(config: McpServerConfig = {}) {
         if (!validateApiKey(msl_api_key)) {
           return unauthorizedResult();
         }
-        const summary: MlcImageOrchestrationSummary = normalizeImageOrchestration({
+        const orchestrationInput = {
           sellerId,
           itemId,
           pictureUrl,
           categoryId,
-          title,
           now: new Date(),
-        }).data;
+        };
+        if (title !== undefined) {
+          Object.assign(orchestrationInput, { title });
+        }
+        const summary: MlcImageOrchestrationSummary =
+          normalizeImageOrchestration(orchestrationInput).data;
         return jsonResult({
           ...summary,
           metadata: {

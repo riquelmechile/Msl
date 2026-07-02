@@ -35,6 +35,7 @@ const signalLabels: Record<BusinessSignalKind, string> = {
   cancellation: "cancelaciones",
   "category-attributes": "category attributes",
   "category-technical-specs": "category technical specs",
+  "business-signal": "señales de negocio",
   claim: "reclamos",
   "historical-summary": "resumen histórico",
   listing: "publicaciones",
@@ -43,6 +44,7 @@ const signalLabels: Record<BusinessSignalKind, string> = {
   order: "órdenes",
   pricing: "precios",
   "product-ads-insights": "Product Ads insights",
+  question: "preguntas",
   reputation: "reputación",
   stock: "stock",
 };

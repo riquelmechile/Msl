@@ -14,7 +14,6 @@ import {
   type MlcCategoryAttributeSummary,
   type MlcCategoryTechnicalSpecSummary,
   type MlcListingSummary,
-  type MlcMessageSummary,
   type MlcOrderSummary,
   type MlcReadSnapshotFreshness,
   type MercadoLibreApiTransport,
@@ -26,6 +25,12 @@ import {
 import { encrypt, decrypt } from "./oauth/tokenStore.js";
 
 const now = new Date("2026-06-25T12:00:00.000Z");
+
+function present<T>(value: T | undefined): T {
+  expect(value).toBeDefined();
+  if (value === undefined) throw new Error("Expected value to be defined");
+  return value;
+}
 
 function completeMlcItemPayload(overrides: Record<string, unknown> = {}) {
   return {
@@ -599,14 +604,13 @@ describe("direct MLC API client boundary", () => {
   });
 
   it("reads Classic listing prices and can return multiple listing types when omitted", async () => {
-    const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue({
-        results: [
-          { currency_id: "ARS", listing_type_id: "gold_special", sale_fee_amount: 700 },
-          { currency_id: "ARS", listing_type_id: "gold_pro", sale_fee_amount: 875 },
-        ],
-      }),
-    };
+    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue({
+      results: [
+        { currency_id: "ARS", listing_type_id: "gold_special", sale_fee_amount: 700 },
+        { currency_id: "ARS", listing_type_id: "gold_pro", sale_fee_amount: 875 },
+      ],
+    });
+    const transport: MercadoLibreApiTransport = { request };
     const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
 
     const response = await client.getListingPrices!("seller-1", {
@@ -619,7 +623,7 @@ describe("direct MLC API client boundary", () => {
       { listingTypeId: "gold_special", saleFeeAmount: 700 },
       { listingTypeId: "gold_pro", saleFeeAmount: 875 },
     ]);
-    expect(transport.request).toHaveBeenCalledWith(
+    expect(request).toHaveBeenCalledWith(
       expect.objectContaining({
         query: { price: "5000", category_id: "MLA418448" },
       }),
@@ -1011,7 +1015,12 @@ describe("direct MLC API client boundary", () => {
     await expect(
       client.getPromotionDetail!("seller-1", "C-MLC302", "SELLER_CAMPAIGN"),
     ).resolves.toMatchObject({
-      data: { id: "C-MLC302", type: "SELLER_CAMPAIGN", subType: "FLEXIBLE_PERCENTAGE", allowCombination: false },
+      data: {
+        id: "C-MLC302",
+        type: "SELLER_CAMPAIGN",
+        subType: "FLEXIBLE_PERCENTAGE",
+        allowCombination: false,
+      },
     });
     await expect(
       client.getPromotionItems!("seller-1", "P-MLC1806015", "MARKETPLACE_CAMPAIGN", {
@@ -1082,7 +1091,9 @@ describe("direct MLC API client boundary", () => {
       now,
     });
     const snapshot = await client.getPromotionDetail!(
-      "seller-1", "P-MLC13457036", "UNHEALTHY_STOCK",
+      "seller-1",
+      "P-MLC13457036",
+      "UNHEALTHY_STOCK",
     );
     expect(snapshot.data).toMatchObject({
       id: "P-MLC13457036",
@@ -1099,35 +1110,39 @@ describe("direct MLC API client boundary", () => {
   });
 
   it("normalizes promotion items with offer_id, percentages, and net_proceeds", async () => {
-    const requests: any[] = [];
-    const request = vi.fn().mockImplementation((opts: any) => {
-      requests.push(opts);
-      return Promise.resolve({
-        results: [
-          {
-            id: "MLC1386957825",
-            status: "started",
-            price: 28,
-            original_price: 30,
-            currency_id: "USD",
-            offer_id: "OFFER-MLC1386957825-10097412984",
-            seller_percentage: 6.7,
-            meli_percentage: 10,
-            start_date: "2023-10-02T17:00:00Z",
-            end_date: "2023-10-16T15:00:00Z",
-            net_proceeds: { amount: 20.68, currency: "USD" },
-          },
-        ],
-        paging: { offset: 0, limit: 50, total: 1 },
+    const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+    const request = vi
+      .fn()
+      .mockImplementation((opts: Parameters<MercadoLibreApiTransport["request"]>[0]) => {
+        requests.push(opts);
+        return Promise.resolve({
+          results: [
+            {
+              id: "MLC1386957825",
+              status: "started",
+              price: 28,
+              original_price: 30,
+              currency_id: "USD",
+              offer_id: "OFFER-MLC1386957825-10097412984",
+              seller_percentage: 6.7,
+              meli_percentage: 10,
+              start_date: "2023-10-02T17:00:00Z",
+              end_date: "2023-10-16T15:00:00Z",
+              net_proceeds: { amount: 20.68, currency: "USD" },
+            },
+          ],
+          paging: { offset: 0, limit: 50, total: 1 },
+        });
       });
-    });
     const client = createMlcApiClient({
       tokenState: tokenState(),
       transport: { request },
       now,
     });
     const snapshot = await client.getPromotionItems!(
-      "seller-1", "P-MLC13457036", "UNHEALTHY_STOCK",
+      "seller-1",
+      "P-MLC13457036",
+      "UNHEALTHY_STOCK",
     );
     const data = snapshot.data as MlcPromotionItemsSummary;
     expect(data.items[0]).toMatchObject({
@@ -1164,9 +1179,7 @@ describe("direct MLC API client boundary", () => {
       transport: { request },
       now,
     });
-    const snapshot = await client.getPromotionItems!(
-      "seller-1", "C-MLC302", "SELLER_CAMPAIGN",
-    );
+    const snapshot = await client.getPromotionItems!("seller-1", "C-MLC302", "SELLER_CAMPAIGN");
     const data = snapshot.data as MlcPromotionItemsSummary;
     expect(data.items[0]).toMatchObject({
       id: "MLC2001",
@@ -1190,7 +1203,9 @@ describe("direct MLC API client boundary", () => {
       now,
     });
     const snapshot = await client.getPromotionItems!(
-      "seller-1", "P-MLC1806015", "MARKETPLACE_CAMPAIGN",
+      "seller-1",
+      "P-MLC1806015",
+      "MARKETPLACE_CAMPAIGN",
     );
     expect(snapshot.data).toMatchObject({
       paging: { searchAfter: "camel-cursor", limit: 50 },
@@ -1208,7 +1223,9 @@ describe("direct MLC API client boundary", () => {
       now,
     });
     const snapshot = await client.getPromotionItems!(
-      "seller-1", "P-MLC999", "PRICE_MATCHING_MELI_ALL",
+      "seller-1",
+      "P-MLC999",
+      "PRICE_MATCHING_MELI_ALL",
     );
     expect(snapshot.data).toMatchObject({
       promotionId: "P-MLC999",
@@ -1837,10 +1854,17 @@ describe("MlClient (stub mode)", () => {
     const questions = await client.getQuestions("seller-1");
 
     expect(questions.kind).toBe("message");
-    expect(Array.isArray(questions.data)).toBe(true);
-    const data = questions.data as ReadonlyArray<MlcMessageSummary>;
+    expect(questions.data).toHaveProperty("results");
+    expect(questions.data).toHaveProperty("paging");
+    const data = questions.data.results;
     expect(data.length).toBeGreaterThan(0);
-    expect(data[0]!.id).toBe("Q-1");
+    expect(data[0]!).toMatchObject({
+      id: "Q-1",
+      text: "¿Tiene stock disponible?",
+      status: "UNANSWERED",
+      dateCreated: "2026-06-25T10:00:00Z",
+      itemId: "MLC1001",
+    });
   });
 
   it("publishItem returns write snapshot in stub mode", async () => {
@@ -1942,9 +1966,7 @@ describe("normalizeModerationStatus", () => {
               { kind: "REASON", value: "product photography" },
               { kind: "REMEDY", value: "use white background" },
             ],
-            evidence: [
-              { text_matched: "used product", section_name: "title" },
-            ],
+            evidence: [{ text_matched: "used product", section_name: "title" }],
           },
         ],
       }),
@@ -1973,9 +1995,7 @@ describe("normalizeModerationStatus", () => {
       { kind: "REASON", value: "product photography" },
       { kind: "REMEDY", value: "use white background" },
     ]);
-    expect(result.data.evidence).toEqual([
-      { textMatched: "used product", sectionName: "title" },
-    ]);
+    expect(result.data.evidence).toEqual([{ textMatched: "used product", sectionName: "title" }]);
   });
 
   it("returns partial completeness when payload is empty", async () => {
@@ -2115,22 +2135,26 @@ describe("normalizeNotices", () => {
     expect(result.completeness).toBe("complete");
     expect(result.data.pagination).toEqual({ total: 25, limit: 10, offset: 0 });
     expect(result.data.notices).toHaveLength(2);
-    expect(result.data.notices[0].id).toBe("notice-1");
-    expect(result.data.notices[0].dismissKey).toBe("dismiss-abc");
-    expect(result.data.notices[0].tags).toEqual(["billing", "urgent"]);
-    expect(result.data.notices[0].actions).toHaveLength(2);
-    expect(result.data.notices[0].actions[0]).toEqual({
+    const firstNotice = present(result.data.notices[0]);
+    const secondNotice = present(result.data.notices[1]);
+    expect(firstNotice.id).toBe("notice-1");
+    expect(firstNotice.dismissKey).toBe("dismiss-abc");
+    expect(firstNotice.tags).toEqual(["billing", "urgent"]);
+    expect(firstNotice.actions).toHaveLength(2);
+    expect(firstNotice.actions[0]).toEqual({
       label: "Ver factura",
       url: "https://mla.com/billing",
     });
-    expect(result.data.notices[1].highlighted).toBe(true);
-    expect(result.data.notices[1].tags).toEqual(["promotions"]);
+    expect(secondNotice.highlighted).toBe(true);
+    expect(secondNotice.tags).toEqual(["promotions"]);
   });
 
   it("returns empty notices with full pagination metadata", async () => {
     const { createMlcApiClient } = await import("./index.js");
     const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue({ paging: { total: 0, limit: 10, offset: 0 }, results: [] }),
+      request: vi
+        .fn()
+        .mockResolvedValue({ paging: { total: 0, limit: 10, offset: 0 }, results: [] }),
     };
     const tokenState: OAuthTokenState = {
       sellerId,
@@ -2208,8 +2232,9 @@ describe("normalizeNotices", () => {
 
     const result = await client.getNotices!("seller-1");
 
-    expect(result.data.notices[0].title).toBe("Integrator weekly digest");
-    expect(result.data.notices[0].dismissKey).toBeUndefined();
+    const firstNotice = present(result.data.notices[0]);
+    expect(firstNotice.title).toBe("Integrator weekly digest");
+    expect(firstNotice.dismissKey).toBeUndefined();
   });
 });
 
@@ -2333,7 +2358,10 @@ describe("getNotices pagination integration", () => {
         path: "/communications/notices",
       }),
     );
-    const callArgs = request.mock.calls[0][0];
+    const call = request.mock.calls[0];
+    expect(call).toBeDefined();
+    if (!call) throw new Error("Expected request to be called");
+    const [callArgs] = call;
     expect(callArgs.query).toBeUndefined();
   });
 });
@@ -2397,16 +2425,18 @@ describe("normalizeClaimsSearch", () => {
     expect(result.completeness).toBe("complete");
     expect(result.data.paging).toEqual({ total: 3, offset: 0, limit: 10 });
     expect(result.data.results).toHaveLength(2);
-    expect(result.data.results[0].id).toBe("C-1001");
-    expect(result.data.results[0].status).toBe("open");
-    expect(result.data.results[0].type).toBe("damaged_product");
-    expect(result.data.results[0].stage).toBe("mediation");
-    expect(result.data.results[0].resource).toBe("order");
-    expect(result.data.results[0].players).toHaveLength(2);
-    expect(result.data.results[0].players![0].role).toBe("complainant");
-    expect(result.data.results[0].resolution).toBeDefined();
-    expect(result.data.results[0].resolution!.reason).toBe("product_not_received");
-    expect(result.data.results[1].players).toBeUndefined();
+    const firstClaim = present(result.data.results[0]);
+    const secondClaim = present(result.data.results[1]);
+    expect(firstClaim.id).toBe("C-1001");
+    expect(firstClaim.status).toBe("open");
+    expect(firstClaim.type).toBe("damaged_product");
+    expect(firstClaim.stage).toBe("mediation");
+    expect(firstClaim.resource).toBe("order");
+    expect(firstClaim.players).toHaveLength(2);
+    expect(present(firstClaim.players?.[0]).role).toBe("complainant");
+    expect(firstClaim.resolution).toBeDefined();
+    expect(firstClaim.resolution!.reason).toBe("product_not_received");
+    expect(secondClaim.players).toBeUndefined();
   });
 
   it("returns empty results with pagination metadata", async () => {
@@ -2465,12 +2495,7 @@ describe("normalizeClaimsSearch", () => {
     const transport: MercadoLibreApiTransport = {
       request: vi.fn().mockResolvedValue({
         paging: { total: 2, offset: 0, limit: 10 },
-        results: [
-          { id: "C-2001", status: "open" },
-          null,
-          "not-an-object",
-          {},
-        ],
+        results: [{ id: "C-2001", status: "open" }, null, "not-an-object", {}],
       }),
     };
     const tokenState: OAuthTokenState = {
@@ -2489,7 +2514,7 @@ describe("normalizeClaimsSearch", () => {
 
     expect(result.completeness).toBe("partial");
     expect(result.data.results).toHaveLength(1);
-    expect(result.data.results[0].id).toBe("C-2001");
+    expect(present(result.data.results[0]).id).toBe("C-2001");
     expect(result.confidence).toBe("low");
   });
 });
@@ -2546,10 +2571,10 @@ describe("getClaimDetail", () => {
     expect(result.data.claim.id).toBe("C-3001");
     expect(result.data.claim.status).toBe("open");
     expect(result.data.messages).toHaveLength(1);
-    expect(result.data.messages![0].message).toBe("Where is my package?");
+    expect(present(result.data.messages?.[0]).message).toBe("Where is my package?");
     expect(result.data.players).toHaveLength(2);
     expect(result.data.availableActions).toHaveLength(1);
-    expect(result.data.availableActions![0].type).toBe("resolve");
+    expect(present(result.data.availableActions?.[0]).type).toBe("resolve");
   });
 
   it("correctly constructs the API request path", async () => {
@@ -2797,11 +2822,13 @@ describe("getClaimMessages", () => {
     expect(result.source).toBe("mercadolibre-api");
     expect(result.completeness).toBe("complete");
     expect(result.data.messages).toHaveLength(2);
-    expect(result.data.messages[0].id).toBe("msg-1");
-    expect(result.data.messages[0].from).toBe("buyer");
-    expect(result.data.messages[0].to).toBe("seller");
-    expect(result.data.messages[0].message).toBe("Where is my package?");
-    expect(result.data.messages[1].attachments).toEqual(["invoice.pdf"]);
+    const firstMessage = present(result.data.messages[0]);
+    const secondMessage = present(result.data.messages[1]);
+    expect(firstMessage.id).toBe("msg-1");
+    expect(firstMessage.from).toBe("buyer");
+    expect(firstMessage.to).toBe("seller");
+    expect(firstMessage.message).toBe("Where is my package?");
+    expect(secondMessage.attachments).toEqual(["invoice.pdf"]);
   });
 
   it("returns empty messages with complete confidence", async () => {
@@ -2831,9 +2858,9 @@ describe("getClaimMessages", () => {
   it("resiliently parses direct array payload for messages", async () => {
     const { createMlcApiClient } = await import("./index.js");
     const transport: MercadoLibreApiTransport = {
-      request: vi.fn().mockResolvedValue([
-        { id: "msg-3", from: "buyer", to: "seller", message: "Hello" },
-      ]),
+      request: vi
+        .fn()
+        .mockResolvedValue([{ id: "msg-3", from: "buyer", to: "seller", message: "Hello" }]),
     };
     const tokenState: OAuthTokenState = {
       sellerId,
@@ -2850,7 +2877,7 @@ describe("getClaimMessages", () => {
     const result = await client.getClaimMessages!("seller-1", "C-1003");
 
     expect(result.data.messages).toHaveLength(1);
-    expect(result.data.messages[0].message).toBe("Hello");
+    expect(present(result.data.messages[0]).message).toBe("Hello");
     expect(result.completeness).toBe("complete");
   });
 });
@@ -2864,8 +2891,18 @@ describe("getClaimExpectedResolutions", () => {
     const transport: MercadoLibreApiTransport = {
       request: vi.fn().mockResolvedValue({
         expected_resolutions: [
-          { id: "res-1", status: "available", reason: "product_not_received", description: "Provide proof of delivery" },
-          { id: "res-2", status: "pending", reason: "damaged_product", description: "Accept return" },
+          {
+            id: "res-1",
+            status: "available",
+            reason: "product_not_received",
+            description: "Provide proof of delivery",
+          },
+          {
+            id: "res-2",
+            status: "pending",
+            reason: "damaged_product",
+            description: "Accept return",
+          },
         ],
       }),
     };
@@ -2886,10 +2923,11 @@ describe("getClaimExpectedResolutions", () => {
     expect(result.kind).toBe("business-signal");
     expect(result.completeness).toBe("complete");
     expect(result.data.expected_resolutions).toHaveLength(2);
-    expect(result.data.expected_resolutions[0].id).toBe("res-1");
-    expect(result.data.expected_resolutions[0].status).toBe("available");
-    expect(result.data.expected_resolutions[0].reason).toBe("product_not_received");
-    expect(result.data.expected_resolutions[0].description).toBe("Provide proof of delivery");
+    const firstResolution = present(result.data.expected_resolutions[0]);
+    expect(firstResolution.id).toBe("res-1");
+    expect(firstResolution.status).toBe("available");
+    expect(firstResolution.reason).toBe("product_not_received");
+    expect(firstResolution.description).toBe("Provide proof of delivery");
   });
 });
 
@@ -2960,10 +2998,13 @@ describe("getClaimStatusHistory", () => {
     expect(result.completeness).toBe("complete");
     expect(result.confidence).toBe("high");
     expect(result.data.history).toHaveLength(3);
-    expect(result.data.history[0].status).toBe("open");
-    expect(result.data.history[1].status).toBe("under_review");
-    expect(result.data.history[2].status).toBe("resolved");
-    expect(result.data.history[0].date).toBe("2026-06-28T10:00:00Z");
+    const firstHistory = present(result.data.history[0]);
+    const secondHistory = present(result.data.history[1]);
+    const thirdHistory = present(result.data.history[2]);
+    expect(firstHistory.status).toBe("open");
+    expect(secondHistory.status).toBe("under_review");
+    expect(thirdHistory.status).toBe("resolved");
+    expect(firstHistory.date).toBe("2026-06-28T10:00:00Z");
   });
 });
 
@@ -2973,9 +3014,9 @@ describe("associateImageToItem", () => {
 
   it("returns associative summary after reading item", async () => {
     const { createMlcApiClient } = await import("./index.js");
-    const request = vi.fn<MercadoLibreApiTransport["request"]>().mockResolvedValue(
-      completeMlcItemPayload(),
-    );
+    const request = vi
+      .fn<MercadoLibreApiTransport["request"]>()
+      .mockResolvedValue(completeMlcItemPayload());
     const tokenState: OAuthTokenState = {
       sellerId,
       site: "MLC",
@@ -3062,4 +3103,3 @@ describe("normalizeImageOrchestration", () => {
     expect(result.confidence).toBe("high");
   });
 });
-
