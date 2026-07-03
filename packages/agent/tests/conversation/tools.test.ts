@@ -8,7 +8,9 @@ import {
   createDelegateToSubagentTool,
   createListAgentLessonsTool,
   createListCompanyAgentsTool,
+  createListWorkforceCostCacheLedgerEntriesTool,
   createRecordAgentLessonTool,
+  createRecordWorkforceCostCacheLedgerEntryTool,
   createRequestAgentEvidenceTool,
   createPrepareActionTool,
   createSimulateActorTool,
@@ -23,6 +25,7 @@ import { simulateActor } from "../../src/conversation/actorSimulator.js";
 import { listCompanyAgents } from "../../src/conversation/companyAgents.js";
 import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
 import { createCompanyAgentLearningStore } from "../../src/conversation/companyAgentLearningStore.js";
+import { createWorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
 
 describe("createGetBusinessContextTool", () => {
   let engine: GraphEngine;
@@ -834,6 +837,112 @@ describe("company agent registry and request_agent_evidence", () => {
         missingInputs: ["authorized CEO/admin runtime"],
         noExternalMutationExecuted: true,
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("records and lists workforce cost/cache ledger entries safely", async () => {
+    const db = new Database(":memory:");
+    const ledgerStore = createWorkforceCostCacheLedgerStore(db);
+    const recordTool = createRecordWorkforceCostCacheLedgerEntryTool(ledgerStore, {
+      authorized: true,
+    });
+    const listTool = createListWorkforceCostCacheLedgerEntriesTool(ledgerStore);
+
+    try {
+      const recorded = await recordTool.execute({
+        entryId: "entry:tool-001",
+        agentId: "agent:pricing",
+        laneId: "ceo",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        operation: "chat.completion",
+        promptCacheHitTokens: 50,
+        inputTokens: 100,
+        outputTokens: 25,
+        estimatedCostMicros: 75,
+        currency: "usd",
+        cacheStatus: "hit",
+        metadata: { requestKind: "delegation" },
+        measuredAt: "2026-07-03T10:00:00.000Z",
+      });
+      const listed = await listTool.execute({ agentId: "agent:pricing", laneId: "ceo", limit: 99 });
+
+      expect(recorded).toMatchObject({
+        status: "recorded",
+        noExternalMutationExecuted: true,
+      });
+      expect(recorded.entry).toMatchObject({
+        entryId: "entry:tool-001",
+        cacheStatus: "hit",
+        currency: "USD",
+        metadata: { requestKind: "delegation" },
+      });
+      expect(listed).toMatchObject({ storeAvailable: true, noExternalMutationExecuted: true });
+      expect(listed.entries).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("blocks unauthorized ledger recording but keeps ledger listing read-only", async () => {
+    const db = new Database(":memory:");
+    const ledgerStore = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      const unauthorized = await createRecordWorkforceCostCacheLedgerEntryTool(ledgerStore).execute(
+        {
+          entryId: "entry:unauthorized",
+          agentId: "agent:pricing",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          operation: "chat.completion",
+          cacheStatus: "unknown",
+        },
+      );
+      const listed = await createListWorkforceCostCacheLedgerEntriesTool(ledgerStore).execute({
+        limit: 500,
+      });
+
+      expect(unauthorized).toMatchObject({
+        status: "blocked",
+        error: "unauthorized",
+        noExternalMutationExecuted: true,
+      });
+      expect(listed).toMatchObject({
+        entries: [],
+        storeAvailable: true,
+        noExternalMutationExecuted: true,
+      });
+      expect(ledgerStore.count()).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects ledger raw prompt/response metadata", async () => {
+    const db = new Database(":memory:");
+    const ledgerStore = createWorkforceCostCacheLedgerStore(db);
+    const tool = createRecordWorkforceCostCacheLedgerEntryTool(ledgerStore, { authorized: true });
+
+    try {
+      const result = await tool.execute({
+        entryId: "entry:raw-prompt",
+        agentId: "agent:pricing",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        operation: "chat.completion",
+        cacheStatus: "miss",
+        metadata: { prompt: "user raw prompt", responseText: "assistant raw response" },
+      });
+
+      expect(result).toMatchObject({
+        status: "blocked",
+        error: "unsafe workforce cost/cache ledger entry",
+        noExternalMutationExecuted: true,
+      });
+      expect(ledgerStore.count()).toBe(0);
     } finally {
       db.close();
     }

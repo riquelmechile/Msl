@@ -45,6 +45,11 @@ const mocks = vi.hoisted(() => {
     listAgentLessons: vi.fn(() => []),
     count: vi.fn(() => 0),
   }));
+  const mockCreateWorkforceCostCacheLedgerStore = vi.fn(() => ({
+    insertEntry: vi.fn(),
+    listEntries: vi.fn(() => []),
+    count: vi.fn(() => 0),
+  }));
   const mockCreateAgentLoop = vi.fn((config?: { companyAgentAdminAuthorized?: boolean }) => ({
     converse: config?.companyAgentAdminAuthorized ? mockAdminConverse : mockConverse,
   }));
@@ -78,6 +83,7 @@ const mocks = vi.hoisted(() => {
     mockCreateStrategyStore,
     mockCreateCompanyAgentStore,
     mockCreateCompanyAgentLearningStore,
+    mockCreateWorkforceCostCacheLedgerStore,
     mockCreateSessionStore,
     mockCreateAutonomyEngine,
     mockBuildSystemPrompt,
@@ -112,6 +118,7 @@ vi.mock("@msl/agent", () => ({
   createStrategyStore: mocks.mockCreateStrategyStore,
   createCompanyAgentStore: mocks.mockCreateCompanyAgentStore,
   createCompanyAgentLearningStore: mocks.mockCreateCompanyAgentLearningStore,
+  createWorkforceCostCacheLedgerStore: mocks.mockCreateWorkforceCostCacheLedgerStore,
   createSessionStore: mocks.mockCreateSessionStore,
   createAutonomyEngine: mocks.mockCreateAutonomyEngine,
   EscribanoObserver: mocks.mockEscribanoObserver,
@@ -454,6 +461,25 @@ describe("createTelegramBot (grammY)", () => {
       companyAgentAdminAuthorized?: boolean;
     };
     expect(agentConfig.activeCompanyAgentId).toBe("agent:pricing-analyst");
+    expect(agentConfig.companyAgentAdminAuthorized).toBe(false);
+  });
+
+  it("passes SQLite-backed workforce cost/cache ledger store to the agent loop", () => {
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_SQLITE_PATH: ":memory:",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    expect(mocks.mockCreateWorkforceCostCacheLedgerStore).toHaveBeenCalledTimes(1);
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      workforceCostCacheLedgerStore?: unknown;
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(agentConfig.workforceCostCacheLedgerStore).toBeDefined();
     expect(agentConfig.companyAgentAdminAuthorized).toBe(false);
   });
 

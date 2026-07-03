@@ -91,7 +91,9 @@ export {
   createCreateCompanyAgentTool,
   createListAgentLessonsTool,
   createListCompanyAgentsTool,
+  createListWorkforceCostCacheLedgerEntriesTool,
   createRecordAgentLessonTool,
+  createRecordWorkforceCostCacheLedgerEntryTool,
   createRequestAgentEvidenceTool,
   createSimulateActorTool,
   createDetectProbesTool,
@@ -132,6 +134,14 @@ export type {
   ListAgentLessonsFilter,
   RecordAgentLessonInput,
 } from "./conversation/companyAgentLearningStore.js";
+export { createWorkforceCostCacheLedgerStore } from "./conversation/workforceCostCacheLedgerStore.js";
+export type {
+  ListWorkforceCostCacheLedgerEntriesFilter,
+  RecordWorkforceCostCacheLedgerEntryInput,
+  WorkforceCacheStatus,
+  WorkforceCostCacheLedgerEntry,
+  WorkforceCostCacheLedgerStore,
+} from "./conversation/workforceCostCacheLedgerStore.js";
 
 // ── Sync tools ──────────────────────────────────────────────────────
 export {

@@ -30,8 +30,10 @@ import {
   createGetBusinessContextTool,
   createListAgentLessonsTool,
   createListCompanyAgentsTool,
+  createListWorkforceCostCacheLedgerEntriesTool,
   createProposeHoneyPotTool,
   createRecordAgentLessonTool,
+  createRecordWorkforceCostCacheLedgerEntryTool,
   createRequestAgentEvidenceTool,
 } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
@@ -82,6 +84,7 @@ import type {
   AgentLearningRecord,
   CompanyAgentLearningStore,
 } from "./companyAgentLearningStore.js";
+import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -237,6 +240,12 @@ export type AgentLoopConfig = {
    * `companyAgentAdminAuthorized` is explicitly true.
    */
   companyAgentLearningStore?: CompanyAgentLearningStore;
+  /**
+   * Optional durable local cost/cache ledger for internal AI workforce usage.
+   * Listing is read-only/bounded; recording remains disabled unless
+   * `companyAgentAdminAuthorized` is explicitly true.
+   */
+  workforceCostCacheLedgerStore?: WorkforceCostCacheLedgerStore;
   /**
    * Explicit company-agent identity for read-only workforce lesson context.
    * Lessons are never inferred globally; without this target no lesson context
@@ -480,6 +489,27 @@ export function createAgentLoop(config: AgentLoopConfig) {
     toolMap.set(
       "record_agent_lesson",
       createRecordAgentLessonTool(config.companyAgentLearningStore, config.companyAgentRegistry, {
+        authorized: true,
+      }),
+    );
+  }
+  if (
+    config.workforceCostCacheLedgerStore &&
+    !toolMap.has("list_workforce_cost_cache_ledger_entries")
+  ) {
+    toolMap.set(
+      "list_workforce_cost_cache_ledger_entries",
+      createListWorkforceCostCacheLedgerEntriesTool(config.workforceCostCacheLedgerStore),
+    );
+  }
+  if (
+    config.workforceCostCacheLedgerStore &&
+    config.companyAgentAdminAuthorized === true &&
+    !toolMap.has("record_workforce_cost_cache_ledger_entry")
+  ) {
+    toolMap.set(
+      "record_workforce_cost_cache_ledger_entry",
+      createRecordWorkforceCostCacheLedgerEntryTool(config.workforceCostCacheLedgerStore, {
         authorized: true,
       }),
     );
