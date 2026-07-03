@@ -35,7 +35,7 @@ npm test          # 1104+ tests in 41 files
 npm run dev       # http://127.0.0.1:3000
 ```
 
-> **Current runtime boundary:** the Next.js `/api/chat` and Telegram bot stay safe by default with local/mock behavior. When the required env vars are configured, `/api/chat` can persist durable SQLite chat state and use DeepSeek; Telegram can persist per-chat sessions/strategy/autonomy state and optionally write Cortex memory through Escribano.
+> **Current runtime boundary:** the Next.js `/api/chat` and Telegram bot stay safe by default with local/mock behavior. When the required env vars are configured, `/api/chat` can persist durable SQLite chat state and use DeepSeek; Telegram can persist per-chat sessions/strategy/autonomy state and optionally write Cortex memory through Escribano. Telegram remains CEO-only for the human: workforce/managers/departments are internal CEO context and delegation details, not user-facing `/agent` selection commands.
 
 > **Verification:** CI and release readiness should keep the durable gates green: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, and `npm run build`.
 
@@ -74,15 +74,15 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 
 ## Production boundary today
 
-| Area               | Current state                                                                                                                                                                           | Do not assume yet                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek.                                                                             | Public unauthenticated production chat.                                    |
-| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                                                                     | Secret values in Git, or mutation execution without approval gates.        |
-| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                                                                   | Manual raw token setup or account role guessing.                           |
-| Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.                                                    | Business hierarchy between accounts or general-purpose bidirectional sync. |
-| MCP tools          | MCP exposes 30 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration). | Production business-operation execution through MCP.                       |
-| ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram.                                                  | Real-time MercadoLibre data without OAuth tokens for every role.           |
-| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                                                                            | Secrets in CI; use GitHub Secrets/platform secrets.                        |
+| Area               | Current state                                                                                                                                                                              | Do not assume yet                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek.                                                                                | Public unauthenticated production chat.                                                           |
+| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory. Human interaction stays with the CEO agent; workforce context is internal routing/lesson context only. | Secret values in Git, `/agent` worker-selection UX, or mutation execution without approval gates. |
+| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                                                                      | Manual raw token setup or account role guessing.                                                  |
+| Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.                                                       | Business hierarchy between accounts or general-purpose bidirectional sync.                        |
+| MCP tools          | MCP exposes 30 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration).    | Production business-operation execution through MCP.                                              |
+| ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram.                                                     | Real-time MercadoLibre data without OAuth tokens for every role.                                  |
+| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                                                                               | Secrets in CI; use GitHub Secrets/platform secrets.                                               |
 
 ## Architecture
 
