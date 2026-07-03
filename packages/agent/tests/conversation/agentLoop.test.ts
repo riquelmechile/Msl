@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach, beforeEach } from "vitest";
+import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import Database from "better-sqlite3";
 
 import {
@@ -221,6 +221,38 @@ describe("createAgentLoop — mock client", () => {
     } finally {
       db.close();
     }
+  });
+
+  it("exposes agent learning tools only with learning store and admin authorization", () => {
+    const withoutStore = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+    });
+    const learningStore = {
+      insertAgentLesson: vi.fn(),
+      listAgentLessons: vi.fn(() => []),
+      count: vi.fn(() => 0),
+    };
+
+    const withStore = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+      companyAgentLearningStore: learningStore,
+    });
+    const withAuthorizedStore = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+      companyAgentLearningStore: learningStore,
+      companyAgentAdminAuthorized: true,
+    });
+
+    expect(withoutStore.getToolNames()).not.toContain("list_agent_lessons");
+    expect(withoutStore.getToolNames()).not.toContain("record_agent_lesson");
+    expect(withStore.getToolNames()).not.toContain("list_agent_lessons");
+    expect(withStore.getToolNames()).not.toContain("record_agent_lesson");
+    expect(withAuthorizedStore.getToolNames()).toEqual(
+      expect.arrayContaining(["list_agent_lessons", "record_agent_lesson"]),
+    );
   });
 });
 

@@ -23,13 +23,30 @@ const mocks = vi.hoisted(() => {
       },
     },
   });
+  const mockAdminConverse = vi.fn().mockResolvedValue({
+    response: "Admin learning tools enabled.",
+    updatedState: {
+      messages: [{ role: "assistant", content: "Admin", timestamp: new Date() }],
+      contextWindowLimit: 20,
+      sessionMetadata: {
+        sellerId: "seller-test",
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+      },
+    },
+  });
   const mockCreateStrategyStore = vi.fn(() => ({ listActive: vi.fn(() => []) }));
   const mockCreateCompanyAgentStore = vi.fn(() => ({
     getCompanyAgent: vi.fn(),
     listCompanyAgents: vi.fn(() => []),
   }));
-  const mockCreateAgentLoop = vi.fn(() => ({
-    converse: mockConverse,
+  const mockCreateCompanyAgentLearningStore = vi.fn(() => ({
+    insertAgentLesson: vi.fn(),
+    listAgentLessons: vi.fn(() => []),
+    count: vi.fn(() => 0),
+  }));
+  const mockCreateAgentLoop = vi.fn((config?: { companyAgentAdminAuthorized?: boolean }) => ({
+    converse: config?.companyAgentAdminAuthorized ? mockAdminConverse : mockConverse,
   }));
   const mockCreateSessionStore = vi.fn(() => ({
     load: vi.fn(() => null),
@@ -57,8 +74,10 @@ const mocks = vi.hoisted(() => {
     mockStart,
     mockStop,
     mockConverse,
+    mockAdminConverse,
     mockCreateStrategyStore,
     mockCreateCompanyAgentStore,
+    mockCreateCompanyAgentLearningStore,
     mockCreateSessionStore,
     mockCreateAutonomyEngine,
     mockBuildSystemPrompt,
@@ -92,6 +111,7 @@ vi.mock("@msl/agent", () => ({
   buildSystemPrompt: mocks.mockBuildSystemPrompt,
   createStrategyStore: mocks.mockCreateStrategyStore,
   createCompanyAgentStore: mocks.mockCreateCompanyAgentStore,
+  createCompanyAgentLearningStore: mocks.mockCreateCompanyAgentLearningStore,
   createSessionStore: mocks.mockCreateSessionStore,
   createAutonomyEngine: mocks.mockCreateAutonomyEngine,
   EscribanoObserver: mocks.mockEscribanoObserver,
@@ -121,6 +141,7 @@ describe("createTelegramBot (grammY)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.mockConverse.mockClear();
+    mocks.mockAdminConverse.mockClear();
   });
 
   it("creates a bot with start and stop methods", () => {
@@ -354,6 +375,7 @@ describe("createTelegramBot (grammY)", () => {
     expect(mocks.mockCreateSessionStore).toHaveBeenCalled();
     expect(mocks.mockCreateStrategyStore).toHaveBeenCalled();
     expect(mocks.mockCreateCompanyAgentStore).toHaveBeenCalled();
+    expect(mocks.mockCreateCompanyAgentLearningStore).toHaveBeenCalled();
     expect(mocks.mockCreateAutonomyEngine).toHaveBeenCalled();
     expect(mocks.mockCreateGraphEngine).toHaveBeenCalledWith(":memory:");
     expect(mocks.mockBuildSystemPrompt).toHaveBeenCalledWith("Maustian");
@@ -366,27 +388,101 @@ describe("createTelegramBot (grammY)", () => {
         listCompanyAgents?: unknown;
       };
       companyAgentAdminAuthorized?: boolean;
+      companyAgentLearningStore?: {
+        listAgentLessons?: unknown;
+      };
     };
     expect(typeof agentConfig.companyAgentRegistry?.getCompanyAgent).toBe("function");
     expect(typeof agentConfig.companyAgentRegistry?.listCompanyAgents).toBe("function");
-    expect(agentConfig.companyAgentAdminAuthorized).toBeUndefined();
+    expect(typeof agentConfig.companyAgentLearningStore?.listAgentLessons).toBe("function");
+    expect(agentConfig.companyAgentAdminAuthorized).toBe(false);
   });
 
-  it("passes company-agent admin authorization only when env explicitly enables it", () => {
+  it("passes company-agent admin authorization only when env enables it with an allowlist", () => {
     createTelegramBotFromEnv({
       BOT_TOKEN: "test-token-123",
       MSL_TELEGRAM_SQLITE_PATH: ":memory:",
       MSL_COMPANY_AGENT_ADMIN_ENABLED: "true",
+      MSL_TELEGRAM_ADMIN_CHAT_IDS: "123",
       DEEPSEEK_API_KEY: "",
     });
 
     const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
       mock: { calls: Array<[unknown]> };
     };
-    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+    const baseAgentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
       companyAgentAdminAuthorized?: boolean;
     };
-    expect(agentConfig.companyAgentAdminAuthorized).toBe(true);
+    const adminAgentConfig = createAgentLoopMock.mock.calls[1]?.[0] as {
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(baseAgentConfig.companyAgentAdminAuthorized).toBe(false);
+    expect(adminAgentConfig.companyAgentAdminAuthorized).toBe(true);
+  });
+
+  it("routes non-admin Telegram messages through the non-admin agent loop", async () => {
+    createTelegramBot({
+      ...config,
+      adminAuthorization: {
+        enabled: true,
+        allowedChatIds: ["999"],
+        allowedUserIds: ["888"],
+      },
+    });
+
+    const handler = mocks.mockOn.mock.calls.find((call) => call[0] === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from?: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+
+    await handler!({
+      message: { text: "registrá esta lección" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(mocks.mockConverse).toHaveBeenCalledWith("registrá esta lección", expect.any(Object));
+    expect(mocks.mockAdminConverse).not.toHaveBeenCalled();
+  });
+
+  it("routes allowed Telegram admin chats through the admin agent loop", async () => {
+    createTelegramBot({
+      ...config,
+      adminAuthorization: {
+        enabled: true,
+        allowedChatIds: ["123"],
+      },
+    });
+
+    const handler = mocks.mockOn.mock.calls.find((call) => call[0] === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from?: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+
+    await handler!({
+      message: { text: "registrá esta lección" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(mocks.mockAdminConverse).toHaveBeenCalledWith(
+      "registrá esta lección",
+      expect.any(Object),
+    );
   });
 
   it("derives a seller-scoped Telegram Cortex path by default", () => {
