@@ -40,9 +40,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Source Adapters
 
-- [ ] 2.1 Create `packages/mercadolibre/src/supplierSource.ts` with ML API-first supplier reads and stock-authoritative evidence.
-- [ ] 2.2 Create `packages/mercadolibre/src/scraperFallback.ts` with isolated low-concurrency fallback evidence and no mutation exports.
-- [ ] 2.3 Test API stock authority, API-gap fallback confidence, and XKP non-stock enrichment in `packages/mercadolibre/src/mercadolibre.test.ts`.
+- [x] 2.1 Create `packages/mercadolibre/src/supplierSource.ts` with ML API-first supplier reads and stock-authoritative evidence.
+- [x] 2.2 Create `packages/mercadolibre/src/scraperFallback.ts` with isolated low-concurrency fallback evidence and no mutation exports.
+- [x] 2.3 Test API stock authority, API-gap fallback confidence, and XKP non-stock enrichment in `packages/mercadolibre/src/mercadolibre.test.ts`.
 
 ## Phase 3: Scheduler and Safe Pause
 
