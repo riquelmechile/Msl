@@ -84,7 +84,10 @@ import type {
   AgentLearningRecord,
   CompanyAgentLearningStore,
 } from "./companyAgentLearningStore.js";
-import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
+import type {
+  WorkforceCacheStatus,
+  WorkforceCostCacheLedgerStore,
+} from "./workforceCostCacheLedgerStore.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -314,6 +317,9 @@ const WORKFORCE_LESSON_SUMMARY_MAX_CHARS = 220;
 const WORKFORCE_LESSON_OUTCOME_MAX_CHARS = 160;
 const WORKFORCE_LESSON_OMISSION_NOTICE =
   "- Additional lessons were omitted because the context budget was reached.";
+const WORKFORCE_COST_CACHE_CONTEXT_LIMIT = 10;
+const WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT = 6;
+const WORKFORCE_COST_CACHE_CONTEXT_MAX_CHARS = 1_400;
 
 function sanitizeLessonText(value: string, maxChars: number): string {
   const withoutControlCharacters = Array.from(value, (character) => {
@@ -389,9 +395,134 @@ export function buildWorkforceLessonContext(
   );
 }
 
+function incrementCount(map: Map<string, number>, key: string | undefined): void {
+  if (!key) return;
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function normalizedCostCacheGroupLabel(
+  labelsByRawValue: Map<string, string>,
+  rawValue: string | undefined,
+  prefix: string,
+): string | undefined {
+  if (!rawValue) return undefined;
+
+  const existingLabel = labelsByRawValue.get(rawValue);
+  if (existingLabel) return existingLabel;
+
+  const normalizedLabel = `${prefix}-${labelsByRawValue.size + 1}`;
+  labelsByRawValue.set(rawValue, normalizedLabel);
+  return normalizedLabel;
+}
+
+function formatCountMap(map: Map<string, number>, limit: number): string {
+  const entries = [...map.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([key, count]) => `${key}: ${count}`);
+  return entries.length > 0 ? entries.join(", ") : "none";
+}
+
+export function buildWorkforceCostCacheContext(
+  ledgerStore?: WorkforceCostCacheLedgerStore,
+): string {
+  if (!ledgerStore) return "";
+
+  const entries = ledgerStore.listEntries({ limit: WORKFORCE_COST_CACHE_CONTEXT_LIMIT });
+  if (entries.length === 0) return "";
+
+  const totals = entries.reduce(
+    (acc, entry) => ({
+      inputTokens: acc.inputTokens + (entry.inputTokens ?? 0),
+      outputTokens: acc.outputTokens + (entry.outputTokens ?? 0),
+      cacheHitTokens: acc.cacheHitTokens + (entry.promptCacheHitTokens ?? 0),
+      cacheMissTokens: acc.cacheMissTokens + (entry.promptCacheMissTokens ?? 0),
+    }),
+    { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 },
+  );
+  const cacheStatusCounts = new Map<WorkforceCacheStatus, number>([
+    ["hit", 0],
+    ["miss", 0],
+    ["partial", 0],
+    ["unknown", 0],
+  ]);
+  const laneCounts = new Map<string, number>();
+  const agentCounts = new Map<string, number>();
+  const providerModelCounts = new Map<string, number>();
+  const laneLabels = new Map<string, string>();
+  const agentLabels = new Map<string, string>();
+  const providerModelLabels = new Map<string, string>();
+
+  for (const entry of entries) {
+    cacheStatusCounts.set(entry.cacheStatus, (cacheStatusCounts.get(entry.cacheStatus) ?? 0) + 1);
+    incrementCount(
+      laneCounts,
+      normalizedCostCacheGroupLabel(laneLabels, entry.laneId ?? "unassigned", "lane"),
+    );
+    incrementCount(agentCounts, normalizedCostCacheGroupLabel(agentLabels, entry.agentId, "agent"));
+    incrementCount(
+      providerModelCounts,
+      normalizedCostCacheGroupLabel(
+        providerModelLabels,
+        `${entry.provider}/${entry.model}`,
+        "provider-model",
+      ),
+    );
+  }
+
+  return enforceMaxChars(
+    [
+      "## CEO Cost/Cache Operating Evidence",
+      "",
+      "Internal-only summary from the local recent workforce cost/cache ledger. Treat this as operating evidence, not billing truth.",
+      "",
+      `- Entries summarized: ${entries.length}`,
+      `- Totals: inputTokens ${totals.inputTokens}; outputTokens ${totals.outputTokens}; cacheHitTokens ${totals.cacheHitTokens}; cacheMissTokens ${totals.cacheMissTokens}`,
+      `- cacheStatus counts: hit ${cacheStatusCounts.get("hit")}; miss ${cacheStatusCounts.get("miss")}; partial ${cacheStatusCounts.get("partial")}; unknown ${cacheStatusCounts.get("unknown")}`,
+      `- Lane counts: ${formatCountMap(laneCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
+      `- Agent counts: ${formatCountMap(agentCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
+      `- Provider/model counts: ${formatCountMap(providerModelCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
+      "- Guidance: prefer cached or lower-cost evidence paths when sufficient; ask the CEO before expensive investigations.",
+    ].join("\n"),
+    WORKFORCE_COST_CACHE_CONTEXT_MAX_CHARS,
+  );
+}
+
 function appendBlockCSection(blockC: string, section: string): string {
   if (!section) return blockC;
   return blockC ? `${blockC}\n\n${section}` : section;
+}
+
+async function buildBlockCContext(
+  config: AgentLoopConfig,
+  state: ConversationState,
+  userMessage: string,
+): Promise<string> {
+  let blockC = "";
+  if (config.engine) {
+    blockC = injectCortexContext(userMessage, config.engine);
+  }
+  if (config.evidenceProvider && config.laneId) {
+    const operationalEvidence = await config.evidenceProvider.getEvidenceForLane(
+      config.laneId,
+      state.sessionMetadata.sellerId,
+    );
+    if (operationalEvidence) {
+      blockC = appendBlockCSection(blockC, `## Evidencia operacional\n\n${operationalEvidence}`);
+    }
+  }
+  blockC = appendBlockCSection(
+    blockC,
+    buildWorkforceCostCacheContext(config.workforceCostCacheLedgerStore),
+  );
+  return appendBlockCSection(
+    blockC,
+    buildWorkforceLessonContext(
+      config.companyAgentLearningStore,
+      config.activeCompanyAgentId,
+      config.companyAgentRegistry,
+    ),
+  );
 }
 
 export function extractPromptCacheTelemetry(input: {
@@ -816,29 +947,7 @@ ${strategyLines.join("\n")}`;
         : getSystemPrompt();
 
       // --- Build Block C: Cortex context + per-lane operational evidence ---
-      let blockC = "";
-      if (config.engine) {
-        blockC = injectCortexContext(userMessage, config.engine);
-      }
-      if (config.evidenceProvider && config.laneId) {
-        const operationalEvidence = await config.evidenceProvider.getEvidenceForLane(
-          config.laneId,
-          state.sessionMetadata.sellerId,
-        );
-        if (operationalEvidence) {
-          blockC = blockC
-            ? `${blockC}\n\n## Evidencia operacional\n\n${operationalEvidence}`
-            : `## Evidencia operacional\n\n${operationalEvidence}`;
-        }
-      }
-      blockC = appendBlockCSection(
-        blockC,
-        buildWorkforceLessonContext(
-          config.companyAgentLearningStore,
-          config.activeCompanyAgentId,
-          config.companyAgentRegistry,
-        ),
-      );
+      const blockC = await buildBlockCContext(config, state, userMessage);
 
       const llmMessages = buildMessages(systemPrompt, state, userMessage, blockC);
 
@@ -1093,29 +1202,7 @@ ${strategyLines.join("\n")}`;
         : getSystemPrompt();
 
       // --- Build Block C: Cortex context + per-lane operational evidence ---
-      let blockC = "";
-      if (config.engine) {
-        blockC = injectCortexContext(userMessage, config.engine);
-      }
-      if (config.evidenceProvider && config.laneId) {
-        const operationalEvidence = await config.evidenceProvider.getEvidenceForLane(
-          config.laneId,
-          state.sessionMetadata.sellerId,
-        );
-        if (operationalEvidence) {
-          blockC = blockC
-            ? `${blockC}\n\n## Evidencia operacional\n\n${operationalEvidence}`
-            : `## Evidencia operacional\n\n${operationalEvidence}`;
-        }
-      }
-      blockC = appendBlockCSection(
-        blockC,
-        buildWorkforceLessonContext(
-          config.companyAgentLearningStore,
-          config.activeCompanyAgentId,
-          config.companyAgentRegistry,
-        ),
-      );
+      const blockC = await buildBlockCContext(config, state, userMessage);
 
       const llmMessages = buildMessages(systemPrompt, state, userMessage, blockC);
 

@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import Database from "better-sqlite3";
 
 import {
+  buildWorkforceCostCacheContext,
   buildWorkforceLessonContext,
   createAgentLoop,
   createDeepSeekClient,
@@ -13,6 +14,7 @@ import {
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
 import { createWorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
+import type { WorkforceCostCacheLedgerEntry } from "../../src/conversation/workforceCostCacheLedgerStore.js";
 import type { AgentLearningRecord } from "../../src/conversation/companyAgentLearningStore.js";
 import type { CompanyAgent, CompanyAgentRegistry } from "../../src/conversation/companyAgents.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
@@ -155,6 +157,28 @@ async function withInMemoryWorkforceLedger<T>(
   } finally {
     db.close();
   }
+}
+
+function makeLedgerEntry(
+  overrides: Partial<WorkforceCostCacheLedgerEntry> = {},
+): WorkforceCostCacheLedgerEntry {
+  return {
+    entryId: "ledger:cost-cache-1",
+    agentId: "agent:pricing-analyst",
+    laneId: "cost-supplier",
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    operation: "chat.completion",
+    inputTokens: 10,
+    outputTokens: 2,
+    promptCacheHitTokens: 8,
+    promptCacheMissTokens: 2,
+    cacheStatus: "partial",
+    metadata: {},
+    measuredAt: "2026-07-03T10:00:00Z",
+    createdAt: "2026-07-03T10:00:00Z",
+    ...overrides,
+  };
 }
 
 describe("createAgentLoop — mock client", () => {
@@ -552,6 +576,252 @@ describe("createAgentLoop — mock client", () => {
         response: "Recibido.",
       });
       expect(workforceCostCacheLedgerStore.count()).toBe(0);
+    });
+  });
+
+  it("adds cost/cache ledger context to latest user Block C when ledger has entries", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const { capturedMessages, llmClient } = makePromptCaptureClient();
+      workforceCostCacheLedgerStore.insertEntry({
+        entryId: "ledger:cost-cache-1",
+        agentId: "agent:pricing-analyst",
+        laneId: "cost-supplier",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        operation: "chat.completion",
+        inputTokens: 100,
+        outputTokens: 20,
+        promptCacheHitTokens: 80,
+        promptCacheMissTokens: 20,
+        cacheStatus: "partial",
+        measuredAt: "2026-07-03T10:00:00Z",
+      });
+      workforceCostCacheLedgerStore.insertEntry({
+        entryId: "ledger:cost-cache-2",
+        agentId: "agent:catalog-analyst",
+        laneId: "market-catalog",
+        provider: "openai-compatible",
+        model: "gpt-compatible",
+        operation: "chat.completion",
+        inputTokens: 50,
+        outputTokens: 10,
+        promptCacheHitTokens: 50,
+        promptCacheMissTokens: 0,
+        cacheStatus: "hit",
+        measuredAt: "2026-07-03T10:01:00Z",
+      });
+      const agent = createAgentLoop({ systemPrompt, llmClient, workforceCostCacheLedgerStore });
+
+      await agent.converse("Hola", makeState());
+
+      const userMessage = lastUserContent(capturedMessages);
+      expect(userMessage).toContain("## CEO Cost/Cache Operating Evidence");
+      expect(userMessage).toContain("operating evidence, not billing truth");
+      expect(userMessage).toContain("inputTokens 150; outputTokens 30");
+      expect(userMessage).toContain("cacheHitTokens 130; cacheMissTokens 20");
+      expect(userMessage).toContain("cacheStatus counts: hit 1; miss 0; partial 1; unknown 0");
+      expect(userMessage).toContain("lane-1: 1");
+      expect(userMessage).toContain("provider-model-1: 1");
+      expect(userMessage).toContain("ask the CEO before expensive investigations");
+    });
+  });
+
+  it("does not inject cost/cache context when ledger store is missing", async () => {
+    const { capturedMessages, llmClient } = makePromptCaptureClient();
+    const agent = createAgentLoop({ systemPrompt, llmClient });
+
+    await agent.converse("Hola", makeState());
+
+    expect(lastUserContent(capturedMessages)).not.toContain("CEO Cost/Cache Operating Evidence");
+  });
+
+  it("degrades safely with an empty cost/cache ledger", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const { capturedMessages, llmClient } = makePromptCaptureClient();
+      const agent = createAgentLoop({ systemPrompt, llmClient, workforceCostCacheLedgerStore });
+
+      await agent.converse("Hola", makeState());
+
+      expect(lastUserContent(capturedMessages)).not.toContain("CEO Cost/Cache Operating Evidence");
+    });
+  });
+
+  it("keeps dynamic cost/cache ledger evidence out of the system prompt", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const { capturedMessages, llmClient } = makePromptCaptureClient();
+      workforceCostCacheLedgerStore.insertEntry({
+        entryId: "ledger:cost-cache-1",
+        agentId: "agent:pricing-analyst",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        operation: "chat.completion",
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheStatus: "unknown",
+      });
+      const agent = createAgentLoop({ systemPrompt, llmClient, workforceCostCacheLedgerStore });
+
+      await agent.converse("Hola", makeState());
+
+      expect(systemContent(capturedMessages)).not.toContain("CEO Cost/Cache Operating Evidence");
+      expect(lastUserContent(capturedMessages)).toContain("CEO Cost/Cache Operating Evidence");
+    });
+  });
+
+  it("summarizes cost/cache context without metadata, raw prompts, secrets, or raw entry IDs", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 1),
+      listEntries: vi.fn(() => [
+        {
+          entryId: "ledger:raw-entry-id-123",
+          agentId: "agent:pricing-analyst",
+          laneId: "cost-supplier",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          operation: "chat.completion",
+          inputTokens: 10,
+          outputTokens: 2,
+          promptCacheHitTokens: 8,
+          promptCacheMissTokens: 2,
+          cacheStatus: "partial",
+          metadata: {
+            prompt: "raw prompt must not appear",
+            response: "raw response must not appear",
+            message: "raw message must not appear",
+            secret: "sk-secret-value-must-not-appear",
+          },
+          measuredAt: "2026-07-03T10:00:00Z",
+          createdAt: "2026-07-03T10:00:00Z",
+        } as const,
+      ]),
+    });
+
+    expect(context).toContain("## CEO Cost/Cache Operating Evidence");
+    expect(context).not.toContain("ledger:raw-entry-id-123");
+    expect(context).not.toContain("raw prompt must not appear");
+    expect(context).not.toContain("raw response must not appear");
+    expect(context).not.toContain("raw message must not appear");
+    expect(context).not.toContain("sk-secret-value-must-not-appear");
+    expect(context).not.toMatch(/metadata|prompt|response|message|secret|api[_ -]?key/i);
+  });
+
+  it("normalizes cost/cache group labels instead of exposing raw agent, lane, provider, or model values", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 1),
+      listEntries: vi.fn(() => [
+        makeLedgerEntry({
+          agentId: "ceo-secret-agent@example.com",
+          laneId: "seller-token-sk-sensitive-lane" as never,
+          provider: "provider-with-api-key",
+          model: "model-with-customer-name",
+        }),
+      ]),
+    });
+
+    expect(context).toContain("Lane counts: lane-1: 1");
+    expect(context).toContain("Agent counts: agent-1: 1");
+    expect(context).toContain("Provider/model counts: provider-model-1: 1");
+    expect(context).not.toContain("ceo-secret-agent@example.com");
+    expect(context).not.toContain("seller-token-sk-sensitive-lane");
+    expect(context).not.toContain("provider-with-api-key");
+    expect(context).not.toContain("model-with-customer-name");
+  });
+
+  it("requests at most 10 cost/cache entries for prompt summaries", () => {
+    const listEntries = vi.fn(() => [makeLedgerEntry()]);
+
+    buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 1),
+      listEntries,
+    });
+
+    expect(listEntries).toHaveBeenCalledWith({ limit: 10 });
+  });
+
+  it("limits cost/cache grouped prompt summaries to 6 labels per group", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 8),
+      listEntries: vi.fn(() =>
+        Array.from({ length: 8 }, (_, index) =>
+          makeLedgerEntry({
+            entryId: `ledger:cost-cache-${index + 1}`,
+            agentId: `agent:${index + 1}`,
+            laneId: `lane-${index + 1}` as never,
+            provider: `provider-${index + 1}`,
+            model: `model-${index + 1}`,
+          }),
+        ),
+      ),
+    });
+
+    expect(context).toContain("lane-6: 1");
+    expect(context).not.toContain("lane-7: 1");
+    expect(context).toContain("agent-6: 1");
+    expect(context).not.toContain("agent-7: 1");
+    expect(context).toContain("provider-model-6: 1");
+    expect(context).not.toContain("provider-model-7: 1");
+  });
+
+  it("keeps cost/cache prompt summaries under 1,400 characters", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 10),
+      listEntries: vi.fn(() =>
+        Array.from({ length: 10 }, (_, index) =>
+          makeLedgerEntry({
+            entryId: `ledger:cost-cache-${index + 1}`,
+            agentId: `agent:${index + 1}:${"x".repeat(200)}`,
+            laneId: `lane-${index + 1}-${"x".repeat(200)}` as never,
+            provider: `provider-${index + 1}-${"x".repeat(200)}`,
+            model: `model-${index + 1}-${"x".repeat(200)}`,
+          }),
+        ),
+      ),
+    });
+
+    expect(context.length).toBeLessThanOrEqual(1_400);
+  });
+
+  it("injects the same cost/cache ledger context for streaming turns", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      let capturedChatUserMessage = "";
+      let capturedStreamUserMessage = "";
+      const llmClient: LlmClient = {
+        chat(messages) {
+          capturedChatUserMessage = lastUserContent(messages);
+          return Promise.resolve({ content: "Recibido." });
+        },
+        async *stream(messages) {
+          await Promise.resolve();
+          capturedStreamUserMessage = lastUserContent(messages);
+          yield { delta: "Recibido.", done: false };
+          yield { delta: "", done: true };
+        },
+      };
+      workforceCostCacheLedgerStore.insertEntry({
+        entryId: "ledger:cost-cache-1",
+        agentId: "agent:pricing-analyst",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        operation: "chat.completion",
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheStatus: "unknown",
+      });
+      const agent = createAgentLoop({ systemPrompt, llmClient, workforceCostCacheLedgerStore });
+      const state = makeState();
+
+      await agent.converse("Hola", state);
+      for await (const chunk of agent.converseStream("Hola", state)) {
+        expect(chunk).toBeDefined();
+      }
+
+      expect(capturedStreamUserMessage).toContain("## CEO Cost/Cache Operating Evidence");
+      expect(capturedStreamUserMessage).toBe(capturedChatUserMessage);
     });
   });
 
