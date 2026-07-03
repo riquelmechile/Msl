@@ -220,17 +220,13 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
     ...(writeClient && accountRoles
       ? {
           executeWrite: {
-            publishItem: (
-              sellerId: string,
-              item: NewItem,
-            ): Promise<MlWriteSnapshot> =>
+            publishItem: (sellerId: string, item: NewItem): Promise<MlWriteSnapshot> =>
               writeClient.publishItem(sellerId, item),
             updateItem: (
               sellerId: string,
               itemId: string,
               updates: Partial<NewItem>,
-            ): Promise<MlWriteSnapshot> =>
-              writeClient.updateItem(sellerId, itemId, updates),
+            ): Promise<MlWriteSnapshot> => writeClient.updateItem(sellerId, itemId, updates),
           },
         }
       : {}),

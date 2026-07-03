@@ -2805,7 +2805,10 @@ describe("MCP Server", () => {
         getCategoryAttributes: vi.fn(),
         getCategoryTechnicalSpecs: vi.fn(),
       },
-      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      syncPreview: {
+        getSourceItem: vi.fn(),
+        getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+      },
       executeWrite: { publishItem, updateItem: vi.fn() },
     });
 
@@ -2851,7 +2854,10 @@ describe("MCP Server", () => {
         getCategoryAttributes: vi.fn(),
         getCategoryTechnicalSpecs: vi.fn(),
       },
-      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      syncPreview: {
+        getSourceItem: vi.fn(),
+        getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+      },
       executeWrite: { publishItem, updateItem: vi.fn() },
     });
 
@@ -2891,7 +2897,10 @@ describe("MCP Server", () => {
         getCategoryAttributes: vi.fn(),
         getCategoryTechnicalSpecs: vi.fn(),
       },
-      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      syncPreview: {
+        getSourceItem: vi.fn(),
+        getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+      },
       executeWrite: { publishItem, updateItem: vi.fn() },
     });
 
@@ -2973,7 +2982,10 @@ describe("MCP Server", () => {
         getCategoryAttributes: vi.fn(),
         getCategoryTechnicalSpecs: vi.fn(),
       },
-      syncPreview: { getSourceItem: vi.fn(), getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]) },
+      syncPreview: {
+        getSourceItem: vi.fn(),
+        getStrategies: vi.fn().mockResolvedValue([{ type: "margin", percentage: 0.5 }]),
+      },
       executeWrite: { publishItem, updateItem: vi.fn() },
     });
 

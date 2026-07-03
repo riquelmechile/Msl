@@ -3522,7 +3522,9 @@ describe("normalizeImageOrchestration", () => {
       const request = vi
         .fn()
         .mockRejectedValue(
-          new Error("ML API GET /post-purchase/v1/returns/R-unauth/reviews failed: 401 Unauthorized"),
+          new Error(
+            "ML API GET /post-purchase/v1/returns/R-unauth/reviews failed: 401 Unauthorized",
+          ),
         );
       const tokenState: OAuthTokenState = {
         sellerId,
@@ -3650,7 +3652,9 @@ describe("normalizeImageOrchestration", () => {
       const request = vi
         .fn()
         .mockRejectedValue(
-          new Error("ML API GET /post-purchase/v1/claims/C-nf/charges/return-cost failed: 404 Not Found"),
+          new Error(
+            "ML API GET /post-purchase/v1/claims/C-nf/charges/return-cost failed: 404 Not Found",
+          ),
         );
       const tokenState: OAuthTokenState = {
         sellerId,
@@ -3691,7 +3695,11 @@ describe("normalizeImageOrchestration", () => {
         connectedAt: new Date("2026-07-01T11:00:00.000Z"),
         expiresAt: new Date("2026-07-01T13:00:00.000Z"),
       };
-      const client = createMlcApiClient({ tokenState, transport, now: new Date("2026-07-01T12:00:00.000Z") });
+      const client = createMlcApiClient({
+        tokenState,
+        transport,
+        now: new Date("2026-07-01T12:00:00.000Z"),
+      });
 
       const forbiddenKeys = [
         "postReturnReview",
@@ -3727,7 +3735,11 @@ describe("normalizeImageOrchestration", () => {
         connectedAt: new Date("2026-07-01T11:00:00.000Z"),
         expiresAt: new Date("2026-07-01T13:00:00.000Z"),
       };
-      const client = createMlcApiClient({ tokenState, transport, now: new Date("2026-07-01T12:00:00.000Z") });
+      const client = createMlcApiClient({
+        tokenState,
+        transport,
+        now: new Date("2026-07-01T12:00:00.000Z"),
+      });
 
       await client.getClaimReturn!("seller-1", "C-1001");
       await client.getReturnReviews!("seller-1", "R-5001");
@@ -3758,7 +3770,11 @@ describe("normalizeImageOrchestration", () => {
         connectedAt: new Date("2026-07-01T11:00:00.000Z"),
         expiresAt: new Date("2026-07-01T13:00:00.000Z"),
       };
-      const client = createMlcApiClient({ tokenState, transport, now: new Date("2026-07-01T12:00:00.000Z") });
+      const client = createMlcApiClient({
+        tokenState,
+        transport,
+        now: new Date("2026-07-01T12:00:00.000Z"),
+      });
 
       await client.getClaimReturn!("seller-1", "C-1001");
       await client.getReturnReviews!("seller-1", "R-5001");
@@ -3795,10 +3811,7 @@ describe("buildNewItemFromMlItem", () => {
       category_id: "MLC1000",
       seller_id: 12345,
       status: "active",
-      pictures: [
-        { url: "https://example.com/img1.jpg" },
-        { url: "https://example.com/img2.jpg" },
-      ],
+      pictures: [{ url: "https://example.com/img1.jpg" }, { url: "https://example.com/img2.jpg" }],
       attributes: [{ id: "BRAND", value_name: "Nike" }],
     };
 
@@ -3832,9 +3845,7 @@ describe("buildNewItemFromMlItem", () => {
           available_quantity: 4,
           sold_quantity: 0,
           picture_ids: ["pic-1"],
-          attributes: [
-            { id: "SELLER_SKU", value_name: "REM-NEG-M" },
-          ],
+          attributes: [{ id: "SELLER_SKU", value_name: "REM-NEG-M" }],
         },
         {
           id: 1001,
@@ -3862,9 +3873,7 @@ describe("buildNewItemFromMlItem", () => {
       { name: "Color", value_id: "52049", value_name: "Negro" },
       { name: "Talle", value_id: "123", value_name: "M" },
     ]);
-    expect(variation0.attributes).toEqual([
-      { id: "SELLER_SKU", value_name: "REM-NEG-M" },
-    ]);
+    expect(variation0.attributes).toEqual([{ id: "SELLER_SKU", value_name: "REM-NEG-M" }]);
 
     const variation1 = present(result.variations?.[1]);
     expect(variation1.price).toBe(15000);

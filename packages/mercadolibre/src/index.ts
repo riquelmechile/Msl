@@ -1086,14 +1086,10 @@ export {
  * condition) when available and falls back to CLP / buy_it_now /
  * gold_special / new when the source item does not carry explicit values.
  */
-export function buildNewItemFromMlItem(
-  sourceItem: MlItem,
-  overrides?: Partial<NewItem>,
-): NewItem {
+export function buildNewItemFromMlItem(sourceItem: MlItem, overrides?: Partial<NewItem>): NewItem {
   // Map pictures: { url } -> { source }
   const pictures =
-    overrides?.pictures ??
-    (sourceItem.pictures?.map((p) => ({ source: p.url })) ?? []);
+    overrides?.pictures ?? sourceItem.pictures?.map((p) => ({ source: p.url })) ?? [];
 
   // Map variations if present
   const variations = sourceItem.variations?.map((v) => {
@@ -2278,10 +2274,7 @@ function normalizeRateLimitedShipmentStatus(input: {
 
 // ── Return safe-read normalizers ────────────────────────────────────
 
-function degradedReturnSnapshot<
-  TData,
-  TSnapshot extends MlcReturnSnapshotBase<TData>,
->(input: {
+function degradedReturnSnapshot<TData, TSnapshot extends MlcReturnSnapshotBase<TData>>(input: {
   sellerId: string;
   now: Date;
   kind: MlcReadSnapshotKind;
@@ -4717,9 +4710,7 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
             }
           : {}),
         ...(newItem?.catalog_listing ? { catalog_listing: true } : {}),
-        ...(newItem?.catalog_product_id
-          ? { catalog_product_id: newItem.catalog_product_id }
-          : {}),
+        ...(newItem?.catalog_product_id ? { catalog_product_id: newItem.catalog_product_id } : {}),
       };
     }
 
@@ -4742,7 +4733,9 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
         permalink: `https://articulo.mercadolibre.cl/${mockId}`,
         status: "active",
         catalog_listing: true,
-        ...(body && typeof body === "object" ? { catalog_product_id: (body as Record<string, unknown>).catalog_product_id } : {}),
+        ...(body && typeof body === "object"
+          ? { catalog_product_id: (body as Record<string, unknown>).catalog_product_id }
+          : {}),
       };
     }
 
@@ -4807,12 +4800,24 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
     },
 
     relistItem: async (sellerId, itemId, input) => {
-      const payload = await apiRequestJson(sellerId, "POST", `/items/${itemId}/relist`, undefined, input);
+      const payload = await apiRequestJson(
+        sellerId,
+        "POST",
+        `/items/${itemId}/relist`,
+        undefined,
+        input,
+      );
       return normalizeWriteResponse({ sellerId, payload, now });
     },
 
     createCatalogListing: async (sellerId, input) => {
-      const payload = await apiRequestJson(sellerId, "POST", "/items/catalog_listings", undefined, input);
+      const payload = await apiRequestJson(
+        sellerId,
+        "POST",
+        "/items/catalog_listings",
+        undefined,
+        input,
+      );
       return normalizeWriteResponse({ sellerId, payload, now });
     },
 

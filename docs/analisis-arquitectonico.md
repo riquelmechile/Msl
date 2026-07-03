@@ -16,20 +16,20 @@ MSL tiene una **arquitectura sólida en el núcleo** (dominio hexagonal puro, su
 
 ## 1. Inventario de Componentes
 
-| Componente | Estado | Rol |
-|-----------|--------|-----|
-| `@msl/domain` | ✅ 100% | Tipos puros, sin I/O. Seller, Listing, Order, Stock, Approval, Audit |
-| `@msl/memory` (Cortex) | ✅ 100% | Grafo neural SQLite con spreading activation, Hebbian, Darwinian |
-| `@msl/memory` (Operational Read Model) | ✅ 100% | Snapshots operativos con TTLs, checkpoints, 8 entity kinds |
-| `@msl/agent` (Agent Loop) | ✅ 100% | Bucle conversacional, 30+ herramientas, guardrails, self-verify |
-| `@msl/agent` (Escribano) | ✅ 100% | Observador Darwiniano, feedback +0.10/−0.15, persistencia de resultados |
-| `@msl/agent` (Autonomy Engine) | ⚠️ Shell | Lógica de degradación lista, KPIs hardcodeados a placeholders |
-| `@msl/agent` (Strategy Store) | ✅ 100% | CRUD SQLite, pero desconectado del system prompt |
-| `@msl/mercadolibre` (OAuth) | ✅ 100% | Multi-account con encryptión AES-256-GCM, refresh token |
-| `@msl/mercadolibre` (Sync Engine) | ✅ 100% | Extract→diff→apply→publish, con dirección restringida |
-| `@msl/mcp` | ⚠️ 30+ tools | `execute_sync_product` existe para ejecución aprobada; quedan stubs/readiness y cableados productivos por completar |
-| `@msl/bot` (Telegram) | ✅ 400 LOC | grammY real, no es stub — pero crea agente por mensaje |
-| `apps/web` | ✅ | Consola demo Next.js 15 |
+| Componente                             | Estado       | Rol                                                                                                                 |
+| -------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `@msl/domain`                          | ✅ 100%      | Tipos puros, sin I/O. Seller, Listing, Order, Stock, Approval, Audit                                                |
+| `@msl/memory` (Cortex)                 | ✅ 100%      | Grafo neural SQLite con spreading activation, Hebbian, Darwinian                                                    |
+| `@msl/memory` (Operational Read Model) | ✅ 100%      | Snapshots operativos con TTLs, checkpoints, 8 entity kinds                                                          |
+| `@msl/agent` (Agent Loop)              | ✅ 100%      | Bucle conversacional, 30+ herramientas, guardrails, self-verify                                                     |
+| `@msl/agent` (Escribano)               | ✅ 100%      | Observador Darwiniano, feedback +0.10/−0.15, persistencia de resultados                                             |
+| `@msl/agent` (Autonomy Engine)         | ⚠️ Shell     | Lógica de degradación lista, KPIs hardcodeados a placeholders                                                       |
+| `@msl/agent` (Strategy Store)          | ✅ 100%      | CRUD SQLite, pero desconectado del system prompt                                                                    |
+| `@msl/mercadolibre` (OAuth)            | ✅ 100%      | Multi-account con encryptión AES-256-GCM, refresh token                                                             |
+| `@msl/mercadolibre` (Sync Engine)      | ✅ 100%      | Extract→diff→apply→publish, con dirección restringida                                                               |
+| `@msl/mcp`                             | ⚠️ 30+ tools | `execute_sync_product` existe para ejecución aprobada; quedan stubs/readiness y cableados productivos por completar |
+| `@msl/bot` (Telegram)                  | ✅ 400 LOC   | grammY real, no es stub — pero crea agente por mensaje                                                              |
+| `apps/web`                             | ✅           | Consola demo Next.js 15                                                                                             |
 
 ---
 
@@ -42,11 +42,13 @@ MSL tiene una **arquitectura sólida en el núcleo** (dominio hexagonal puro, su
 **Qué falta:** cerrar el flujo conversacional completo de aprobación→ejecución desde el agent loop/bot, endurecer evidencia productiva de readiness y registrar outcomes operativos después de ejecutar.
 
 **Dónde:**
+
 - `packages/mcp/src/index.ts` — `execute_sync_product` implementado; aún conviene extraer validaciones de dominio.
 - `packages/mcp/src/runtimeDependencies.ts` — `executeWrite` existe cuando el runtime OAuth/write está disponible.
 - `packages/agent/src/conversation/agentLoop.ts` / bot — queda completar la orquestación conversacional de confirmación explícita.
 
 **Solución:**
+
 ```
 Fase A: execute_sync_product en MCP ✅ implementado
   1. Lee proposal del approval queue
@@ -86,6 +88,7 @@ readinessEvidence: {
 Ese comportamiento ya fue reemplazado. Si hoy la readiness aparece bloqueada, debe interpretarse como una señal operativa del runtime/configuración, no como un stub permanente.
 
 **Solución:**
+
 ```
 1. readRollbackStrategyPresent(): profundizar la verificación de estrategias activas que sirvan como rollback operativo
    → Revisar strategyStore.listActive() y confirmar reversibilidad de margin/category/stock strategies
@@ -111,6 +114,7 @@ Ese comportamiento ya fue reemplazado. Si hoy la readiness aparece bloqueada, de
 **Impacto restante:** La herramienta ya está disponible; falta asegurar que los prompts y flujos productivos la usen consistentemente antes de propuestas críticas.
 
 **Implementado:**
+
 ```typescript
 // En createAgentLoop(), toolMap construction:
 if (config.engine && !toolMap.has("get_business_context")) {
@@ -129,6 +133,7 @@ if (config.engine && !toolMap.has("get_business_context")) {
 **Dónde:** `agentLoop.ts` line 408 — `activeStrategies` se inicializa de `config.strategies` (array opcional), no del store.
 
 **Solución:**
+
 ```typescript
 // En getSystemPrompt(), cuando config.store existe:
 function getActiveStrategies(): Strategy[] {
@@ -150,11 +155,13 @@ function getActiveStrategies(): Strategy[] {
 **Qué pasa:** El bot de Telegram llama a `createAgentLoop(agentConfig)` **por cada mensaje**. Como `EscribanoObserver` se crea dentro y mantiene `#turnCount` y `#conceptCache` como estado de instancia, cada mensaje empieza con contadores en cero y caché vacía.
 
 **Impacto:**
+
 - El pruning Darwiniano (cada 10 turns, cada 50 turns) **nunca se ejecuta** porque ninguna instancia llega a 10 turns
 - `#conceptCache` (Map de conceptos→node IDs) se reconstruye desde cero en cada mensaje → queries redundantes a SQLite
 - `#businessNodeIds` (Set de IDs cacheados) se pierde → más queries redundantes
 
 **Solución:**
+
 ```
 Opción A (simple): Pasar turnCount como parámetro de estado persistente
   - Guardar turnCount en ConversationState
@@ -186,6 +193,7 @@ Conversación → Cortex (grafo neural)
 ```
 
 **Solución:**
+
 ```
 1. Cablear OperationalEvidenceProvider en el agent config del bot
    → agentConfig.evidenceProvider = createOperationalEvidenceProvider(readModel)
@@ -209,18 +217,20 @@ Conversación → Cortex (grafo neural)
 ### GAP 7 — BAJO: KPIs de Autonomía Son Placeholders
 
 **Qué pasa:** El agent loop registra KPIs hardcodeados:
+
 ```typescript
 autonomyEngine.recordKpi(sellerId, {
-  marginCompliance: 1,      // ← siempre 1
-  successRate: 1,           // ← siempre 1
-  safetyViolations: 0,      // ← siempre 0
-  responseAccuracy: 0,      // ← siempre 0
+  marginCompliance: 1, // ← siempre 1
+  successRate: 1, // ← siempre 1
+  safetyViolations: 0, // ← siempre 0
+  responseAccuracy: 0, // ← siempre 0
 });
 ```
 
 La promoción de nivel requiere `responseAccuracy > 0.9` — **imposible** con el valor actual. La degradación (#2 y #3) nunca se dispara porque marginCompliance y successRate siempre son 1.
 
 **Solución:**
+
 ```
 Medir KPIs reales post-ejecución (después del GAP 1):
   - marginCompliance: ¿el precio publicado respeta el margen configurado?
@@ -244,20 +254,21 @@ Implementar heurísticas simples:
 
 ### 3.1 Fragmentación de Conexiones SQLite (5-7 conexiones independientes)
 
-| Componente | Crea su propio DB? | Usa pool compartido? |
-|-----------|-------------------|---------------------|
-| `createDatabase()` (Cortex) | ✅ Sí | ❌ No |
-| `createTokenStore()` (OAuth) | ✅ Sí | ❌ No |
-| `createSyncStore()` | ✅ Sí | ❌ No |
-| `createSqliteApprovalQueueRepository()` | ✅ Sí | ❌ No |
-| Bot: `new Database(sqlitePath)` | ✅ Sí | ❌ No |
-| Bot: `createGraphEngine(cortexPath)` | ✅ Sí | ❌ No |
-| `createStrategyStore(db)` | ❌ Recibe | ❌ No |
-| `createOperationalReadModel(db)` | ❌ Recibe | ❌ No |
+| Componente                              | Crea su propio DB? | Usa pool compartido? |
+| --------------------------------------- | ------------------ | -------------------- |
+| `createDatabase()` (Cortex)             | ✅ Sí              | ❌ No                |
+| `createTokenStore()` (OAuth)            | ✅ Sí              | ❌ No                |
+| `createSyncStore()`                     | ✅ Sí              | ❌ No                |
+| `createSqliteApprovalQueueRepository()` | ✅ Sí              | ❌ No                |
+| Bot: `new Database(sqlitePath)`         | ✅ Sí              | ❌ No                |
+| Bot: `createGraphEngine(cortexPath)`    | ✅ Sí              | ❌ No                |
+| `createStrategyStore(db)`               | ❌ Recibe          | ❌ No                |
+| `createOperationalReadModel(db)`        | ❌ Recibe          | ❌ No                |
 
 **El pool compartido existe** (`packages/memory/src/connectionPool.ts` con `getSharedDb()`) pero ningún componente de producción lo usa.
 
 **Solución:**
+
 ```
 1. Migrar todos los factories a aceptar Database | string
    → Si reciben string, usar getSharedDb(path)
@@ -276,6 +287,7 @@ Implementar heurísticas simples:
 ### 3.2 Lógica de Dominio en Capa de Infraestructura
 
 **Qué pasa:** `packages/mcp/src/index.ts` contiene validaciones de negocio que deberían estar en `@msl/domain`:
+
 - `isSupportedSyncProductProposal()` — validación de proposal
 - `validateSellerAccountScope()` — scope de cuenta
 - `buildSyncProductPreview()` — lógica de preview
@@ -302,8 +314,9 @@ Implementar heurísticas simples:
 `queryByMetadata()` construye queries con `WHERE JSON_EXTRACT(metadata, '$.type') = ?`. SQLite no indexa paths JSON sin columnas virtuales. Cada query operacional hace full table scan.
 
 **Solución:** Agregar columnas virtuales generadas en la migración v2:
+
 ```sql
-ALTER TABLE nodes ADD COLUMN node_type TEXT 
+ALTER TABLE nodes ADD COLUMN node_type TEXT
   GENERATED ALWAYS AS (json_extract(metadata, '$.type')) VIRTUAL;
 CREATE INDEX idx_nodes_type ON nodes(node_type);
 ```
@@ -319,6 +332,7 @@ El bot crea `createDeepSeekClient()` → `new OpenAI()` por cada mensaje, perdie
 ### 4.3 MCP Server: 3 Stubs Hardcodeados
 
 `check_account`, `list_strategies`, `consult_cortex` en `mcp/src/index.ts` devuelven datos mock:
+
 ```typescript
 // check_account → { level: "platinum", status: "active" }
 // list_strategies → { strategies: [], count: 0 }
@@ -335,47 +349,47 @@ El bot crea `createDeepSeekClient()` → `new OpenAI()` por cada mensaje, perdie
 
 ### 🔴 Bloqueantes (no se puede llegar a producción sin esto)
 
-| # | Gap | Esfuerzo | Depende de |
-|---|-----|----------|------------|
-| 1 | Endurecer `readinessEvidence` productivo | 1-2h | — |
-| 2 | Registrar `get_business_context` en toolMap | ✅ Hecho | — |
-| 3 | Sincronizar `activeStrategies` con strategyStore | 30min | — |
-| 4 | Conectar `execute_sync_product` al flujo conversacional y seguir endureciendo guards | 4-6h | #1 |
-| 5 | Conectar credenciales ML reales (7h del roadmap) | 2-3h | — |
+| #   | Gap                                                                                  | Esfuerzo | Depende de |
+| --- | ------------------------------------------------------------------------------------ | -------- | ---------- |
+| 1   | Endurecer `readinessEvidence` productivo                                             | 1-2h     | —          |
+| 2   | Registrar `get_business_context` en toolMap                                          | ✅ Hecho | —          |
+| 3   | Sincronizar `activeStrategies` con strategyStore                                     | 30min    | —          |
+| 4   | Conectar `execute_sync_product` al flujo conversacional y seguir endureciendo guards | 4-6h     | #1         |
+| 5   | Conectar credenciales ML reales (7h del roadmap)                                     | 2-3h     | —          |
 
 ### 🟡 Alta Prioridad (degrada calidad pero no bloquea)
 
-| # | Gap | Esfuerzo | Depende de |
-|---|-----|----------|------------|
-| 6 | Arreglar ciclo de vida Escribano en bot | 1-2h | — |
-| 7 | Puentear Cortex ↔ Operational Read Model | 4-6h | #2 |
-| 8 | Unificar conexiones SQLite (shared pool) | 3-4h | — |
-| 9 | Reutilizar instancia AgentLoop en bot | 2-3h | #6 |
+| #   | Gap                                      | Esfuerzo | Depende de |
+| --- | ---------------------------------------- | -------- | ---------- |
+| 6   | Arreglar ciclo de vida Escribano en bot  | 1-2h     | —          |
+| 7   | Puentear Cortex ↔ Operational Read Model | 4-6h     | #2         |
+| 8   | Unificar conexiones SQLite (shared pool) | 3-4h     | —          |
+| 9   | Reutilizar instancia AgentLoop en bot    | 2-3h     | #6         |
 
 ### 🟢 Baja Prioridad (mejora pero no es urgente)
 
-| # | Gap | Esfuerzo | Depende de |
-|---|-----|----------|------------|
-| 10 | Implementar KPIs de autonomía reales | 3-4h | #4 |
-| 11 | Índices JSON en Cortex (migración v2) | 30min | — |
-| 12 | Cablear stubs de MCP (check_account, etc.) | 1-2h | credenciales |
-| 13 | Extraer lógica de dominio del MCP | 1-2h | — |
-| 14 | Deprecar answerBusinessQuestion() | 1h | — |
+| #   | Gap                                        | Esfuerzo | Depende de   |
+| --- | ------------------------------------------ | -------- | ------------ |
+| 10  | Implementar KPIs de autonomía reales       | 3-4h     | #4           |
+| 11  | Índices JSON en Cortex (migración v2)      | 30min    | —            |
+| 12  | Cablear stubs de MCP (check_account, etc.) | 1-2h     | credenciales |
+| 13  | Extraer lógica de dominio del MCP          | 1-2h     | —            |
+| 14  | Deprecar answerBusinessQuestion()          | 1h       | —            |
 
 ---
 
 ## 6. Comparación con observaciones.md
 
-| Aspecto | observaciones.md | Este análisis |
-|---------|-----------------|---------------|
-| Gaps identificados | 5 | 14 (7 gaps + 7 issues de cohesión/bottleneck) |
-| Causa raíz por gap | No | Sí — cada gap tiene root cause analysis |
-| Solución concreta | No | Sí — cada gap tiene plan de implementación |
-| Esfuerzo estimado | No | Sí — horas por tarea |
-| Priorización | No | Sí — 3 tiers con dependencias |
-| Análisis de DB connections | No | Sí — inventario de 8 conexiones |
-| Análisis de cohesión hexagonal | No | Sí — 3 violaciones identificadas |
-| Cuellos de botella | 4 (2 teóricos) | 3 (todos medibles y concretos) |
+| Aspecto                        | observaciones.md | Este análisis                                 |
+| ------------------------------ | ---------------- | --------------------------------------------- |
+| Gaps identificados             | 5                | 14 (7 gaps + 7 issues de cohesión/bottleneck) |
+| Causa raíz por gap             | No               | Sí — cada gap tiene root cause analysis       |
+| Solución concreta              | No               | Sí — cada gap tiene plan de implementación    |
+| Esfuerzo estimado              | No               | Sí — horas por tarea                          |
+| Priorización                   | No               | Sí — 3 tiers con dependencias                 |
+| Análisis de DB connections     | No               | Sí — inventario de 8 conexiones               |
+| Análisis de cohesión hexagonal | No               | Sí — 3 violaciones identificadas              |
+| Cuellos de botella             | 4 (2 teóricos)   | 3 (todos medibles y concretos)                |
 
 ---
 

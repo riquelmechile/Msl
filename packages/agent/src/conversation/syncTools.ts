@@ -73,7 +73,9 @@ type PriceIntelligenceEndpointSpec<K extends PriceIntelligenceEndpointKey> = {
   read: () => Promise<PriceIntelligenceEndpointResult[K]>;
 };
 
-function approvalRequired(tool: "sync_product" | "sync_all" | "create_listing"): Record<string, unknown> {
+function approvalRequired(
+  tool: "sync_product" | "sync_all" | "create_listing",
+): Record<string, unknown> {
   return {
     status: "approval_required",
     tool,
@@ -3107,8 +3109,7 @@ export function createCreateListingTool(
       properties: {
         sellerId: {
           type: "string",
-          description:
-            "ID de la cuenta donde publicar. Ej: 'plasticov' o 'maustian'.",
+          description: "ID de la cuenta donde publicar. Ej: 'plasticov' o 'maustian'.",
         },
         title: {
           type: "string",
@@ -3132,8 +3133,7 @@ export function createCreateListingTool(
         },
         buying_mode: {
           type: "string",
-          description:
-            "Modo de compra: 'buy_it_now' (Compra inmediata).",
+          description: "Modo de compra: 'buy_it_now' (Compra inmediata).",
         },
         listing_type_id: {
           type: "string",
@@ -3146,8 +3146,7 @@ export function createCreateListingTool(
         },
         pictures: {
           type: "array",
-          description:
-            "URLs de las fotos del producto. Cada elemento: { source: 'https://...' }.",
+          description: "URLs de las fotos del producto. Cada elemento: { source: 'https://...' }.",
           items: {
             type: "object",
             properties: {
@@ -3166,7 +3165,8 @@ export function createCreateListingTool(
             properties: {
               attribute_combinations: {
                 type: "array",
-                description: "Atributos que diferencian esta variante. Ej: [{ name: 'Tamaño', value_name: '2m x 3m' }].",
+                description:
+                  "Atributos que diferencian esta variante. Ej: [{ name: 'Tamaño', value_name: '2m x 3m' }].",
                 items: {
                   type: "object",
                   properties: {
@@ -3230,7 +3230,8 @@ export function createCreateListingTool(
         },
         sale_terms: {
           type: "array",
-          description: "Términos de venta: garantía. Ej: [{ id: 'WARRANTY_TYPE', value_name: 'Garantía del vendedor' }].",
+          description:
+            "Términos de venta: garantía. Ej: [{ id: 'WARRANTY_TYPE', value_name: 'Garantía del vendedor' }].",
           items: {
             type: "object",
             properties: {
@@ -3280,7 +3281,9 @@ export function createCreateListingTool(
       const pictures = Array.isArray(args.pictures)
         ? args.pictures.filter(
             (p): p is { source: string } =>
-              typeof p === "object" && p !== null && typeof (p as Record<string, unknown>).source === "string",
+              typeof p === "object" &&
+              p !== null &&
+              typeof (p as Record<string, unknown>).source === "string",
           )
         : [];
 
@@ -3293,9 +3296,11 @@ export function createCreateListingTool(
         category_id: typeof args.category_id === "string" ? args.category_id : "",
         price: typeof args.price === "number" ? args.price : 0,
         currency_id: typeof args.currency_id === "string" ? args.currency_id : "CLP",
-        available_quantity: typeof args.available_quantity === "number" ? args.available_quantity : 1,
+        available_quantity:
+          typeof args.available_quantity === "number" ? args.available_quantity : 1,
         buying_mode: typeof args.buying_mode === "string" ? args.buying_mode : "buy_it_now",
-        listing_type_id: typeof args.listing_type_id === "string" ? args.listing_type_id : "gold_special",
+        listing_type_id:
+          typeof args.listing_type_id === "string" ? args.listing_type_id : "gold_special",
         condition: typeof args.condition === "string" ? args.condition : "new",
         pictures,
       };
@@ -3397,7 +3402,10 @@ export function createUpdateListingTool(
         title: { type: "string", description: "Nuevo título (opcional)." },
         price: { type: "number", description: "Nuevo precio en CLP (opcional)." },
         available_quantity: { type: "number", description: "Nuevo stock (opcional)." },
-        description: { type: "string", description: "Nueva descripción en texto plano (opcional)." },
+        description: {
+          type: "string",
+          description: "Nueva descripción en texto plano (opcional).",
+        },
         pictures: {
           type: "array",
           items: { type: "object", properties: { source: { type: "string" } } },
@@ -3446,11 +3454,7 @@ export function createUpdateListingTool(
       if (typeof args.warranty === "string") updates.warranty = args.warranty;
 
       try {
-        const result = await mlClient.updateItem(
-          sellerId,
-          itemId,
-          updates,
-        );
+        const result = await mlClient.updateItem(sellerId, itemId, updates);
         if (cortex) {
           cortex.createNode(`update_${itemId}_${Date.now()}`, {
             type: "listing_updated",
@@ -3671,9 +3675,7 @@ export function createManageVariationsTool(
       try {
         // 1. Fetch current item to get existing variations.
         const currentItem = await mlClient.getItem(sellerId, itemId);
-        const currentVariations = Array.isArray(
-          (currentItem as Record<string, unknown>).variations,
-        )
+        const currentVariations = Array.isArray((currentItem as Record<string, unknown>).variations)
           ? ((currentItem as Record<string, unknown>).variations as Array<Record<string, unknown>>)
           : [];
 
@@ -3761,9 +3763,7 @@ export function createManageVariationsTool(
  * @param reader — the `OperationalReadModelReader` instance for local DB queries.
  * @returns a `read_my_catalog` tool definition compatible with OpenAI function calling.
  */
-export function createReadMyCatalogTool(
-  reader: OperationalReadModelReader,
-): ToolDefinition {
+export function createReadMyCatalogTool(reader: OperationalReadModelReader): ToolDefinition {
   return {
     name: "read_my_catalog",
     description:
@@ -3796,15 +3796,11 @@ export function createReadMyCatalogTool(
       if (!sellerId) return { error: "sellerId es obligatorio." };
 
       try {
-        const snapshots = await reader.listSnapshots<Record<string, unknown>>(
-          sellerId,
-          "listing",
-          {
-            limit: 200,
-            ...(typeof args.status === "string" ? { status: args.status } : {}),
-            ...(typeof args.categoryId === "string" ? { categoryId: args.categoryId } : {}),
-          },
-        );
+        const snapshots = await reader.listSnapshots<Record<string, unknown>>(sellerId, "listing", {
+          limit: 200,
+          ...(typeof args.status === "string" ? { status: args.status } : {}),
+          ...(typeof args.categoryId === "string" ? { categoryId: args.categoryId } : {}),
+        });
 
         if (snapshots.length === 0) {
           return {
@@ -3815,7 +3811,7 @@ export function createReadMyCatalogTool(
           };
         }
 
-        const items = snapshots.map(s => {
+        const items = snapshots.map((s) => {
           const data = s.data;
           return {
             id: s.itemId,
@@ -3835,9 +3831,9 @@ export function createReadMyCatalogTool(
         return {
           sellerId,
           total: items.length,
-          active: items.filter(i => i.status === "active").length,
-          paused: items.filter(i => i.status === "paused").length,
-          closed: items.filter(i => i.status === "closed").length,
+          active: items.filter((i) => i.status === "active").length,
+          paused: items.filter((i) => i.status === "paused").length,
+          closed: items.filter((i) => i.status === "closed").length,
           items,
         };
       } catch (err) {
@@ -3859,10 +3855,12 @@ function storeCreateOutcome(
     .prepare("SELECT id, label FROM nodes WHERE metadata LIKE ?")
     .get(`%"sellerId":"${sellerId}"%`) as { id: number; label: string } | undefined;
 
-  const sourceId = sellerNode?.id ?? cortex.createNode(`seller_${sellerId}`, {
-    type: "seller_account",
-    sellerId,
-  }).id;
+  const sourceId =
+    sellerNode?.id ??
+    cortex.createNode(`seller_${sellerId}`, {
+      type: "seller_account",
+      sellerId,
+    }).id;
 
   const outcomeNode = cortex.createNode(
     `create_${result.id}_${new Date().toISOString().slice(0, 10)}`,

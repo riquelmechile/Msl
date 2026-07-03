@@ -20,18 +20,19 @@ MSL tiene **42 métodos en MlcApiClient** y **8 métodos en MlClient**. Cubre bi
 
 Según la API oficial, el POST /items acepta estos campos. MSL ya preserva los más críticos para sync, pero no todo el schema:
 
-| Campo | Tipo | Requerido? | Impacto en sync |
-|-------|------|-----------|-----------------|
-| `shipping` | `{ mode, local_pick_up, free_shipping, dimensions, logistic_type, tags[] }` | No | ✅ Implementado en tipos/buildNewItemFromMlItem; preservar en sync sigue siendo crítico |
-| `sale_terms` | `Array<{ id, value_id?, value_name? }>` | No | ✅ Implementado en tipos/buildNewItemFromMlItem; preserva garantía |
-| `official_store_id` | `number \| null` | No | Bajo |
-| `differential_pricing` | `number \| null` | No | Bajo |
-| `seller_custom_field` | `string \| null` | No | Medio — útil para tracking interno |
-| `automatic_relist` | `boolean` | No | Bajo |
-| `tags` | `string[]` | No | Medio — tags como "immediate_payment" afectan visibilidad |
-| `description` | `{ plain_text: string }` | No | **ALTO** — Actualmente MSL usa `descriptions: Array<...>`. La API oficial usa `description: { plain_text }` para crear y `descriptions: [...]` en la respuesta GET. Hay que mapear correctamente. |
+| Campo                  | Tipo                                                                        | Requerido? | Impacto en sync                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shipping`             | `{ mode, local_pick_up, free_shipping, dimensions, logistic_type, tags[] }` | No         | ✅ Implementado en tipos/buildNewItemFromMlItem; preservar en sync sigue siendo crítico                                                                                                           |
+| `sale_terms`           | `Array<{ id, value_id?, value_name? }>`                                     | No         | ✅ Implementado en tipos/buildNewItemFromMlItem; preserva garantía                                                                                                                                |
+| `official_store_id`    | `number \| null`                                                            | No         | Bajo                                                                                                                                                                                              |
+| `differential_pricing` | `number \| null`                                                            | No         | Bajo                                                                                                                                                                                              |
+| `seller_custom_field`  | `string \| null`                                                            | No         | Medio — útil para tracking interno                                                                                                                                                                |
+| `automatic_relist`     | `boolean`                                                                   | No         | Bajo                                                                                                                                                                                              |
+| `tags`                 | `string[]`                                                                  | No         | Medio — tags como "immediate_payment" afectan visibilidad                                                                                                                                         |
+| `description`          | `{ plain_text: string }`                                                    | No         | **ALTO** — Actualmente MSL usa `descriptions: Array<...>`. La API oficial usa `description: { plain_text }` para crear y `descriptions: [...]` en la respuesta GET. Hay que mapear correctamente. |
 
 ### Ejemplo de `shipping` preservado:
+
 ```json
 "shipping": {
   "mode": "me2",
@@ -44,6 +45,7 @@ Según la API oficial, el POST /items acepta estos campos. MSL ya preserva los m
 ```
 
 ### Ejemplo de `sale_terms` preservado:
+
 ```json
 "sale_terms": [
   { "id": "WARRANTY_TYPE", "value_id": "2230280", "value_name": "Garantía del vendedor" },
@@ -57,18 +59,18 @@ Según la API oficial, el POST /items acepta estos campos. MSL ya preserva los m
 
 Según la respuesta oficial de GET /items, `MlItem` ya incluye los campos críticos para republicar (`shipping`, `sale_terms`, `currency_id`, `buying_mode`, `listing_type_id`, `condition`, `warranty`, `permalink` y `domain_id`). Quedan campos informativos o de enriquecimiento que todavía no están modelados:
 
-| Campo | Tipo | Útil para sync? |
-|-------|------|----------------|
-| `official_store_id` | `number \| null` | Informativo |
-| `differential_pricing` | `number \| null` | Informativo |
-| `seller_custom_field` | `string \| null` | Medio — tracking interno |
-| `automatic_relist` | `boolean` | Bajo |
-| `health` | `number \| null` | Bajo |
-| `tags` | `string[]` | Medio |
-| `video_id` | `string \| null` | Ya agregado en NewItem |
-| `base_price` | `number` | Informativo |
-| `original_price` | `number \| null` | Informativo |
-| `descriptions` | `Array<{ id: string }>` | Referencia |
+| Campo                  | Tipo                    | Útil para sync?          |
+| ---------------------- | ----------------------- | ------------------------ |
+| `official_store_id`    | `number \| null`        | Informativo              |
+| `differential_pricing` | `number \| null`        | Informativo              |
+| `seller_custom_field`  | `string \| null`        | Medio — tracking interno |
+| `automatic_relist`     | `boolean`               | Bajo                     |
+| `health`               | `number \| null`        | Bajo                     |
+| `tags`                 | `string[]`              | Medio                    |
+| `video_id`             | `string \| null`        | Ya agregado en NewItem   |
+| `base_price`           | `number`                | Informativo              |
+| `original_price`       | `number \| null`        | Informativo              |
+| `descriptions`         | `Array<{ id: string }>` | Referencia               |
 
 ---
 
@@ -76,24 +78,24 @@ Según la respuesta oficial de GET /items, `MlItem` ya incluye los campos críti
 
 El `MlClient` actual ya tiene `publishItem`, `updateItem`, `relistItem` y `createCatalogListing`. Quedan helpers explícitos de ciclo de vida/borrado, aunque técnicamente pueden expresarse con `updateItem`:
 
-| Método | Endpoint | Necesidad |
-|--------|----------|-----------|
-| `closeItem(sellerId, itemId)` | `PUT /items/:id` con `{ status: "closed" }` | **ALTO** — Necesario para cerrar items viejos antes de republicar |
-| `pauseItem(sellerId, itemId)` | `PUT /items/:id` con `{ status: "paused" }` | **MEDIO** — Pausar sin borrar |
-| `relistItem(sellerId, itemId, input)` | `POST /items/:id/relist` | ✅ Implementado — republicar items cerrados preservando historial |
-| `createCatalogListing(sellerId, input)` | `POST /items/catalog_listings` | ✅ Implementado — optin de item tradicional a catálogo |
-| `deleteItem(sellerId, itemId)` | `PUT /items/:id` con `{ deleted: "true" }` | Bajo — Borrado permanente |
+| Método                                  | Endpoint                                    | Necesidad                                                         |
+| --------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------- |
+| `closeItem(sellerId, itemId)`           | `PUT /items/:id` con `{ status: "closed" }` | **ALTO** — Necesario para cerrar items viejos antes de republicar |
+| `pauseItem(sellerId, itemId)`           | `PUT /items/:id` con `{ status: "paused" }` | **MEDIO** — Pausar sin borrar                                     |
+| `relistItem(sellerId, itemId, input)`   | `POST /items/:id/relist`                    | ✅ Implementado — republicar items cerrados preservando historial |
+| `createCatalogListing(sellerId, input)` | `POST /items/catalog_listings`              | ✅ Implementado — optin de item tradicional a catálogo            |
+| `deleteItem(sellerId, itemId)`          | `PUT /items/:id` con `{ deleted: "true" }`  | Bajo — Borrado permanente                                         |
 
 ---
 
 ## 4. Métodos Faltantes en `MlcApiClient` (Read Client)
 
-| Método | Endpoint | Utilidad |
-|--------|----------|----------|
-| `getItemDescription(sellerId, itemId)` | `GET /items/:id/description` | Leer descripción para preservar al republicar |
-| `getPack(sellerId, packId)` | `GET /marketplace/orders/pack/:id` | Órdenes con carrito (múltiples items) |
-| `getShippingOptions(sellerId, itemId)` | `GET /items/:id/shipping_options` | Ver opciones de envío disponibles |
-| `getShippingPreferences(sellerId)` | `GET /users/:id/shipping_preferences` | Ver configuración de envío del seller |
+| Método                                 | Endpoint                              | Utilidad                                      |
+| -------------------------------------- | ------------------------------------- | --------------------------------------------- |
+| `getItemDescription(sellerId, itemId)` | `GET /items/:id/description`          | Leer descripción para preservar al republicar |
+| `getPack(sellerId, packId)`            | `GET /marketplace/orders/pack/:id`    | Órdenes con carrito (múltiples items)         |
+| `getShippingOptions(sellerId, itemId)` | `GET /items/:id/shipping_options`     | Ver opciones de envío disponibles             |
+| `getShippingPreferences(sellerId)`     | `GET /users/:id/shipping_preferences` | Ver configuración de envío del seller         |
 
 ---
 
@@ -123,25 +125,25 @@ El `MlClient` actual ya tiene `publishItem`, `updateItem`, `relistItem` y `creat
 
 ## 6. Comparación: MSL vs API Oficial
 
-| Área | MSL actual | API Oficial | Gap |
-|------|-----------|------------|-----|
-| Read: listings | ✅ 42 métodos MlcApiClient | Completo | OK |
-| Read: pricing intelligence | ✅ sale_price, prices, price_to_win, automation | Completo | OK |
-| Read: claims | ✅ search, detail, messages, resolutions, reputation, history | Completo | OK |
-| Read: shipping status | ✅ getShipmentStatus | Completo | OK |
-| Read: promotions | ✅ seller, detail, items | Completo | OK |
-| Write: create item | ✅ publishItem (POST /items) | Completo | OK |
-| Write: update item | ✅ updateItem (PUT /items/:id) | Parcial | Soporta payload parcial; faltan helpers específicos para close/pause/delete |
-| Write: close/pause | ❌ | PUT /items/:id status | **Falta** |
-| Write: relist | ✅ relistItem | POST /items/:id/relist | OK |
-| Write: catalog optin | ✅ createCatalogListing | POST /items/catalog_listings | OK |
-| Item fields (read) | 11 campos | 30+ campos | **Faltan 19** |
-| Item fields (write) | 14 campos | 25+ campos | **Faltan 11** |
-| Variations | ✅ variations en MlItem + NewItem | Completo | OK |
-| Catalog | ✅ catalog_product_id + catalog_listing | Completo | OK |
-| Pictures | ✅ source URL | Completo | OK |
-| Shipping config | ✅ En tipos | `shipping` object | OK |
-| Sale terms (warranty) | ✅ En tipos | `sale_terms` array | OK |
+| Área                       | MSL actual                                                    | API Oficial                  | Gap                                                                         |
+| -------------------------- | ------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------- |
+| Read: listings             | ✅ 42 métodos MlcApiClient                                    | Completo                     | OK                                                                          |
+| Read: pricing intelligence | ✅ sale_price, prices, price_to_win, automation               | Completo                     | OK                                                                          |
+| Read: claims               | ✅ search, detail, messages, resolutions, reputation, history | Completo                     | OK                                                                          |
+| Read: shipping status      | ✅ getShipmentStatus                                          | Completo                     | OK                                                                          |
+| Read: promotions           | ✅ seller, detail, items                                      | Completo                     | OK                                                                          |
+| Write: create item         | ✅ publishItem (POST /items)                                  | Completo                     | OK                                                                          |
+| Write: update item         | ✅ updateItem (PUT /items/:id)                                | Parcial                      | Soporta payload parcial; faltan helpers específicos para close/pause/delete |
+| Write: close/pause         | ❌                                                            | PUT /items/:id status        | **Falta**                                                                   |
+| Write: relist              | ✅ relistItem                                                 | POST /items/:id/relist       | OK                                                                          |
+| Write: catalog optin       | ✅ createCatalogListing                                       | POST /items/catalog_listings | OK                                                                          |
+| Item fields (read)         | 11 campos                                                     | 30+ campos                   | **Faltan 19**                                                               |
+| Item fields (write)        | 14 campos                                                     | 25+ campos                   | **Faltan 11**                                                               |
+| Variations                 | ✅ variations en MlItem + NewItem                             | Completo                     | OK                                                                          |
+| Catalog                    | ✅ catalog_product_id + catalog_listing                       | Completo                     | OK                                                                          |
+| Pictures                   | ✅ source URL                                                 | Completo                     | OK                                                                          |
+| Shipping config            | ✅ En tipos                                                   | `shipping` object            | OK                                                                          |
+| Sale terms (warranty)      | ✅ En tipos                                                   | `sale_terms` array           | OK                                                                          |
 
 ---
 

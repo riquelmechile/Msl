@@ -264,7 +264,7 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
       const rows = listSnapshotsStmt.all(sellerId, kind, limit) as SnapshotRow[];
 
       return rows
-        .map(row => {
+        .map((row) => {
           let data: TData;
           try {
             data = JSON.parse(row.data_json) as TData;
@@ -273,8 +273,13 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
           }
 
           // Client-side filtering
-          if (options?.status && (data as Record<string, unknown>)?.status !== options.status) return null;
-          if (options?.categoryId && (data as Record<string, unknown>)?.category_id !== options.categoryId) return null;
+          if (options?.status && (data as Record<string, unknown>)?.status !== options.status)
+            return null;
+          if (
+            options?.categoryId &&
+            (data as Record<string, unknown>)?.category_id !== options.categoryId
+          )
+            return null;
 
           return {
             itemId: row.item_id,

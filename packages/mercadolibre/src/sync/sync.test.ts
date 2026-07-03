@@ -247,9 +247,7 @@ describe("Strategy Applier", () => {
       variations: [
         {
           id: 1,
-          attribute_combinations: [
-            { name: "Tamaño", value_name: "2m x 3m" },
-          ],
+          attribute_combinations: [{ name: "Tamaño", value_name: "2m x 3m" }],
           price: 10000,
           available_quantity: 5,
           sold_quantity: 0,
@@ -257,9 +255,7 @@ describe("Strategy Applier", () => {
         },
         {
           id: 2,
-          attribute_combinations: [
-            { name: "Tamaño", value_name: "3m x 4m" },
-          ],
+          attribute_combinations: [{ name: "Tamaño", value_name: "3m x 4m" }],
           price: 18000,
           available_quantity: 3,
           sold_quantity: 0,
@@ -267,9 +263,7 @@ describe("Strategy Applier", () => {
         },
         {
           id: 3,
-          attribute_combinations: [
-            { name: "Tamaño", value_name: "4m x 6m" },
-          ],
+          attribute_combinations: [{ name: "Tamaño", value_name: "4m x 6m" }],
           price: 35000,
           available_quantity: 2,
           sold_quantity: 0,
@@ -278,7 +272,7 @@ describe("Strategy Applier", () => {
       ],
     });
 
-    const strategy: MarginStrategy = { type: "margin", percentage: 0.30 };
+    const strategy: MarginStrategy = { type: "margin", percentage: 0.3 };
     const result = applyStrategies(item, [strategy]);
 
     expect(result.applied).toBe(true);
