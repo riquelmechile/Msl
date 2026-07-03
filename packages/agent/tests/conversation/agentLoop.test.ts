@@ -91,6 +91,30 @@ function lastUserContent(messages: Array<{ role: string; content: string }>): st
   return "";
 }
 
+function systemContent(messages: Array<{ role: string; content: string }>): string {
+  return messages.find((message) => message.role === "system")?.content ?? "";
+}
+
+function makePromptCaptureClient(): {
+  llmClient: LlmClient;
+  capturedMessages: Array<{ role: string; content: string }>;
+} {
+  const capturedMessages: Array<{ role: string; content: string }> = [];
+  return {
+    capturedMessages,
+    llmClient: {
+      chat(messages) {
+        capturedMessages.splice(0, capturedMessages.length, ...messages);
+        return Promise.resolve({ content: "Recibido." });
+      },
+      async *stream() {
+        await Promise.resolve();
+        yield { delta: "", done: true };
+      },
+    },
+  };
+}
+
 describe("createAgentLoop — mock client", () => {
   const agent = createAgentLoop({
     systemPrompt,
@@ -246,6 +270,41 @@ describe("createAgentLoop — mock client", () => {
     expect(agentWithDefaultTools.getToolNames()).toEqual(
       expect.arrayContaining(["delegate_to_subagent", "request_agent_evidence"]),
     );
+  });
+
+  it("includes internal CEO workforce guidance in the system prompt", async () => {
+    const { capturedMessages, llmClient } = makePromptCaptureClient();
+    const agent = createAgentLoop({ systemPrompt, llmClient });
+
+    await agent.converse("Hola", makeState());
+
+    const prompt = systemContent(capturedMessages);
+    expect(prompt).toContain("## Orquestación Interna de Workforce del CEO");
+    expect(prompt).toContain("usuario habla solo con el CEO");
+    expect(prompt).toContain("request_agent_evidence");
+    expect(prompt).toContain("delegate_to_subagent");
+  });
+
+  it("forbids user-facing worker selection in the workforce guidance", async () => {
+    const { capturedMessages, llmClient } = makePromptCaptureClient();
+    const agent = createAgentLoop({ systemPrompt, llmClient });
+
+    await agent.converse("Hola", makeState());
+
+    const prompt = systemContent(capturedMessages);
+    expect(prompt).toContain("No expongas comandos de selección de workers");
+    expect(prompt).toContain("ni le pidas al usuario elegir workers");
+  });
+
+  it("keeps Workforce Lessons as context-only guidance below policy", async () => {
+    const { capturedMessages, llmClient } = makePromptCaptureClient();
+    const agent = createAgentLoop({ systemPrompt, llmClient });
+
+    await agent.converse("Hola", makeState());
+
+    const prompt = systemContent(capturedMessages);
+    expect(prompt).toContain("Workforce Lessons son solo contexto");
+    expect(prompt).toContain("nunca reemplazan ni anulan system, safety o CEO policy");
   });
 
   it("exposes create_company_agent only when durable registry and admin authorization exist", () => {
