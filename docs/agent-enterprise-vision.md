@@ -14,6 +14,17 @@ MercadoLibre is the first operating channel, not the product boundary. The produ
 | Cost-aware AI operations             | DeepSeek cache-resident specialists use stable prompts and routing rules to keep repeated reasoning cheap.                      |
 | Multichannel commerce infrastructure | MercadoLibre is the first channel; the architecture must grow toward ecommerce, social, suppliers, ads, and other marketplaces. |
 
+## Current repository alignment
+
+The repository now contains the first durable workforce kernel. It is real, but intentionally bounded.
+
+| Area                   | Implemented today                                                                                                                                                                                | Not complete yet                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Company-agent registry | SQLite-backed company-agent profiles; authorized CEO/admin tools can create and list company agents.                                                                                             | Full department/manager lifecycle, broad self-management, and organization-wide activation policies. |
+| Workforce learning     | SQLite-backed lesson store; authorized tools can record and list lessons for agents/departments.                                                                                                 | Inter-agent evidence protocol, cost ledger, utility scoring, and complete training lifecycle.        |
+| Runtime wiring         | Telegram wires the registry and learning store when SQLite is configured.                                                                                                                        | Broad production mutation flows through Telegram.                                                    |
+| Agent context          | `AgentLoop` injects bounded `## Workforce Lessons` only for explicit active company agents. Lessons are capped, sanitized, hostile text filtered, and parity-tested for streaming/non-streaming. | Unbounded context sharing or implicit lesson injection for every conversation.                       |
+
 ## What MSL is not
 
 - Not a MercadoLibre sync bot.
@@ -136,32 +147,21 @@ Every new channel should plug into the same company model: specialist agents, ev
 
 ## First implementation kernel
 
-The next architectural kernel should make the company model durable instead of hardcoded.
+The first architectural kernel has started: PR #65 made the company model durable with registry/lesson storage and admin tools; PR #67 connected bounded workforce lessons to active agent context. The table below separates what exists from what remains.
 
-| Kernel capability            | Why it matters                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Company-agent registry       | Stores departments, managers, specialists, responsibilities, tools, budgets, and stable cache prefixes. |
-| Agent lifecycle              | Lets the CEO create, train, activate, pause, or retire agents over time.                                |
-| Skill and training memory    | Records what each specialist knows and how that knowledge was acquired.                                 |
-| Evidence request protocol    | Allows agents to ask other agents for bounded research before escalating.                               |
-| Cost ledger                  | Tracks LLM spend, cache hits, agent work, and proposal utility.                                         |
-| Proposal escalation contract | Keeps Telegram focused on approve/reject/redirect business decisions.                                   |
-| Outcome feedback             | Connects approvals, rejections, operational outcomes, and corrections back into Cortex.                 |
+| Kernel capability            | Why it matters                                                                                                                                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Company-agent registry       | Partially implemented: durable SQLite agent profiles and authorized create/list tools. Still needs full department/manager lifecycle, budgets, allowed-tool enforcement, and stable prefix governance. |
+| Agent lifecycle              | Planned: create/train/activate/pause/retire policies beyond the current controlled admin surface.                                                                                                      |
+| Skill and training memory    | Partially implemented: durable lessons can be recorded/listed and injected for active agents. Still needs richer provenance and training workflows.                                                    |
+| Evidence request protocol    | Planned: allows agents to ask other agents for bounded research before escalating.                                                                                                                     |
+| Cost ledger                  | Planned: tracks LLM spend, cache hits, agent work, and proposal utility.                                                                                                                               |
+| Proposal escalation contract | Existing approval-gate philosophy remains; deeper delegation records are still planned.                                                                                                                |
+| Outcome feedback             | Cortex/Darwinian feedback exists; direct linkage from workforce lessons to operational outcomes is still planned.                                                                                      |
 
 This kernel should start proposal-only. It should make collaboration and learning real before enabling broader production mutations.
 
-## Current repository alignment
-
-The repository already contains important foundations:
-
-- Telegram runtime and `AgentLoop` wiring.
-- Hardcoded CEO and specialist lanes.
-- Cortex neural graph memory and operational read model.
-- DeepSeek 3-block cache design and telemetry.
-- `delegate_to_subagent` as a static proposal-oriented primitive.
-- MercadoLibre tooling and approval-gated business operations.
-
-The main missing pieces are durability and lifecycle: a company-agent registry, department/agent/skill training records, an inter-agent evidence protocol, a cost ledger, and a roadmap for multichannel expansion.
+The main missing pieces are no longer basic durability. They are lifecycle depth and governance: full department/manager operations, inter-agent evidence records, cost ledgering, utility feedback, allowed-tool policy enforcement, and multichannel expansion.
 
 ## Related material
 

@@ -1,5 +1,9 @@
 # Propuesta por Fases: Sistema Jerárquico CEO-Socio
 
+> **Estado:** Documento histórico/propuesta. No describe completamente la capacidad actual del repositorio. El estado vigente está en `README.md`, `ARCHITECTURE.md`, `ROADMAP.md` y `docs/agent-enterprise-vision.md`.
+>
+> **Realidad actual:** MSL ya tiene un kernel inicial de fuerza laboral AI: registro durable de company agents, store durable de lecciones, herramientas CEO/admin autorizadas para crear/listar agentes y registrar/listar lecciones, y un bloque `## Workforce Lessons` acotado que se inyecta solo para agentes explícitos y activos. Aún no existe un ciclo de vida autónomo completo de departamentos/managers, ni ejecución productiva amplia por Telegram.
+
 Para hacer realidad tu visión de manera segura y eficiente, estructuraremos la implementación en **4 fases incrementales**.
 
 Dado que el monorepo ya cuenta con las bases del bot de Telegram (`@msl/bot`), la base de datos neural (`@msl/memory` / Cortex), y las estructuras de campañas creativas (`@msl/workers/src/creative`), usaremos esta infraestructura existente para dar vida al rol del **CEO Virtual** y sus subagentes.

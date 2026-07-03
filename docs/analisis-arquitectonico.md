@@ -4,11 +4,13 @@
 > **Alcance:** Análisis completo de cuellos de botella, problemas de cohesión, desconexiones de base de datos y gaps agente↔LLM.
 > **Referencia:** Reemplaza y extiende `docs/observaciones.md`.
 
+> **Nota de vigencia (2026-07-03):** Este diagnóstico sigue siendo útil como análisis técnico, pero algunas brechas cambiaron con PR #65/#67. El repositorio ya tiene un kernel inicial de fuerza laboral AI: registro durable de company agents, store durable de lecciones, herramientas CEO/admin autorizadas para crear/listar agentes y registrar/listar lecciones, y un bloque `## Workforce Lessons` acotado que AgentLoop inyecta solo para agentes de compañía explícitos y activos. No leer este documento como verdad única de producto actual; usar `README.md`, `ARCHITECTURE.md`, `ROADMAP.md` y `docs/agent-enterprise-vision.md` para el estado vigente.
+
 ---
 
 ## Resumen Ejecutivo
 
-MSL tiene una **arquitectura sólida en el núcleo** (dominio hexagonal puro, suite de tests amplia, patrón de caché de 3 bloques para DeepSeek) pero todavía conserva desconexiones entre capas que limitan el salto a producción. Los problemas no son de diseño — son de **cableado**: componentes que existen pero no se conectan entre sí, stubs que simulan fallas, y 5-7 conexiones SQLite independientes que fragmentan la persistencia.
+MSL tiene una **arquitectura sólida en el núcleo** (dominio hexagonal puro, suite de tests amplia, patrón de caché de 3 bloques para DeepSeek) pero todavía conserva desconexiones entre capas que limitan el salto a producción. Varias piezas ya avanzaron —en especial el kernel durable de agentes y lecciones—, así que los gaps de este documento deben interpretarse como diagnóstico mixto: algunos siguen vigentes, otros están parcialmente resueltos y otros ya no son la ruta primaria.
 
 **El camino a producción no requiere refactors grandes — requiere conectar lo que ya está construido.**
 
@@ -16,20 +18,21 @@ MSL tiene una **arquitectura sólida en el núcleo** (dominio hexagonal puro, su
 
 ## 1. Inventario de Componentes
 
-| Componente                             | Estado       | Rol                                                                                                                 |
-| -------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `@msl/domain`                          | ✅ 100%      | Tipos puros, sin I/O. Seller, Listing, Order, Stock, Approval, Audit                                                |
-| `@msl/memory` (Cortex)                 | ✅ 100%      | Grafo neural SQLite con spreading activation, Hebbian, Darwinian                                                    |
-| `@msl/memory` (Operational Read Model) | ✅ 100%      | Snapshots operativos con TTLs, checkpoints, 8 entity kinds                                                          |
-| `@msl/agent` (Agent Loop)              | ✅ 100%      | Bucle conversacional, 30+ herramientas, guardrails, self-verify                                                     |
-| `@msl/agent` (Escribano)               | ✅ 100%      | Observador Darwiniano, feedback +0.10/−0.15, persistencia de resultados                                             |
-| `@msl/agent` (Autonomy Engine)         | ⚠️ Shell     | Lógica de degradación lista, KPIs hardcodeados a placeholders                                                       |
-| `@msl/agent` (Strategy Store)          | ✅ 100%      | CRUD SQLite, pero desconectado del system prompt                                                                    |
-| `@msl/mercadolibre` (OAuth)            | ✅ 100%      | Multi-account con encryptión AES-256-GCM, refresh token                                                             |
-| `@msl/mercadolibre` (Sync Engine)      | ✅ 100%      | Extract→diff→apply→publish, con dirección restringida                                                               |
-| `@msl/mcp`                             | ⚠️ 30+ tools | `execute_sync_product` existe para ejecución aprobada; quedan stubs/readiness y cableados productivos por completar |
-| `@msl/bot` (Telegram)                  | ✅ 400 LOC   | grammY real, no es stub — pero crea agente por mensaje                                                              |
-| `apps/web`                             | ✅           | Consola demo Next.js 15                                                                                             |
+| Componente                             | Estado     | Rol                                                                                                                                                    |
+| -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@msl/domain`                          | ✅ 100%    | Tipos puros, sin I/O. Seller, Listing, Order, Stock, Approval, Audit                                                                                   |
+| `@msl/memory` (Cortex)                 | ✅ 100%    | Grafo neural SQLite con spreading activation, Hebbian, Darwinian                                                                                       |
+| `@msl/memory` (Operational Read Model) | ✅ 100%    | Snapshots operativos con TTLs, checkpoints, 8 entity kinds                                                                                             |
+| `@msl/agent` (Agent Loop)              | ✅ 100%    | Bucle conversacional con herramientas de negocio, guardrails, self-verify                                                                              |
+| `@msl/agent` (Escribano)               | ✅ 100%    | Observador Darwiniano, feedback +0.10/−0.15, persistencia de resultados                                                                                |
+| `@msl/agent` (Workforce Kernel)        | 🟡 Parcial | Registro SQLite de agentes, store de lecciones, herramientas CEO/admin autorizadas e inyección acotada de lecciones                                    |
+| `@msl/agent` (Autonomy Engine)         | ⚠️ Shell   | Lógica de degradación lista, KPIs hardcodeados a placeholders                                                                                          |
+| `@msl/agent` (Strategy Store)          | ✅ 100%    | CRUD SQLite, pero desconectado del system prompt                                                                                                       |
+| `@msl/mercadolibre` (OAuth)            | ✅ 100%    | Multi-account con encryptión AES-256-GCM, refresh token                                                                                                |
+| `@msl/mercadolibre` (Sync Engine)      | ✅ 100%    | Extract→diff→apply→publish, con dirección restringida                                                                                                  |
+| `@msl/mcp`                             | ⚠️ Parcial | Superficie MCP para lecturas seguras, preparación/estado/aprobación y ejecución aprobada; quedan stubs/readiness y cableados productivos por completar |
+| `@msl/bot` (Telegram)                  | ✅ 400 LOC | grammY real, no es stub — pero crea agente por mensaje                                                                                                 |
+| `apps/web`                             | ✅         | Consola demo Next.js 15                                                                                                                                |
 
 ---
 

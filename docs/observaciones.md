@@ -1,6 +1,8 @@
 # Observaciones del Estado del Proyecto, Cuellos de Botella y Desconexiones Lógicas
 
-> **Nota de estado:** Documento histórico. El diagnóstico vigente y priorizado está en `docs/analisis-arquitectonico.md`; este archivo se conserva como referencia de las observaciones originales, con algunas notas actualizadas para evitar contradicciones operativas.
+> **Nota de estado:** Documento histórico. No usar este archivo como estado actual del proyecto. El diagnóstico técnico vigente está en `docs/analisis-arquitectonico.md`, y la realidad de producto/arquitectura vigente está en `README.md`, `ARCHITECTURE.md`, `ROADMAP.md` y `docs/agent-enterprise-vision.md`. Este archivo se conserva solo como registro de observaciones originales.
+
+> **Estado actual resumido (2026-07-03):** la rama actual tiene **1167 tests en 41 archivos**. PR #65/#67 agregaron registro durable de company agents, store durable de lecciones, herramientas CEO/admin autorizadas, cableado de Telegram cuando SQLite está configurado e inyección acotada de `## Workforce Lessons` solo para agentes explícitos y activos. Las afirmaciones históricas de este archivo pueden estar superadas.
 
 Este documento recopila el análisis histórico del proyecto **MSL (Plasticov / Maustian AI Agent)**, detallando su nivel de madurez, cuellos de botella críticos (técnicos y operativos) y desconexiones lógicas entre sus componentes arquitectónicos al momento de la revisión original.
 
@@ -8,16 +10,16 @@ Este documento recopila el análisis histórico del proyecto **MSL (Plasticov / 
 
 ## 1. Resumen del Estado Actual
 
-- **Estabilidad del Codebase:** Excelente. Toda la suite de pruebas unitarias e integración (**1071 pruebas en 41 archivos**) pasa de manera exitosa y sin fallas mediante Vitest.
+- **Estabilidad del Codebase (histórico):** Excelente. En la revisión original la suite tenía un conteo de pruebas anterior. En la rama actual son **1167 tests en 41 archivos**.
 - **Modelo de Dominio (`@msl/domain`):** Completamente implementado bajo una arquitectura hexagonal libre de efectos secundarios y I/O ([packages/domain/src](file:///home/sebastian/code/Msl/packages/domain/src)).
 - **Base de Datos y Memoria (`@msl/memory`):** El motor Cortex (grafo neural con SQLite y CTEs recursivas para propagación Hebbiana/Darwiniana) está 100% operativo ([packages/memory/src](file:///home/sebastian/code/Msl/packages/memory/src)).
 - **Interfaz del Agente (`@msl/agent`):** Implementa correctamente el bucle conversacional con validaciones de idioma (español), guardrails de seguridad, simulación de actores sombra y el motor de ingesta en segundo plano ([packages/agent/src](file:///home/sebastian/code/Msl/packages/agent/src)).
 - **Canales de Presentación:**
   - **Consola Web (`apps/web`):** Panel interactivo Next.js 15 para simulación local determinista ([apps/web](file:///home/sebastian/code/Msl/apps/web)).
   - **Bot de Telegram (`@msl/bot`):** Desarrollado e integrado usando grammY. Incluye comandos básicos (`/start`, `/help`) y soporte para alertas proactivas ([packages/bot/src](file:///home/sebastian/code/Msl/packages/bot/src)).
-- **Trabajo en Progreso (Pendiente):**
-  - **Ingesta de Competencia de Catálogo:** Se encuentra planificada, diseñada y documentada bajo [operational-catalog-competition-ingestion](file:///home/sebastian/code/Msl/openspec/changes/operational-catalog-competition-ingestion/tasks.md) pero aún no está aplicada ni integrada en el flujo diario.
-  - **Credenciales de Red:** Las comunicaciones reales con la API de MercadoLibre y la API de Telegram están en modo _stub_ (simulado). Para activarlas en producción, se requiere configurar las claves correspondientes en [.env.local](file:///home/sebastian/code/Msl/.env.local).
+- **Trabajo en Progreso (histórico):**
+  - Algunas afirmaciones pendientes de la revisión original ya fueron implementadas o cambiaron de prioridad. Ver `ROADMAP.md` antes de planificar trabajo desde esta lista.
+  - Las credenciales reales de MercadoLibre/Telegram siguen siendo una frontera operativa: para producción se requieren secretos configurados fuera de Git y políticas de aprobación explícitas.
 
 ---
 
