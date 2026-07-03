@@ -351,6 +351,34 @@ describe("createAgentLoop — mock client", () => {
     expect(prompt).toContain("delegate_to_subagent");
   });
 
+  it("captures internal cost-aware reuse-vs-ask guardrails in the system prompt", async () => {
+    const { capturedMessages, llmClient } = makePromptCaptureClient();
+    const agent = createAgentLoop({ systemPrompt, llmClient });
+
+    await agent.converse("Hola", makeState());
+
+    const prompt = systemContent(capturedMessages);
+    expect(prompt).toContain("evidencia reciente, cacheada o de menor costo");
+    expect(prompt).toContain("cuando sea suficiente para decidir");
+    expect(prompt).toContain("investigaciones caras, amplias o duplicadas");
+    expect(prompt).toContain("pedí aprobación explícita al CEO");
+    expect(prompt).toContain("evidencia operativa interna");
+    expect(prompt).toContain("no verdad de facturación ni dashboard");
+  });
+
+  it("keeps cost-aware guardrail exceptions non-blocking for urgent or required work", async () => {
+    const { capturedMessages, llmClient } = makePromptCaptureClient();
+    const agent = createAgentLoop({ systemPrompt, llmClient });
+
+    await agent.converse("Hola", makeState());
+
+    const prompt = systemContent(capturedMessages);
+    expect(prompt).toContain("No pidas aprobación cuando el trabajo sea urgente");
+    expect(prompt).toContain("de seguridad");
+    expect(prompt).toContain("ya esté aprobado explícitamente");
+    expect(prompt).toContain("necesario para cumplir system, safety o CEO policy");
+  });
+
   it("forbids user-facing worker selection in the workforce guidance", async () => {
     const { capturedMessages, llmClient } = makePromptCaptureClient();
     const agent = createAgentLoop({ systemPrompt, llmClient });
@@ -369,7 +397,7 @@ describe("createAgentLoop — mock client", () => {
     await agent.converse("Hola", makeState());
 
     const prompt = systemContent(capturedMessages);
-    expect(prompt).toContain("Workforce Lessons son solo contexto");
+    expect(prompt).toContain("Estas guardrails y Workforce Lessons son solo contexto");
     expect(prompt).toContain("nunca reemplazan ni anulan system, safety o CEO policy");
   });
 
@@ -622,7 +650,9 @@ describe("createAgentLoop — mock client", () => {
       expect(userMessage).toContain("cacheStatus counts: hit 1; miss 0; partial 1; unknown 0");
       expect(userMessage).toContain("lane-1: 1");
       expect(userMessage).toContain("provider-model-1: 1");
-      expect(userMessage).toContain("ask the CEO before expensive investigations");
+      expect(userMessage).toContain(
+        "ask the CEO before expensive, broad, or duplicate investigations unless urgent",
+      );
     });
   });
 
