@@ -116,6 +116,47 @@ function makePromptCaptureClient(): {
   };
 }
 
+function makeUsageClient(
+  usage: Record<string, unknown> | undefined,
+  overrides: Partial<{ provider: string; model: string; content: string }> = {},
+): LlmClient {
+  return {
+    chat() {
+      return Promise.resolve({
+        content: overrides.content ?? "Recibido.",
+        ...(usage
+          ? {
+              usage: {
+                provider: overrides.provider ?? "deepseek",
+                model: overrides.model ?? "deepseek-v4-flash",
+                usage,
+              },
+            }
+          : {}),
+      });
+    },
+    async *stream() {
+      await Promise.resolve();
+      yield { delta: "", done: true };
+    },
+  };
+}
+
+async function withInMemoryWorkforceLedger<T>(
+  callback: (context: {
+    workforceCostCacheLedgerStore: ReturnType<typeof createWorkforceCostCacheLedgerStore>;
+  }) => Promise<T> | T,
+): Promise<T> {
+  const db = new Database(":memory:");
+  const workforceCostCacheLedgerStore = createWorkforceCostCacheLedgerStore(db);
+
+  try {
+    return await callback({ workforceCostCacheLedgerStore });
+  } finally {
+    db.close();
+  }
+}
+
 describe("createAgentLoop — mock client", () => {
   const agent = createAgentLoop({
     systemPrompt,
@@ -409,6 +450,172 @@ describe("createAgentLoop — mock client", () => {
     } finally {
       db.close();
     }
+  });
+
+  it("records DeepSeek usage and cache counters into the workforce ledger", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const llmClient = makeUsageClient({
+        prompt_tokens: 100,
+        completion_tokens: 25,
+        prompt_cache_hit_tokens: 70,
+        prompt_cache_miss_tokens: 30,
+      });
+      const agent = createAgentLoop({
+        systemPrompt,
+        llmClient,
+        workforceCostCacheLedgerStore,
+        laneId: "market-catalog",
+      });
+
+      await agent.converse("Hola", makeState());
+      const entries = workforceCostCacheLedgerStore.listEntries({ laneId: "market-catalog" });
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        agentId: "market-catalog",
+        laneId: "market-catalog",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        operation: "chat.completion",
+        inputTokens: 100,
+        outputTokens: 25,
+        promptCacheHitTokens: 70,
+        promptCacheMissTokens: 30,
+        cacheStatus: "partial",
+      });
+      expect(entries[0]?.metadata.source).toBe("agent_loop");
+    });
+  });
+
+  it("normalizes OpenAI-compatible cached prompt token usage into workforce ledger counters", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const agent = createAgentLoop({
+        systemPrompt,
+        llmClient: makeUsageClient(
+          {
+            prompt_tokens: 100,
+            completion_tokens: 25,
+            prompt_tokens_details: { cached_tokens: 40 },
+          },
+          { provider: "openai-compatible", model: "gpt-compatible" },
+        ),
+        workforceCostCacheLedgerStore,
+      });
+
+      await agent.converse("Hola", makeState());
+      const [entry] = workforceCostCacheLedgerStore.listEntries();
+
+      expect(entry).toMatchObject({
+        provider: "openai-compatible",
+        model: "gpt-compatible",
+        inputTokens: 100,
+        outputTokens: 25,
+        promptCacheHitTokens: 40,
+        promptCacheMissTokens: 60,
+        cacheStatus: "partial",
+      });
+    });
+  });
+
+  it.each([
+    ["hit", { prompt_tokens: 100, prompt_tokens_details: { cached_tokens: 100 } }, 100, 0],
+    ["miss", { prompt_tokens: 100, prompt_tokens_details: { cached_tokens: 0 } }, 0, 100],
+    ["unknown", { prompt_tokens: 100 }, undefined, undefined],
+  ] as const)(
+    "maps workforce ledger cacheStatus to %s from provider usage counters",
+    async (cacheStatus, usage, promptCacheHitTokens, promptCacheMissTokens) => {
+      await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+        const agent = createAgentLoop({
+          systemPrompt,
+          llmClient: makeUsageClient(usage),
+          workforceCostCacheLedgerStore,
+        });
+
+        await agent.converse("Hola", makeState());
+        const [entry] = workforceCostCacheLedgerStore.listEntries();
+
+        expect(entry).toMatchObject({
+          cacheStatus,
+          ...(promptCacheHitTokens !== undefined ? { promptCacheHitTokens } : {}),
+          ...(promptCacheMissTokens !== undefined ? { promptCacheMissTokens } : {}),
+        });
+      });
+    },
+  );
+
+  it("degrades safely without recording when provider usage is missing", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const llmClient = makeUsageClient(undefined);
+      const agent = createAgentLoop({ systemPrompt, llmClient, workforceCostCacheLedgerStore });
+
+      await expect(agent.converse("Hola", makeState())).resolves.toMatchObject({
+        response: "Recibido.",
+      });
+      expect(workforceCostCacheLedgerStore.count()).toBe(0);
+    });
+  });
+
+  it("records multiple tool-loop model calls without duplicate ledger IDs", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      let callCount = 0;
+      const llmClient: LlmClient = {
+        chat() {
+          const usage = {
+            provider: "deepseek",
+            model: "deepseek-v4-flash",
+            usage: { prompt_tokens: 20 + callCount, completion_tokens: 5 },
+          };
+          callCount += 1;
+          if (callCount === 1) {
+            return Promise.resolve({
+              content: "",
+              toolCalls: [{ name: "simulate_actor", arguments: { actorType: "competidor" } }],
+              usage,
+            });
+          }
+          return Promise.resolve({ content: "Recibido.", usage });
+        },
+        async *stream() {
+          await Promise.resolve();
+          yield { delta: "", done: true };
+        },
+      };
+      const tool: ToolDefinition = {
+        name: "simulate_actor",
+        description: "Stub actor simulation",
+        parameters: { type: "object", properties: {} },
+        execute: () => ({ actorType: "competidor", recommendation: "revisar precios" }),
+      };
+      const agent = createAgentLoop({
+        systemPrompt,
+        llmClient,
+        tools: [tool],
+        workforceCostCacheLedgerStore,
+      });
+
+      await agent.converse("Revisá al competidor", makeState());
+      const entries = workforceCostCacheLedgerStore.listEntries();
+      const entryIds = entries.map((entry) => entry.entryId);
+
+      expect(entries).toHaveLength(2);
+      expect(new Set(entryIds).size).toBe(2);
+      expect(entries.every((entry) => entry.metadata.source === "agent_loop")).toBe(true);
+    });
+  });
+
+  it("does not record raw prompt response or message metadata", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const llmClient = makeUsageClient({ prompt_tokens: 10, completion_tokens: 2 });
+      const agent = createAgentLoop({ systemPrompt, llmClient, workforceCostCacheLedgerStore });
+
+      await agent.converse("Hola", makeState());
+      const [entry] = workforceCostCacheLedgerStore.listEntries();
+
+      expect(entry?.metadata).toMatchObject({ source: "agent_loop" });
+      expect(Object.keys(entry?.metadata ?? {})).not.toEqual(
+        expect.arrayContaining(["prompt", "response", "message", "messages", "toolArgs"]),
+      );
+    });
   });
 
   it("injects bounded workforce lessons into Block C for the active company agent", async () => {
