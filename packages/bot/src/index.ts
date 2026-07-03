@@ -83,6 +83,7 @@ export type TelegramBotEnv = Partial<
     | "MERCADOLIBRE_ACCESS_TOKEN"
     | "MERCADOLIBRE_REFRESH_TOKEN"
     | "MERCADOLIBRE_SELLER_ID"
+    | "MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID"
     | "MSL_COMPANY_AGENT_ADMIN_ENABLED"
     | "MSL_TELEGRAM_ADMIN_CHAT_IDS"
     | "MSL_TELEGRAM_ADMIN_USER_IDS"
@@ -225,6 +226,8 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     systemPrompt: buildSystemPrompt(sellerName),
     mockClient: !env.DEEPSEEK_API_KEY?.trim(),
   };
+  const activeCompanyAgentId = env.MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID?.trim();
+  if (activeCompanyAgentId) agentConfig.activeCompanyAgentId = activeCompanyAgentId;
   if (store) agentConfig.store = store;
   if (companyAgentRegistry) agentConfig.companyAgentRegistry = companyAgentRegistry;
   if (companyAgentLearningStore) agentConfig.companyAgentLearningStore = companyAgentLearningStore;
