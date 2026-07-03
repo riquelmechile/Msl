@@ -10,6 +10,7 @@ import {
   createCompanyAgentStore,
   createSessionStore,
   createStrategyStore,
+  createWorkforceCostCacheLedgerStore,
   EscribanoObserver,
   OperationalEvidenceProvider,
   startBackgroundIngestion,
@@ -176,6 +177,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const autonomyEngine = db ? createAutonomyEngine(db) : undefined;
   const companyAgentRegistry = db ? createCompanyAgentStore(db) : undefined;
   const companyAgentLearningStore = db ? createCompanyAgentLearningStore(db) : undefined;
+  const workforceCostCacheLedgerStore = db ? createWorkforceCostCacheLedgerStore(db) : undefined;
 
   const configuredCortexPath =
     env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() || env.MSL_CORTEX_SQLITE_PATH?.trim();
@@ -233,6 +235,8 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   if (store) agentConfig.store = store;
   if (companyAgentRegistry) agentConfig.companyAgentRegistry = companyAgentRegistry;
   if (companyAgentLearningStore) agentConfig.companyAgentLearningStore = companyAgentLearningStore;
+  if (workforceCostCacheLedgerStore)
+    agentConfig.workforceCostCacheLedgerStore = workforceCostCacheLedgerStore;
   if (autonomyEngine) agentConfig.autonomyEngine = autonomyEngine;
   if (engine) agentConfig.engine = engine;
   if (escribano) agentConfig.escribano = escribano;

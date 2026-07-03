@@ -12,6 +12,7 @@ import {
 } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
+import { createWorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
 import type { AgentLearningRecord } from "../../src/conversation/companyAgentLearningStore.js";
 import type { CompanyAgent, CompanyAgentRegistry } from "../../src/conversation/companyAgents.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
@@ -372,6 +373,42 @@ describe("createAgentLoop — mock client", () => {
     expect(withAuthorizedStore.getToolNames()).toEqual(
       expect.arrayContaining(["list_agent_lessons", "record_agent_lesson"]),
     );
+  });
+
+  it("exposes workforce ledger tools only when configured and gates recording by admin authorization", () => {
+    const withoutStore = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+    });
+    const db = new Database(":memory:");
+    const workforceCostCacheLedgerStore = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      const withStore = createAgentLoop({
+        systemPrompt,
+        mockClient: true,
+        workforceCostCacheLedgerStore,
+      });
+      const withAuthorizedStore = createAgentLoop({
+        systemPrompt,
+        mockClient: true,
+        workforceCostCacheLedgerStore,
+        companyAgentAdminAuthorized: true,
+      });
+
+      expect(withoutStore.getToolNames()).not.toContain("list_workforce_cost_cache_ledger_entries");
+      expect(withoutStore.getToolNames()).not.toContain("record_workforce_cost_cache_ledger_entry");
+      expect(withStore.getToolNames()).toContain("list_workforce_cost_cache_ledger_entries");
+      expect(withStore.getToolNames()).not.toContain("record_workforce_cost_cache_ledger_entry");
+      expect(withAuthorizedStore.getToolNames()).toEqual(
+        expect.arrayContaining([
+          "list_workforce_cost_cache_ledger_entries",
+          "record_workforce_cost_cache_ledger_entry",
+        ]),
+      );
+    } finally {
+      db.close();
+    }
   });
 
   it("injects bounded workforce lessons into Block C for the active company agent", async () => {
