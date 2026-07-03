@@ -5,12 +5,17 @@ import type { CacheFreshness, ReadSnapshot } from "@msl/domain";
 import {
   assertCompleteMlcItem,
   buildNewItemFromMlItem,
+  createMercadoLibreScraperFallbackAdapter,
+  createMercadoLibreSupplierSourceAdapter,
   createMlcApiClient,
   createMlClient,
   createOAuthManager,
   createOAuthMlcApiClient,
   createTokenStore,
+  createUnsupportedSupplierSourceAdapter,
+  createXkpEnrichmentAdapter,
   evaluateOAuthAccess,
+  parseMercadoLibreFallbackHtml,
   PRICING_AUTOMATION_HISTORY_MAX_SIZE,
   type MlcCategoryAttributeSummary,
   type MlcCategoryTechnicalSpecSummary,
@@ -1428,6 +1433,163 @@ describe("direct MLC API client boundary", () => {
     );
     expect(ensureValidToken).toHaveBeenCalledWith("source-seller");
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe("Supplier Mirror source adapters", () => {
+  it("reports unsupported supplier sources without collecting items or stock", async () => {
+    const adapter = createUnsupportedSupplierSourceAdapter("whatsapp-manual");
+
+    const result = await adapter.collect({ supplierId: "manual-supplier" });
+
+    expect(result).toMatchObject({
+      supplierId: "manual-supplier",
+      source: "unsupported",
+      unsupported: true,
+      items: [],
+      stockObservations: [],
+      evidence: [
+        {
+          supplierId: "manual-supplier",
+          source: "unsupported",
+          confidence: "low",
+          freshness: "fresh",
+          summary: "Supplier source whatsapp-manual is not supported by an enabled adapter.",
+          metadata: { requestedSource: "whatsapp-manual" },
+        },
+      ],
+    });
+    expect(result.evidence[0]?.id).toContain("unsupported:manual-supplier:");
+    expect(result.evidence[0]?.capturedAt).toEqual(expect.any(String));
+  });
+
+  it("normalizes MercadoLibre API reads as stock-authoritative supplier evidence", async () => {
+    const requests: Parameters<MercadoLibreApiTransport["request"]>[0][] = [];
+    const transport: MercadoLibreApiTransport = {
+      request: (request) => {
+        requests.push(request);
+        if (request.path === "/users/seller-1/items/search") {
+          return Promise.resolve({ results: ["MLC1001"] });
+        }
+        return Promise.resolve(
+          completeMlcItemPayload({
+            available_quantity: 2,
+            currency_id: "CLP",
+            attributes: [{ id: "SELLER_SKU", value_name: "SKU-1001" }],
+          }),
+        );
+      },
+    };
+    const client = createMlcApiClient({ tokenState: tokenState(), transport, now });
+    const adapter = createMercadoLibreSupplierSourceAdapter({
+      client,
+      sellerId: "seller-1",
+      now: () => now,
+    });
+
+    const result = await adapter.collect({ supplierId: "jinpeng", lowStockThreshold: 3 });
+
+    expect(result.items).toMatchObject([
+      {
+        supplierId: "jinpeng",
+        supplierItemId: "MLC1001",
+        mlItemId: "MLC1001",
+        source: "mercadolibre-api",
+        confidence: "high",
+        sku: "SKU-1001",
+      },
+    ]);
+    expect(result.stockObservations).toMatchObject([
+      {
+        supplierItemId: "MLC1001",
+        source: "mercadolibre-api",
+        authority: "stock-authoritative",
+        quantity: 2,
+        status: "low-stock",
+        confidence: "high",
+      },
+    ]);
+    expect(result.evidence.map((evidence) => evidence.source)).toEqual([
+      "mercadolibre-api",
+      "mercadolibre-api",
+    ]);
+    expect(requests.map(({ method, path }) => ({ method, path }))).toEqual([
+      { method: "GET", path: "/users/seller-1/items/search" },
+      { method: "GET", path: "/items/MLC1001" },
+    ]);
+  });
+
+  it("keeps MercadoLibre scraper fallback isolated as fallback evidence only", async () => {
+    const html = `<html><head><meta property="og:title" content="Fallback item"><meta property="product:price:amount" content="12990"><script type="application/ld+json">{"offers":{"availability":"https://schema.org/InStock","priceCurrency":"CLP"}}</script></head><body>Stock disponibles: 4</body></html>`;
+    const fetcher = vi.fn().mockResolvedValue({ url: "https://mercadolibre.test/MLC1001", html });
+    const adapter = createMercadoLibreScraperFallbackAdapter({ fetcher, now: () => now });
+
+    const result = await adapter.collect({ supplierId: "jinpeng", itemIds: ["MLC1001"] });
+    const parsed = parseMercadoLibreFallbackHtml({
+      supplierId: "jinpeng",
+      supplierItemId: "MLC1001",
+      url: "https://mercadolibre.test/MLC1001",
+      html,
+      capturedAt: now.toISOString(),
+    });
+
+    expect(result.items).toMatchObject([
+      {
+        supplierItemId: "MLC1001",
+        source: "mercadolibre-scraper-fallback",
+        confidence: "medium",
+        title: "Fallback item",
+        price: 12990,
+      },
+    ]);
+    expect(result.stockObservations).toMatchObject([
+      {
+        authority: "fallback-evidence",
+        quantity: 4,
+        confidence: "medium",
+      },
+    ]);
+    expect(parsed.evidence.metadata).toMatchObject({ selectors: ["json-ld", "og:title"] });
+    expect(fetcher).toHaveBeenCalledWith({ supplierId: "jinpeng", supplierItemId: "MLC1001" });
+    expect("publishItem" in adapter).toBe(false);
+  });
+
+  it("treats XKP enrichment as non-stock-authoritative catalog evidence", async () => {
+    const client = {
+      fetchEnrichment: vi.fn().mockResolvedValue([
+        {
+          supplierItemId: "XKP-1",
+          title: "XKP item",
+          photos: ["https://xkp.test/1.jpg"],
+          specs: { brand: "Jinpeng" },
+          categoryId: "mobility",
+          stock: 999,
+        },
+      ]),
+    };
+    const adapter = createXkpEnrichmentAdapter({ client, now: () => now });
+
+    const result = await adapter.collect({ supplierId: "xkp", itemIds: ["XKP-1"] });
+
+    expect(result.items).toMatchObject([
+      {
+        supplierItemId: "XKP-1",
+        source: "xkp-enrichment",
+        snapshot: { photos: ["https://xkp.test/1.jpg"], specs: { brand: "Jinpeng" } },
+      },
+    ]);
+    expect(result.stockObservations).toMatchObject([
+      {
+        source: "xkp-enrichment",
+        authority: "catalog-enrichment",
+        quantity: null,
+        status: "unknown",
+      },
+    ]);
+    expect(result.evidence[0]).toMatchObject({
+      source: "xkp-enrichment",
+      metadata: { stockIgnored: true },
+    });
   });
 });
 

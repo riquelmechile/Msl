@@ -1067,6 +1067,31 @@ export { createOAuthManager } from "./oauth/oauthManager.js";
 export { createTokenStore } from "./oauth/tokenStore.js";
 
 export {
+  createMercadoLibreSupplierSourceAdapter,
+  createUnsupportedSupplierSourceAdapter,
+  summarizeListingAsSupplierItem,
+  type MercadoLibreSupplierSourceAdapterOptions,
+  type SupplierEvidence,
+  type SupplierSourceAdapter,
+  type SupplierSourceCollectInput,
+  type SupplierSourceCollectResult,
+} from "./supplierSource.js";
+
+export {
+  createMercadoLibreScraperFallbackAdapter,
+  parseMercadoLibreFallbackHtml,
+  type ScraperFallbackFetcher,
+  type ScraperFallbackInput,
+  type ScraperFallbackParseResult,
+} from "./scraperFallback.js";
+
+export {
+  createXkpEnrichmentAdapter,
+  type XkpEnrichmentClient,
+  type XkpEnrichmentRecord,
+} from "./xkpEnrichment.js";
+
+export {
   assertOAuthAccountMatchesRole,
   assertPlasticovToMaustianDirection,
   getMlAccountRoleConfig,
