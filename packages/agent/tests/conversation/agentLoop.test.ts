@@ -9,6 +9,7 @@ import {
   buildMessages,
 } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
+import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
 import type { ConversationState, Strategy, StreamingChunk } from "../../src/conversation/types.js";
 import { createMetrics } from "../../src/conversation/observability.js";
@@ -185,6 +186,41 @@ describe("createAgentLoop — mock client", () => {
     expect(agentWithDefaultTools.getToolNames()).toEqual(
       expect.arrayContaining(["delegate_to_subagent", "request_agent_evidence"]),
     );
+  });
+
+  it("exposes create_company_agent only when durable registry and admin authorization exist", () => {
+    const withoutRegistry = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+    });
+    const db = new Database(":memory:");
+    const companyAgentRegistry = createCompanyAgentStore(db);
+
+    try {
+      const withRegistry = createAgentLoop({
+        systemPrompt,
+        mockClient: true,
+        companyAgentRegistry,
+      });
+      const withAuthorizedRegistry = createAgentLoop({
+        systemPrompt,
+        mockClient: true,
+        companyAgentRegistry,
+        companyAgentAdminAuthorized: true,
+      });
+
+      expect(withoutRegistry.getToolNames()).toEqual(
+        expect.arrayContaining(["list_company_agents"]),
+      );
+      expect(withoutRegistry.getToolNames()).not.toContain("create_company_agent");
+      expect(withRegistry.getToolNames()).toEqual(expect.arrayContaining(["list_company_agents"]));
+      expect(withRegistry.getToolNames()).not.toContain("create_company_agent");
+      expect(withAuthorizedRegistry.getToolNames()).toEqual(
+        expect.arrayContaining(["create_company_agent", "list_company_agents"]),
+      );
+    } finally {
+      db.close();
+    }
   });
 });
 

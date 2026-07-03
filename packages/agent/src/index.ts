@@ -88,6 +88,8 @@ export {
   createGetBusinessContextTool,
   createPrepareActionTool,
   createDelegateToSubagentTool,
+  createCreateCompanyAgentTool,
+  createListCompanyAgentsTool,
   createRequestAgentEvidenceTool,
   createSimulateActorTool,
   createDetectProbesTool,
@@ -108,9 +110,16 @@ export type {
   AgentEvidenceResponseStatus,
   EvidenceKind,
 } from "./conversation/companyAgents.js";
-export { COMPANY_AGENTS, getCompanyAgent, listCompanyAgents } from "./conversation/companyAgents.js";
+export {
+  COMPANY_AGENTS,
+  getCompanyAgent,
+  listCompanyAgents,
+} from "./conversation/companyAgents.js";
 export { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
-export type { CompanyAgentStore, CreateCompanyAgentInput } from "./conversation/companyAgentStore.js";
+export type {
+  CompanyAgentStore,
+  CreateCompanyAgentInput,
+} from "./conversation/companyAgentStore.js";
 
 // ── Sync tools ──────────────────────────────────────────────────────
 export {

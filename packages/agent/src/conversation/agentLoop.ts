@@ -26,7 +26,9 @@ import type { ToolDefinition } from "./tools.js";
 import {
   createDelegateToSubagentTool,
   createDetectProbesTool,
+  createCreateCompanyAgentTool,
   createGetBusinessContextTool,
+  createListCompanyAgentsTool,
   createProposeHoneyPotTool,
   createRequestAgentEvidenceTool,
 } from "./tools.js";
@@ -203,9 +205,15 @@ export type AgentLoopConfig = {
   /**
    * Optional durable company-agent registry. When provided,
    * `request_agent_evidence` can resolve CEO-created agents alongside
-   * static lane-backed agents. The loop never creates or mutates agents.
+   * static lane-backed agents. Creation remains disabled unless
+   * `companyAgentAdminAuthorized` is explicitly true.
    */
   companyAgentRegistry?: CompanyAgentRegistry;
+  /**
+   * Explicit backend authorization evidence for CEO/admin-only durable
+   * company-agent creation. Read/list tools do not require this flag.
+   */
+  companyAgentAdminAuthorized?: boolean;
   /**
    * Active lane ID for per-lane evidence injection into Block C.
    * Required when {@link evidenceProvider} is configured.
@@ -316,39 +324,43 @@ export function createAgentLoop(config: AgentLoopConfig) {
     toolMap.set("delegate_to_subagent", createDelegateToSubagentTool());
   }
   if (!toolMap.has("request_agent_evidence")) {
-    toolMap.set("request_agent_evidence", createRequestAgentEvidenceTool(config.companyAgentRegistry));
+    toolMap.set(
+      "request_agent_evidence",
+      createRequestAgentEvidenceTool(config.companyAgentRegistry),
+    );
+  }
+  if (!toolMap.has("list_company_agents")) {
+    toolMap.set("list_company_agents", createListCompanyAgentsTool(config.companyAgentRegistry));
+  }
+  if (
+    config.companyAgentRegistry &&
+    config.companyAgentAdminAuthorized === true &&
+    !toolMap.has("create_company_agent")
+  ) {
+    toolMap.set(
+      "create_company_agent",
+      createCreateCompanyAgentTool(config.companyAgentRegistry, { authorized: true }),
+    );
   }
 
   // ── Create listing tool (new from scratch) ─────────────────────
   if (config.mlClient && !toolMap.has("create_listing")) {
-    toolMap.set(
-      "create_listing",
-      createCreateListingTool(config.mlClient, config.engine),
-    );
+    toolMap.set("create_listing", createCreateListingTool(config.mlClient, config.engine));
   }
 
   // ── Update listing tool (edit existing) ──────────────────────
   if (config.mlClient && !toolMap.has("update_listing")) {
-    toolMap.set(
-      "update_listing",
-      createUpdateListingTool(config.mlClient, config.engine),
-    );
+    toolMap.set("update_listing", createUpdateListingTool(config.mlClient, config.engine));
   }
 
   // ── Change item status tool (pause/close/activate) ───────────
   if (config.mlClient && !toolMap.has("change_item_status")) {
-    toolMap.set(
-      "change_item_status",
-      createChangeItemStatusTool(config.mlClient, config.engine),
-    );
+    toolMap.set("change_item_status", createChangeItemStatusTool(config.mlClient, config.engine));
   }
 
   // ── Manage variations tool (add/update/remove) ───────────────
   if (config.mlClient && !toolMap.has("manage_variations")) {
-    toolMap.set(
-      "manage_variations",
-      createManageVariationsTool(config.mlClient, config.engine),
-    );
+    toolMap.set("manage_variations", createManageVariationsTool(config.mlClient, config.engine));
   }
 
   // ── Read my catalog tool (local operational read model) ──

@@ -33,6 +33,21 @@ export type CompanyAgentRegistry = {
   listCompanyAgents(): readonly CompanyAgent[];
 };
 
+export type CompanyAgentWritableRegistry = CompanyAgentRegistry & {
+  insertCompanyAgent(input: {
+    id: CompanyAgentId;
+    laneId?: LaneId;
+    label: string;
+    departmentId: CompanyDepartmentId;
+    stablePrefix: string;
+    refreshableContextProvider: string;
+    inputs: readonly string[];
+    outputs: readonly string[];
+    requiredEvidenceKinds: readonly EvidenceKind[];
+    boundaries: readonly string[];
+  }): CompanyAgent;
+};
+
 export type AgentEvidenceRequest = {
   targetAgent: string;
   scope: string;

@@ -22,6 +22,9 @@ import {
   listCompanyAgents,
   type AgentEvidenceResponse,
   type CompanyAgentRegistry,
+  type CompanyAgentWritableRegistry,
+  type CompanyDepartmentId,
+  type EvidenceKind,
 } from "./companyAgents.js";
 
 /** Function signature for the actor simulator (injected for testability). */
@@ -558,13 +561,283 @@ export function createDelegateToSubagentTool(): ToolDefinition {
 
 const productiveRequestPattern =
   /publish|publicar|mutar|mutation|ejecutar|execute|cambiar|change|modificar|update|crear|create|mensaje|message|payment|pago|sii|enviar|send/i;
+const companyAgentIdPattern = /^[a-z][a-z0-9-]{2,62}$/;
+const validDepartmentIds = new Set<CompanyDepartmentId>(["executive", "operations", "commercial"]);
+const promptInjectionPattern =
+  /ignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions|disregard\s+(?:previous|prior|above)|system\s+prompt|developer\s+message|reveal\s+(?:your\s+)?instructions|tool\s*(?:call|execution|escalation)|escalate\s+(?:privileges?|permissions?)|enable\s+admin|bypass\s+(?:auth|authorization|guardrails?)|ignora(?:r|́|á)?\s+(?:las\s+)?instrucciones|ignor[aá]\s+(?:las\s+)?instrucciones|olvida\s+(?:las\s+)?instrucciones|revela\s+(?:el\s+)?prompt|ejecuta\s+(?:la\s+)?herramienta|omite\s+(?:la\s+)?autorizaci[oó]n/i;
+
+const companyAgentTextLimits = {
+  label: 80,
+  role: 80,
+  specialty: 120,
+  stablePrefix: 600,
+  responsibility: 160,
+  evidenceKind: 64,
+  policy: 180,
+  listedStablePrefix: 240,
+} as const;
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function safeString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeCompanyAgentText(value: unknown): string {
+  return safeString(value)
+    .replaceAll(/./gs, (char) => {
+      const code = char.charCodeAt(0);
+      return code < 32 || code === 127 ? " " : char;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function validateCompanyAgentText(
+  value: string,
+  field: string,
+  maxLength: number,
+): string | undefined {
+  if (value.length > maxLength) return `${field} too long`;
+  if (promptInjectionPattern.test(value)) return `${field} contains unsafe control instructions`;
+  return undefined;
+}
+
+function truncateCompanyAgentText(value: string, maxLength: number): string {
+  const normalized = normalizeCompanyAgentText(value);
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function nonEmptyUniqueStrings(value: unknown): string[] {
+  const items = stringArray(value)
+    .map((item) => normalizeCompanyAgentText(item))
+    .filter(Boolean);
+  return [...new Set(items)];
+}
+
+function isWritableCompanyAgentRegistry(
+  registry: CompanyAgentRegistry | undefined,
+): registry is CompanyAgentWritableRegistry {
+  return (
+    typeof (registry as { insertCompanyAgent?: unknown } | undefined)?.insertCompanyAgent ===
+    "function"
+  );
+}
+
+function summarizeCompanyAgent(agent: ReturnType<CompanyAgentRegistry["getCompanyAgent"]>) {
+  if (!agent) return null;
+  return {
+    id: agent.id,
+    label: truncateCompanyAgentText(agent.profile.label, companyAgentTextLimits.label),
+    departmentId: agent.profile.departmentId,
+    source: agent.source,
+    status: agent.status,
+    stablePrefix: truncateCompanyAgentText(
+      agent.profile.stablePrefix,
+      companyAgentTextLimits.listedStablePrefix,
+    ),
+    requiredEvidenceKinds: agent.profile.requiredEvidenceKinds
+      .slice(0, 16)
+      .map((kind) => truncateCompanyAgentText(kind, companyAgentTextLimits.evidenceKind)),
+    noMutationBoundary: agent.profile.noMutationBoundary,
+  };
+}
+
+export function createListCompanyAgentsTool(registry?: CompanyAgentRegistry): ToolDefinition {
+  return {
+    name: "list_company_agents",
+    description:
+      "Lista agentes activos de la compañía, incluyendo lanes estáticas y agentes CEO durables cuando existe registry. No expone secretos.",
+    parameters: { type: "object", properties: {}, required: [] },
+    execute: (): Record<string, unknown> => {
+      const agents = new Map<string, ReturnType<CompanyAgentRegistry["getCompanyAgent"]>>();
+      for (const agent of listCompanyAgents()) agents.set(agent.id, agent);
+      for (const agent of registry?.listCompanyAgents() ?? []) {
+        if (agent.status === "active") agents.set(agent.id, agent);
+      }
+
+      return {
+        agents: [...agents.values()].map(summarizeCompanyAgent),
+        registryAvailable: Boolean(registry),
+        noExternalMutationExecuted: true,
+      };
+    },
+  };
+}
+
+export type CreateCompanyAgentToolOptions = {
+  authorized?: boolean;
+};
+
+export function createCreateCompanyAgentTool(
+  registry?: CompanyAgentRegistry,
+  options: CreateCompanyAgentToolOptions = {},
+): ToolDefinition {
+  return {
+    name: "create_company_agent",
+    description:
+      "Registra un agente durable creado por el CEO para operar en modo proposal/evidence-only. Persiste solo en el registry local; no muta sistemas externos.",
+    parameters: {
+      type: "object",
+      description:
+        "Provide either stablePrefix or mission. The tool blocks requests missing both fields.",
+      properties: {
+        agentId: { type: "string", description: "Slug seguro: minúsculas, números y guiones." },
+        label: { type: "string" },
+        departmentId: { type: "string", enum: [...validDepartmentIds] },
+        role: { type: "string" },
+        specialty: { type: "string" },
+        responsibilities: { type: "array", items: { type: "string" } },
+        stablePrefix: { type: "string", description: "Required when mission is omitted." },
+        mission: { type: "string", description: "Required when stablePrefix is omitted." },
+        allowedEvidenceKinds: { type: "array", items: { type: "string" } },
+        budgetPolicy: { type: "string" },
+        autonomyPolicy: { type: "string" },
+      },
+      required: ["agentId", "label", "departmentId", "responsibilities", "allowedEvidenceKinds"],
+      anyOf: [{ required: ["stablePrefix"] }, { required: ["mission"] }],
+    },
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
+      if (!options.authorized) {
+        return {
+          status: "blocked",
+          error: "unauthorized",
+          missingInputs: ["authorized CEO/admin runtime"],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!isWritableCompanyAgentRegistry(registry)) {
+        return {
+          status: "blocked",
+          error: "company-agent registry unavailable",
+          missingInputs: ["writable companyAgentRegistry"],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const agentId = safeString(args.agentId).toLowerCase();
+      const label = normalizeCompanyAgentText(args.label);
+      const departmentId = normalizeCompanyAgentText(args.departmentId) as CompanyDepartmentId;
+      const role = normalizeCompanyAgentText(args.role);
+      const specialty = normalizeCompanyAgentText(args.specialty);
+      const responsibilities = nonEmptyUniqueStrings(args.responsibilities);
+      const stablePrefix =
+        normalizeCompanyAgentText(args.stablePrefix) || normalizeCompanyAgentText(args.mission);
+      const evidenceKinds: EvidenceKind[] = nonEmptyUniqueStrings(args.allowedEvidenceKinds);
+      const budgetPolicy = normalizeCompanyAgentText(args.budgetPolicy);
+      const autonomyPolicy = normalizeCompanyAgentText(args.autonomyPolicy);
+
+      const missingInputs: string[] = [];
+      if (!agentId) missingInputs.push("agentId");
+      if (!label) missingInputs.push("label");
+      if (!validDepartmentIds.has(departmentId)) missingInputs.push("departmentId");
+      if (!stablePrefix) missingInputs.push("stablePrefix or mission");
+      if (responsibilities.length === 0) missingInputs.push("responsibilities");
+      if (evidenceKinds.length === 0) missingInputs.push("allowedEvidenceKinds");
+
+      if (missingInputs.length > 0) {
+        return { status: "blocked", missingInputs, noExternalMutationExecuted: true };
+      }
+
+      const unsafeInputs = [
+        validateCompanyAgentText(label, "label", companyAgentTextLimits.label),
+        validateCompanyAgentText(role, "role", companyAgentTextLimits.role),
+        validateCompanyAgentText(specialty, "specialty", companyAgentTextLimits.specialty),
+        validateCompanyAgentText(
+          stablePrefix,
+          "stablePrefix or mission",
+          companyAgentTextLimits.stablePrefix,
+        ),
+        validateCompanyAgentText(budgetPolicy, "budgetPolicy", companyAgentTextLimits.policy),
+        validateCompanyAgentText(autonomyPolicy, "autonomyPolicy", companyAgentTextLimits.policy),
+        ...responsibilities.map((item) =>
+          validateCompanyAgentText(item, "responsibilities", companyAgentTextLimits.responsibility),
+        ),
+        ...evidenceKinds.map((item) =>
+          validateCompanyAgentText(
+            item,
+            "allowedEvidenceKinds",
+            companyAgentTextLimits.evidenceKind,
+          ),
+        ),
+      ].filter((issue): issue is string => Boolean(issue));
+
+      if (responsibilities.length > 12) unsafeInputs.push("responsibilities too many");
+      if (evidenceKinds.length > 16) unsafeInputs.push("allowedEvidenceKinds too many");
+
+      if (unsafeInputs.length > 0) {
+        return {
+          status: "blocked",
+          error: "unsafe company agent metadata",
+          missingInputs: [...new Set(unsafeInputs)],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!companyAgentIdPattern.test(agentId) || agentId.includes("..")) {
+        return {
+          status: "blocked",
+          error: "invalid agentId",
+          missingInputs: ["safe slug agentId"],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (getCompanyAgent(agentId) || registry.getCompanyAgent(agentId)) {
+        return {
+          status: "blocked",
+          error: "duplicate agentId",
+          missingInputs: ["unique agentId"],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const outputs = ["proposal", "evidence-summary"];
+      const boundaries = [
+        "CEO-created company agent is proposal/evidence-only for now.",
+        "No external business mutation, ecommerce update, customer message, payment, or SII action is permitted.",
+        ...(budgetPolicy ? [`Budget policy: ${budgetPolicy}`] : []),
+        ...(autonomyPolicy ? [`Autonomy policy: ${autonomyPolicy}`] : []),
+      ];
+
+      try {
+        const agent = registry.insertCompanyAgent({
+          id: agentId,
+          label,
+          departmentId,
+          stablePrefix,
+          refreshableContextProvider: "ceo-created-local-registry",
+          inputs: [role, specialty, ...responsibilities].filter(Boolean),
+          outputs,
+          requiredEvidenceKinds: evidenceKinds,
+          boundaries,
+        });
+
+        return {
+          status: "created",
+          agent: summarizeCompanyAgent(agent),
+          noExternalMutationExecuted: true,
+        };
+      } catch {
+        return {
+          status: "blocked",
+          error: "company agent could not be persisted safely",
+          missingInputs: ["unique valid agent definition"],
+          noExternalMutationExecuted: true,
+        };
+      }
+    },
+  };
 }
 
 export function createRequestAgentEvidenceTool(registry?: CompanyAgentRegistry): ToolDefinition {
-  const resolveAgent = (agentId: string) => getCompanyAgent(agentId) ?? registry?.getCompanyAgent(agentId);
+  const resolveAgent = (agentId: string) =>
+    getCompanyAgent(agentId) ?? registry?.getCompanyAgent(agentId);
   const targetAgentIds = Array.from(
     new Set([
       ...listCompanyAgents().map((agent) => agent.id),

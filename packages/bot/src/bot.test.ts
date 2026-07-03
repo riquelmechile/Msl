@@ -28,6 +28,9 @@ const mocks = vi.hoisted(() => {
     getCompanyAgent: vi.fn(),
     listCompanyAgents: vi.fn(() => []),
   }));
+  const mockCreateAgentLoop = vi.fn(() => ({
+    converse: mockConverse,
+  }));
   const mockCreateSessionStore = vi.fn(() => ({
     load: vi.fn(() => null),
     save: vi.fn(),
@@ -61,6 +64,7 @@ const mocks = vi.hoisted(() => {
     mockBuildSystemPrompt,
     mockEscribanoObserver,
     mockCreateGraphEngine,
+    mockCreateAgentLoop,
   };
 });
 
@@ -84,9 +88,7 @@ vi.mock("grammy", () => ({
 
 // Mock agent
 vi.mock("@msl/agent", () => ({
-  createAgentLoop: vi.fn(() => ({
-    converse: mocks.mockConverse,
-  })),
+  createAgentLoop: mocks.mockCreateAgentLoop,
   buildSystemPrompt: mocks.mockBuildSystemPrompt,
   createStrategyStore: mocks.mockCreateStrategyStore,
   createCompanyAgentStore: mocks.mockCreateCompanyAgentStore,
@@ -355,6 +357,36 @@ describe("createTelegramBot (grammY)", () => {
     expect(mocks.mockCreateAutonomyEngine).toHaveBeenCalled();
     expect(mocks.mockCreateGraphEngine).toHaveBeenCalledWith(":memory:");
     expect(mocks.mockBuildSystemPrompt).toHaveBeenCalledWith("Maustian");
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      companyAgentRegistry?: {
+        getCompanyAgent?: unknown;
+        listCompanyAgents?: unknown;
+      };
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(typeof agentConfig.companyAgentRegistry?.getCompanyAgent).toBe("function");
+    expect(typeof agentConfig.companyAgentRegistry?.listCompanyAgents).toBe("function");
+    expect(agentConfig.companyAgentAdminAuthorized).toBeUndefined();
+  });
+
+  it("passes company-agent admin authorization only when env explicitly enables it", () => {
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_SQLITE_PATH: ":memory:",
+      MSL_COMPANY_AGENT_ADMIN_ENABLED: "true",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(agentConfig.companyAgentAdminAuthorized).toBe(true);
   });
 
   it("derives a seller-scoped Telegram Cortex path by default", () => {

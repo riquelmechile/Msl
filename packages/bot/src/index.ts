@@ -74,6 +74,7 @@ export type TelegramBotEnv = Partial<
     | "MERCADOLIBRE_ACCESS_TOKEN"
     | "MERCADOLIBRE_REFRESH_TOKEN"
     | "MERCADOLIBRE_SELLER_ID"
+    | "MSL_COMPANY_AGENT_ADMIN_ENABLED"
   >
 >;
 
@@ -193,6 +194,9 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   };
   if (store) agentConfig.store = store;
   if (companyAgentRegistry) agentConfig.companyAgentRegistry = companyAgentRegistry;
+  if (env.MSL_COMPANY_AGENT_ADMIN_ENABLED?.trim() === "true") {
+    agentConfig.companyAgentAdminAuthorized = true;
+  }
   if (autonomyEngine) agentConfig.autonomyEngine = autonomyEngine;
   if (engine) agentConfig.engine = engine;
   if (escribano) agentConfig.escribano = escribano;
@@ -209,7 +213,11 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     agentConfig,
   };
   if (sessionStore) botConfig.sessionStore = sessionStore;
-  if (db) botConfig.cleanup = () => { db.close(); operationalDb?.close(); };
+  if (db)
+    botConfig.cleanup = () => {
+      db.close();
+      operationalDb?.close();
+    };
 
   const botHandle = createTelegramBot(botConfig);
 
