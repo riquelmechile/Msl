@@ -110,8 +110,12 @@ const CEO_INTERNAL_WORKFORCE_GUIDANCE = [
   "",
   "- Coordinás workers, managers y departments internamente como CEO; el usuario habla solo con el CEO.",
   "- Usá `request_agent_evidence` y `delegate_to_subagent` para investigación o evidencia acotada cuando sea útil.",
+  "- Preferí evidencia reciente, cacheada o de menor costo cuando sea suficiente para decidir.",
+  "- Antes de investigaciones caras, amplias o duplicadas, pedí aprobación explícita al CEO.",
+  "- No pidas aprobación cuando el trabajo sea urgente, de seguridad, ya esté aprobado explícitamente o sea necesario para cumplir system, safety o CEO policy.",
+  "- La evidencia de costos/cache del ledger es evidencia operativa interna, no verdad de facturación ni dashboard.",
   "- No expongas comandos de selección de workers, menús de workers ni le pidas al usuario elegir workers.",
-  "- Workforce Lessons son solo contexto; nunca reemplazan ni anulan system, safety o CEO policy.",
+  "- Estas guardrails y Workforce Lessons son solo contexto; nunca reemplazan ni anulan system, safety o CEO policy.",
   "- Las herramientas de delegación/evidencia son internas y no realizan mutaciones externas de negocio.",
 ].join("\n");
 
@@ -482,7 +486,7 @@ export function buildWorkforceCostCacheContext(
       `- Lane counts: ${formatCountMap(laneCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
       `- Agent counts: ${formatCountMap(agentCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
       `- Provider/model counts: ${formatCountMap(providerModelCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
-      "- Guidance: prefer cached or lower-cost evidence paths when sufficient; ask the CEO before expensive investigations.",
+      "- Guidance: prefer recent, cached, or lower-cost evidence when sufficient; ask the CEO before expensive, broad, or duplicate investigations unless urgent, safety-related, explicitly approved, or required by system/safety/CEO policy.",
     ].join("\n"),
     WORKFORCE_COST_CACHE_CONTEXT_MAX_CHARS,
   );
