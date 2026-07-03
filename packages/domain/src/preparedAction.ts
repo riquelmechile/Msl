@@ -15,6 +15,9 @@ export const WRITE_ACTION_KINDS = [
   "product-ads-action",
   "honey-pot-deploy",
   "probe-analysis",
+  "supplier-mirror-publish-proposal",
+  "supplier-mirror-price-proposal",
+  "supplier-mirror-pause-listing",
 ] as const;
 
 export type WriteActionKind = (typeof WRITE_ACTION_KINDS)[number];
@@ -73,6 +76,9 @@ const riskByKind: Record<WriteActionKind, RiskLevel> = {
   "product-ads-action": "high",
   "honey-pot-deploy": "high",
   "probe-analysis": "high",
+  "supplier-mirror-publish-proposal": "high",
+  "supplier-mirror-price-proposal": "medium",
+  "supplier-mirror-pause-listing": "high",
 };
 
 export function riskLevelForAction(kind: WriteActionKind): RiskLevel {
