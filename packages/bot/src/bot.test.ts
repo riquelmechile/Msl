@@ -420,6 +420,89 @@ describe("createTelegramBot (grammY)", () => {
     expect(adminAgentConfig.companyAgentAdminAuthorized).toBe(true);
   });
 
+  it("passes configured active company-agent id from env to the agent loop", () => {
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_SQLITE_PATH: ":memory:",
+      MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID: " agent:pricing-analyst ",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      activeCompanyAgentId?: string;
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(agentConfig.activeCompanyAgentId).toBe("agent:pricing-analyst");
+    expect(agentConfig.companyAgentAdminAuthorized).toBe(false);
+  });
+
+  it("does not pass active company-agent id when env is missing", () => {
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_SQLITE_PATH: ":memory:",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      activeCompanyAgentId?: string;
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(agentConfig).not.toHaveProperty("activeCompanyAgentId");
+    expect(agentConfig.companyAgentAdminAuthorized).toBe(false);
+  });
+
+  it("does not pass active company-agent id when env is whitespace only", () => {
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_SQLITE_PATH: ":memory:",
+      MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID: "   \t\n  ",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      activeCompanyAgentId?: string;
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(agentConfig).not.toHaveProperty("activeCompanyAgentId");
+    expect(agentConfig.companyAgentAdminAuthorized).toBe(false);
+  });
+
+  it("keeps active company-agent identity separate from Telegram admin authorization", () => {
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_TELEGRAM_SQLITE_PATH: ":memory:",
+      MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID: "agent:pricing-analyst",
+      MSL_COMPANY_AGENT_ADMIN_ENABLED: "true",
+      MSL_TELEGRAM_ADMIN_CHAT_IDS: "123",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const baseAgentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      activeCompanyAgentId?: string;
+      companyAgentAdminAuthorized?: boolean;
+    };
+    const adminAgentConfig = createAgentLoopMock.mock.calls[1]?.[0] as {
+      activeCompanyAgentId?: string;
+      companyAgentAdminAuthorized?: boolean;
+    };
+    expect(baseAgentConfig.activeCompanyAgentId).toBe("agent:pricing-analyst");
+    expect(baseAgentConfig.companyAgentAdminAuthorized).toBe(false);
+    expect(adminAgentConfig.activeCompanyAgentId).toBe("agent:pricing-analyst");
+    expect(adminAgentConfig.companyAgentAdminAuthorized).toBe(true);
+  });
+
   it("routes non-admin Telegram messages through the non-admin agent loop", async () => {
     createTelegramBot({
       ...config,
