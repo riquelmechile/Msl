@@ -130,13 +130,74 @@ import { Bot } from "grammy";
 import type { ConversationState } from "@msl/agent";
 
 describe("createTelegramBot (grammY)", () => {
+  const activeAgent = {
+    id: "agent:pricing-analyst",
+    source: "ceo-created" as const,
+    status: "active" as const,
+    durableReady: true as const,
+    profile: {
+      agentId: "agent:pricing-analyst",
+      label: "Pricing Analyst",
+      departmentId: "commercial" as const,
+      stablePrefix: "Pricing Analyst",
+      refreshableContextProvider: "pricing",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: [],
+      boundaries: [],
+      noMutationBoundary: true as const,
+    },
+  };
+  const envFallbackAgent = {
+    ...activeAgent,
+    id: "agent:env-fallback",
+    profile: {
+      ...activeAgent.profile,
+      agentId: "agent:env-fallback",
+      label: "Env Fallback Agent",
+      stablePrefix: "Env Fallback Agent",
+    },
+  };
+  const archivedAgent = { ...activeAgent, id: "agent:archived", status: "archived" as const };
   const config = {
     token: "test-token-123",
     agentConfig: {
       systemPrompt: "Eres un asistente para vendedores de Mercado Libre.",
       mockClient: true,
+      activeCompanyAgentId: "agent:env-fallback",
+      companyAgentRegistry: {
+        getCompanyAgent: vi.fn((id: string) =>
+          id === envFallbackAgent.id ? envFallbackAgent : undefined,
+        ),
+        listCompanyAgents: vi.fn(() => [envFallbackAgent]),
+      },
     },
   };
+
+  function getCommandHandler(command: string) {
+    return mocks.mockCommand.mock.calls.find(
+      ([registeredCommand]) => registeredCommand === command,
+    )?.[1] as
+      | ((ctx: {
+          message?: { text: string };
+          chat: { id: number };
+          from?: { id: number; first_name?: string };
+          reply: (message: string, options?: unknown) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+  }
+
+  function getTextHandler() {
+    return mocks.mockOn.mock.calls.find(([event]) => event === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from?: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -173,6 +234,11 @@ describe("createTelegramBot (grammY)", () => {
     expect(mocks.mockCommand).toHaveBeenCalledWith("help", expect.any(Function));
   });
 
+  it("registers /agent command", () => {
+    createTelegramBot(config);
+    expect(mocks.mockCommand).toHaveBeenCalledWith("agent", expect.any(Function));
+  });
+
   it("explains that dale only approves bounded preparation in Phase 1 help copy", async () => {
     createTelegramBot(config);
     const handler = mocks.mockCommand.mock.calls.find(([command]) => command === "help")?.[1] as
@@ -199,8 +265,451 @@ describe("createTelegramBot (grammY)", () => {
       expect.arrayContaining([
         expect.objectContaining({ command: "start" }),
         expect.objectContaining({ command: "help" }),
+        expect.objectContaining({ command: "agent" }),
       ]),
     );
+  });
+
+  it("rejects /agent use from non-admin chats", async () => {
+    createTelegramBot({
+      ...config,
+      agentConfig: {
+        ...config.agentConfig,
+        companyAgentRegistry: {
+          getCompanyAgent: vi.fn(),
+          listCompanyAgents: vi.fn(() => [activeAgent]),
+        },
+      },
+      adminAuthorization: { enabled: true, allowedChatIds: ["999"] },
+    });
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith(expect.stringMatching(/Only an authorized Telegram admin/));
+  });
+
+  it("rejects /agent use when registry is missing, unknown, inactive, or archived", async () => {
+    const adminAuthorization = { enabled: true, allowedChatIds: ["123"] };
+    const missingRegistryReply = vi.fn().mockResolvedValue(undefined);
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: { mockClient: true },
+      adminAuthorization,
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      reply: missingRegistryReply,
+    });
+    expect(missingRegistryReply).toHaveBeenCalledWith(expect.stringMatching(/No durable/));
+
+    vi.clearAllMocks();
+    const getCompanyAgent = vi.fn((id: string) =>
+      id === "agent:archived" ? archivedAgent : undefined,
+    );
+    const reply = vi.fn().mockResolvedValue(undefined);
+    createTelegramBot({
+      ...config,
+      agentConfig: {
+        ...config.agentConfig,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [activeAgent]) },
+      },
+      adminAuthorization,
+    });
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:unknown" },
+      chat: { id: 123 },
+      reply,
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:archived" },
+      chat: { id: 123 },
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledTimes(2);
+    expect(reply).toHaveBeenCalledWith(expect.stringMatching(/Unknown or inactive/));
+  });
+
+  it("stores /agent use selection for an authorized chat", async () => {
+    const getCompanyAgent = vi.fn(() => activeAgent);
+    createTelegramBot({
+      ...config,
+      agentConfig: {
+        ...config.agentConfig,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [activeAgent]) },
+      },
+      adminAuthorization: { enabled: true, allowedChatIds: ["123"] },
+    });
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringMatching(/Selected active company agent: agent:pricing-analyst/),
+    );
+  });
+
+  it("fails closed for normal text without a selected agent or env fallback", async () => {
+    createTelegramBot({ token: "test-token-123", agentConfig: { mockClient: true } });
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await getTextHandler()!({
+      message: { text: "hola" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply,
+    });
+
+    expect(mocks.mockConverse).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringMatching(/No active company agent is selected/),
+    );
+  });
+
+  it("routes normal text with the selected active agent id", async () => {
+    const getCompanyAgent = vi.fn(() => activeAgent);
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: {
+        mockClient: true,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [activeAgent]) },
+      },
+      adminAuthorization: { enabled: true, allowedUserIds: ["1"] },
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      from: { id: 1 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await getTextHandler()!({
+      message: { text: "hola" },
+      chat: { id: 123 },
+      from: { id: 2 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const selectedConfig = mocks.mockCreateAgentLoop.mock.calls.at(-1)?.[0] as {
+      activeCompanyAgentId?: string;
+    };
+    expect(selectedConfig.activeCompanyAgentId).toBe("agent:pricing-analyst");
+    expect(mocks.mockConverse).toHaveBeenCalledWith("hola", expect.any(Object));
+  });
+
+  it("lets /agent use override the process-level active company-agent fallback", async () => {
+    const getCompanyAgent = vi.fn((id: string) =>
+      id === activeAgent.id
+        ? activeAgent
+        : id === envFallbackAgent.id
+          ? envFallbackAgent
+          : undefined,
+    );
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: {
+        mockClient: true,
+        activeCompanyAgentId: envFallbackAgent.id,
+        companyAgentRegistry: {
+          getCompanyAgent,
+          listCompanyAgents: vi.fn(() => [envFallbackAgent, activeAgent]),
+        },
+      },
+      adminAuthorization: { enabled: true, allowedChatIds: ["123"] },
+    });
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+    await getTextHandler()!({
+      message: { text: "hola" },
+      chat: { id: 123 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const selectedConfig = mocks.mockCreateAgentLoop.mock.calls.at(-1)?.[0] as {
+      activeCompanyAgentId?: string;
+    };
+    expect(selectedConfig.activeCompanyAgentId).toBe(activeAgent.id);
+    expect(selectedConfig.activeCompanyAgentId).not.toBe(envFallbackAgent.id);
+  });
+
+  it("falls back to a valid process-level active company-agent after /agent clear", async () => {
+    const getCompanyAgent = vi.fn((id: string) =>
+      id === activeAgent.id
+        ? activeAgent
+        : id === envFallbackAgent.id
+          ? envFallbackAgent
+          : undefined,
+    );
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: {
+        mockClient: true,
+        activeCompanyAgentId: envFallbackAgent.id,
+        companyAgentRegistry: {
+          getCompanyAgent,
+          listCompanyAgents: vi.fn(() => [envFallbackAgent, activeAgent]),
+        },
+      },
+      adminAuthorization: { enabled: true, allowedUserIds: ["1"] },
+    });
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      from: { id: 1 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent clear" },
+      chat: { id: 123 },
+      from: { id: 1 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+    await getTextHandler()!({
+      message: { text: "hola" },
+      chat: { id: 123 },
+      from: { id: 2 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(mocks.mockConverse).toHaveBeenCalledWith("hola", expect.any(Object));
+    const baseAgentConfig = mocks.mockCreateAgentLoop.mock.calls[0]?.[0] as {
+      activeCompanyAgentId?: string;
+    };
+    expect(baseAgentConfig.activeCompanyAgentId).toBe(envFallbackAgent.id);
+  });
+
+  it("fails closed when the process-level active company-agent is missing or inactive", async () => {
+    const getCompanyAgent = vi.fn((id: string) =>
+      id === archivedAgent.id ? archivedAgent : undefined,
+    );
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: {
+        mockClient: true,
+        activeCompanyAgentId: archivedAgent.id,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [archivedAgent]) },
+      },
+    });
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await getTextHandler()!({
+      message: { text: "hola" },
+      chat: { id: 123 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply,
+    });
+
+    expect(mocks.mockConverse).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringMatching(/No active company agent is selected/),
+    );
+  });
+
+  it("isolates selected-agent loop cache by chat and keeps unselected chats fail-closed", async () => {
+    const getCompanyAgent = vi.fn((id: string) =>
+      id === activeAgent.id ? activeAgent : undefined,
+    );
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: {
+        mockClient: true,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [activeAgent]) },
+      },
+      adminAuthorization: { enabled: true, allowedUserIds: ["1"] },
+    });
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      from: { id: 1 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+    await getTextHandler()!({
+      message: { text: "chat a" },
+      chat: { id: 123 },
+      from: { id: 2 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const chatBReply = vi.fn().mockResolvedValue(undefined);
+    await getTextHandler()!({
+      message: { text: "chat b before selection" },
+      chat: { id: 456 },
+      from: { id: 2 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: chatBReply,
+    });
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 456 },
+      from: { id: 1 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+    await getTextHandler()!({
+      message: { text: "chat b after selection" },
+      chat: { id: 456 },
+      from: { id: 2 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(chatBReply).toHaveBeenCalledWith(
+      expect.stringMatching(/No active company agent is selected/),
+    );
+    const selectedLoopCreations = mocks.mockCreateAgentLoop.mock.calls.filter(
+      ([loopConfig]) =>
+        (loopConfig as { activeCompanyAgentId?: string }).activeCompanyAgentId === activeAgent.id,
+    );
+    expect(selectedLoopCreations).toHaveLength(2);
+    expect(mocks.mockConverse).toHaveBeenCalledWith("chat a", expect.any(Object));
+    expect(mocks.mockConverse).toHaveBeenCalledWith("chat b after selection", expect.any(Object));
+    expect(mocks.mockConverse).not.toHaveBeenCalledWith(
+      "chat b before selection",
+      expect.any(Object),
+    );
+  });
+
+  it("does not grant admin tools to non-admin users with a selected identity", async () => {
+    const getCompanyAgent = vi.fn(() => activeAgent);
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: {
+        mockClient: true,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [activeAgent]) },
+      },
+      adminAuthorization: { enabled: true, allowedUserIds: ["1"] },
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      from: { id: 1 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await getTextHandler()!({
+      message: { text: "hola" },
+      chat: { id: 123 },
+      from: { id: 2 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(mocks.mockConverse).toHaveBeenCalledWith("hola", expect.any(Object));
+    expect(mocks.mockAdminConverse).not.toHaveBeenCalled();
+  });
+
+  it("clears /agent selection and falls back to fail-closed normal text", async () => {
+    const getCompanyAgent = vi.fn(() => activeAgent);
+    createTelegramBot({
+      token: "test-token-123",
+      agentConfig: {
+        mockClient: true,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [activeAgent]) },
+      },
+      adminAuthorization: { enabled: true, allowedChatIds: ["123"] },
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent clear" },
+      chat: { id: 123 },
+      reply: vi.fn().mockResolvedValue(undefined),
+    });
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await getTextHandler()!({
+      message: { text: "hola" },
+      chat: { id: 123 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringMatching(/No active company agent is selected/),
+    );
+  });
+
+  it("reports /agent status as selected or none", async () => {
+    const getCompanyAgent = vi.fn(() => activeAgent);
+    createTelegramBot({
+      ...config,
+      agentConfig: {
+        ...config.agentConfig,
+        companyAgentRegistry: { getCompanyAgent, listCompanyAgents: vi.fn(() => [activeAgent]) },
+      },
+      adminAuthorization: { enabled: true, allowedChatIds: ["123"] },
+    });
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent status" },
+      chat: { id: 123 },
+      reply,
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent use agent:pricing-analyst" },
+      chat: { id: 123 },
+      reply,
+    });
+    await getCommandHandler("agent")!({
+      message: { text: "/agent status" },
+      chat: { id: 123 },
+      reply,
+    });
+
+    expect(reply.mock.calls[0]?.[0]).toMatch(/No active company agent selected/);
+    expect(reply.mock.calls[2]?.[0]).toMatch(
+      /Selected active company agent: agent:pricing-analyst/,
+    );
+  });
+
+  it("lists active durable registry agents only", async () => {
+    createTelegramBot({
+      ...config,
+      agentConfig: {
+        ...config.agentConfig,
+        companyAgentRegistry: {
+          getCompanyAgent: vi.fn(),
+          listCompanyAgents: vi.fn(() => [activeAgent, archivedAgent]),
+        },
+      },
+    });
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await getCommandHandler("agent")!({
+      message: { text: "/agent list" },
+      chat: { id: 123 },
+      reply,
+    });
+
+    expect(reply.mock.calls[0]?.[0]).toContain("agent:pricing-analyst");
+    expect(reply.mock.calls[0]?.[0]).not.toContain("agent:archived");
   });
 
   it("start calls bot.start", async () => {

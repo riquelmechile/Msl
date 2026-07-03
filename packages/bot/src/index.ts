@@ -14,6 +14,8 @@ import {
   OperationalEvidenceProvider,
   startBackgroundIngestion,
   type AgentLoopConfig,
+  type CompanyAgent,
+  type CompanyAgentRegistry,
   type ConversationState,
   type SessionStore,
 } from "@msl/agent";
@@ -150,6 +152,22 @@ function isTelegramAdminAuthorized(
   if (allowedChatIds.size === 0 && allowedUserIds.size === 0) return false;
 
   return allowedChatIds.has(chatId) || (userId ? allowedUserIds.has(userId) : false);
+}
+
+function isActiveCompanyAgent(agent: CompanyAgent | undefined): agent is CompanyAgent {
+  return agent?.status === "active";
+}
+
+function getActiveCompanyAgent(
+  registry: CompanyAgentRegistry | undefined,
+  agentId: string,
+): CompanyAgent | undefined {
+  const agent = registry?.getCompanyAgent(agentId);
+  return isActiveCompanyAgent(agent) ? agent : undefined;
+}
+
+function formatCompanyAgent(agent: CompanyAgent): string {
+  return `${agent.id} — ${agent.profile.label}`;
 }
 
 /**
@@ -330,6 +348,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
  * |-----------|------------------------------------|
  * | `/start`  | Greeting + agent identity          |
  * | `/help`   | Available topics                   |
+ * | `/agent`  | Per-chat active company-agent selection |
  * | any text  | Routed through agentLoop.converse()|
  */
 export function createTelegramBot(config: BotConfig): TelegramBotHandle {
@@ -339,6 +358,10 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
     systemPrompt: config.agentConfig.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     ...config.agentConfig,
   };
+  const companyAgentRegistry = agentConfig.companyAgentRegistry;
+  const selectedCompanyAgentByChat = new Map<string, string>();
+  const agentLoopBySelection = new Map<string, ReturnType<typeof createAgentLoop>>();
+  const processLevelActiveCompanyAgentId = agentConfig.activeCompanyAgentId?.trim();
 
   // ── Commands ───────────────────────────────────────────
 
@@ -368,11 +391,85 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
     );
   });
 
+  bot.command("agent", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    const userId = ctx.from?.id !== undefined ? String(ctx.from.id) : undefined;
+    const text = ctx.message?.text ?? "";
+    const [, subcommand = "status", agentId = ""] = text.trim().split(/\s+/, 3);
+
+    if (subcommand === "status") {
+      const selectedAgentId = selectedCompanyAgentByChat.get(chatId);
+      if (!selectedAgentId) {
+        await ctx.reply("No active company agent selected for this chat.");
+        return;
+      }
+
+      const selectedAgent = getActiveCompanyAgent(companyAgentRegistry, selectedAgentId);
+      if (!selectedAgent) {
+        selectedCompanyAgentByChat.delete(chatId);
+        await ctx.reply("No valid active company agent selected for this chat.");
+        return;
+      }
+
+      await ctx.reply(`Selected active company agent: ${formatCompanyAgent(selectedAgent)}.`);
+      return;
+    }
+
+    if (subcommand === "list") {
+      const agents = (companyAgentRegistry?.listCompanyAgents() ?? []).filter(isActiveCompanyAgent);
+      if (agents.length === 0) {
+        await ctx.reply("No active durable company agents are available.");
+        return;
+      }
+
+      await ctx.reply(
+        `Active durable company agents:\n${agents.map((agent) => `• ${formatCompanyAgent(agent)}`).join("\n")}`,
+      );
+      return;
+    }
+
+    if (subcommand === "use") {
+      if (!isTelegramAdminAuthorized(config.adminAuthorization, chatId, userId)) {
+        await ctx.reply("Only an authorized Telegram admin can select the active company agent.");
+        return;
+      }
+
+      if (!companyAgentRegistry) {
+        await ctx.reply("No durable company-agent registry is configured.");
+        return;
+      }
+
+      const selectedAgent = getActiveCompanyAgent(companyAgentRegistry, agentId.trim());
+      if (!selectedAgent) {
+        await ctx.reply("Unknown or inactive company agent. Use /agent list to see active agents.");
+        return;
+      }
+
+      selectedCompanyAgentByChat.set(chatId, selectedAgent.id);
+      await ctx.reply(`Selected active company agent: ${formatCompanyAgent(selectedAgent)}.`);
+      return;
+    }
+
+    if (subcommand === "clear") {
+      if (!isTelegramAdminAuthorized(config.adminAuthorization, chatId, userId)) {
+        await ctx.reply("Only an authorized Telegram admin can clear the active company agent.");
+        return;
+      }
+
+      selectedCompanyAgentByChat.delete(chatId);
+      await ctx.reply("Active company-agent selection cleared for this chat.");
+      return;
+    }
+
+    await ctx.reply("Usage: /agent status, /agent list, /agent use <agentId>, or /agent clear.");
+  });
+
   // ── Register commands in Telegram UI ────────────────────
 
   void bot.api.setMyCommands([
     { command: "start", description: "Iniciar el bot" },
     { command: "help", description: "Ver temas disponibles" },
+    { command: "agent", description: "Seleccionar agente activo" },
   ]);
 
   // ── Message handler ─────────────────────────────────────
@@ -385,15 +482,51 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
     ? createAgentLoop({ ...agentConfig, companyAgentAdminAuthorized: true })
     : undefined;
 
+  const getRequestAgent = (chatId: string, userId: string | undefined) => {
+    const adminAuthorized = isTelegramAdminAuthorized(config.adminAuthorization, chatId, userId);
+    const selectedAgentId = selectedCompanyAgentByChat.get(chatId);
+
+    if (!selectedAgentId) {
+      if (!processLevelActiveCompanyAgentId) return undefined;
+      if (!getActiveCompanyAgent(companyAgentRegistry, processLevelActiveCompanyAgentId)) {
+        return undefined;
+      }
+
+      return adminAuthorized ? (adminAgent ?? agent) : agent;
+    }
+
+    if (!getActiveCompanyAgent(companyAgentRegistry, selectedAgentId)) {
+      selectedCompanyAgentByChat.delete(chatId);
+      return undefined;
+    }
+
+    const cacheKey = `${chatId}:${adminAuthorized ? "admin" : "base"}:${selectedAgentId}`;
+    const cachedAgent = agentLoopBySelection.get(cacheKey);
+    if (cachedAgent) return cachedAgent;
+
+    const selectedAgent = createAgentLoop({
+      ...agentConfig,
+      activeCompanyAgentId: selectedAgentId,
+      companyAgentAdminAuthorized: adminAuthorized,
+    });
+    agentLoopBySelection.set(cacheKey, selectedAgent);
+    return selectedAgent;
+  };
+
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text;
     const chatId = String(ctx.chat.id);
     const userId = ctx.from?.id !== undefined ? String(ctx.from.id) : undefined;
     const sellerId = config.sellerId ?? String(userId ?? chatId);
     const sessionId = createTelegramSessionId(sellerId, chatId);
-    const requestAgent = isTelegramAdminAuthorized(config.adminAuthorization, chatId, userId)
-      ? (adminAgent ?? agent)
-      : agent;
+    const requestAgent = getRequestAgent(chatId, userId);
+
+    if (!requestAgent) {
+      await ctx.reply(
+        "No active company agent is selected for this chat. Ask an authorized admin to run /agent use <agentId>.",
+      );
+      return;
+    }
 
     // Typing indicator
     await ctx.replyWithChatAction("typing");
@@ -430,6 +563,7 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
       await bot.api.setMyCommands([
         { command: "start", description: "Iniciar el bot" },
         { command: "help", description: "Ver temas disponibles" },
+        { command: "agent", description: "Seleccionar agente activo" },
       ]);
 
       console.log("🤖 Bot iniciado (grammY long polling)");
