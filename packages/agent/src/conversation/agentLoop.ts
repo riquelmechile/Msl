@@ -274,9 +274,16 @@ export type LlmClient = {
   chat(messages: Array<{ role: string; content: string }>): Promise<{
     content: string;
     toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+    usage?: LlmUsageMetadata;
   }>;
   /** Stream a response token-by-token. The final chunk has `done: true`. */
   stream(messages: Array<{ role: string; content: string }>): AsyncIterable<StreamingChunk>;
+};
+
+export type LlmUsageMetadata = {
+  provider: string;
+  model: string;
+  usage: Record<string, unknown>;
 };
 
 export type OpenAiFunctionToolDefinition = {
@@ -645,6 +652,30 @@ export function createAgentLoop(config: AgentLoopConfig) {
       : config.mockClient
         ? createMockClient(toolMap)
         : createNoopClient());
+  let llmCallIndex = 0;
+
+  function recordLlmUsage(llmResponse: { usage?: LlmUsageMetadata }): void {
+    if (!config.workforceCostCacheLedgerStore || !llmResponse.usage) return;
+
+    const callIndex = llmCallIndex;
+    llmCallIndex += 1;
+
+    try {
+      const laneId = config.laneId ?? "ceo";
+      config.workforceCostCacheLedgerStore.insertEntry({
+        entryId: `llm:${Date.now()}:${callIndex}`,
+        agentId: laneId,
+        laneId,
+        provider: llmResponse.usage.provider,
+        model: llmResponse.usage.model,
+        operation: "chat.completion",
+        ...extractLedgerTokenUsage(llmResponse.usage.usage),
+        metadata: { source: "agent_loop", callIndex },
+      });
+    } catch {
+      // Telemetry must never break the seller conversation.
+    }
+  }
 
   // ── Strategy state (mutable closure) ──────────────────────────────
   let activeStrategies = config.strategies ?? [];
@@ -813,6 +844,7 @@ ${strategyLines.join("\n")}`;
 
       // --- Send to LLM ---
       let llmResponse = await client.chat(llmMessages);
+      recordLlmUsage(llmResponse);
 
       // --- Tool call loop: execute non-prepare_action tools ---
       while (
@@ -868,6 +900,7 @@ ${strategyLines.join("\n")}`;
           }
         }
         llmResponse = await client.chat(llmMessages);
+        recordLlmUsage(llmResponse);
       }
 
       // --- Parse response ---
@@ -1379,11 +1412,19 @@ function createRealClient(
       const result: {
         content: string;
         toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+        usage?: LlmUsageMetadata;
       } = {
         content: choice?.message?.content ?? "",
       };
       if (toolCalls) {
         result.toolCalls = toolCalls;
+      }
+      if (completion.usage) {
+        result.usage = {
+          provider: "deepseek",
+          model,
+          usage: completion.usage as unknown as Record<string, unknown>,
+        };
       }
       return result;
     },
@@ -1716,6 +1757,66 @@ function readNumericCounter(
 ): number | null {
   const value = usage?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readNonNegativeInteger(usage: Record<string, unknown>, key: string): number | undefined {
+  const value = usage[key];
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function readCachedPromptTokens(usage: Record<string, unknown>): number | undefined {
+  const details = usage.prompt_tokens_details;
+  if (!isRecord(details)) return undefined;
+  const cachedTokens = details.cached_tokens;
+  return typeof cachedTokens === "number" && Number.isInteger(cachedTokens) && cachedTokens >= 0
+    ? cachedTokens
+    : undefined;
+}
+
+function deriveCacheStatus(input: {
+  promptCacheHitTokens: number | undefined;
+  promptCacheMissTokens: number | undefined;
+}): "hit" | "miss" | "partial" | "unknown" {
+  const hitTokens = input.promptCacheHitTokens ?? 0;
+  const missTokens = input.promptCacheMissTokens ?? 0;
+  const hasHit = hitTokens > 0;
+  const hasMiss = missTokens > 0;
+
+  if (hasHit && hasMiss) return "partial";
+  if (hasHit) return "hit";
+  if (hasMiss) return "miss";
+  return "unknown";
+}
+
+function extractLedgerTokenUsage(usage: Record<string, unknown>): {
+  promptCacheHitTokens?: number;
+  promptCacheMissTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheStatus: "hit" | "miss" | "partial" | "unknown";
+} {
+  const inputTokens = readNonNegativeInteger(usage, "prompt_tokens");
+  const outputTokens = readNonNegativeInteger(usage, "completion_tokens");
+  let promptCacheHitTokens = readNonNegativeInteger(usage, "prompt_cache_hit_tokens");
+  let promptCacheMissTokens = readNonNegativeInteger(usage, "prompt_cache_miss_tokens");
+
+  if (promptCacheHitTokens === undefined && promptCacheMissTokens === undefined) {
+    const cachedTokens = readCachedPromptTokens(usage);
+    if (cachedTokens !== undefined) {
+      promptCacheHitTokens = cachedTokens;
+      if (inputTokens !== undefined && inputTokens >= cachedTokens) {
+        promptCacheMissTokens = inputTokens - cachedTokens;
+      }
+    }
+  }
+
+  return {
+    ...(promptCacheHitTokens !== undefined ? { promptCacheHitTokens } : {}),
+    ...(promptCacheMissTokens !== undefined ? { promptCacheMissTokens } : {}),
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    cacheStatus: deriveCacheStatus({ promptCacheHitTokens, promptCacheMissTokens }),
+  };
 }
 
 function buildPhaseOneNoMutationResponse(summary: string): string {
