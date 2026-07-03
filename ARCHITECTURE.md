@@ -53,14 +53,15 @@
 
 ## Current production boundaries
 
-| Boundary          | Current implementation                                                                                                                                                             | Safety rule                                                                                         |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `/api/chat`       | Safe-by-default Next.js route; env can enable API-key auth, seller-bound SQLite state, and real DeepSeek.                                                                          | Do not run public production chat without setting the auth and durable chat env vars.               |
-| Telegram bot      | grammY runtime; env can enable durable per-chat SQLite state and optional Cortex/Escribano memory writes.                                                                          | Do not commit `BOT_TOKEN`; keep mutation execution behind explicit approval gates.                  |
-| Auth defaults     | Web chat auth, MCP auth, token encryption, and account role config fail closed.                                                                                                    | Local/demo/test bypasses must be explicit through env flags.                                        |
-| OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`.                                                           | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth. |
-| Dual-account sync | `sync_product` is configured as Plasticov → Maustian on MercadoLibre Chile (`MLC`) for one safety-bounded operation.                                                               | Do not model the accounts as factory/store roles; reverse or arbitrary seller IDs are rejected.     |
-| MCP               | Stdio server exposes 30 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, and image orchestration. | Treat production business-operation execution as approval-gated and environment-backed.             |
+| Boundary          | Current implementation                                                                                                                                                             | Safety rule                                                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/chat`       | Safe-by-default Next.js route; env can enable API-key auth, seller-bound SQLite state, and real DeepSeek.                                                                          | Do not run public production chat without setting the auth and durable chat env vars.                                                  |
+| Telegram bot      | grammY runtime; env can enable durable per-chat SQLite state and optional Cortex/Escribano memory writes.                                                                          | Do not commit `BOT_TOKEN`; keep mutation execution behind explicit approval gates.                                                     |
+| Agent workforce   | Company-agent registry, learning store, active company-agent routing, and cost/cache ledger are internal CEO orchestration resources.                                              | Do not expose worker selection or direct worker chat to Telegram users; learned lessons do not override system, safety, or CEO policy. |
+| Auth defaults     | Web chat auth, MCP auth, token encryption, and account role config fail closed.                                                                                                    | Local/demo/test bypasses must be explicit through env flags.                                                                           |
+| OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`.                                                           | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth.                                    |
+| Dual-account sync | `sync_product` is configured as Plasticov → Maustian on MercadoLibre Chile (`MLC`) for one safety-bounded operation.                                                               | Do not model the accounts as factory/store roles; reverse or arbitrary seller IDs are rejected.                                        |
+| MCP               | Stdio server exposes 30 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, and image orchestration. | Treat production business-operation execution as approval-gated and environment-backed.                                                |
 
 ## Data flow: a conversation turn
 
@@ -85,7 +86,7 @@ User message (Spanish)
 │     ├─ systemPrompt (Block A: identity + hard rules)          │
 │     ├─ CEO strategies (Block B: injected rules)               │
 │     ├─ conversation history (context window enforced)         │
-│     └─ user message (latest)                                  │
+│     └─ user message + Block C evidence (latest)               │
 │                                                               │
 │  5. LLM CALL (DeepSeek or mock)                               │
 │     └─ Tool call loop: execute non-prepare_action tools       │
@@ -113,19 +114,21 @@ User message (Spanish)
 
 ## Key design decisions
 
-| Decision                   | Choice                                     | Tradeoff                                                                                                          |
-| -------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| **Hexagonal domain**       | `@msl/domain` has zero I/O dependencies    | Tests run instantly. Every adapter is swappable.                                                                  |
-| **SQLite Cortex**          | Recursive CTEs for spreading activation    | No graph DB dependency. Single file. ~400 lines.                                                                  |
-| **3-block cache**          | DeepSeek prefix-anchored cache             | ~98% cost reduction. Stable lane prefixes (CEO, Cost, Market, Creative) with refreshable context.                 |
-| **CEO lanes**              | `@msl/agent/lanes.ts` — 4 specialist lanes | CEO coordinates cache-resident specialists; `delegate_to_subagent` as OpenAI function tool.                       |
-| **Operational read model** | SQLite snapshots + checkpoints per seller  | 5 entity kinds (listings, claims, questions, orders, messages) + reputation trends. Local-first reads.            |
-| **Darwinian learning**     | Spreading-activation outcome propagation   | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes. |
-| **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.              |
-| **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost.                                                       |
-| **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                        |
-| **MCP protocol**           | Stdio server with 30 compatible tools      | Compatible clients can exercise read, proposal, approval/status, Cortex, and MercadoLibre evidence surfaces.      |
-| **No framework**           | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                      |
+| Decision                   | Choice                                     | Tradeoff                                                                                                             |
+| -------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| **Hexagonal domain**       | `@msl/domain` has zero I/O dependencies    | Tests run instantly. Every adapter is swappable.                                                                     |
+| **SQLite Cortex**          | Recursive CTEs for spreading activation    | No graph DB dependency. Single file. ~400 lines.                                                                     |
+| **3-block cache**          | DeepSeek prefix-anchored cache             | ~98% cost reduction. Stable lane prefixes (CEO, Cost, Market, Creative) with refreshable context.                    |
+| **CEO lanes**              | `@msl/agent/lanes.ts` — 4 specialist lanes | CEO coordinates cache-resident specialists; `delegate_to_subagent` as OpenAI function tool.                          |
+| **CEO-only Telegram**      | `@msl/bot` routes text to the CEO agent    | Workers/managers/departments stay internal. No `/agent` worker-selection UX or direct worker chat.                   |
+| **Workforce context**      | Active company-agent ID from env/config    | Selects internal lesson/delegation context only; admin authorization remains a separate allowlisted runtime gate.    |
+| **Cost/cache context**     | Ledger summaries injected in Block C       | Keeps dynamic operating evidence out of Block A so prefix-cache stability is preserved. Not billing truth.           |
+| **Operational read model** | SQLite snapshots + checkpoints per seller  | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing). Local-first reads. |
+| **Darwinian learning**     | Spreading-activation outcome propagation   | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes.    |
+| **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.                 |
+| **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                           |
+| **MCP protocol**           | Stdio server with 30 compatible tools      | Compatible clients can exercise read, proposal, approval/status, Cortex, and MercadoLibre evidence surfaces.         |
+| **No framework**           | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                         |
 
 ## Directory tree
 
@@ -277,6 +280,8 @@ Stdio-based MCP server exposing 30 compatible tools across agent simulation, Cor
 ### `@msl/bot` — Telegram bot
 
 Telegram runtime around the CEO agent loop. Handles incoming Telegram messages, forwards them to the CEO agent, and sends responses back. Environment variables can enable durable per-chat SQLite state, optional Cortex/Escribano memory writes, and internal active company-agent context for workforce lessons/delegation. Telegram does not expose worker-selection commands; managers, departments, and specialists remain internal CEO coordination details. Business mutations still require explicit approval gates.
+
+`MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID` selects internal company-agent context for lessons and delegation. It is not an admin flag. Admin-capable company-agent tools require `MSL_COMPANY_AGENT_ADMIN_ENABLED=true` plus an allowlisted Telegram chat or user id.
 
 ### `apps/web` — Demo console
 

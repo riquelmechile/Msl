@@ -4,6 +4,16 @@ MSL is a CEO-led AI company operating system: a hierarchy of specialized agents 
 
 MercadoLibre is the first operating channel, not the product boundary. The product goal is to build a cost-aware learning organization that can run Plasticov and Maustian today, then expand into owned ecommerce, social commerce, supplier operations, ads, content, and additional marketplaces.
 
+## Current implementation boundary
+
+- Telegram is CEO-only. The user talks to the CEO agent, not directly to workers, managers, departments, or specialists.
+- Workers, managers, and departments are internal orchestration resources coordinated by the CEO agent.
+- Workforce lessons are durable company-agent context. They can inform routing and proposals, but they never override system, safety, or CEO policy.
+- Active company-agent routing uses environment/configuration context for lessons and delegation. It does not grant admin authorization.
+- Cost/cache ledger evidence is internal operating evidence for routing decisions, not billing truth and not a user-facing dashboard.
+- Provider usage capture stores bounded numeric counters and boring metadata only. LLM context and ledger summaries must not include prompts, responses, tool args, secrets, raw metadata, full entry IDs, or raw agent/provider labels.
+- Cost/cache context belongs in Block C dynamic evidence, not the system prompt, so Block A remains prefix-cache stable.
+
 ## What MSL is
 
 | MSL is                               | Meaning                                                                                                                         |
@@ -21,6 +31,8 @@ MercadoLibre is the first operating channel, not the product boundary. The produ
 - Not a loose collection of tools.
 - Not an autonomous mutation engine that spends money or changes listings without approval.
 - Not a single assistant trying to know everything equally well.
+- Not a worker-selection UI or a place where the user chats directly with individual workers.
+- Not a billing dashboard; ledger evidence is operational routing context only.
 
 ## Operating model
 
@@ -114,6 +126,8 @@ MSL should prefer cache-resident specialists with stable prompts, stable role de
 
 The company should become smarter without becoming expensive to operate.
 
+Cost-aware CEO guardrails prefer recent, cached, or lower-cost evidence when it is sufficient. The CEO agent should ask before expensive, broad, or duplicate investigations, while preserving exceptions for urgent, safety-related, explicitly approved, or policy-required work.
+
 ## Commerce expansion path
 
 The current base business is two MercadoLibre Chile accounts:
@@ -134,19 +148,19 @@ MSL must grow beyond MercadoLibre:
 
 Every new channel should plug into the same company model: specialist agents, evidence requests, CEO approval gates, Cortex memory, Darwinian feedback, and cost-aware routing.
 
-## First implementation kernel
+## Implemented kernel foundation
 
-The next architectural kernel should make the company model durable instead of hardcoded.
+The current branch includes the first durable company-agent foundation. It makes the company model real enough for internal routing, learning, and cost-aware operating evidence while keeping Telegram CEO-only.
 
-| Kernel capability            | Why it matters                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Company-agent registry       | Stores departments, managers, specialists, responsibilities, tools, budgets, and stable cache prefixes. |
-| Agent lifecycle              | Lets the CEO create, train, activate, pause, or retire agents over time.                                |
-| Skill and training memory    | Records what each specialist knows and how that knowledge was acquired.                                 |
-| Evidence request protocol    | Allows agents to ask other agents for bounded research before escalating.                               |
-| Cost ledger                  | Tracks LLM spend, cache hits, agent work, and proposal utility.                                         |
-| Proposal escalation contract | Keeps Telegram focused on approve/reject/redirect business decisions.                                   |
-| Outcome feedback             | Connects approvals, rejections, operational outcomes, and corrections back into Cortex.                 |
+| Kernel capability            | Current boundary                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Company-agent registry       | Stores active company agents with department, stable prefix, inputs, outputs, evidence needs, and boundaries. |
+| Agent lifecycle              | Supports active/archived records; admin-capable mutation remains separated from routing context.              |
+| Skill and training memory    | Records bounded lessons for agents or departments as durable context, not policy overrides.                   |
+| Evidence request protocol    | Allows bounded evidence requests before CEO escalation; no external business mutation is executed.            |
+| Cost/cache ledger            | Tracks bounded counters and safe metadata for operating evidence; summaries are not billing truth.            |
+| Proposal escalation contract | Keeps Telegram focused on CEO approve/reject/redirect decisions.                                              |
+| Outcome feedback             | Connects approvals, rejections, operational outcomes, and corrections back into Cortex.                       |
 
 This kernel should start proposal-only. It should make collaboration and learning real before enabling broader production mutations.
 
@@ -155,13 +169,15 @@ This kernel should start proposal-only. It should make collaboration and learnin
 The repository already contains important foundations:
 
 - Telegram runtime and `AgentLoop` wiring.
-- Hardcoded CEO and specialist lanes.
+- CEO and specialist lanes plus a durable company-agent registry.
+- Durable workforce lessons for agent/department context.
+- Cost/cache operating ledger summaries injected as Block C evidence.
 - Cortex neural graph memory and operational read model.
 - DeepSeek 3-block cache design and telemetry.
 - `delegate_to_subagent` as a static proposal-oriented primitive.
 - MercadoLibre tooling and approval-gated business operations.
 
-The main missing pieces are durability and lifecycle: a company-agent registry, department/agent/skill training records, an inter-agent evidence protocol, a cost ledger, and a roadmap for multichannel expansion.
+The remaining work is product hardening: richer lifecycle workflows, broader evidence protocols, operational utility feedback, production policy, and the roadmap for multichannel expansion.
 
 ## Related material
 
