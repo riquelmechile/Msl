@@ -28,6 +28,7 @@ import {
   createDetectProbesTool,
   createGetBusinessContextTool,
   createProposeHoneyPotTool,
+  createRequestAgentEvidenceTool,
 } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
 import {
@@ -306,6 +307,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (!toolMap.has("delegate_to_subagent")) {
     toolMap.set("delegate_to_subagent", createDelegateToSubagentTool());
+  }
+  if (!toolMap.has("request_agent_evidence")) {
+    toolMap.set("request_agent_evidence", createRequestAgentEvidenceTool());
   }
 
   // ── Create listing tool (new from scratch) ─────────────────────
@@ -905,6 +909,9 @@ ${strategyLines.join("\n")}`;
       }));
       activeStrategies = [...activeStrategies, ...newStrategies];
       return parsed;
+    },
+    getToolNames(): string[] {
+      return Array.from(toolMap.keys());
     },
   };
 }

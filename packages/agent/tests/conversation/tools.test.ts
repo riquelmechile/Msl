@@ -4,6 +4,7 @@ import { GraphEngine, createGraphEngine } from "@msl/memory";
 import {
   createGetBusinessContextTool,
   createDelegateToSubagentTool,
+  createRequestAgentEvidenceTool,
   createPrepareActionTool,
   createSimulateActorTool,
   createDetectProbesTool,
@@ -14,6 +15,7 @@ import { createOpenAiToolDefinitions } from "../../src/conversation/agentLoop.js
 import type { DecoyProposal, ProbeAlert, Strategy } from "../../src/conversation/types.js";
 import type { GuardResult } from "../../src/conversation/guardrails.js";
 import { simulateActor } from "../../src/conversation/actorSimulator.js";
+import { listCompanyAgents } from "../../src/conversation/companyAgents.js";
 
 describe("createGetBusinessContextTool", () => {
   let engine: GraphEngine;
@@ -388,6 +390,113 @@ describe("createDelegateToSubagentTool", () => {
     });
     expect(result.boundaryWarnings).toEqual(
       expect.arrayContaining([expect.stringMatching(/blocked|Phase 1|publish|publicar/i)]),
+    );
+  });
+});
+
+describe("company agent registry and request_agent_evidence", () => {
+  it("contains lane-backed company agents with stable prefixes and no-mutation boundaries", () => {
+    const agents = listCompanyAgents();
+
+    expect(agents.map((agent) => agent.id)).toEqual([
+      "ceo",
+      "cost-supplier",
+      "market-catalog",
+      "creative-commercial",
+    ]);
+    const marketCatalog = agents.find((agent) => agent.id === "market-catalog");
+    expect(marketCatalog?.source).toBe("lane-contract");
+    expect(marketCatalog?.durableReady).toBe(true);
+    expect(marketCatalog?.profile.stablePrefix).toMatch(/Market\/Catalog lane/i);
+    expect(marketCatalog?.profile.noMutationBoundary).toBe(true);
+  });
+
+  it("returns an evidence-ready no-mutation response for a known specialist", async () => {
+    const tool = createRequestAgentEvidenceTool();
+    const result = await tool.execute({
+      targetAgent: "cost-supplier",
+      scope: "validate margin viability for listing MLC-42",
+      requestedEvidenceKinds: ["cost", "supplier", "margin"],
+      existingEvidenceIds: ["cost:local-1"],
+    });
+
+    expect(result).toMatchObject({
+      status: "evidence-ready",
+      targetAgent: "cost-supplier",
+      laneId: "cost-supplier",
+      noMutationExecuted: true,
+      evidenceIds: ["cost:local-1"],
+    });
+    expect(result.boundaryWarnings).toEqual(expect.arrayContaining([expect.stringMatching(/Phase 1/i)]));
+  });
+
+  it("blocks unknown target agents without executing mutations", async () => {
+    const tool = createRequestAgentEvidenceTool();
+    const result = await tool.execute({
+      targetAgent: "unknown-specialist",
+      scope: "review margins",
+      requestedEvidenceKinds: ["margin"],
+    });
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      targetAgent: "unknown-specialist",
+      noMutationExecuted: true,
+      missingInputs: ["known targetAgent"],
+    });
+  });
+
+  it("returns missing-inputs for a known specialist when required evidence inputs are incomplete", async () => {
+    const tool = createRequestAgentEvidenceTool();
+    const result = await tool.execute({
+      targetAgent: "market-catalog",
+      scope: "",
+      requestedEvidenceKinds: ["catalog", "stock"],
+      existingEvidenceIds: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "missing-inputs",
+      targetAgent: "market-catalog",
+      laneId: "market-catalog",
+      noMutationExecuted: true,
+      missingInputs: ["scope", "requested evidence kind: market"],
+    });
+  });
+
+  it("does not warn when productive words only appear as evidence kind names", async () => {
+    const tool = createRequestAgentEvidenceTool();
+    const result = await tool.execute({
+      targetAgent: "market-catalog",
+      scope: "validate listing evidence for MLC-42",
+      requestedEvidenceKinds: ["catalog", "stock", "market"],
+      existingEvidenceIds: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "evidence-ready",
+      noMutationExecuted: true,
+    });
+    expect(result.boundaryWarnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/productive|action intent|not executed/i)]),
+    );
+  });
+
+  it("warns on productive/action wording while preserving the no-mutation boundary", async () => {
+    const tool = createRequestAgentEvidenceTool();
+    const result = await tool.execute({
+      targetAgent: "creative-commercial",
+      scope: "publicar campaña para producto MLC-42",
+      requestedEvidenceKinds: ["product", "campaign", "outcome"],
+      existingEvidenceIds: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "evidence-ready",
+      noMutationExecuted: true,
+    });
+    expect(result.boundaryWarnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/productive|not executed|publish|publicar/i)]),
     );
   });
 });

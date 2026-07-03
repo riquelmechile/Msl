@@ -88,6 +88,7 @@ export {
   createGetBusinessContextTool,
   createPrepareActionTool,
   createDelegateToSubagentTool,
+  createRequestAgentEvidenceTool,
   createSimulateActorTool,
   createDetectProbesTool,
   createProposeHoneyPotTool,
@@ -95,6 +96,18 @@ export {
 
 export type { LaneContract, LaneOutput, CacheTelemetry, LaneId } from "./conversation/lanes.js";
 export { LANE_CONTRACTS, getLaneContract } from "./conversation/lanes.js";
+
+export type {
+  CompanyAgent,
+  CompanyAgentId,
+  CompanyAgentProfile,
+  CompanyDepartmentId,
+  AgentEvidenceRequest,
+  AgentEvidenceResponse,
+  AgentEvidenceResponseStatus,
+  EvidenceKind,
+} from "./conversation/companyAgents.js";
+export { COMPANY_AGENTS, getCompanyAgent, listCompanyAgents } from "./conversation/companyAgents.js";
 
 // ── Sync tools ──────────────────────────────────────────────────────
 export {

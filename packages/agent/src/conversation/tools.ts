@@ -17,6 +17,11 @@ import {
 } from "./probeDetector.js";
 import { proposeDecoy as defaultProposeDecoy } from "./honeyPotProposer.js";
 import { getLaneContract, type LaneId } from "./lanes.js";
+import {
+  getCompanyAgent,
+  listCompanyAgents,
+  type AgentEvidenceResponse,
+} from "./companyAgents.js";
 
 /** Function signature for the actor simulator (injected for testability). */
 type SimulateActorFn = typeof defaultSimulateActor;
@@ -544,6 +549,99 @@ export function createDelegateToSubagentTool(): ToolDefinition {
         scope: typeof args.scope === "string" ? args.scope : "bounded investigation",
         evidenceIds,
         boundaryWarnings,
+        noMutationExecuted: true,
+      };
+    },
+  };
+}
+
+const productiveRequestPattern =
+  /publish|publicar|mutar|mutation|ejecutar|execute|cambiar|change|modificar|update|crear|create|mensaje|message|payment|pago|sii|enviar|send/i;
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+export function createRequestAgentEvidenceTool(): ToolDefinition {
+  return {
+    name: "request_agent_evidence",
+    description:
+      "Solicita evidencia a un agente especialista de la compañía. No ejecuta acciones, " +
+      "no muta sistemas externos y solo devuelve el contrato de evidencia requerido.",
+    parameters: {
+      type: "object",
+      properties: {
+        targetAgent: {
+          type: "string",
+          enum: listCompanyAgents().map((agent) => agent.id),
+          description: "Agente/lane especialista objetivo.",
+        },
+        scope: { type: "string", description: "Alcance acotado de la investigación." },
+        requestedEvidenceKinds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Tipos de evidencia que el agente debe preparar o validar.",
+        },
+        existingEvidenceIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Evidence IDs ya disponibles para evitar trabajo duplicado.",
+        },
+      },
+      required: ["targetAgent", "scope", "requestedEvidenceKinds"],
+    },
+    execute: (args: Record<string, unknown>): AgentEvidenceResponse => {
+      const targetAgent = typeof args.targetAgent === "string" ? args.targetAgent : "";
+      const scope = typeof args.scope === "string" ? args.scope.trim() : "";
+      const requestedEvidenceKinds = stringArray(args.requestedEvidenceKinds);
+      const existingEvidenceIds = stringArray(args.existingEvidenceIds);
+      const warnings: string[] = [];
+
+      const requestText = scope;
+      if (productiveRequestPattern.test(requestText)) {
+        warnings.push(
+          "Requested productive/action intent was not executed: request_agent_evidence only asks for evidence.",
+        );
+      }
+
+      const agent = getCompanyAgent(targetAgent);
+      if (!agent) {
+        return {
+          status: "blocked",
+          targetAgent,
+          scope,
+          requestedEvidenceKinds,
+          existingEvidenceIds,
+          requiredEvidenceKinds: [],
+          evidenceIds: existingEvidenceIds,
+          missingInputs: ["known targetAgent"],
+          boundaryWarnings: warnings,
+          noMutationExecuted: true,
+        };
+      }
+
+      const missingInputs: string[] = [];
+      if (!scope) missingInputs.push("scope");
+      if (requestedEvidenceKinds.length === 0) missingInputs.push("requestedEvidenceKinds");
+
+      const missingEvidenceKinds = agent.profile.requiredEvidenceKinds.filter(
+        (kind) => !requestedEvidenceKinds.includes(kind),
+      );
+      for (const kind of missingEvidenceKinds) {
+        missingInputs.push(`requested evidence kind: ${kind}`);
+      }
+
+      return {
+        status: missingInputs.length > 0 ? "missing-inputs" : "evidence-ready",
+        targetAgent: agent.id,
+        laneId: agent.profile.laneId,
+        scope,
+        requestedEvidenceKinds,
+        existingEvidenceIds,
+        requiredEvidenceKinds: agent.profile.requiredEvidenceKinds,
+        evidenceIds: existingEvidenceIds,
+        missingInputs,
+        boundaryWarnings: [...agent.profile.boundaries, ...warnings],
         noMutationExecuted: true,
       };
     },

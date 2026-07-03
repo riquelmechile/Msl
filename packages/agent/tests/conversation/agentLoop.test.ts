@@ -175,6 +175,17 @@ describe("createAgentLoop — mock client", () => {
       ]),
     );
   });
+
+  it("exposes request_agent_evidence by default alongside delegation tools", () => {
+    const agentWithDefaultTools = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+    });
+
+    expect(agentWithDefaultTools.getToolNames()).toEqual(
+      expect.arrayContaining(["delegate_to_subagent", "request_agent_evidence"]),
+    );
+  });
 });
 
 describe("createAgentLoop — input guardrails", () => {
