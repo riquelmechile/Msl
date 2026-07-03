@@ -203,6 +203,24 @@ describe("createTelegramBot (grammY)", () => {
     );
   });
 
+  it("keeps Telegram command registration CEO-only without worker-selection commands", () => {
+    createTelegramBot(config);
+
+    const registeredCommands = (mocks.mockCommand.mock.calls as Array<[string, unknown]>).map(
+      ([command]) => command,
+    );
+    const setMyCommandsCalls = mocks.mockSetMyCommands.mock.calls as Array<
+      [Array<{ command: string }>]
+    >;
+    const uiCommands = setMyCommandsCalls.flatMap(([commands]) =>
+      commands.map(({ command }) => command),
+    );
+
+    expect(registeredCommands).toEqual(["start", "help"]);
+    expect(uiCommands).toEqual(["start", "help"]);
+    expect([...registeredCommands, ...uiCommands]).not.toContain("agent");
+  });
+
   it("start calls bot.start", async () => {
     const bot = createTelegramBot(config);
     await bot.start();

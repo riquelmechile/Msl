@@ -226,6 +226,8 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     systemPrompt: buildSystemPrompt(sellerName),
     mockClient: !env.DEEPSEEK_API_KEY?.trim(),
   };
+  // Compatibility env from PR #71: this selects internal CEO workforce context
+  // for lessons/delegation. It is not a Telegram user-facing worker switch.
   const activeCompanyAgentId = env.MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID?.trim();
   if (activeCompanyAgentId) agentConfig.activeCompanyAgentId = activeCompanyAgentId;
   if (store) agentConfig.store = store;
@@ -328,9 +330,12 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
  *
  * | Command   | Behavior                           |
  * |-----------|------------------------------------|
- * | `/start`  | Greeting + agent identity          |
- * | `/help`   | Available topics                   |
+ * | `/start`  | Greeting + CEO assistant identity  |
+ * | `/help`   | CEO-facing topics                  |
  * | any text  | Routed through agentLoop.converse()|
+ *
+ * Workforce/department routing stays behind the CEO agent loop. Telegram does
+ * not expose worker-selection commands such as `/agent`.
  */
 export function createTelegramBot(config: BotConfig): TelegramBotHandle {
   const bot = new Bot(config.token, config.client ? { client: config.client } : undefined);

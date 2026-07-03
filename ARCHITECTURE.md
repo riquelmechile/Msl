@@ -276,7 +276,7 @@ Stdio-based MCP server exposing 30 compatible tools across agent simulation, Cor
 
 ### `@msl/bot` — Telegram bot
 
-Telegram runtime around the agent loop. Handles incoming Telegram messages, forwards them to the agent, and sends responses back. Environment variables can enable durable per-chat SQLite state and optional Cortex/Escribano memory writes. Business mutations still require explicit approval gates.
+Telegram runtime around the CEO agent loop. Handles incoming Telegram messages, forwards them to the CEO agent, and sends responses back. Environment variables can enable durable per-chat SQLite state, optional Cortex/Escribano memory writes, and internal active company-agent context for workforce lessons/delegation. Telegram does not expose worker-selection commands; managers, departments, and specialists remain internal CEO coordination details. Business mutations still require explicit approval gates.
 
 ### `apps/web` — Demo console
 
