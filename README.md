@@ -1,6 +1,6 @@
 <p align="center">
-  <h1>MSL — Plasticov / Maustian AI Agent</h1>
-  <p>Conversational AI agent for MercadoLibre Chile sellers. Natural language. No commands. Revenue-driven.</p>
+  <h1>MSL — Agent Enterprise for Commerce</h1>
+  <p>CEO-led AI agent company for commerce operations. Natural language. Controlled autonomy. Revenue-driven.</p>
 </p>
 
 <p align="center">
@@ -18,6 +18,12 @@
 MSL is a proactive conversational AI agent for MercadoLibre Chile. It ingests your business data (listings, orders, ads, pricing, claims, reputation), builds durable operational evidence in a local SQLite read model, runs a neural graph memory (Cortex) for learning, coordinates 4 cache-resident CEO specialist lanes powered by DeepSeek, and proposes concrete profit-maximizing actions — all through natural Spanish conversation. Every action requires your explicit "dale" before execution.
 
 **Business context:** Plasticov and Maustian are separate MercadoLibre Chile seller accounts used as parallel commercial channels. Each account can carry independent prices, listing types, titles, and exposure strategies for the same or similar products. Fulfillment is product-level: some products use owned stock and others are supplier-sourced/arbitrage.
+
+## Product vision
+
+MSL is evolving from MercadoLibre operating intelligence into an **AI agent enterprise**: a CEO-led hierarchy of managers, departments, and specialists that learn through Cortex, collaborate before escalating, and ask the human CEO only for business decisions through Telegram. MercadoLibre is the first operating channel; the long-term product includes owned ecommerce, social channels, suppliers, ads, content/creative work, and additional marketplaces.
+
+Read the canonical vision in [`docs/agent-enterprise-vision.md`](docs/agent-enterprise-vision.md).
 
 ## Quick start
 
@@ -68,15 +74,15 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 
 ## Production boundary today
 
-| Area               | Current state                                                                                                                          | Do not assume yet                                                          |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek.                            | Public unauthenticated production chat.                                    |
-| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                    | Secret values in Git, or mutation execution without approval gates.        |
-| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                  | Manual raw token setup or account role guessing.                           |
-| Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.   | Business hierarchy between accounts or general-purpose bidirectional sync. |
-| MCP tools          | MCP exposes 30 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration).                      | Production business-operation execution through MCP.                       |
-| ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram. | Real-time MercadoLibre data without OAuth tokens for every role.           |
-| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                           | Secrets in CI; use GitHub Secrets/platform secrets.                        |
+| Area               | Current state                                                                                                                                                                           | Do not assume yet                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Web chat           | `/api/chat` is safe-by-default; env can enable API-key auth, seller-bound SQLite persistence, and DeepSeek.                                                                             | Public unauthenticated production chat.                                    |
+| Telegram bot       | grammY bot can use env-backed SQLite sessions and optional Cortex/Escribano memory.                                                                                                     | Secret values in Git, or mutation execution without approval gates.        |
+| MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                                                                   | Manual raw token setup or account role guessing.                           |
+| Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.                                                    | Business hierarchy between accounts or general-purpose bidirectional sync. |
+| MCP tools          | MCP exposes 30 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration). | Production business-operation execution through MCP.                       |
+| ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram.                                                  | Real-time MercadoLibre data without OAuth tokens for every role.           |
+| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                                                                            | Secrets in CI; use GitHub Secrets/platform secrets.                        |
 
 ## Architecture
 
@@ -173,7 +179,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 10  | **Autonomy Engine**            | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                                                                                                   |
 | 11  | **Product Sync**               | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary                                                                                |
 | 12  | **Approval Queue**             | Every write action goes through prepare → approve → execute → audit                                                                                                                          |
-| 13  | **ML Business Tools**          | 30 tools for real MercadoLibre data: listings, fees, orders, ads, pricing, promotions, quality, relist, images, visits, claims, returns, shipping, moderation, notices, orchestration          |
+| 13  | **ML Business Tools**          | 30 tools for real MercadoLibre data: listings, fees, orders, ads, pricing, promotions, quality, relist, images, visits, claims, returns, shipping, moderation, notices, orchestration        |
 | 14  | **Background Ingestion**       | 6h worker ingesting 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing) into operational DB with per-kind checkpoints and freshness TTLs        |
 | 15  | **Seasonal Detection**         | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts                                                                                           |
 | 16  | **Cross-Account Intelligence** | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                                                                                                        |
@@ -190,21 +196,21 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 27  | **Darwinian Cortex Learning**  | Spreading-activation outcome propagation: approved proposals strengthen activated constellation edges (+0.10), rejected weaken all (−0.15); learning generalizes across shared concept edges |
 | 28  | **DeepSeek Tool Smoke**        | Opt-in official DeepSeek V4 tool-call validation with forced delegate_to_subagent, synthetic user_id lane isolation, and cache telemetry                                                     |
 | 29  | **Product Ads Evidence**       | Background ingestion persists `product-ads-insights` operational snapshots with ROAS metadata, checkpoints, and safe-read-only semantics; CEO/campaign/market lanes cite durable ad evidence |
-| 30  | **Catalog Competition**        | Bounded rotated `price_to_win` ingestion as `pricing` operational snapshots with deterministic evidence IDs; market/margin lanes retrieve durable competition evidence                      |
-| 31  | **Returns Evidence**           | 3 safe-read return tools (detail, reviews, return-cost) via MercadoLibre post-purchase API and MCP; MLC-to-confirm degradation; no mutation, upload, or refund execution                  |
+| 30  | **Catalog Competition**        | Bounded rotated `price_to_win` ingestion as `pricing` operational snapshots with deterministic evidence IDs; market/margin lanes retrieve durable competition evidence                       |
+| 31  | **Returns Evidence**           | 3 safe-read return tools (detail, reviews, return-cost) via MercadoLibre post-purchase API and MCP; MLC-to-confirm degradation; no mutation, upload, or refund execution                     |
 
 ## Stack
 
-| Layer        | Technology                                   | Why                                                       |
-| ------------ | -------------------------------------------- | --------------------------------------------------------- |
-| **Runtime**  | Node.js 22 + TypeScript 5.8                  | Strict mode, composite project references                 |
-| **LLM**      | DeepSeek v4 Flash/Pro                        | 1M context window, ~98% cache discount, OpenAI-compatible |
-| **Memory**   | SQLite (better-sqlite3) + recursive CTEs     | Zero external services, ~400 lines TS                     |
-| **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction          |
-| **Bot**      | Telegram (grammY, proactive messaging)       | Natural language interface, no UI needed                  |
-| **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Stubbed project tool surface for compatible clients       |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 1104+ tests, guarded platform support                     |
-| **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                              |
+| Layer        | Technology                                   | Why                                                         |
+| ------------ | -------------------------------------------- | ----------------------------------------------------------- |
+| **Runtime**  | Node.js 22 + TypeScript 5.8                  | Strict mode, composite project references                   |
+| **LLM**      | DeepSeek v4 Flash/Pro                        | 1M context window, ~98% cache discount, OpenAI-compatible   |
+| **Memory**   | SQLite (better-sqlite3) + recursive CTEs     | Zero external services, ~400 lines TS                       |
+| **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction            |
+| **Bot**      | Telegram (grammY, proactive messaging)       | Natural language interface, no UI needed                    |
+| **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Compatible tool surface for business evidence and proposals |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 1104+ tests, guarded platform support                       |
+| **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                                |
 
 ## Philosophy
 

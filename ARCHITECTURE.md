@@ -1,6 +1,8 @@
-# ARCHITECTURE — MSL AI Agent
+# ARCHITECTURE — MSL Agent Enterprise
 
-> **Lead with the answer:** MSL is a hexagonal-architecture TypeScript monorepo. The domain core is pure logic (no I/O). Six satellite packages — memory, mercadolibre, tools, agent, workers, and mcp — surround it. A Next.js app and a Telegram bot form the presentation layer. The agent package can orchestrate conversation through DeepSeek's LLM, using Cortex (SQLite neural graph) for persistent memory and learning; production capabilities are enabled explicitly through environment-backed secrets and SQLite paths.
+> **Lead with the answer:** MSL is a hexagonal-architecture TypeScript monorepo for a CEO-led AI agent enterprise. The domain core is pure logic (no I/O). Six satellite packages — memory, mercadolibre, tools, agent, workers, and mcp — surround it. A Next.js app and a Telegram bot form the presentation layer. The agent package can orchestrate conversation through DeepSeek's LLM, using Cortex (SQLite neural graph) for persistent memory and learning; production capabilities are enabled explicitly through environment-backed secrets and SQLite paths.
+
+> **Product framing:** MercadoLibre is the first operating channel, not the whole product. The canonical company-agent vision is documented in [`docs/agent-enterprise-vision.md`](docs/agent-enterprise-vision.md).
 
 ---
 
@@ -33,7 +35,7 @@
           │                     │  ┌──────────┐  ┌──────────┐  ┌───────────┐
           │                     │  │@msl/tools│  │@msl/mcp  │  │@msl/      │
           │                     │  │Approval  │  │Stdio MCP │  │workers    │
-          │                     │  │queue     │  │6 tools   │  │Insights   │
+          │                     │  │queue     │  │30 tools  │  │Insights   │
           │                     │  │Audit     │  │          │  │Creative   │
           │                     │  └──────────┘  └──────────┘  │Sync jobs  │
           │                     │                              └───────────┘
@@ -51,14 +53,14 @@
 
 ## Current production boundaries
 
-| Boundary          | Current implementation                                                                                                   | Safety rule                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `/api/chat`       | Safe-by-default Next.js route; env can enable API-key auth, seller-bound SQLite state, and real DeepSeek.                | Do not run public production chat without setting the auth and durable chat env vars.               |
-| Telegram bot      | grammY runtime; env can enable durable per-chat SQLite state and optional Cortex/Escribano memory writes.                | Do not commit `BOT_TOKEN`; keep mutation execution behind explicit approval gates.                  |
-| Auth defaults     | Web chat auth, MCP auth, token encryption, and account role config fail closed.                                          | Local/demo/test bypasses must be explicit through env flags.                                        |
-| OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`. | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth. |
-| Dual-account sync | `sync_product` is configured as Plasticov → Maustian on MercadoLibre Chile (`MLC`) for one safety-bounded operation.     | Do not model the accounts as factory/store roles; reverse or arbitrary seller IDs are rejected.     |
-| MCP               | Stdio server exposes a six-tool stubbed compatible surface.                                                              | Not production business-operation wiring yet.                                                       |
+| Boundary          | Current implementation                                                                                                                                                             | Safety rule                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `/api/chat`       | Safe-by-default Next.js route; env can enable API-key auth, seller-bound SQLite state, and real DeepSeek.                                                                          | Do not run public production chat without setting the auth and durable chat env vars.               |
+| Telegram bot      | grammY runtime; env can enable durable per-chat SQLite state and optional Cortex/Escribano memory writes.                                                                          | Do not commit `BOT_TOKEN`; keep mutation execution behind explicit approval gates.                  |
+| Auth defaults     | Web chat auth, MCP auth, token encryption, and account role config fail closed.                                                                                                    | Local/demo/test bypasses must be explicit through env flags.                                        |
+| OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`.                                                           | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth. |
+| Dual-account sync | `sync_product` is configured as Plasticov → Maustian on MercadoLibre Chile (`MLC`) for one safety-bounded operation.                                                               | Do not model the accounts as factory/store roles; reverse or arbitrary seller IDs are rejected.     |
+| MCP               | Stdio server exposes 30 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, and image orchestration. | Treat production business-operation execution as approval-gated and environment-backed.             |
 
 ## Data flow: a conversation turn
 
@@ -122,7 +124,7 @@ User message (Spanish)
 | **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.              |
 | **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost.                                                       |
 | **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                        |
-| **MCP protocol**           | Stdio server with 6 stubbed tools          | Compatible clients can exercise the current demo tool surface.                                                    |
+| **MCP protocol**           | Stdio server with 30 compatible tools      | Compatible clients can exercise read, proposal, approval/status, Cortex, and MercadoLibre evidence surfaces.      |
 | **No framework**           | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                      |
 
 ## Directory tree
@@ -213,10 +215,10 @@ Msl/
 │   │
 │   ├── mcp/                      # MCP (Model Context Protocol) server
 │   │   └── src/
-│   │       └── index.ts          # 6 tools: simulate_actor, detect_probes, sync_product,
-│   │                             #   check_account, list_strategies, consult_cortex
+│   │       └── index.ts          # 30 tools: ML evidence, proposal/approval/status,
+│   │                             #   Cortex, claims, shipping, moderation, notices
 │   │
-│   └── bot/                      # Telegram bot (stub)
+│   └── bot/                      # Telegram bot runtime
 │       └── src/
 │           └── index.ts          # Message handler → agent loop
 │
@@ -270,11 +272,11 @@ Sync job stubs for critical business signals (orders, claims, cancellations, sto
 
 ### `@msl/mcp` — Model Context Protocol server
 
-Stdio-based MCP server exposing 6 tools: `simulate_actor`, `detect_probes`, `sync_product`, `check_account`, `list_strategies`, `consult_cortex`. Compatible with MCP clients that can launch the stdio server. Schema definitions use zod for input validation. Implementations are currently hardcoded/stubbed and are not production business-operation wiring.
+Stdio-based MCP server exposing 30 compatible tools across agent simulation, Cortex consultation, strategy reads, MercadoLibre evidence, proposal preparation, approval/status, claims, shipping, moderation, notices, and image orchestration. Compatible with MCP clients that can launch the stdio server. Schema definitions use zod for input validation. Production business-operation execution remains approval-gated and environment-backed.
 
-### `@msl/bot` — Telegram bot (stub)
+### `@msl/bot` — Telegram bot
 
-Thin wrapper around the agent loop. Handles incoming Telegram messages, forwards them to the agent, and sends responses back. Currently a stub awaiting real Telegram token injection.
+Telegram runtime around the agent loop. Handles incoming Telegram messages, forwards them to the agent, and sends responses back. Environment variables can enable durable per-chat SQLite state and optional Cortex/Escribano memory writes. Business mutations still require explicit approval gates.
 
 ### `apps/web` — Demo console
 
