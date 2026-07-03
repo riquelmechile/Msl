@@ -6,6 +6,7 @@ import {
   buildSystemPrompt,
   createAgentLoop,
   createAutonomyEngine,
+  createCompanyAgentLearningStore,
   createCompanyAgentStore,
   createSessionStore,
   createStrategyStore,
@@ -38,6 +39,14 @@ export type BotConfig = {
   cleanup?: () => void;
   /** Optional grammY client options (e.g. for test/stub mode). */
   client?: ApiClientOptions;
+  /** Request-scoped Telegram admin allowlist for CEO/admin-only tools. */
+  adminAuthorization?: TelegramAdminAuthorization;
+};
+
+export type TelegramAdminAuthorization = {
+  enabled: boolean;
+  allowedChatIds?: string[];
+  allowedUserIds?: string[];
 };
 
 /**
@@ -75,6 +84,8 @@ export type TelegramBotEnv = Partial<
     | "MERCADOLIBRE_REFRESH_TOKEN"
     | "MERCADOLIBRE_SELLER_ID"
     | "MSL_COMPANY_AGENT_ADMIN_ENABLED"
+    | "MSL_TELEGRAM_ADMIN_CHAT_IDS"
+    | "MSL_TELEGRAM_ADMIN_USER_IDS"
   >
 >;
 
@@ -119,6 +130,27 @@ function createSellerScopedSqlitePath(sqlitePath: string, sellerId: string): str
   );
 }
 
+function parseTelegramIdAllowlist(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+}
+
+function isTelegramAdminAuthorized(
+  authorization: TelegramAdminAuthorization | undefined,
+  chatId: string,
+  userId: string | undefined,
+): boolean {
+  if (!authorization?.enabled) return false;
+
+  const allowedChatIds = new Set(authorization.allowedChatIds ?? []);
+  const allowedUserIds = new Set(authorization.allowedUserIds ?? []);
+  if (allowedChatIds.size === 0 && allowedUserIds.size === 0) return false;
+
+  return allowedChatIds.has(chatId) || (userId ? allowedUserIds.has(userId) : false);
+}
+
 /**
  * Creates the production-oriented Telegram runtime from environment variables.
  *
@@ -142,6 +174,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const sessionStore = db ? createSessionStore(db) : undefined;
   const autonomyEngine = db ? createAutonomyEngine(db) : undefined;
   const companyAgentRegistry = db ? createCompanyAgentStore(db) : undefined;
+  const companyAgentLearningStore = db ? createCompanyAgentLearningStore(db) : undefined;
 
   const configuredCortexPath =
     env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() || env.MSL_CORTEX_SQLITE_PATH?.trim();
@@ -194,9 +227,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   };
   if (store) agentConfig.store = store;
   if (companyAgentRegistry) agentConfig.companyAgentRegistry = companyAgentRegistry;
-  if (env.MSL_COMPANY_AGENT_ADMIN_ENABLED?.trim() === "true") {
-    agentConfig.companyAgentAdminAuthorized = true;
-  }
+  if (companyAgentLearningStore) agentConfig.companyAgentLearningStore = companyAgentLearningStore;
   if (autonomyEngine) agentConfig.autonomyEngine = autonomyEngine;
   if (engine) agentConfig.engine = engine;
   if (escribano) agentConfig.escribano = escribano;
@@ -212,6 +243,13 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     sellerId,
     agentConfig,
   };
+  if (env.MSL_COMPANY_AGENT_ADMIN_ENABLED?.trim() === "true") {
+    botConfig.adminAuthorization = {
+      enabled: true,
+      allowedChatIds: parseTelegramIdAllowlist(env.MSL_TELEGRAM_ADMIN_CHAT_IDS),
+      allowedUserIds: parseTelegramIdAllowlist(env.MSL_TELEGRAM_ADMIN_USER_IDS),
+    };
+  }
   if (sessionStore) botConfig.sessionStore = sessionStore;
   if (db)
     botConfig.cleanup = () => {
@@ -339,13 +377,20 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
   // Reuse a single AgentLoop instance across all messages so that
   // EscribanoObserver accumulates turnCount for Darwinian pruning
   // and conceptCache stays warm, avoiding redundant DB lookups.
-  const agent = createAgentLoop(agentConfig);
+  const agent = createAgentLoop({ ...agentConfig, companyAgentAdminAuthorized: false });
+  const adminAgent = config.adminAuthorization?.enabled
+    ? createAgentLoop({ ...agentConfig, companyAgentAdminAuthorized: true })
+    : undefined;
 
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text;
     const chatId = String(ctx.chat.id);
-    const sellerId = config.sellerId ?? String(ctx.from?.id ?? chatId);
+    const userId = ctx.from?.id !== undefined ? String(ctx.from.id) : undefined;
+    const sellerId = config.sellerId ?? String(userId ?? chatId);
     const sessionId = createTelegramSessionId(sellerId, chatId);
+    const requestAgent = isTelegramAdminAuthorized(config.adminAuthorization, chatId, userId)
+      ? (adminAgent ?? agent)
+      : agent;
 
     // Typing indicator
     await ctx.replyWithChatAction("typing");
@@ -355,7 +400,7 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
       loadedState && stateBelongsToSeller(loadedState, sellerId)
         ? loadedState
         : createInitialState(sellerId, config.contextWindowLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT);
-    const result = await agent.converse(text, state);
+    const result = await requestAgent.converse(text, state);
     config.sessionStore?.save(sessionId, result.updatedState);
 
     await ctx.reply(result.response);

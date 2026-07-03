@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { answerBusinessQuestion, type BusinessContext } from "./index.js";
 import { hasRejectionPattern, resolveTurnOutcome } from "./conversation/agentLoop.js";
 import { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
+import { createCompanyAgentLearningStore } from "./conversation/companyAgentLearningStore.js";
 import { createRequestAgentEvidenceTool } from "./conversation/tools.js";
 import { createGraphEngine } from "@msl/memory";
 import { EscribanoObserver } from "./conversation/escribano.js";
@@ -341,6 +342,99 @@ describe("durable company agent registry", () => {
       missingInputs: ["known targetAgent"],
       noMutationExecuted: true,
     });
+
+    db.close();
+  });
+});
+
+describe("durable company agent learning store", () => {
+  it("persists agent lessons across database reopen", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "msl-agent-lessons-"));
+    const dbPath = join(tempDir, "agent-lessons.sqlite");
+    let db: Database.Database | undefined;
+    let reopenedDb: Database.Database | undefined;
+
+    try {
+      db = new Database(dbPath);
+      const store = createCompanyAgentLearningStore(db);
+      store.insertAgentLesson({
+        lessonId: "lesson:pricing-001",
+        targetAgentId: "pricing-analyst",
+        departmentId: "commercial",
+        scope: "agent",
+        lessonType: "outcome-lesson",
+        summary: "Supplier evidence changed the price decision.",
+        evidenceIds: ["evidence:price-1"],
+        confidence: 0.8,
+        impact: 0.7,
+        outcome: "avoided low-margin listing",
+      });
+      db.close();
+      db = undefined;
+
+      reopenedDb = new Database(dbPath);
+      const reopenedStore = createCompanyAgentLearningStore(reopenedDb);
+
+      expect(reopenedStore.listAgentLessons({ targetAgentId: "pricing-analyst" })).toEqual([
+        expect.objectContaining({
+          lessonId: "lesson:pricing-001",
+          targetAgentId: "pricing-analyst",
+          departmentId: "commercial",
+          evidenceIds: ["evidence:price-1"],
+          outcome: "avoided low-margin listing",
+        }),
+      ]);
+      reopenedDb.close();
+      reopenedDb = undefined;
+    } finally {
+      reopenedDb?.close();
+      db?.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("skips malformed learning rows instead of poisoning reads", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentLearningStore(db);
+    store.insertAgentLesson({
+      lessonId: "lesson:valid",
+      targetAgentId: "catalog-coach",
+      departmentId: "operations",
+      scope: "department",
+      lessonType: "research-finding",
+      summary: "Catalog evidence should be refreshed before analysis.",
+      evidenceIds: ["evidence:catalog-1"],
+      confidence: 0.75,
+      impact: 0.6,
+    });
+    db.prepare(
+      `
+        INSERT INTO company_agent_lessons (
+          lesson_id,
+          target_agent_id,
+          department_id,
+          scope,
+          lesson_type,
+          summary,
+          evidence_ids,
+          confidence,
+          impact,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+      `,
+    ).run(
+      "lesson:poisoned",
+      "catalog-coach",
+      "operations",
+      "department",
+      "research-finding",
+      "Poisoned lesson",
+      "not json",
+      0.7,
+      0.6,
+    );
+
+    expect(store.listAgentLessons().map((lesson) => lesson.lessonId)).toEqual(["lesson:valid"]);
 
     db.close();
   });

@@ -26,6 +26,12 @@ import {
   type CompanyDepartmentId,
   type EvidenceKind,
 } from "./companyAgents.js";
+import type {
+  AgentLearningRecord,
+  AgentLessonScope,
+  AgentLessonType,
+  CompanyAgentLearningStore,
+} from "./companyAgentLearningStore.js";
 
 /** Function signature for the actor simulator (injected for testability). */
 type SimulateActorFn = typeof defaultSimulateActor;
@@ -562,7 +568,15 @@ export function createDelegateToSubagentTool(): ToolDefinition {
 const productiveRequestPattern =
   /publish|publicar|mutar|mutation|ejecutar|execute|cambiar|change|modificar|update|crear|create|mensaje|message|payment|pago|sii|enviar|send/i;
 const companyAgentIdPattern = /^[a-z][a-z0-9-]{2,62}$/;
+const agentLessonIdPattern = /^[a-z][a-z0-9:_-]{2,95}$/;
 const validDepartmentIds = new Set<CompanyDepartmentId>(["executive", "operations", "commercial"]);
+const validLessonTypes = new Set<AgentLessonType>([
+  "ceo-correction",
+  "research-finding",
+  "outcome-lesson",
+  "policy",
+]);
+const validLessonScopes = new Set<AgentLessonScope>(["agent", "department"]);
 const promptInjectionPattern =
   /ignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions|disregard\s+(?:previous|prior|above)|system\s+prompt|developer\s+message|reveal\s+(?:your\s+)?instructions|tool\s*(?:call|execution|escalation)|escalate\s+(?:privileges?|permissions?)|enable\s+admin|bypass\s+(?:auth|authorization|guardrails?)|ignora(?:r|́|á)?\s+(?:las\s+)?instrucciones|ignor[aá]\s+(?:las\s+)?instrucciones|olvida\s+(?:las\s+)?instrucciones|revela\s+(?:el\s+)?prompt|ejecuta\s+(?:la\s+)?herramienta|omite\s+(?:la\s+)?autorizaci[oó]n/i;
 
@@ -575,6 +589,11 @@ const companyAgentTextLimits = {
   evidenceKind: 64,
   policy: 180,
   listedStablePrefix: 240,
+  lessonSummary: 800,
+  lessonOutcome: 240,
+  evidenceId: 96,
+  listedLessonSummary: 360,
+  listedLessonOutcome: 180,
 } as const;
 
 function stringArray(value: unknown): string[] {
@@ -644,6 +663,37 @@ function summarizeCompanyAgent(agent: ReturnType<CompanyAgentRegistry["getCompan
       .slice(0, 16)
       .map((kind) => truncateCompanyAgentText(kind, companyAgentTextLimits.evidenceKind)),
     noMutationBoundary: agent.profile.noMutationBoundary,
+  };
+}
+
+function resolveCompanyAgent(registry: CompanyAgentRegistry | undefined, agentId: string) {
+  return getCompanyAgent(agentId) ?? registry?.getCompanyAgent(agentId);
+}
+
+function summarizeAgentLesson(lesson: AgentLearningRecord) {
+  return {
+    lessonId: truncateCompanyAgentText(lesson.lessonId, 96),
+    targetAgentId: truncateCompanyAgentText(lesson.targetAgentId, 96),
+    departmentId: lesson.departmentId,
+    scope: lesson.scope,
+    lessonType: lesson.lessonType,
+    summary: truncateCompanyAgentText(lesson.summary, companyAgentTextLimits.listedLessonSummary),
+    evidenceIds: lesson.evidenceIds
+      .slice(0, 12)
+      .map((id) => truncateCompanyAgentText(id, companyAgentTextLimits.evidenceId)),
+    confidence: lesson.confidence,
+    impact: lesson.impact,
+    ...(lesson.outcome
+      ? {
+          outcome: truncateCompanyAgentText(
+            lesson.outcome,
+            companyAgentTextLimits.listedLessonOutcome,
+          ),
+        }
+      : {}),
+    status: lesson.status,
+    createdAt: lesson.createdAt,
+    updatedAt: lesson.updatedAt,
   };
 }
 
@@ -835,9 +885,199 @@ export function createCreateCompanyAgentTool(
   };
 }
 
+export type RecordAgentLessonToolOptions = {
+  authorized?: boolean;
+};
+
+export type ListAgentLessonsToolOptions = {
+  authorized?: boolean;
+};
+
+export function createRecordAgentLessonTool(
+  learningStore: CompanyAgentLearningStore | undefined,
+  registry?: CompanyAgentRegistry,
+  options: RecordAgentLessonToolOptions = {},
+): ToolDefinition {
+  return {
+    name: "record_agent_lesson",
+    description:
+      "Records a durable local learning lesson for an AI company agent after CEO/admin authorization. No external systems are mutated.",
+    parameters: {
+      type: "object",
+      properties: {
+        lessonId: { type: "string", description: "Safe durable lesson id." },
+        targetAgentId: { type: "string", description: "Known company agent id." },
+        scope: { type: "string", enum: [...validLessonScopes] },
+        lessonType: { type: "string", enum: [...validLessonTypes] },
+        summary: { type: "string" },
+        evidenceIds: { type: "array", items: { type: "string" } },
+        confidence: { type: "number", minimum: 0, maximum: 1 },
+        impact: { type: "number", minimum: 0, maximum: 1 },
+        outcome: {
+          type: "string",
+          description: "Optional outcome/bridge field for Cortex/Darwinian use.",
+        },
+      },
+      required: ["lessonId", "targetAgentId", "scope", "lessonType", "summary"],
+    },
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
+      if (!options.authorized) {
+        return {
+          status: "blocked",
+          error: "unauthorized",
+          missingInputs: ["authorized CEO/admin runtime"],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!learningStore) {
+        return {
+          status: "blocked",
+          error: "agent learning store unavailable",
+          missingInputs: ["companyAgentLearningStore"],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const lessonId = safeString(args.lessonId).toLowerCase();
+      const targetAgentId = safeString(args.targetAgentId);
+      const scope = normalizeCompanyAgentText(args.scope) as AgentLessonScope;
+      const lessonType = normalizeCompanyAgentText(args.lessonType) as AgentLessonType;
+      const summary = normalizeCompanyAgentText(args.summary);
+      const outcome = normalizeCompanyAgentText(args.outcome);
+      const evidenceIds = nonEmptyUniqueStrings(args.evidenceIds);
+      const confidence = typeof args.confidence === "number" ? args.confidence : 0.5;
+      const impact = typeof args.impact === "number" ? args.impact : 0.5;
+
+      const missingInputs: string[] = [];
+      if (!lessonId) missingInputs.push("lessonId");
+      if (!targetAgentId) missingInputs.push("targetAgentId");
+      if (!validLessonScopes.has(scope)) missingInputs.push("scope");
+      if (!validLessonTypes.has(lessonType)) missingInputs.push("lessonType");
+      if (!summary) missingInputs.push("summary");
+      if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+        missingInputs.push("confidence 0..1");
+      }
+      if (!Number.isFinite(impact) || impact < 0 || impact > 1) missingInputs.push("impact 0..1");
+
+      const targetAgent = resolveCompanyAgent(registry, targetAgentId);
+      if (!targetAgent || targetAgent.status !== "active")
+        missingInputs.push("known active targetAgentId");
+
+      if (missingInputs.length > 0) {
+        return { status: "blocked", missingInputs, noExternalMutationExecuted: true };
+      }
+
+      const unsafeInputs = [
+        validateCompanyAgentText(summary, "summary", companyAgentTextLimits.lessonSummary),
+        validateCompanyAgentText(outcome, "outcome", companyAgentTextLimits.lessonOutcome),
+        ...evidenceIds.map((id) =>
+          validateCompanyAgentText(id, "evidenceIds", companyAgentTextLimits.evidenceId),
+        ),
+      ].filter((issue): issue is string => Boolean(issue));
+      if (!agentLessonIdPattern.test(lessonId) || lessonId.includes("..")) {
+        unsafeInputs.push("safe lessonId");
+      }
+      if (evidenceIds.length > 16) unsafeInputs.push("evidenceIds too many");
+
+      if (unsafeInputs.length > 0) {
+        return {
+          status: "blocked",
+          error: "unsafe agent lesson metadata",
+          missingInputs: [...new Set(unsafeInputs)],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      try {
+        const lesson = learningStore.insertAgentLesson({
+          lessonId,
+          targetAgentId: targetAgent!.id,
+          departmentId: targetAgent!.profile.departmentId,
+          scope,
+          lessonType,
+          summary,
+          evidenceIds,
+          confidence,
+          impact,
+          ...(outcome ? { outcome } : {}),
+        });
+
+        return {
+          status: "recorded",
+          lesson: summarizeAgentLesson(lesson),
+          noExternalMutationExecuted: true,
+        };
+      } catch {
+        return {
+          status: "blocked",
+          error: "agent lesson could not be persisted safely",
+          missingInputs: ["unique valid lesson"],
+          noExternalMutationExecuted: true,
+        };
+      }
+    },
+  };
+}
+
+export function createListAgentLessonsTool(
+  learningStore: CompanyAgentLearningStore | undefined,
+  options: ListAgentLessonsToolOptions = {},
+): ToolDefinition {
+  return {
+    name: "list_agent_lessons",
+    description:
+      "Lists bounded active local lessons for AI company agents after CEO/admin authorization. Read-only; no external mutations.",
+    parameters: {
+      type: "object",
+      properties: {
+        targetAgentId: { type: "string" },
+        departmentId: { type: "string", enum: [...validDepartmentIds] },
+        scope: { type: "string", enum: [...validLessonScopes] },
+        limit: { type: "number", minimum: 1, maximum: 20 },
+      },
+      required: [],
+    },
+    execute: (args: Record<string, unknown>): Record<string, unknown> => {
+      if (!options.authorized) {
+        return {
+          status: "blocked",
+          error: "unauthorized",
+          missingInputs: ["authorized CEO/admin runtime"],
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!learningStore) {
+        return {
+          lessons: [],
+          storeAvailable: false,
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const departmentId = normalizeCompanyAgentText(args.departmentId) as CompanyDepartmentId;
+      const scope = normalizeCompanyAgentText(args.scope) as AgentLessonScope;
+      const limit = typeof args.limit === "number" ? args.limit : 10;
+      const filter = { limit: Math.max(1, Math.min(limit, 20)) };
+      const targetAgentId = safeString(args.targetAgentId);
+      const lessons = learningStore.listAgentLessons({
+        ...filter,
+        ...(targetAgentId ? { targetAgentId } : {}),
+        ...(validDepartmentIds.has(departmentId) ? { departmentId } : {}),
+        ...(validLessonScopes.has(scope) ? { scope } : {}),
+      });
+
+      return {
+        lessons: lessons.map(summarizeAgentLesson),
+        storeAvailable: true,
+        noExternalMutationExecuted: true,
+      };
+    },
+  };
+}
+
 export function createRequestAgentEvidenceTool(registry?: CompanyAgentRegistry): ToolDefinition {
-  const resolveAgent = (agentId: string) =>
-    getCompanyAgent(agentId) ?? registry?.getCompanyAgent(agentId);
   const targetAgentIds = Array.from(
     new Set([
       ...listCompanyAgents().map((agent) => agent.id),
@@ -886,7 +1126,7 @@ export function createRequestAgentEvidenceTool(registry?: CompanyAgentRegistry):
         );
       }
 
-      const agent = resolveAgent(targetAgent);
+      const agent = resolveCompanyAgent(registry, targetAgent);
       if (!agent) {
         return {
           status: "blocked",

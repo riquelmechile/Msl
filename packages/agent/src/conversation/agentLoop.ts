@@ -28,8 +28,10 @@ import {
   createDetectProbesTool,
   createCreateCompanyAgentTool,
   createGetBusinessContextTool,
+  createListAgentLessonsTool,
   createListCompanyAgentsTool,
   createProposeHoneyPotTool,
+  createRecordAgentLessonTool,
   createRequestAgentEvidenceTool,
 } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
@@ -76,6 +78,7 @@ import type { OperationalReadModelReader } from "@msl/memory";
 import type { OperationalEvidenceProvider } from "./operationalEvidenceProvider.js";
 import { injectCortexContext } from "./cacheBlocks.js";
 import type { CompanyAgentRegistry } from "./companyAgents.js";
+import type { CompanyAgentLearningStore } from "./companyAgentLearningStore.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -210,8 +213,14 @@ export type AgentLoopConfig = {
    */
   companyAgentRegistry?: CompanyAgentRegistry;
   /**
+   * Optional durable learning store for AI workforce lessons. When provided,
+   * lesson tools remain disabled unless
+   * `companyAgentAdminAuthorized` is explicitly true.
+   */
+  companyAgentLearningStore?: CompanyAgentLearningStore;
+  /**
    * Explicit backend authorization evidence for CEO/admin-only durable
-   * company-agent creation. Read/list tools do not require this flag.
+   * company-agent creation and agent-learning read/write tools.
    */
   companyAgentAdminAuthorized?: boolean;
   /**
@@ -333,6 +342,16 @@ export function createAgentLoop(config: AgentLoopConfig) {
     toolMap.set("list_company_agents", createListCompanyAgentsTool(config.companyAgentRegistry));
   }
   if (
+    config.companyAgentLearningStore &&
+    config.companyAgentAdminAuthorized === true &&
+    !toolMap.has("list_agent_lessons")
+  ) {
+    toolMap.set(
+      "list_agent_lessons",
+      createListAgentLessonsTool(config.companyAgentLearningStore, { authorized: true }),
+    );
+  }
+  if (
     config.companyAgentRegistry &&
     config.companyAgentAdminAuthorized === true &&
     !toolMap.has("create_company_agent")
@@ -340,6 +359,18 @@ export function createAgentLoop(config: AgentLoopConfig) {
     toolMap.set(
       "create_company_agent",
       createCreateCompanyAgentTool(config.companyAgentRegistry, { authorized: true }),
+    );
+  }
+  if (
+    config.companyAgentLearningStore &&
+    config.companyAgentAdminAuthorized === true &&
+    !toolMap.has("record_agent_lesson")
+  ) {
+    toolMap.set(
+      "record_agent_lesson",
+      createRecordAgentLessonTool(config.companyAgentLearningStore, config.companyAgentRegistry, {
+        authorized: true,
+      }),
     );
   }
 

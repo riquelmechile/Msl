@@ -89,7 +89,9 @@ export {
   createPrepareActionTool,
   createDelegateToSubagentTool,
   createCreateCompanyAgentTool,
+  createListAgentLessonsTool,
   createListCompanyAgentsTool,
+  createRecordAgentLessonTool,
   createRequestAgentEvidenceTool,
   createSimulateActorTool,
   createDetectProbesTool,
@@ -120,6 +122,16 @@ export type {
   CompanyAgentStore,
   CreateCompanyAgentInput,
 } from "./conversation/companyAgentStore.js";
+export { createCompanyAgentLearningStore } from "./conversation/companyAgentLearningStore.js";
+export type {
+  AgentLearningRecord,
+  AgentLessonScope,
+  AgentLessonStatus,
+  AgentLessonType,
+  CompanyAgentLearningStore,
+  ListAgentLessonsFilter,
+  RecordAgentLessonInput,
+} from "./conversation/companyAgentLearningStore.js";
 
 // ── Sync tools ──────────────────────────────────────────────────────
 export {
