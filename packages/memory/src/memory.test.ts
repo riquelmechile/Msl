@@ -6,6 +6,7 @@ import { evaluateFreshness, type ReadSnapshot } from "@msl/domain";
 
 import {
   canStoreInCortex,
+  createSqliteSupplierMirrorStore,
   decideReadSnapshotFreshness,
   decideSelectiveSync,
   decideCortexFeedbackAction,
@@ -151,6 +152,250 @@ describe("operational read-model boundaries", () => {
     await expect(
       reader.findEvidence({ sellerId: "seller-1", snapshotKind: "listing" }),
     ).resolves.toBeNull();
+  });
+});
+
+describe("supplier mirror operational store", () => {
+  it("migrates and stores suppliers, snapshots, confidence metadata, and stock observations", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteSupplierMirrorStore(db);
+
+      await store.upsertSupplier({
+        id: "jinpeng",
+        name: "Jinpeng / XKP",
+        enabled: true,
+        primarySource: "mercadolibre-api",
+        metadata: { country: "CL" },
+        createdAt: "2026-07-03T00:00:00.000Z",
+        updatedAt: "2026-07-03T00:00:00.000Z",
+      });
+
+      await store.upsertSupplierItemSnapshot({
+        supplierId: "jinpeng",
+        supplierItemId: "XKP-001",
+        mlItemId: "MLC100",
+        title: "Supplier item",
+        sku: "SKU-1",
+        categoryId: "storage",
+        price: 1000,
+        currency: "CLP",
+        snapshot: { color: "black" },
+        source: "mercadolibre-api",
+        confidence: "high",
+        freshness: "fresh",
+        evidenceId: "evidence-snapshot-1",
+        capturedAt: "2026-07-03T00:01:00.000Z",
+      });
+
+      await store.recordStockObservation({
+        id: "stock-1",
+        supplierId: "jinpeng",
+        supplierItemId: "XKP-001",
+        source: "mercadolibre-api",
+        authority: "stock-authoritative",
+        quantity: 2,
+        status: "low-stock",
+        confidence: "high",
+        evidenceId: "evidence-stock-1",
+        capturedAt: "2026-07-03T00:02:00.000Z",
+      });
+
+      await expect(store.listEnabledSuppliers()).resolves.toMatchObject([
+        { id: "jinpeng", enabled: true, primarySource: "mercadolibre-api" },
+      ]);
+      await expect(store.getSupplierItemSnapshot("jinpeng", "XKP-001")).resolves.toMatchObject({
+        supplierId: "jinpeng",
+        confidence: "high",
+        freshness: "fresh",
+        evidenceId: "evidence-snapshot-1",
+      });
+      await expect(store.listStockObservations("jinpeng", "XKP-001")).resolves.toMatchObject([
+        {
+          authority: "stock-authoritative",
+          confidence: "high",
+          evidenceId: "evidence-stock-1",
+          quantity: 2,
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("resolves target policies without using the old Plasticov to Maustian direction guard", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteSupplierMirrorStore(db);
+
+      await store.upsertTargetPolicy({
+        scopeType: "supplier",
+        scopeId: "jinpeng",
+        supplierId: "jinpeng",
+        targetSellerIds: ["plasticov", "maustian"],
+        lowStockThreshold: 3,
+        autoPauseAllowed: false,
+        pricingPolicy: { kind: "multiplier", multiplier: 3 },
+      });
+      await store.upsertTargetPolicy({
+        scopeType: "category",
+        scopeId: "storage",
+        supplierId: "jinpeng",
+        targetSellerIds: ["maustian"],
+        lowStockThreshold: 2,
+        autoPauseAllowed: true,
+      });
+
+      await expect(
+        store.resolveTargetPolicy({
+          supplierId: "jinpeng",
+          supplierItemId: "XKP-001",
+          categoryId: "storage",
+        }),
+      ).resolves.toMatchObject({
+        scopeType: "category",
+        targetSellerIds: ["maustian"],
+        autoPauseAllowed: true,
+      });
+      await expect(
+        store.resolveTargetPolicy({ supplierId: "jinpeng", supplierItemId: "XKP-002" }),
+      ).resolves.toMatchObject({
+        scopeType: "supplier",
+        targetSellerIds: ["plasticov", "maustian"],
+        pricingPolicy: { kind: "multiplier", multiplier: 3 },
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("upserts mappings and keeps ledger writes idempotent by action key", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteSupplierMirrorStore(db);
+
+      await store.upsertTargetMapping({
+        supplierId: "jinpeng",
+        supplierItemId: "XKP-001",
+        targetSellerId: "maustian",
+        targetItemId: "MLC200",
+        policyRef: {
+          scopeType: "category",
+          scopeId: "storage",
+          supplierId: "jinpeng",
+        },
+        state: "approved",
+        approvedAt: "2026-07-03T00:03:00.000Z",
+        evidenceIds: ["evidence-mapping-1"],
+      });
+
+      const firstLedger = await store.appendLedger({
+        id: "ledger-1",
+        actionType: "skip",
+        idempotencyKey: "supplier-mirror:skip:jinpeng:XKP-001:maustian",
+        status: "skipped",
+        reason: "unmapped-target-policy",
+        supplierId: "jinpeng",
+        supplierItemId: "XKP-001",
+        targetSellerId: "maustian",
+        targetItemId: "MLC200",
+        evidenceIds: ["evidence-stock-1"],
+        before: null,
+        after: null,
+        createdAt: "2026-07-03T00:04:00.000Z",
+      });
+      const duplicateLedger = await store.appendLedger({
+        ...firstLedger,
+        id: "ledger-duplicate",
+        status: "failed",
+        reason: "should-not-replace-original",
+      });
+
+      await expect(store.listTargetMappings("jinpeng", "XKP-001")).resolves.toMatchObject([
+        {
+          targetSellerId: "maustian",
+          policyRef: { scopeType: "category", scopeId: "storage", supplierId: "jinpeng" },
+          state: "approved",
+          evidenceIds: ["evidence-mapping-1"],
+        },
+      ]);
+      expect(duplicateLedger).toMatchObject({
+        id: "ledger-1",
+        status: "skipped",
+        reason: "unmapped-target-policy",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("fails safely when a ledger id collides with a different idempotency key", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteSupplierMirrorStore(db);
+      const record = {
+        id: "ledger-1",
+        actionType: "skip" as const,
+        idempotencyKey: "supplier-mirror:skip:jinpeng:XKP-001:maustian",
+        status: "skipped" as const,
+        reason: "unmapped-target-policy",
+        supplierId: "jinpeng",
+        supplierItemId: "XKP-001",
+        targetSellerId: "maustian",
+        targetItemId: "MLC200",
+        evidenceIds: ["evidence-stock-1"],
+        before: null,
+        after: null,
+        createdAt: "2026-07-03T00:04:00.000Z",
+      };
+
+      await store.appendLedger(record);
+
+      await expect(
+        store.appendLedger({
+          ...record,
+          idempotencyKey: "supplier-mirror:skip:jinpeng:XKP-001:plasticov",
+        }),
+      ).rejects.toThrow(
+        "Supplier Mirror ledger id collision for ledger-1: existing idempotency key supplier-mirror:skip:jinpeng:XKP-001:maustian does not match supplier-mirror:skip:jinpeng:XKP-001:plasticov",
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("stores notification preferences and learned fallback policy skeletons for later slices", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteSupplierMirrorStore(db);
+
+      await store.saveNotificationPreference({
+        scopeType: "supplier",
+        scopeId: "jinpeng",
+        preference: { suppressLowConfidenceStock: true },
+      });
+      await store.upsertLearnedFallbackPolicy({
+        id: "policy-1",
+        policyType: "pricing",
+        scope: { supplierId: "jinpeng" },
+        decision: { kind: "multiplier", multiplier: 3 },
+        confidence: "medium",
+        evidenceIds: ["evidence-ceo-answer-1"],
+        status: "proposed",
+      });
+
+      await expect(store.getNotificationPreference("supplier", "jinpeng")).resolves.toMatchObject({
+        preference: { suppressLowConfidenceStock: true },
+      });
+      await expect(store.getLearnedFallbackPolicy("policy-1")).resolves.toMatchObject({
+        policyType: "pricing",
+        confidence: "medium",
+        evidenceIds: ["evidence-ceo-answer-1"],
+        status: "proposed",
+      });
+    } finally {
+      db.close();
+    }
   });
 });
 

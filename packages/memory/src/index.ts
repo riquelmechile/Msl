@@ -44,6 +44,11 @@ export {
   createSqliteOperationalReadModel,
   migrateOperationalStore,
 } from "./operationalReadModel.js";
+export type { SupplierMirrorStore } from "./supplierMirrorStore.js";
+export {
+  createSqliteSupplierMirrorStore,
+  migrateSupplierMirrorStore,
+} from "./supplierMirrorStore.js";
 
 // Re-export shared connection pool and backup utilities.
 export { getSharedDb, closeSharedDb } from "./connectionPool.js";

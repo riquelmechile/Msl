@@ -48,6 +48,9 @@ describe("approval-required writes", () => {
     "refund",
     "listing-edit",
     "creative-publication",
+    "supplier-mirror-publish-proposal",
+    "supplier-mirror-price-proposal",
+    "supplier-mirror-pause-listing",
   ])("requires explicit approval before executing %s", (kind) => {
     const action = preparedAction(kind);
 
@@ -160,6 +163,9 @@ describe("risk labels", () => {
     ["creative-publication", "high"],
     ["honey-pot-deploy", "high"],
     ["probe-analysis", "high"],
+    ["supplier-mirror-publish-proposal", "high"],
+    ["supplier-mirror-price-proposal", "medium"],
+    ["supplier-mirror-pause-listing", "high"],
   ] satisfies Array<[WriteActionKind, string]>)('labels "%s" as %s risk', (kind, risk) => {
     expect(riskLevelForAction(kind)).toBe(risk);
   });
