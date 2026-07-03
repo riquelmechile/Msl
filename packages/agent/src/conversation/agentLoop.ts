@@ -73,6 +73,7 @@ import type { CacheTelemetry, LaneId, LaneOutput } from "./lanes.js";
 import type { OperationalReadModelReader } from "@msl/memory";
 import type { OperationalEvidenceProvider } from "./operationalEvidenceProvider.js";
 import { injectCortexContext } from "./cacheBlocks.js";
+import type { CompanyAgentRegistry } from "./companyAgents.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -200,6 +201,12 @@ export type AgentLoopConfig = {
    */
   evidenceProvider?: OperationalEvidenceProvider;
   /**
+   * Optional durable company-agent registry. When provided,
+   * `request_agent_evidence` can resolve CEO-created agents alongside
+   * static lane-backed agents. The loop never creates or mutates agents.
+   */
+  companyAgentRegistry?: CompanyAgentRegistry;
+  /**
    * Active lane ID for per-lane evidence injection into Block C.
    * Required when {@link evidenceProvider} is configured.
    */
@@ -309,7 +316,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
     toolMap.set("delegate_to_subagent", createDelegateToSubagentTool());
   }
   if (!toolMap.has("request_agent_evidence")) {
-    toolMap.set("request_agent_evidence", createRequestAgentEvidenceTool());
+    toolMap.set("request_agent_evidence", createRequestAgentEvidenceTool(config.companyAgentRegistry));
   }
 
   // ── Create listing tool (new from scratch) ─────────────────────

@@ -2,13 +2,13 @@ import { LANE_CONTRACTS, type LaneContract, type LaneId } from "./lanes.js";
 
 export type CompanyDepartmentId = "executive" | "operations" | "commercial";
 
-export type CompanyAgentId = LaneId;
+export type CompanyAgentId = string;
 
 export type EvidenceKind = string;
 
 export type CompanyAgentProfile = {
   agentId: CompanyAgentId;
-  laneId: LaneId;
+  laneId?: LaneId;
   label: string;
   departmentId: CompanyDepartmentId;
   stablePrefix: string;
@@ -23,8 +23,14 @@ export type CompanyAgentProfile = {
 export type CompanyAgent = {
   id: CompanyAgentId;
   profile: CompanyAgentProfile;
-  source: "lane-contract";
+  source: "lane-contract" | "ceo-created";
+  status: "active" | "archived";
   durableReady: true;
+};
+
+export type CompanyAgentRegistry = {
+  getCompanyAgent(agentId: string): CompanyAgent | undefined;
+  listCompanyAgents(): readonly CompanyAgent[];
 };
 
 export type AgentEvidenceRequest = {
@@ -61,6 +67,7 @@ function toCompanyAgent(contract: LaneContract): CompanyAgent {
   return {
     id: contract.laneId,
     source: "lane-contract",
+    status: "active",
     durableReady: true,
     profile: {
       agentId: contract.laneId,
@@ -94,3 +101,8 @@ export function listCompanyAgents(): readonly CompanyAgent[] {
 export function getCompanyAgent(agentId: string): CompanyAgent | undefined {
   return COMPANY_AGENTS.find((agent) => agent.id === agentId);
 }
+
+export const staticCompanyAgentRegistry: CompanyAgentRegistry = Object.freeze({
+  getCompanyAgent,
+  listCompanyAgents,
+});

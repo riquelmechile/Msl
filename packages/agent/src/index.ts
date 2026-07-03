@@ -101,6 +101,7 @@ export type {
   CompanyAgent,
   CompanyAgentId,
   CompanyAgentProfile,
+  CompanyAgentRegistry,
   CompanyDepartmentId,
   AgentEvidenceRequest,
   AgentEvidenceResponse,
@@ -108,6 +109,8 @@ export type {
   EvidenceKind,
 } from "./conversation/companyAgents.js";
 export { COMPANY_AGENTS, getCompanyAgent, listCompanyAgents } from "./conversation/companyAgents.js";
+export { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
+export type { CompanyAgentStore, CreateCompanyAgentInput } from "./conversation/companyAgentStore.js";
 
 // ── Sync tools ──────────────────────────────────────────────────────
 export {

@@ -21,6 +21,7 @@ import {
   getCompanyAgent,
   listCompanyAgents,
   type AgentEvidenceResponse,
+  type CompanyAgentRegistry,
 } from "./companyAgents.js";
 
 /** Function signature for the actor simulator (injected for testability). */
@@ -562,7 +563,15 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-export function createRequestAgentEvidenceTool(): ToolDefinition {
+export function createRequestAgentEvidenceTool(registry?: CompanyAgentRegistry): ToolDefinition {
+  const resolveAgent = (agentId: string) => getCompanyAgent(agentId) ?? registry?.getCompanyAgent(agentId);
+  const targetAgentIds = Array.from(
+    new Set([
+      ...listCompanyAgents().map((agent) => agent.id),
+      ...(registry?.listCompanyAgents().map((agent) => agent.id) ?? []),
+    ]),
+  );
+
   return {
     name: "request_agent_evidence",
     description:
@@ -573,7 +582,7 @@ export function createRequestAgentEvidenceTool(): ToolDefinition {
       properties: {
         targetAgent: {
           type: "string",
-          enum: listCompanyAgents().map((agent) => agent.id),
+          enum: targetAgentIds,
           description: "Agente/lane especialista objetivo.",
         },
         scope: { type: "string", description: "Alcance acotado de la investigación." },
@@ -604,7 +613,7 @@ export function createRequestAgentEvidenceTool(): ToolDefinition {
         );
       }
 
-      const agent = getCompanyAgent(targetAgent);
+      const agent = resolveAgent(targetAgent);
       if (!agent) {
         return {
           status: "blocked",
@@ -620,6 +629,21 @@ export function createRequestAgentEvidenceTool(): ToolDefinition {
         };
       }
 
+      if (agent.status !== "active") {
+        return {
+          status: "blocked",
+          targetAgent,
+          scope,
+          requestedEvidenceKinds,
+          existingEvidenceIds,
+          requiredEvidenceKinds: agent.profile.requiredEvidenceKinds,
+          evidenceIds: existingEvidenceIds,
+          missingInputs: ["active targetAgent"],
+          boundaryWarnings: [...agent.profile.boundaries, ...warnings],
+          noMutationExecuted: true,
+        };
+      }
+
       const missingInputs: string[] = [];
       if (!scope) missingInputs.push("scope");
       if (requestedEvidenceKinds.length === 0) missingInputs.push("requestedEvidenceKinds");
@@ -631,10 +655,9 @@ export function createRequestAgentEvidenceTool(): ToolDefinition {
         missingInputs.push(`requested evidence kind: ${kind}`);
       }
 
-      return {
+      const response: AgentEvidenceResponse = {
         status: missingInputs.length > 0 ? "missing-inputs" : "evidence-ready",
         targetAgent: agent.id,
-        laneId: agent.profile.laneId,
         scope,
         requestedEvidenceKinds,
         existingEvidenceIds,
@@ -644,6 +667,8 @@ export function createRequestAgentEvidenceTool(): ToolDefinition {
         boundaryWarnings: [...agent.profile.boundaries, ...warnings],
         noMutationExecuted: true,
       };
+      if (agent.profile.laneId) response.laneId = agent.profile.laneId;
+      return response;
     },
   };
 }

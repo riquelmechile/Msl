@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { answerBusinessQuestion, type BusinessContext } from "./index.js";
 import { hasRejectionPattern, resolveTurnOutcome } from "./conversation/agentLoop.js";
+import { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
+import { createRequestAgentEvidenceTool } from "./conversation/tools.js";
 import { createGraphEngine } from "@msl/memory";
 import { EscribanoObserver } from "./conversation/escribano.js";
 import type { AgentProposal, ConversationState } from "./conversation/types.js";
@@ -139,6 +145,204 @@ describe("principal business agent orchestration", () => {
 
     expect(response.specializationCandidate.status).toBe("needs-more-evidence");
     expect(response.specializationCandidate.evidence).toContain("seller decision criteria");
+  });
+});
+
+describe("durable company agent registry", () => {
+  it("roundtrips CEO-created company agents in SQLite", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    const agent = store.insertCompanyAgent({
+      id: "agent:supplier-negotiator",
+      label: "Supplier Negotiator",
+      departmentId: "operations",
+      stablePrefix: "supplier-negotiator",
+      refreshableContextProvider: "supplier-negotiator-context",
+      inputs: ["supplier costs"],
+      outputs: ["negotiation evidence"],
+      requiredEvidenceKinds: ["supplier-cost"],
+      boundaries: ["No supplier messages without CEO confirmation."],
+    });
+
+    expect(agent.source).toBe("ceo-created");
+    expect(agent.status).toBe("active");
+    expect(store.getCompanyAgent("agent:supplier-negotiator")?.profile.label).toBe(
+      "Supplier Negotiator",
+    );
+    expect(store.listCompanyAgents()).toHaveLength(1);
+    expect(store.count()).toBe(1);
+
+    db.close();
+  });
+
+  it("persists CEO-created company agents across database reopen", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "msl-company-agents-"));
+    const dbPath = join(tempDir, "company-agents.sqlite");
+    let db: Database.Database | undefined;
+    let reopenedDb: Database.Database | undefined;
+
+    try {
+      db = new Database(dbPath);
+      const store = createCompanyAgentStore(db);
+      store.insertCompanyAgent({
+        id: "agent:ceo-created-persistent",
+        label: "Persistent CEO Agent",
+        departmentId: "operations",
+        stablePrefix: "persistent-ceo-agent",
+        refreshableContextProvider: "persistent-ceo-agent-context",
+        inputs: ["supplier costs"],
+        outputs: ["durable evidence"],
+        requiredEvidenceKinds: ["supplier-cost"],
+        boundaries: ["Evidence only; no external mutations."],
+      });
+      db.close();
+      db = undefined;
+
+      reopenedDb = new Database(dbPath);
+      const reopenedStore = createCompanyAgentStore(reopenedDb);
+
+      expect(reopenedStore.getCompanyAgent("agent:ceo-created-persistent")?.profile).toMatchObject({
+        agentId: "agent:ceo-created-persistent",
+        label: "Persistent CEO Agent",
+        requiredEvidenceKinds: ["supplier-cost"],
+      });
+      expect(reopenedStore.listCompanyAgents().map((agent) => agent.id)).toContain(
+        "agent:ceo-created-persistent",
+      );
+
+      reopenedDb.close();
+      reopenedDb = undefined;
+    } finally {
+      reopenedDb?.close();
+      db?.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("skips malformed JSON rows instead of crashing registry reads", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+    store.insertCompanyAgent({
+      id: "agent:valid",
+      label: "Valid Agent",
+      departmentId: "operations",
+      stablePrefix: "valid-agent",
+      refreshableContextProvider: "valid-agent-context",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["valid-evidence"],
+      boundaries: ["Evidence only."],
+    });
+    db.prepare(
+      `
+        INSERT INTO company_agents (
+          id,
+          lane_id,
+          label,
+          department_id,
+          stable_prefix,
+          refreshable_context_provider,
+          inputs,
+          outputs,
+          required_evidence_kinds,
+          boundaries,
+          source,
+          status
+        ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'ceo-created', 'active')
+      `,
+    ).run(
+      "agent:poisoned",
+      "Poisoned Agent",
+      "operations",
+      "poisoned-agent",
+      "poisoned-agent-context",
+      "not json",
+      "[]",
+      "[]",
+      "[]",
+    );
+
+    expect(store.getCompanyAgent("agent:poisoned")).toBeUndefined();
+    expect(store.listCompanyAgents().map((agent) => agent.id)).toEqual(["agent:valid"]);
+
+    db.close();
+  });
+
+  it("resolves durable agents in request_agent_evidence when a registry is injected", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+    store.insertCompanyAgent({
+      id: "agent:catalog-auditor",
+      label: "Catalog Auditor",
+      departmentId: "operations",
+      stablePrefix: "catalog-auditor",
+      refreshableContextProvider: "catalog-auditor-context",
+      inputs: ["catalog snapshots"],
+      outputs: ["catalog evidence"],
+      requiredEvidenceKinds: ["catalog-snapshot"],
+      boundaries: ["Evidence only; no listing edits."],
+    });
+
+    const tool = createRequestAgentEvidenceTool(store);
+    const response = tool.execute({
+      targetAgent: "agent:catalog-auditor",
+      scope: "Review catalog coverage",
+      requestedEvidenceKinds: ["catalog-snapshot"],
+      existingEvidenceIds: ["ev-1"],
+    });
+
+    expect(response).toMatchObject({
+      status: "evidence-ready",
+      targetAgent: "agent:catalog-auditor",
+      requiredEvidenceKinds: ["catalog-snapshot"],
+      evidenceIds: ["ev-1"],
+      noMutationExecuted: true,
+    });
+
+    db.close();
+  });
+
+  it("blocks archived and unknown company agents", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+    store.insertCompanyAgent({
+      id: "agent:archived",
+      label: "Archived Agent",
+      departmentId: "commercial",
+      stablePrefix: "archived-agent",
+      refreshableContextProvider: "archived-agent-context",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["commercial-context"],
+      boundaries: ["Archived agent must not receive work."],
+    });
+    store.archiveCompanyAgent("agent:archived");
+
+    const tool = createRequestAgentEvidenceTool(store);
+    const archived = tool.execute({
+      targetAgent: "agent:archived",
+      scope: "Review archived work",
+      requestedEvidenceKinds: ["commercial-context"],
+    });
+    const unknown = tool.execute({
+      targetAgent: "agent:missing",
+      scope: "Review missing work",
+      requestedEvidenceKinds: ["commercial-context"],
+    });
+
+    expect(archived).toMatchObject({
+      status: "blocked",
+      missingInputs: ["active targetAgent"],
+      noMutationExecuted: true,
+    });
+    expect(unknown).toMatchObject({
+      status: "blocked",
+      missingInputs: ["known targetAgent"],
+      noMutationExecuted: true,
+    });
+
+    db.close();
   });
 });
 

@@ -24,6 +24,10 @@ const mocks = vi.hoisted(() => {
     },
   });
   const mockCreateStrategyStore = vi.fn(() => ({ listActive: vi.fn(() => []) }));
+  const mockCreateCompanyAgentStore = vi.fn(() => ({
+    getCompanyAgent: vi.fn(),
+    listCompanyAgents: vi.fn(() => []),
+  }));
   const mockCreateSessionStore = vi.fn(() => ({
     load: vi.fn(() => null),
     save: vi.fn(),
@@ -51,6 +55,7 @@ const mocks = vi.hoisted(() => {
     mockStop,
     mockConverse,
     mockCreateStrategyStore,
+    mockCreateCompanyAgentStore,
     mockCreateSessionStore,
     mockCreateAutonomyEngine,
     mockBuildSystemPrompt,
@@ -84,6 +89,7 @@ vi.mock("@msl/agent", () => ({
   })),
   buildSystemPrompt: mocks.mockBuildSystemPrompt,
   createStrategyStore: mocks.mockCreateStrategyStore,
+  createCompanyAgentStore: mocks.mockCreateCompanyAgentStore,
   createSessionStore: mocks.mockCreateSessionStore,
   createAutonomyEngine: mocks.mockCreateAutonomyEngine,
   EscribanoObserver: mocks.mockEscribanoObserver,
@@ -345,6 +351,7 @@ describe("createTelegramBot (grammY)", () => {
     expect(Bot).toHaveBeenCalledWith("test-token-123", undefined);
     expect(mocks.mockCreateSessionStore).toHaveBeenCalled();
     expect(mocks.mockCreateStrategyStore).toHaveBeenCalled();
+    expect(mocks.mockCreateCompanyAgentStore).toHaveBeenCalled();
     expect(mocks.mockCreateAutonomyEngine).toHaveBeenCalled();
     expect(mocks.mockCreateGraphEngine).toHaveBeenCalledWith(":memory:");
     expect(mocks.mockBuildSystemPrompt).toHaveBeenCalledWith("Maustian");

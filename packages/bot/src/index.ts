@@ -6,6 +6,7 @@ import {
   buildSystemPrompt,
   createAgentLoop,
   createAutonomyEngine,
+  createCompanyAgentStore,
   createSessionStore,
   createStrategyStore,
   EscribanoObserver,
@@ -139,6 +140,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const store = db ? createStrategyStore(db) : undefined;
   const sessionStore = db ? createSessionStore(db) : undefined;
   const autonomyEngine = db ? createAutonomyEngine(db) : undefined;
+  const companyAgentRegistry = db ? createCompanyAgentStore(db) : undefined;
 
   const configuredCortexPath =
     env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() || env.MSL_CORTEX_SQLITE_PATH?.trim();
@@ -190,6 +192,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     mockClient: !env.DEEPSEEK_API_KEY?.trim(),
   };
   if (store) agentConfig.store = store;
+  if (companyAgentRegistry) agentConfig.companyAgentRegistry = companyAgentRegistry;
   if (autonomyEngine) agentConfig.autonomyEngine = autonomyEngine;
   if (engine) agentConfig.engine = engine;
   if (escribano) agentConfig.escribano = escribano;
