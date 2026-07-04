@@ -17,15 +17,16 @@ import {
   createSupplierMirrorWorker,
   createSyncJobStubs,
   criticalSyncSignals,
+  evaluateSupplierMirrorRuntimeGate,
   evaluateStaleCriticalSignal,
   persistSupplierMirrorIngestion,
+  runJinpengBootstrap,
   runSupplierMirrorStockBreakMonitor,
   startSupplierMirrorScheduler,
   supplierMirrorDefaultPollIntervalMs,
   type SupplierMirrorStorePort,
   type SupplierSourceAdapter,
 } from "./index.js";
-import { runJinpengBootstrap } from "./supplierMirror/jinpengBootstrap.js";
 
 describe("MercadoLibre sync job stubs", () => {
   it("creates scoped stubs for every critical business signal", async () => {
@@ -82,6 +83,61 @@ describe("Supplier Mirror worker foundation", () => {
       enabled: false,
       intervalMs: supplierMirrorDefaultPollIntervalMs,
     });
+  });
+
+  it("fails closed unless the runtime gate explicitly approves scheduler startup", () => {
+    const store = createMockSupplierMirrorStore();
+    const intervalHandle = { scheduler: "supplier-mirror" };
+    const setIntervalFn = vi.fn(() => intervalHandle as unknown as ReturnType<typeof setInterval>);
+    const clearIntervalFn = vi.fn();
+
+    const missingGateRuntime = startSupplierMirrorScheduler({
+      enabled: true,
+      store,
+      adapters: new Map(),
+      setIntervalFn,
+    });
+
+    expect(missingGateRuntime).toMatchObject({ enabled: false });
+    expect(setIntervalFn).not.toHaveBeenCalled();
+
+    const blockedGateRuntime = startSupplierMirrorScheduler({
+      enabled: true,
+      runtimeGate: {
+        workerEnabled: false,
+        status: "blocked",
+        reasons: ["runtime readiness is not approved"],
+        noMutationExecuted: true,
+      },
+      store,
+      adapters: new Map(),
+      setIntervalFn,
+    });
+
+    expect(blockedGateRuntime).toMatchObject({ enabled: false });
+    expect(setIntervalFn).not.toHaveBeenCalled();
+
+    const approvedGateRuntime = startSupplierMirrorScheduler({
+      enabled: true,
+      runtimeGate: {
+        workerEnabled: true,
+        status: "enabled",
+        reasons: [],
+        noMutationExecuted: true,
+      },
+      store,
+      adapters: new Map(),
+      intervalMs: 1_000,
+      jitterMs: 0,
+      setIntervalFn,
+      clearIntervalFn,
+    });
+
+    expect(approvedGateRuntime).toMatchObject({ enabled: true, intervalMs: 1_000 });
+    expect(setIntervalFn).toHaveBeenCalledTimes(1);
+
+    approvedGateRuntime.stop();
+    expect(clearIntervalFn).toHaveBeenCalledWith(intervalHandle);
   });
 
   it("keeps source adapters in an explicit registry", () => {
@@ -326,6 +382,61 @@ describe("Jinpeng Supplier Mirror bootstrap", () => {
     } finally {
       db.close();
     }
+  });
+
+  it("keeps runtime disabled unless explicit config and readiness approval are present", () => {
+    const unapprovedSupplier: SupplierRegistryEntry = {
+      id: "jinpeng",
+      name: "Jinpeng",
+      enabled: false,
+      primarySource: "mercadolibre-api",
+      metadata: {
+        runtimeEnabled: false,
+        requiresCeoConfirmation: true,
+        missingCredentials: [],
+        missingSourceInfo: [],
+      },
+      createdAt: "2026-07-04T12:00:00.000Z",
+      updatedAt: "2026-07-04T12:00:00.000Z",
+    };
+    const approvedSupplier: SupplierRegistryEntry = {
+      ...unapprovedSupplier,
+      enabled: true,
+      metadata: {
+        runtimeEnabled: true,
+        requiresCeoConfirmation: false,
+        missingCredentials: [],
+        missingSourceInfo: [],
+      },
+    };
+
+    expect(
+      evaluateSupplierMirrorRuntimeGate({
+        explicitWorkerEnabled: false,
+        supplier: approvedSupplier,
+      }),
+    ).toMatchObject({ status: "disabled", workerEnabled: false, noMutationExecuted: true });
+    const blockedGate = evaluateSupplierMirrorRuntimeGate({
+      explicitWorkerEnabled: true,
+      supplier: unapprovedSupplier,
+    });
+    expect(blockedGate).toMatchObject({
+      status: "blocked",
+      workerEnabled: false,
+    });
+    expect(blockedGate.reasons).toEqual(
+      expect.arrayContaining([
+        "supplier is not enabled after CEO approval",
+        "runtime readiness is not approved",
+        "CEO confirmation is still required",
+      ]),
+    );
+    expect(
+      evaluateSupplierMirrorRuntimeGate({
+        explicitWorkerEnabled: true,
+        supplier: approvedSupplier,
+      }),
+    ).toMatchObject({ status: "enabled", workerEnabled: true, reasons: [] });
   });
 
   it("records missing credentials and source gaps as blocked data without enabling runtime", async () => {

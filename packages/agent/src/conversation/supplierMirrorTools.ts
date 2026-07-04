@@ -1,8 +1,10 @@
 import type {
   SupplierItemSnapshot,
   SupplierLearnedFallbackPolicy,
+  SupplierMirrorLedgerRecord,
   SupplierMirrorNotificationEvent,
   SupplierPricingPolicy,
+  SupplierRegistryEntry,
   SupplierStockObservation,
   SupplierTargetMapping,
   SupplierTargetPolicy,
@@ -190,7 +192,136 @@ function summarizeNotification(event: SupplierMirrorNotificationEvent) {
   };
 }
 
+function readRecord(value: unknown): Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : {};
+}
+
+function readUnknownArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function summarizeReadinessSupplier(supplier: SupplierRegistryEntry) {
+  return {
+    id: supplier.id,
+    name: supplier.name,
+    enabled: supplier.enabled,
+    primarySource: supplier.primarySource,
+    runtimeEnabled: supplier.metadata.runtimeEnabled === true,
+    workerEnabled: supplier.metadata.workerEnabled === true,
+    requiresCeoConfirmation: supplier.metadata.requiresCeoConfirmation === true,
+  };
+}
+
+function summarizeLedger(record: SupplierMirrorLedgerRecord) {
+  return {
+    id: record.id,
+    actionType: record.actionType,
+    idempotencyKey: record.idempotencyKey,
+    status: record.status,
+    reason: record.reason,
+    evidenceIds: record.evidenceIds,
+    createdAt: record.createdAt,
+  };
+}
+
+function buildJinpengReadinessLedgerKeys(): readonly string[] {
+  return [
+    "supplier-mirror:jinpeng-bootstrap:target-proposal:maustian",
+    "supplier-mirror:jinpeng-bootstrap:target-proposal:plasticov",
+    "supplier-mirror:jinpeng-bootstrap:validation-skip:credentials",
+    "supplier-mirror:jinpeng-bootstrap:validation-skip:source-info",
+    "supplier-mirror:jinpeng-bootstrap:enablement-block",
+  ];
+}
+
 export function createSupplierMirrorTools(store: SupplierMirrorStore): ToolDefinition[] {
+  const reviewReadiness: ToolDefinition = {
+    name: "review_supplier_mirror_readiness",
+    description:
+      "Reviews Jinpeng Supplier Mirror readiness for the CEO using local bootstrap evidence. Read-only; it does not expose worker selection, enable workers, or execute external mutations.",
+    parameters: {
+      type: "object",
+      properties: {
+        supplierId: { type: "string" },
+      },
+      required: [],
+    },
+    execute: async (args) => {
+      const supplierId = readString(args.supplierId) ?? "jinpeng";
+      const supplier = await store.getSupplier(supplierId);
+      if (supplier === null) {
+        return {
+          status: "blocked",
+          supplierId,
+          missingDecisions: ["Run the Jinpeng bootstrap before reviewing readiness."],
+          failures: ["supplier bootstrap report is missing"],
+          noMutationExecuted: true,
+          workerSelectionExposed: false,
+        };
+      }
+
+      const metadata = supplier.metadata;
+      const identity = readRecord(metadata.mlIdentity);
+      const sources = readRecord(metadata.sources);
+      const missingCredentials = readStringArray(metadata.missingCredentials);
+      const missingSourceInfo = readStringArray(metadata.missingSourceInfo);
+      const targetProposals = readUnknownArray(metadata.targetProposals);
+      const policy = await store.resolveTargetPolicy({
+        supplierId,
+        supplierItemId: "__readiness__",
+      });
+      const ledgerRecords = (
+        await Promise.all(
+          buildJinpengReadinessLedgerKeys().map((key) => store.getLedgerByIdempotencyKey(key)),
+        )
+      ).filter((record): record is SupplierMirrorLedgerRecord => record !== null);
+      const failures = [
+        ...missingCredentials.map((name) => `Missing credential: ${name}`),
+        ...missingSourceInfo.map((name) => `Missing source information: ${name}`),
+        ...(identity.verified === true ? [] : ["Supplier identity is not verified"]),
+        ...(policy === null ? ["Target policy proposal is missing"] : []),
+      ];
+      const missingDecisions = [
+        ...(identity.sellerId === undefined && identity.nickname === undefined
+          ? ["Confirm Jinpeng MercadoLibre seller id or nickname."]
+          : []),
+        ...(missingCredentials.length > 0 ? ["Provide MercadoLibre runtime credentials."] : []),
+        ...(metadata.defaultLowStockThreshold === undefined
+          ? ["Confirm low-stock threshold for Jinpeng."]
+          : []),
+        ...(supplier.enabled &&
+        metadata.runtimeEnabled === true &&
+        metadata.requiresCeoConfirmation !== true
+          ? []
+          : ["Approve runtime enablement after readiness is validated."]),
+      ];
+
+      return {
+        status: failures.length > 0 ? "blocked" : "ready-for-ceo-decision",
+        supplier: summarizeReadinessSupplier(supplier),
+        identity: {
+          sellerId: identity.sellerId ?? null,
+          nickname: identity.nickname ?? null,
+          profileUrl: identity.profileUrl ?? null,
+          verified: identity.verified === true,
+        },
+        authority: {
+          mlStockAuthority: sources.mlStockAuthority ?? "missing",
+          xkpEnrichment: sources.xkpEnrichment ?? "missing",
+        },
+        policy: policy === null ? null : summarizePolicy(policy),
+        targetProposals,
+        failures,
+        missingDecisions,
+        ledgerEvidence: ledgerRecords.map(summarizeLedger),
+        noMutationExecuted: true,
+        workerSelectionExposed: false,
+      };
+    },
+  };
+
   const reviewOpportunities: ToolDefinition = {
     name: "review_supplier_mirror_opportunities",
     description:
@@ -481,6 +612,7 @@ export function createSupplierMirrorTools(store: SupplierMirrorStore): ToolDefin
   };
 
   return [
+    reviewReadiness,
     reviewOpportunities,
     reviewNotifications,
     proposePricingPolicy,
