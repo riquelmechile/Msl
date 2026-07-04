@@ -540,12 +540,32 @@ describe("Supplier Mirror CEO tools and pricing policy", () => {
       policy: { kind: "fixed-uplift-clp", amount: 50000 },
       normalized: "+50000 CLP",
     });
+    expect(parseSupplierPricingPolicyText("usar x2.5 para Maustian")).toEqual({
+      status: "parsed",
+      policy: { kind: "multiplier", multiplier: 2.5 },
+      normalized: "x2.5",
+    });
+    expect(parseSupplierPricingPolicyText("usar ×2,5 para Maustian")).toEqual({
+      status: "parsed",
+      policy: { kind: "multiplier", multiplier: 2.5 },
+      normalized: "x2.5",
+    });
     expect(
       applySupplierPricingPolicy({
         supplierPrice: 25000,
         policy: { kind: "multiplier", multiplier: 4 },
       }),
     ).toMatchObject({ status: "priced", proposedPrice: 100000 });
+  });
+
+  it("blocks invalid pricing multipliers before proposal output", () => {
+    expect(parseSupplierPricingPolicyText("usar x0 para Jinpeng")).toMatchObject({
+      status: "missing-policy",
+      missingInputs: ["positive pricing multiplier such as x2, x2.5, x3, or +CLP uplift"],
+    });
+    expect(parseSupplierPricingPolicyText("usar x-2 para Jinpeng")).toMatchObject({
+      status: "missing-policy",
+    });
   });
 
   it("reviews supplier opportunities and notifications without worker selection or mutation", async () => {
@@ -597,9 +617,15 @@ describe("Supplier Mirror CEO tools and pricing policy", () => {
       pricing: { status: "priced", proposedPrice: 24000 },
       noMutationExecuted: true,
     });
+    expect(tool.execute({ policyText: "x2.5", supplierPrice: 12001 })).toMatchObject({
+      status: "proposal-prepared",
+      policy: { kind: "multiplier", multiplier: 2.5 },
+      pricing: { status: "priced", proposedPrice: 30003 },
+      noMutationExecuted: true,
+    });
     expect(tool.execute({ policyText: "decidilo vos", supplierPrice: 12000 })).toMatchObject({
       status: "missing-policy",
-      missingInputs: ["pricing policy: x2, x3, x4, or +CLP uplift"],
+      missingInputs: ["pricing policy: x2, x2.5, x3, x4, or +CLP uplift"],
       noMutationExecuted: true,
     });
 
