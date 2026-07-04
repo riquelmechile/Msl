@@ -8,7 +8,7 @@
 | Configured review budget | 800 changed lines |
 | 400-line budget risk | High |
 | Chained PRs recommended | Yes |
-| Suggested split | PR 1 store/types → PR 2 sources → PR 3a worker foundation → PR 3b monitor/pause → PR 4 CEO tools/pricing → PR 5 Cortex/cost/docs |
+| Suggested split | PR 1 store/types → PR 2 sources → PR 3 worker foundation → PR 4 monitor/pause → PR 5 CEO tools/pricing → PR 6 Cortex/cost/docs |
 | Delivery strategy | auto-forecast |
 | Chain strategy | stacked-to-main |
 
@@ -23,10 +23,10 @@ Chain strategy: stacked-to-main
 |------|------|-----------|-------|
 | 1 | Domain and operational store | PR 1 | Tests with in-memory SQLite; no runtime polling. |
 | 2 | ML/API-first source adapters | PR 2 | Depends on PR 1; scraper fallback is evidence-only. |
-| 3a | Worker foundation | PR 3a | Depends on PR 1-2; disabled-by-default scheduler, registry, rate limiter, and ingestion persistence only. |
-| 3b | Monitor, verification, pause | PR 3b | Depends on PR 3a; pause only after verified policy and explicit `targetSellerIds` membership. |
-| 4 | CEO tools, lane wiring, pricing policy | PR 4 | Depends on PR 1-3; proposal-first UX. |
-| 5 | Cortex learning, DeepSeek evidence, docs | PR 5 | Depends on PR 4; cost/cache proof and rollout docs. |
+| 3 | Worker foundation | PR 3 | Depends on PR 1-2; disabled-by-default scheduler, registry, rate limiter, and ingestion persistence only. |
+| 4 | Monitor, verification, pause | PR 4 | Depends on PR 3; pause only after verified policy and explicit `targetSellerIds` membership. |
+| 5 | CEO tools, lane wiring, pricing policy | PR 5 | Depends on PR 1-4; proposal-first UX. |
+| 6 | Cortex learning, DeepSeek evidence, docs | PR 6 | Depends on PR 5; cost/cache proof and rollout docs. |
 
 ## Non-Goals and Safety Gates
 
