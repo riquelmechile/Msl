@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:e2e": "node scripts/run-e2e.mjs",
     "smoke:deepseek:tool": "npm run build --workspace @msl/agent && node scripts/deepseek-tool-smoke.mjs",
+    "supplier-mirror:jinpeng:dry-run": "npm run build --workspace @msl/workers && node scripts/supplier-mirror-jinpeng-bootstrap.mjs --dry-run",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

@@ -8,8 +8,8 @@ Standard. Strict TDD is disabled in `openspec/config.yaml`.
 
 - Delivery strategy: auto-chain
 - Chain strategy: stacked-to-main
-- Current work unit: PR3 / Phase 3 — CEO Readiness and Runtime Gates
-- Boundary: builds on PR2 bootstrap evidence; adds exported bootstrap service/types, a CEO-facing local readiness review tool, explicit runtime gate evaluation, and targeted tests. CLI/docs/smoke, publishing, pausing, price updates, external API calls, and credential storage remain out of scope.
+- Current work unit: PR4 / Phase 4 — CLI, Docs, and Smoke Path
+- Boundary: builds on PR3 runtime gates; adds a safe admin CLI/npm dry-run command, operator docs, and smoke/test coverage. Publishing, pausing, price updates, worker enablement, credential storage, and external API calls remain out of scope.
 - Estimated review budget impact: focused stacked PR slice within the configured 800-line budget.
 
 ## Completed Tasks
@@ -26,6 +26,10 @@ Standard. Strict TDD is disabled in `openspec/config.yaml`.
 - [x] 3.2 Added `review_supplier_mirror_readiness` in `packages/agent/src/conversation/supplierMirrorTools.ts` to return local identity, authority, policy, failure, missing-decision, and ledger evidence without exposing worker selection.
 - [x] 3.3 Added agent and worker tests proving readiness review is read-only, asks for unresolved seller IDs/credentials/threshold/approval, and runtime gates block worker enablement unless explicit config plus readiness approval are present.
 - [x] 3.4 Fixed PR3 verification failure so scheduler startup fails closed when `runtimeGate` is missing or blocked, and starts only when the runtime gate explicitly approves worker enablement.
+- [x] 4.1 Created `scripts/supplier-mirror-jinpeng-bootstrap.mjs` defaulting to `--dry-run` and requiring `MSL_SUPPLIER_MIRROR_DB_PATH` before opening SQLite.
+- [x] 4.2 Added `supplier-mirror:jinpeng:dry-run` to `package.json` and kept CLI evidence explicit that no publish, pause, price update, worker enablement, external API, or secret storage occurs.
+- [x] 4.3 Updated `docs/supplier-mirror.md` with required env/config, dry-run command, missing credential behavior, XKP enrichment limits, CEO/operator review checklist, and runtime enablement gate.
+- [x] 4.4 Added focused CLI tests in `scripts/supplier-mirror-jinpeng-bootstrap.test.mjs` and verified full test/typecheck/lint/format plus no-credential smoke.
 
 ## Verification
 
@@ -37,6 +41,13 @@ Standard. Strict TDD is disabled in `openspec/config.yaml`.
 - `npm run lint` — passed
 - `npm run format:check` — passed
 - PR3 fix verification: `npm test -- --run packages/workers/src/workers.test.ts`, `npm test`, `npm run typecheck`, `npm run lint`, and `npm run format:check` — passed
+- `npm test -- --run scripts/supplier-mirror-jinpeng-bootstrap.test.mjs packages/workers/src/workers.test.ts` — passed
+- `MSL_SUPPLIER_MIRROR_DB_PATH="/tmp/opencode/jinpeng-bootstrap-smoke.sqlite" npm run supplier-mirror:jinpeng:dry-run` — passed with blocked no-credential readiness report and no mutation evidence
+- `npm test -- --run tests/api-chat-auth.test.ts packages/mcp/src/mcp.test.ts` — passed after the first full-suite run exposed transient 5s timeouts in those files
+- `npm test` — passed (43 files, 1247 tests)
+- `npm run typecheck` — passed
+- `npm run lint` — passed
+- `npm run format:check` — passed
 
 ## Safety Notes
 
@@ -46,7 +57,8 @@ Standard. Strict TDD is disabled in `openspec/config.yaml`.
 - The readiness tool reads only local Supplier Mirror store state and stable ledger keys; it returns `noMutationExecuted: true` and `workerSelectionExposed: false`.
 - `evaluateSupplierMirrorRuntimeGate` keeps workers disabled unless `MSL_SUPPLIER_MIRROR_WORKER_ENABLED` is explicitly true and stored supplier readiness/CEO approval are already satisfied.
 - `startSupplierMirrorScheduler` now also fails closed unless the caller supplies an approved runtime gate; `enabled: true` alone cannot start the worker.
+- The CLI requires an explicit SQLite path from env, redacts credential/config values to presence booleans, and reports external mutation flags as false.
 
 ## Remaining Tasks
 
-- [ ] Phase 4: CLI, Docs, and Verification
+- None. All planned implementation phases are complete; ready for SDD verification.

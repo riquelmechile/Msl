@@ -10,6 +10,43 @@ Supplier Mirror mirrors supplier evidence into the CEO workflow without exposing
 4. Allow emergency pause only for verified stock breaks and approved target policies.
 5. Keep publication and price updates proposal-only until a later autonomy gate is approved.
 
+## Jinpeng dry-run bootstrap
+
+Run the Jinpeng bootstrap as an admin/operator smoke path before any runtime enablement decision. It opens only the SQLite database named by env, writes local disabled seed/readiness evidence, and prints a redacted report.
+
+```bash
+MSL_SUPPLIER_MIRROR_DB_PATH=/absolute/path/to/supplier-mirror.sqlite \
+MSL_JINPENG_ML_SELLER_ID=<operator-provided seller id> \
+MSL_JINPENG_XKP_URL=https://www.xkp.cl/products \
+npm run supplier-mirror:jinpeng:dry-run
+```
+
+### Required and optional env
+
+| Env                                                         | Required for ready report | Notes                                                                    |
+| ----------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------ |
+| `MSL_SUPPLIER_MIRROR_DB_PATH`                               | Yes                       | Explicit SQLite path. The script has no default DB path.                 |
+| `MSL_JINPENG_ML_SELLER_ID` or `MSL_JINPENG_ML_NICKNAME`     | Yes                       | Supplier identity evidence; values stay in runtime env/operator records. |
+| `MSL_JINPENG_ML_PROFILE_URL`                                | No                        | Optional supporting identity evidence.                                   |
+| `MSL_JINPENG_XKP_URL`                                       | Yes                       | Enrichment source URL only; XKP is not stock authority.                  |
+| `MSL_MAUSTIAN_SELLER_ID`                                    | No                        | Defaults to `maustian` if omitted. Use real seller ID outside git.       |
+| `MSL_PLASTICOV_SELLER_ID`                                   | No                        | Defaults to `plasticov` if omitted. Use real seller ID outside git.      |
+| `MELI_ACCESS_TOKEN`, `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET` | Yes for ready report      | Presence is reported; secret values are not stored or printed.           |
+
+### What the operator/CEO reviews
+
+- `readinessReport.status`: `blocked` means missing credentials/source decisions; `ready-for-ceo-decision` still requires explicit CEO approval before runtime.
+- `missingCredentials` and `missingSourceInfo`: resolve these outside git and rerun the dry-run.
+- `targetProposals`: Maustian uses proposed `x2.5` owned/improved titles and descriptions; Plasticov uses proposed `x2`. Both remain proposals requiring CEO confirmation.
+- `ledgerIds`: stable local evidence for skipped validation, target proposals, and blocked/deferred enablement.
+- `safety`: confirm `noMutationExecuted: true`, `workerEnabled: false`, and all external mutation flags are `false`.
+
+### Safety boundaries
+
+- The dry-run does not publish listings, pause listings, update prices, enable the worker, store secrets, or call external APIs.
+- MercadoLibre remains the stock authority. XKP enrichment may support catalog/spec/photo/description context but MUST NOT override ML stock evidence.
+- Runtime workers remain disabled unless `MSL_SUPPLIER_MIRROR_WORKER_ENABLED=true` and stored Jinpeng readiness has been explicitly approved after CEO confirmation.
+
 ## Safety gates
 
 | Gate             | Requirement                                                                                                                                                                  |
