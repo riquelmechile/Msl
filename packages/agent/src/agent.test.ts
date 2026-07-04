@@ -9,9 +9,18 @@ import { hasRejectionPattern, resolveTurnOutcome } from "./conversation/agentLoo
 import { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
 import { createCompanyAgentLearningStore } from "./conversation/companyAgentLearningStore.js";
 import { createRequestAgentEvidenceTool } from "./conversation/tools.js";
-import { createGraphEngine } from "@msl/memory";
+import {
+  createGraphEngine,
+  createSqliteSupplierMirrorStore,
+  type SupplierMirrorStore,
+} from "@msl/memory";
 import { EscribanoObserver } from "./conversation/escribano.js";
 import type { AgentProposal, ConversationState } from "./conversation/types.js";
+import {
+  applySupplierPricingPolicy,
+  createSupplierMirrorTools,
+  parseSupplierPricingPolicyText,
+} from "./conversation/supplierMirrorTools.js";
 
 const context: BusinessContext = {
   sellerId: "seller-1",
@@ -435,6 +444,156 @@ describe("durable company agent learning store", () => {
     );
 
     expect(store.listAgentLessons().map((lesson) => lesson.lessonId)).toEqual(["lesson:valid"]);
+
+    db.close();
+  });
+});
+
+async function seedSupplierMirrorStore(store: SupplierMirrorStore): Promise<void> {
+  await store.upsertSupplier({
+    id: "jinpeng",
+    name: "Jinpeng",
+    enabled: true,
+    primarySource: "mercadolibre-api",
+    metadata: {},
+    createdAt: "2026-07-04T00:00:00.000Z",
+    updatedAt: "2026-07-04T00:00:00.000Z",
+  });
+  await store.upsertSupplierItemSnapshot({
+    supplierId: "jinpeng",
+    supplierItemId: "jp-1",
+    mlItemId: "MLC-SUP-1",
+    title: "Supplier Pump",
+    categoryId: "MLC1743",
+    price: 25000,
+    currency: "CLP",
+    snapshot: { brand: "Jinpeng" },
+    source: "mercadolibre-api",
+    confidence: "high",
+    freshness: "fresh",
+    evidenceId: "evidence:item-1",
+    capturedAt: "2026-07-04T00:01:00.000Z",
+  });
+  await store.recordStockObservation({
+    id: "stock-1",
+    supplierId: "jinpeng",
+    supplierItemId: "jp-1",
+    source: "mercadolibre-api",
+    authority: "stock-authoritative",
+    quantity: 2,
+    status: "low-stock",
+    confidence: "high",
+    evidenceId: "evidence:stock-1",
+    capturedAt: "2026-07-04T00:02:00.000Z",
+  });
+  await store.upsertTargetPolicy({
+    scopeType: "supplier",
+    scopeId: "jinpeng",
+    supplierId: "jinpeng",
+    targetSellerIds: ["plasticov"],
+    lowStockThreshold: 3,
+    autoPauseAllowed: false,
+    pricingPolicy: { kind: "multiplier", multiplier: 3 },
+  });
+  await store.upsertTargetMapping({
+    supplierId: "jinpeng",
+    supplierItemId: "jp-1",
+    targetSellerId: "plasticov",
+    targetItemId: "MLC-TARGET-1",
+    policyRef: { scopeType: "supplier", scopeId: "jinpeng", supplierId: "jinpeng" },
+    state: "approved",
+    approvedAt: "2026-07-04T00:03:00.000Z",
+    evidenceIds: ["evidence:mapping-1"],
+  });
+  await store.recordNotificationEvent({
+    id: "notify-1",
+    type: "pause-deferred",
+    status: "pending",
+    supplierId: "jinpeng",
+    supplierItemId: "jp-1",
+    targetSellerId: "plasticov",
+    targetItemId: "MLC-TARGET-1",
+    reason: "Auto-pause disabled by policy.",
+    evidenceIds: ["evidence:stock-1"],
+    metadata: { policy: "manual" },
+    createdAt: "2026-07-04T00:04:00.000Z",
+  });
+}
+
+describe("Supplier Mirror CEO tools and pricing policy", () => {
+  it("parses and applies deterministic multiplier and CLP uplift policies", () => {
+    expect(parseSupplierPricingPolicyText("usar x3 para Jinpeng")).toEqual({
+      status: "parsed",
+      policy: { kind: "multiplier", multiplier: 3 },
+      normalized: "x3",
+    });
+    expect(parseSupplierPricingPolicyText("sumar +50.000 CLP")).toEqual({
+      status: "parsed",
+      policy: { kind: "fixed-uplift-clp", amount: 50000 },
+      normalized: "+50000 CLP",
+    });
+    expect(
+      applySupplierPricingPolicy({
+        supplierPrice: 25000,
+        policy: { kind: "multiplier", multiplier: 4 },
+      }),
+    ).toMatchObject({ status: "priced", proposedPrice: 100000 });
+  });
+
+  it("reviews supplier opportunities and notifications without worker selection or mutation", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteSupplierMirrorStore(db);
+    await seedSupplierMirrorStore(store);
+
+    const tools = new Map(createSupplierMirrorTools(store).map((tool) => [tool.name, tool]));
+    const opportunities = await tools.get("review_supplier_mirror_opportunities")!.execute({
+      supplierId: "jinpeng",
+    });
+    const notifications = await tools.get("review_supplier_mirror_notifications")!.execute({
+      supplierId: "jinpeng",
+    });
+
+    expect(opportunities).toMatchObject({
+      status: "ready",
+      noMutationExecuted: true,
+      workerSelectionExposed: false,
+      opportunities: [
+        {
+          supplier: { id: "jinpeng" },
+          item: { supplierItemId: "jp-1", price: 25000 },
+          latestStockObservation: { status: "low-stock", evidenceId: "evidence:stock-1" },
+          mappings: [{ targetSellerId: "plasticov", state: "approved" }],
+          policy: { targetSellerIds: ["plasticov"], pricingPolicy: { kind: "multiplier" } },
+        },
+      ],
+    });
+    expect(notifications).toMatchObject({
+      status: "ready",
+      noMutationExecuted: true,
+      events: [{ id: "notify-1", type: "pause-deferred" }],
+    });
+
+    db.close();
+  });
+
+  it("prepares Supplier Mirror pricing proposals without changing prices", () => {
+    const db = new Database(":memory:");
+    const store = createSqliteSupplierMirrorStore(db);
+    const tool = createSupplierMirrorTools(store).find(
+      (candidate) => candidate.name === "propose_supplier_mirror_pricing_policy",
+    )!;
+
+    expect(tool.execute({ policyText: "x2", supplierPrice: 12000 })).toMatchObject({
+      status: "proposal-prepared",
+      policy: { kind: "multiplier", multiplier: 2 },
+      pricing: { status: "priced", proposedPrice: 24000 },
+      noMutationExecuted: true,
+    });
+    expect(tool.execute({ policyText: "decidilo vos", supplierPrice: 12000 })).toMatchObject({
+      status: "missing-policy",
+      missingInputs: ["pricing policy: x2, x3, x4, or +CLP uplift"],
+      noMutationExecuted: true,
+    });
 
     db.close();
   });

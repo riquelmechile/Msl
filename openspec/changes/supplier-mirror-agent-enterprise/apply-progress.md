@@ -2,16 +2,16 @@
 
 ## Mode
 
-Standard apply mode. Strict TDD is not active; focused behavior/unit tests were added with the PR 1, PR 2, PR 3a, and PR 4/PR 3b work units.
+Standard apply mode. Strict TDD is not active; focused behavior/unit tests were added with the PR 1, PR 2, PR 3a, PR 4/PR 3b, and PR 5/Phase 4 work units.
 
 ## Delivery Boundary
 
 - Strategy: stacked-to-main chained PRs.
-- Previous slices: PR 1 — domain types and operational store; PR 2 — supplier source adapter interfaces and read-only source adapters; PR 3a — disabled-by-default worker foundation.
-- Current slice: PR 4 (formerly PR 3b) — stock-break verification and safe pause/defer workflow.
-- Starts from: PR 3a worker foundation branch stack with existing OpenSpec and Engram apply-progress merged from observation #1436.
-- Ends at: monitor candidate selection, authoritative stock-break verification, safe pause/defer planner, ledger records, CEO notification event records, and explicit `mapping.targetSellerId` membership enforcement against `policy.targetSellerIds` before any pause executor call.
-- Out of scope for this slice: broad CEO Telegram tool UX, CEO prompt rewrites, pricing policy parsing/proposals, Cortex learning, DeepSeek routing/cost implementation, blind publishing, mass price mutation, and any changes to the old Plasticov→Maustian sync guard.
+- Previous slices: PR 1 — domain types and operational store; PR 2 — supplier source adapter interfaces and read-only source adapters; PR 3a — disabled-by-default worker foundation; PR 4/PR 3b — stock-break verification and safe pause/defer workflow.
+- Current slice: PR 5/Phase 4 — CEO-facing Supplier Mirror read/proposal tools and deterministic pricing policy foundation.
+- Starts from: PR 4 safe pause branch stack with existing OpenSpec and Engram apply-progress merged from observation #1436.
+- Ends at: CEO-only tools for supplier opportunities, notification events, mappings/policies, proposal-only pricing policy calculation, deterministic parsing for `x2`, `x3`, `x4`, and fixed CLP uplift, lane/agent-loop wiring that keeps supplier workers hidden, and focused tests.
+- Out of scope for this slice: Cortex fallback learning persistence, DeepSeek runtime model routing integration, rollout docs, blind publishing, direct price mutation, direct worker selection UX, broad Telegram UI rewrites, and any changes to the old Plasticov→Maustian sync guard.
 
 ## Completed Tasks
 
@@ -29,12 +29,12 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - [x] 3.4 Create monitor candidate selection, stock-break verifier, and pause/defer planner.
 - [x] 3.5 Enforce that each approved mapping target is present in `policy.targetSellerIds` before any pause execution.
 - [x] 3.6 Test confirmed break pause, target-policy mismatch deferral, inconclusive skip/alert, idempotency keys, ledger records, and CEO notification events.
+- [x] 4.1 Create `packages/agent/src/conversation/supplierMirrorTools.ts` for evidence reads, policy proposals, decisions, and mirror requests.
+- [x] 4.2 Update `packages/agent/src/conversation/lanes.ts` and `agentLoop.ts` to keep supplier workers hidden and CEO-only.
+- [x] 4.3 Add pricing policy parsing/resolution for `x2`, `x3`, `x4`, fixed CLP uplift, learned, and missing-policy CEO prompts; test proposal flow.
 
 ## Deferred Tasks
 
-- [ ] 4.1 Create `packages/agent/src/conversation/supplierMirrorTools.ts` for evidence reads, policy proposals, decisions, and mirror requests.
-- [ ] 4.2 Update `packages/agent/src/conversation/lanes.ts` and `agentLoop.ts` to keep supplier workers hidden and CEO-only.
-- [ ] 4.3 Add pricing policy parsing/resolution for `x2`, `x3`, `x4`, fixed CLP uplift, learned, and missing-policy CEO prompts; test proposal flow.
 - [ ] 5.1 Record Cortex lessons for pricing, target policy, stock handling, suppressions, failures, and rejected outcomes.
 - [ ] 5.2 Add DeepSeek V4 Flash/Pro selection plus cache hit/miss, token, cost, and reason evidence to existing cost ledger tests.
 - [ ] 5.3 Document rollout, safety gates, supplier onboarding, and stacked PR verification in `docs/supplier-mirror.md`.
@@ -58,6 +58,10 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - `npm run lint` — passed.
 - `npm run format:check` — passed.
 - `npm test` — passed, 42 files / 1231 tests.
+- `npm test -- packages/agent/src/agent.test.ts` — passed, 1 file / 30 tests.
+- `npm run typecheck` — passed.
+- `npm run lint` — passed.
+- `npm run format:check` — passed.
 
 ## Notes
 
@@ -74,6 +78,9 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - Emergency pause execution is only reached after verified stock-authoritative, high-confidence stock-break evidence, `autoPauseAllowed`, and explicit membership of `mapping.targetSellerId` in `policy.targetSellerIds`.
 - If the mapping target seller is no longer allowed by policy, the monitor records a deferred ledger entry plus CEO notification event and does not call the injected pause executor.
 - Inconclusive verification records a CEO notification event without pause mutation or ledger execution.
+- PR 5/Phase 4 adds CEO-facing Supplier Mirror tools only when a `supplierMirrorStore` is injected into the agent loop; tools are read/proposal-only and return `noMutationExecuted`/`workerSelectionExposed: false` evidence.
+- Deterministic pricing policy parsing supports `x2`, `x3`, `x4`, and fixed CLP uplift forms like `+50,000 CLP`; unsupported natural language returns a missing-policy CEO prompt instead of guessing.
+- Supplier Mirror notification review required adding a bounded `listNotificationEvents()` read method to the operational store; it is read-only and capped by limit.
 
 ## PR 1 Verification Fixes
 

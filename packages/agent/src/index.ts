@@ -103,6 +103,13 @@ export {
 export type { LaneContract, LaneOutput, CacheTelemetry, LaneId } from "./conversation/lanes.js";
 export { LANE_CONTRACTS, getLaneContract } from "./conversation/lanes.js";
 
+export {
+  applySupplierPricingPolicy,
+  createSupplierMirrorTools,
+  parseSupplierPricingPolicyText,
+} from "./conversation/supplierMirrorTools.js";
+export type { ParsedSupplierPricingPolicy } from "./conversation/supplierMirrorTools.js";
+
 export type {
   CompanyAgent,
   CompanyAgentId,

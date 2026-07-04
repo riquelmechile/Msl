@@ -155,6 +155,10 @@ export type SupplierMirrorStore = {
     event: SupplierMirrorNotificationEvent,
   ): Promise<SupplierMirrorNotificationEvent>;
   getNotificationEvent(id: string): Promise<SupplierMirrorNotificationEvent | null>;
+  listNotificationEvents(filter?: {
+    supplierId?: SupplierId;
+    limit?: number;
+  }): Promise<SupplierMirrorNotificationEvent[]>;
   saveNotificationPreference(preference: SupplierNotificationPreference): Promise<void>;
   getNotificationPreference(
     scopeType: SupplierTargetPolicyScopeType,
@@ -554,6 +558,12 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
   const getNotificationEventStmt = db.prepare(
     "SELECT * FROM supplier_mirror_notification_events WHERE id = ?",
   );
+  const listNotificationEventsStmt = db.prepare(`
+    SELECT * FROM supplier_mirror_notification_events
+    WHERE (@supplierId IS NULL OR supplier_id = @supplierId)
+    ORDER BY created_at DESC, id ASC
+    LIMIT @limit
+  `);
   const upsertLearnedPolicyStmt = db.prepare(`
     INSERT INTO learned_fallback_policies
       (id, policy_type, scope_json, decision_json, confidence, evidence_ids_json, status)
@@ -735,6 +745,15 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
     async getNotificationEvent(id) {
       const row = getNotificationEventStmt.get(id) as NotificationEventRow | undefined;
       return row ? notificationEventFromRow(row) : null;
+    },
+    async listNotificationEvents(filter = {}) {
+      const limit = Math.max(1, Math.min(filter.limit ?? 20, 50));
+      return (
+        listNotificationEventsStmt.all({
+          supplierId: filter.supplierId ?? null,
+          limit,
+        }) as NotificationEventRow[]
+      ).map(notificationEventFromRow);
     },
     async saveNotificationPreference(preference) {
       upsertPreferenceStmt.run(

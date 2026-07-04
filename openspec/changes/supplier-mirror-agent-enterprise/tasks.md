@@ -59,9 +59,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: CEO Tools and Pricing
 
-- [ ] 4.1 Create `packages/agent/src/conversation/supplierMirrorTools.ts` for evidence reads, policy proposals, decisions, and mirror requests.
-- [ ] 4.2 Update `packages/agent/src/conversation/lanes.ts` and `agentLoop.ts` to keep supplier workers hidden and CEO-only.
-- [ ] 4.3 Add pricing policy parsing/resolution for `x2`, `x3`, `x4`, fixed CLP uplift, learned, and missing-policy CEO prompts; test proposal flow.
+- [x] 4.1 Create `packages/agent/src/conversation/supplierMirrorTools.ts` for evidence reads, policy proposals, decisions, and mirror requests.
+- [x] 4.2 Update `packages/agent/src/conversation/lanes.ts` and `agentLoop.ts` to keep supplier workers hidden and CEO-only.
+- [x] 4.3 Add pricing policy parsing/resolution for `x2`, `x3`, `x4`, fixed CLP uplift, learned, and missing-policy CEO prompts; test proposal flow.
 
 ## Phase 5: Cortex, Cost, Docs
 
