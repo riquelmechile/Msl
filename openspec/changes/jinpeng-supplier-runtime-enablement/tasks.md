@@ -42,9 +42,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: CEO Readiness and Runtime Gates
 
-- [ ] 3.1 Export bootstrap types/service from `packages/workers/src/supplierMirror/index.ts` without enabling the scheduler by default.
-- [ ] 3.2 Add `review_supplier_mirror_readiness` to `packages/agent/src/conversation/supplierMirrorTools.ts` that returns identity, authority, policy, failures, and ledger evidence.
-- [ ] 3.3 Add tests in `packages/agent/src/agent.test.ts` proving the readiness tool is read-only and asks for unresolved seller IDs, credentials, threshold, or approval.
+- [x] 3.1 Export bootstrap types/service from `packages/workers/src/supplierMirror/index.ts` without enabling the scheduler by default.
+- [x] 3.2 Add `review_supplier_mirror_readiness` to `packages/agent/src/conversation/supplierMirrorTools.ts` that returns identity, authority, policy, failures, and ledger evidence.
+- [x] 3.3 Add tests in `packages/agent/src/agent.test.ts` proving the readiness tool is read-only and asks for unresolved seller IDs, credentials, threshold, or approval.
 
 ## Phase 4: CLI, Docs, and Verification
 

@@ -12,6 +12,8 @@ import type {
   SupplierTargetPolicy,
 } from "@msl/domain";
 
+export * from "./jinpengBootstrap.js";
+
 export const supplierMirrorDefaultPollIntervalMs = 10 * 60 * 1000;
 
 export type SupplierMirrorWorkerOptions = {
@@ -22,6 +24,7 @@ export type SupplierMirrorWorkerOptions = {
 
 export type SupplierMirrorSchedulerOptions = SupplierMirrorWorkerOptions & {
   enabled?: boolean;
+  runtimeGate?: SupplierMirrorRuntimeGateResult;
   intervalMs?: number;
   jitterMs?: number;
   setIntervalFn?: typeof setInterval;
@@ -36,6 +39,18 @@ export type SupplierMirrorWorkerCycleResult = {
   itemsPersisted: number;
   observationsPersisted: number;
   evidenceIds: readonly string[];
+};
+
+export type SupplierMirrorRuntimeGateConfig = {
+  explicitWorkerEnabled: boolean;
+  supplier: SupplierRegistryEntry | null;
+};
+
+export type SupplierMirrorRuntimeGateResult = {
+  workerEnabled: boolean;
+  status: "enabled" | "disabled" | "blocked";
+  reasons: readonly string[];
+  noMutationExecuted: true;
 };
 
 type SupplierMirrorScheduledRuntime = {
@@ -204,11 +219,64 @@ export function createSupplierMirrorRateLimiter(
   };
 }
 
+export function parseSupplierMirrorWorkerEnabled(env: NodeJS.ProcessEnv): boolean {
+  return env.MSL_SUPPLIER_MIRROR_WORKER_ENABLED === "true";
+}
+
+export function evaluateSupplierMirrorRuntimeGate(
+  config: SupplierMirrorRuntimeGateConfig,
+): SupplierMirrorRuntimeGateResult {
+  if (!config.explicitWorkerEnabled) {
+    return {
+      workerEnabled: false,
+      status: "disabled",
+      reasons: ["MSL_SUPPLIER_MIRROR_WORKER_ENABLED is not explicitly true"],
+      noMutationExecuted: true,
+    };
+  }
+
+  const supplier = config.supplier;
+  const reasons: string[] = [];
+  if (supplier === null) {
+    reasons.push("supplier is not registered");
+  } else {
+    if (!supplier.enabled) reasons.push("supplier is not enabled after CEO approval");
+    if (supplier.metadata.runtimeEnabled !== true)
+      reasons.push("runtime readiness is not approved");
+    if (supplier.metadata.requiresCeoConfirmation === true) {
+      reasons.push("CEO confirmation is still required");
+    }
+    if (
+      Array.isArray(supplier.metadata.missingCredentials) &&
+      supplier.metadata.missingCredentials.length > 0
+    ) {
+      reasons.push("runtime credentials are missing");
+    }
+    if (
+      Array.isArray(supplier.metadata.missingSourceInfo) &&
+      supplier.metadata.missingSourceInfo.length > 0
+    ) {
+      reasons.push("source identity or enrichment information is missing");
+    }
+  }
+
+  if (reasons.length > 0) {
+    return { workerEnabled: false, status: "blocked", reasons, noMutationExecuted: true };
+  }
+
+  return {
+    workerEnabled: true,
+    status: "enabled",
+    reasons: [],
+    noMutationExecuted: true,
+  };
+}
+
 export function startSupplierMirrorScheduler(
   options: SupplierMirrorSchedulerOptions,
 ): SupplierMirrorScheduledRuntime {
   const intervalMs = options.intervalMs ?? supplierMirrorDefaultPollIntervalMs;
-  if (options.enabled !== true) {
+  if (options.enabled !== true || options.runtimeGate?.workerEnabled !== true) {
     return { enabled: false, intervalMs, stop: () => undefined };
   }
 

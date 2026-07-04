@@ -604,6 +604,143 @@ describe("Supplier Mirror CEO tools and pricing policy", () => {
     db.close();
   });
 
+  it("reviews Jinpeng readiness from bootstrap evidence without enabling runtime", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteSupplierMirrorStore(db);
+    await store.upsertSupplier({
+      id: "jinpeng",
+      name: "Jinpeng / XKP",
+      enabled: false,
+      primarySource: "mercadolibre-api",
+      metadata: {
+        runtimeEnabled: false,
+        workerEnabled: false,
+        requiresCeoConfirmation: true,
+        defaultLowStockThreshold: 2,
+        mlIdentity: { sellerId: "123456", nickname: "JINPENG-CL", verified: true },
+        sources: { mlStockAuthority: "validated", xkpEnrichment: "validated" },
+        targetProposals: [
+          {
+            target: "maustian",
+            sellerId: "maustian-ml",
+            pricing: "x2.5",
+            contentPolicy: "owned/improved titles and descriptions",
+            requiresCeoConfirmation: true,
+          },
+        ],
+        missingCredentials: [],
+        missingSourceInfo: [],
+      },
+      createdAt: "2026-07-04T00:00:00.000Z",
+      updatedAt: "2026-07-04T00:00:00.000Z",
+    });
+    await store.upsertTargetPolicy({
+      scopeType: "supplier",
+      scopeId: "jinpeng",
+      supplierId: "jinpeng",
+      targetSellerIds: ["maustian-ml", "plasticov-ml"],
+      lowStockThreshold: 2,
+      autoPauseAllowed: false,
+    });
+    await store.appendLedger({
+      id: "supplier-mirror:ledger:jinpeng:enablement-block",
+      actionType: "defer",
+      idempotencyKey: "supplier-mirror:jinpeng-bootstrap:enablement-block",
+      status: "deferred",
+      reason: "jinpeng-awaits-ceo-confirmation",
+      supplierId: "jinpeng",
+      evidenceIds: ["supplier-mirror:jinpeng:readiness-report"],
+      before: null,
+      after: { enabled: false, workerEnabled: false, noMutationExecuted: true },
+      createdAt: "2026-07-04T00:05:00.000Z",
+    });
+
+    const tool = createSupplierMirrorTools(store).find(
+      (candidate) => candidate.name === "review_supplier_mirror_readiness",
+    )!;
+    const readiness = await tool.execute({ supplierId: "jinpeng" });
+
+    expect(readiness).toMatchObject({
+      status: "ready-for-ceo-decision",
+      supplier: {
+        id: "jinpeng",
+        enabled: false,
+        runtimeEnabled: false,
+        workerEnabled: false,
+      },
+      identity: { sellerId: "123456", verified: true },
+      authority: { mlStockAuthority: "validated", xkpEnrichment: "validated" },
+      policy: { targetSellerIds: ["maustian-ml", "plasticov-ml"], lowStockThreshold: 2 },
+      failures: [],
+      missingDecisions: ["Approve runtime enablement after readiness is validated."],
+      ledgerEvidence: [{ id: "supplier-mirror:ledger:jinpeng:enablement-block" }],
+      noMutationExecuted: true,
+      workerSelectionExposed: false,
+    });
+
+    await expect(store.listEnabledSuppliers()).resolves.toEqual([]);
+    db.close();
+  });
+
+  it("asks for unresolved Jinpeng seller IDs, credentials, threshold, and approval", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteSupplierMirrorStore(db);
+    await store.upsertSupplier({
+      id: "jinpeng",
+      name: "Jinpeng / XKP",
+      enabled: false,
+      primarySource: "mercadolibre-api",
+      metadata: {
+        runtimeEnabled: false,
+        workerEnabled: false,
+        requiresCeoConfirmation: true,
+        mlIdentity: { verified: false },
+        sources: { mlStockAuthority: "missing", xkpEnrichment: "missing" },
+        missingCredentials: ["MELI_ACCESS_TOKEN"],
+        missingSourceInfo: ["MSL_JINPENG_ML_SELLER_ID or MSL_JINPENG_ML_NICKNAME"],
+      },
+      createdAt: "2026-07-04T00:00:00.000Z",
+      updatedAt: "2026-07-04T00:00:00.000Z",
+    });
+
+    const tool = createSupplierMirrorTools(store).find(
+      (candidate) => candidate.name === "review_supplier_mirror_readiness",
+    )!;
+
+    const readiness = (await tool.execute({ supplierId: "jinpeng" })) as {
+      status: string;
+      failures: readonly string[];
+      missingDecisions: readonly string[];
+      noMutationExecuted: boolean;
+      workerSelectionExposed: boolean;
+    };
+
+    expect(readiness).toMatchObject({
+      status: "blocked",
+      noMutationExecuted: true,
+      workerSelectionExposed: false,
+    });
+    expect(readiness.failures).toEqual(
+      expect.arrayContaining([
+        "Missing credential: MELI_ACCESS_TOKEN",
+        "Missing source information: MSL_JINPENG_ML_SELLER_ID or MSL_JINPENG_ML_NICKNAME",
+        "Supplier identity is not verified",
+        "Target policy proposal is missing",
+      ]),
+    );
+    expect(readiness.missingDecisions).toEqual(
+      expect.arrayContaining([
+        "Confirm Jinpeng MercadoLibre seller id or nickname.",
+        "Provide MercadoLibre runtime credentials.",
+        "Confirm low-stock threshold for Jinpeng.",
+        "Approve runtime enablement after readiness is validated.",
+      ]),
+    );
+
+    await expect(store.listEnabledSuppliers()).resolves.toEqual([]);
+    db.close();
+  });
+
   it("prepares Supplier Mirror pricing proposals without changing prices", () => {
     const db = new Database(":memory:");
     const store = createSqliteSupplierMirrorStore(db);
