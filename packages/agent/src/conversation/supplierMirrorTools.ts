@@ -23,12 +23,21 @@ export type ParsedSupplierPricingPolicy =
 
 export function parseSupplierPricingPolicyText(text: string): ParsedSupplierPricingPolicy {
   const normalized = text.trim().toLowerCase().replace(/\s+/g, " ");
-  const multiplier = normalized.match(/(?:^|\b)(?:x|×)\s*([234])(?:\b|$)/u);
+  const multiplier = normalized.match(/(?:^|\s)(?:x|×)\s*([0-9]+(?:[.,][0-9]+)?)(?:\b|$)/u);
   if (multiplier) {
+    const multiplierValue = Number(multiplier[1]!.replace(",", "."));
+    if (!Number.isFinite(multiplierValue) || multiplierValue <= 0) {
+      return {
+        status: "missing-policy",
+        missingInputs: ["positive pricing multiplier such as x2, x2.5, x3, or +CLP uplift"],
+        prompt:
+          "Ask the CEO to choose a positive supplier pricing multiplier such as x2, x2.5, x3, or +50,000 CLP before preparing price proposals.",
+      };
+    }
     return {
       status: "parsed",
-      policy: { kind: "multiplier", multiplier: Number(multiplier[1]) as 2 | 3 | 4 },
-      normalized: `x${multiplier[1]}`,
+      policy: { kind: "multiplier", multiplier: multiplierValue },
+      normalized: `x${multiplierValue}`,
     };
   }
 
@@ -48,9 +57,9 @@ export function parseSupplierPricingPolicyText(text: string): ParsedSupplierPric
 
   return {
     status: "missing-policy",
-    missingInputs: ["pricing policy: x2, x3, x4, or +CLP uplift"],
+    missingInputs: ["pricing policy: x2, x2.5, x3, x4, or +CLP uplift"],
     prompt:
-      "Ask the CEO to choose a supplier pricing policy such as x2, x3, x4, or +50,000 CLP before preparing price proposals.",
+      "Ask the CEO to choose a supplier pricing policy such as x2, x2.5, x3, x4, or +50,000 CLP before preparing price proposals.",
   };
 }
 
@@ -268,7 +277,7 @@ export function createSupplierMirrorTools(store: SupplierMirrorStore): ToolDefin
   const proposePricingPolicy: ToolDefinition = {
     name: "propose_supplier_mirror_pricing_policy",
     description:
-      "Parses deterministic CEO pricing policies like x2, x3, x4, or +50,000 CLP and prepares a proposal-only price calculation. It never changes MercadoLibre prices.",
+      "Parses deterministic CEO pricing policies like x2, x2.5, x3, x4, or +50,000 CLP and prepares a proposal-only price calculation. It never changes MercadoLibre prices.",
     parameters: {
       type: "object",
       properties: {

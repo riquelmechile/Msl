@@ -84,7 +84,7 @@ export type SupplierTargetMapping = {
 export type SupplierTargetPolicyScopeType = "supplier" | "category" | "item";
 
 export type SupplierPricingPolicy =
-  | { kind: "multiplier"; multiplier: 2 | 3 | 4 }
+  | { kind: "multiplier"; multiplier: number }
   | { kind: "fixed-uplift-clp"; amount: number }
   | { kind: "learned"; policyId: SupplierMirrorPolicyId };
 
