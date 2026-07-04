@@ -48,7 +48,7 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: CLI, Docs, and Verification
 
-- [ ] 4.1 Create `scripts/supplier-mirror-jinpeng-bootstrap.mjs` defaulting to `--dry-run` and opening the configured SQLite store only from env.
-- [ ] 4.2 Add `supplier-mirror:jinpeng:dry-run` to `package.json` and ensure no publish, pause, or price-update client is called.
-- [ ] 4.3 Update `docs/supplier-mirror.md` with env names, dry-run command, missing credential behavior, XKP enrichment limits, and enablement gate.
-- [ ] 4.4 Verify with `npm test`, `npm run typecheck`, `npm run lint`, `npm run format:check`, and no-credential CLI smoke.
+- [x] 4.1 Create `scripts/supplier-mirror-jinpeng-bootstrap.mjs` defaulting to `--dry-run` and opening the configured SQLite store only from env.
+- [x] 4.2 Add `supplier-mirror:jinpeng:dry-run` to `package.json` and ensure no publish, pause, or price-update client is called.
+- [x] 4.3 Update `docs/supplier-mirror.md` with env names, dry-run command, missing credential behavior, XKP enrichment limits, and enablement gate.
+- [x] 4.4 Verify with `npm test`, `npm run typecheck`, `npm run lint`, `npm run format:check`, and no-credential CLI smoke.
