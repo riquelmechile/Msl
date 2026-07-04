@@ -65,6 +65,6 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Cortex, Cost, Docs
 
-- [ ] 5.1 Record Cortex lessons for pricing, target policy, stock handling, suppressions, failures, and rejected outcomes.
-- [ ] 5.2 Add DeepSeek V4 Flash/Pro selection plus cache hit/miss, token, cost, and reason evidence to existing cost ledger tests.
-- [ ] 5.3 Document rollout, safety gates, supplier onboarding, and stacked PR verification in `docs/supplier-mirror.md`.
+- [x] 5.1 Record Cortex lessons for pricing, target policy, stock handling, suppressions, failures, and rejected outcomes.
+- [x] 5.2 Add DeepSeek V4 Flash/Pro selection plus cache hit/miss, token, cost, and reason evidence to existing cost ledger tests.
+- [x] 5.3 Document rollout, safety gates, supplier onboarding, and stacked PR verification in `docs/supplier-mirror.md`.

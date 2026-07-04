@@ -1,5 +1,6 @@
 import type {
   SupplierItemSnapshot,
+  SupplierLearnedFallbackPolicy,
   SupplierMirrorNotificationEvent,
   SupplierPricingPolicy,
   SupplierStockObservation,
@@ -9,6 +10,12 @@ import type {
 import type { SupplierMirrorStore } from "@msl/memory";
 
 import type { ToolDefinition } from "./tools.js";
+import {
+  buildSupplierMirrorDeepSeekPromptPlan,
+  estimateSupplierMirrorDeepSeekCostMicros,
+  selectSupplierMirrorDeepSeekModel,
+  SUPPLIER_MIRROR_DEEPSEEK_PRICING,
+} from "./supplierMirrorDeepSeekPolicy.js";
 
 export type ParsedSupplierPricingPolicy =
   | { status: "parsed"; policy: SupplierPricingPolicy; normalized: string }
@@ -76,6 +83,40 @@ function readString(value: unknown): string | undefined {
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim()] : []))
+    : [];
+}
+
+function slugSegment(value: string, fallback: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9:_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug || fallback;
+}
+
+function normalizeFallbackPolicyType(value: unknown): SupplierLearnedFallbackPolicy["policyType"] {
+  const normalized = readString(value)?.toLowerCase();
+  switch (normalized) {
+    case "pricing":
+    case "targeting":
+    case "stock":
+    case "notification":
+    case "error-outcome":
+      return normalized;
+    default:
+      return "notification";
+  }
 }
 
 function newestObservation(
@@ -261,5 +302,180 @@ export function createSupplierMirrorTools(store: SupplierMirrorStore): ToolDefin
     },
   };
 
-  return [reviewOpportunities, reviewNotifications, proposePricingPolicy];
+  const recordFallbackLesson: ToolDefinition = {
+    name: "record_supplier_mirror_fallback_lesson",
+    description:
+      "Records a CEO-approved Supplier Mirror fallback lesson or notification suppression. Local persistence only; no external messages, listing changes, or price mutations are executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        lessonType: {
+          type: "string",
+          enum: ["pricing", "targeting", "stock", "notification", "error-outcome"],
+        },
+        supplierId: { type: "string" },
+        supplierItemId: { type: "string" },
+        categoryId: { type: "string" },
+        alertType: { type: "string" },
+        decisionText: { type: "string" },
+        suppressNotifications: { type: "boolean" },
+        evidenceIds: { type: "array", items: { type: "string" } },
+      },
+      required: ["lessonType", "supplierId", "decisionText"],
+    },
+    execute: async (args) => {
+      const supplierId = readString(args.supplierId);
+      const decisionText = readString(args.decisionText);
+      const lessonType = normalizeFallbackPolicyType(args.lessonType);
+      const supplierItemId = readString(args.supplierItemId);
+      const categoryId = readString(args.categoryId);
+      const alertType = readString(args.alertType) ?? lessonType;
+      const evidenceIds = readStringArray(args.evidenceIds);
+      const missingInputs: string[] = [];
+      if (!supplierId) missingInputs.push("supplierId");
+      if (!decisionText) missingInputs.push("decisionText");
+      if (missingInputs.length > 0) {
+        return { status: "blocked", missingInputs, noMutationExecuted: true };
+      }
+
+      const scopeType = supplierItemId ? "item" : categoryId ? "category" : "supplier";
+      const scopeId = supplierItemId ?? categoryId ?? supplierId!;
+      const policyId = [
+        "supplier-mirror",
+        lessonType,
+        slugSegment(supplierId!, "supplier"),
+        slugSegment(scopeType, "scope"),
+        slugSegment(scopeId, "scope-id"),
+        slugSegment(alertType, "alert"),
+      ].join(":");
+      const suppressNotifications = readBoolean(args.suppressNotifications);
+
+      await store.upsertLearnedFallbackPolicy({
+        id: policyId,
+        policyType: lessonType,
+        scope: {
+          supplierId,
+          scopeType,
+          scopeId,
+          ...(supplierItemId ? { supplierItemId } : {}),
+          ...(categoryId ? { categoryId } : {}),
+          ...(alertType ? { alertType } : {}),
+        },
+        decision: {
+          decisionText,
+          suppressNotifications,
+          recordedFrom: "ceo-workflow",
+        },
+        confidence: "medium",
+        evidenceIds,
+        status: suppressNotifications || lessonType !== "notification" ? "active" : "proposed",
+      });
+
+      if (suppressNotifications) {
+        await store.saveNotificationPreference({
+          scopeType,
+          scopeId,
+          preference: {
+            suppress: true,
+            alertType,
+            supplierId,
+            learnedFallbackPolicyId: policyId,
+            reason: decisionText,
+          },
+        });
+      }
+
+      return {
+        status: "recorded",
+        learnedFallbackPolicyId: policyId,
+        notificationPreferenceSaved: suppressNotifications,
+        scope: { scopeType, scopeId, supplierId },
+        noMutationExecuted: true,
+      };
+    },
+  };
+
+  const planDeepSeekUsage: ToolDefinition = {
+    name: "plan_supplier_mirror_deepseek_usage",
+    description:
+      "Builds Supplier Mirror DeepSeek V4 Flash/Pro routing and cache/cost metadata for CEO evidence planning. It does not call DeepSeek or store prompts.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["supplier-extraction", "supplier-classification", "policy-conflict"],
+        },
+        hardPolicyConflict: { type: "boolean" },
+        supplierId: { type: "string" },
+        supplierName: { type: "string" },
+        targetSellerIds: { type: "array", items: { type: "string" } },
+        policySummary: { type: "string" },
+        evidenceIds: { type: "array", items: { type: "string" } },
+        promptCacheHitTokens: { type: "number", minimum: 0 },
+        promptCacheMissTokens: { type: "number", minimum: 0 },
+        outputTokens: { type: "number", minimum: 0 },
+      },
+      required: ["operation", "supplierId", "supplierName"],
+    },
+    execute: (args) => {
+      const supplierId = readString(args.supplierId);
+      const supplierName = readString(args.supplierName);
+      if (!supplierId || !supplierName) {
+        return {
+          status: "blocked",
+          missingInputs: [!supplierId ? "supplierId" : "supplierName"],
+          noMutationExecuted: true,
+        };
+      }
+      const model = selectSupplierMirrorDeepSeekModel({
+        operation:
+          args.operation === "policy-conflict"
+            ? "policy-conflict"
+            : args.operation === "supplier-classification"
+              ? "supplier-classification"
+              : "supplier-extraction",
+        hardPolicyConflict: readBoolean(args.hardPolicyConflict),
+      });
+      const promptPlan = buildSupplierMirrorDeepSeekPromptPlan({
+        supplierId,
+        supplierName,
+        targetSellerIds: readStringArray(args.targetSellerIds),
+        evidenceIds: readStringArray(args.evidenceIds),
+        ...(readString(args.policySummary) === undefined
+          ? {}
+          : { policySummary: readString(args.policySummary) }),
+      });
+      const estimatedCostMicros = estimateSupplierMirrorDeepSeekCostMicros({
+        model,
+        ...(readNumber(args.promptCacheHitTokens) === undefined
+          ? {}
+          : { promptCacheHitTokens: readNumber(args.promptCacheHitTokens) }),
+        ...(readNumber(args.promptCacheMissTokens) === undefined
+          ? {}
+          : { promptCacheMissTokens: readNumber(args.promptCacheMissTokens) }),
+        ...(readNumber(args.outputTokens) === undefined
+          ? {}
+          : { outputTokens: readNumber(args.outputTokens) }),
+      });
+      return {
+        status: "planned",
+        provider: "deepseek",
+        model,
+        pricing: SUPPLIER_MIRROR_DEEPSEEK_PRICING[model],
+        estimatedCostMicros,
+        currency: "USD",
+        promptPlan,
+        noMutationExecuted: true,
+      };
+    },
+  };
+
+  return [
+    reviewOpportunities,
+    reviewNotifications,
+    proposePricingPolicy,
+    recordFallbackLesson,
+    planDeepSeekUsage,
+  ];
 }

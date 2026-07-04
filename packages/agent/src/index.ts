@@ -142,6 +142,22 @@ export type {
   RecordAgentLessonInput,
 } from "./conversation/companyAgentLearningStore.js";
 export { createWorkforceCostCacheLedgerStore } from "./conversation/workforceCostCacheLedgerStore.js";
+export {
+  buildSupplierMirrorDeepSeekPromptPlan,
+  estimateSupplierMirrorDeepSeekCostMicros,
+  selectSupplierMirrorDeepSeekModel,
+  SUPPLIER_MIRROR_DEEPSEEK_PRICING,
+  SUPPLIER_MIRROR_DEEPSEEK_PROVIDER,
+  SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
+  SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
+} from "./conversation/supplierMirrorDeepSeekPolicy.js";
+export type {
+  SupplierMirrorDeepSeekModel,
+  SupplierMirrorDeepSeekOperation,
+  SupplierMirrorDeepSeekPricing,
+  SupplierMirrorDeepSeekPromptPlan,
+  SupplierMirrorDeepSeekPromptPlanInput,
+} from "./conversation/supplierMirrorDeepSeekPolicy.js";
 export type {
   ListWorkforceCostCacheLedgerEntriesFilter,
   RecordWorkforceCostCacheLedgerEntryInput,

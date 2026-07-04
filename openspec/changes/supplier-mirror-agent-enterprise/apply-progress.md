@@ -2,16 +2,16 @@
 
 ## Mode
 
-Standard apply mode. Strict TDD is not active; focused behavior/unit tests were added with the PR 1, PR 2, PR 3a, PR 4/PR 3b, and PR 5/Phase 4 work units.
+Standard apply mode. Strict TDD is not active; focused behavior/unit tests were added with the PR 1, PR 2, PR 3a, PR 4/PR 3b, PR 5/Phase 4, and final Phase 5 work units.
 
 ## Delivery Boundary
 
 - Strategy: stacked-to-main chained PRs.
-- Previous slices: PR 1 — domain types and operational store; PR 2 — supplier source adapter interfaces and read-only source adapters; PR 3a — disabled-by-default worker foundation; PR 4/PR 3b — stock-break verification and safe pause/defer workflow.
-- Current slice: PR 5/Phase 4 — CEO-facing Supplier Mirror read/proposal tools and deterministic pricing policy foundation.
+- Previous slices: PR 1 — domain types and operational store; PR 2 — supplier source adapter interfaces and read-only source adapters; PR 3a — disabled-by-default worker foundation; PR 4/PR 3b — stock-break verification and safe pause/defer workflow; PR 5/Phase 4 — CEO-facing Supplier Mirror read/proposal tools and deterministic pricing policy foundation.
+- Current slice: Final Phase 5 — Cortex fallback lessons, DeepSeek cost/cache evidence, and rollout docs.
 - Starts from: PR 4 safe pause branch stack with existing OpenSpec and Engram apply-progress merged from observation #1436.
-- Ends at: CEO-only tools for supplier opportunities, notification events, mappings/policies, proposal-only pricing policy calculation, deterministic parsing for `x2`, `x3`, `x4`, and fixed CLP uplift, lane/agent-loop wiring that keeps supplier workers hidden, and focused tests.
-- Out of scope for this slice: Cortex fallback learning persistence, DeepSeek runtime model routing integration, rollout docs, blind publishing, direct price mutation, direct worker selection UX, broad Telegram UI rewrites, and any changes to the old Plasticov→Maustian sync guard.
+- Ends at: CEO-only fallback lesson/suppression persistence, DeepSeek V4 Flash/Pro routing metadata and official pricing constants, cacheable Supplier Mirror prompt-plan builder, cost ledger estimate enrichment for DeepSeek usage, rollout documentation, and focused tests.
+- Out of scope for this slice: Broad autonomous LLM behavior, DeepSeek secret/runtime model integration beyond bounded metadata/cost evidence, blind publishing, direct price mutation, direct worker selection UX, broad Telegram UI rewrites, and any changes to the old Plasticov→Maustian sync guard.
 
 ## Completed Tasks
 
@@ -32,12 +32,13 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - [x] 4.1 Create `packages/agent/src/conversation/supplierMirrorTools.ts` for evidence reads, policy proposals, decisions, and mirror requests.
 - [x] 4.2 Update `packages/agent/src/conversation/lanes.ts` and `agentLoop.ts` to keep supplier workers hidden and CEO-only.
 - [x] 4.3 Add pricing policy parsing/resolution for `x2`, `x3`, `x4`, fixed CLP uplift, learned, and missing-policy CEO prompts; test proposal flow.
+- [x] 5.1 Record Cortex lessons for pricing, target policy, stock handling, suppressions, failures, and rejected outcomes.
+- [x] 5.2 Add DeepSeek V4 Flash/Pro selection plus cache hit/miss, token, cost, and reason evidence to existing cost ledger tests.
+- [x] 5.3 Document rollout, safety gates, supplier onboarding, and stacked PR verification in `docs/supplier-mirror.md`.
 
 ## Deferred Tasks
 
-- [ ] 5.1 Record Cortex lessons for pricing, target policy, stock handling, suppressions, failures, and rejected outcomes.
-- [ ] 5.2 Add DeepSeek V4 Flash/Pro selection plus cache hit/miss, token, cost, and reason evidence to existing cost ledger tests.
-- [ ] 5.3 Document rollout, safety gates, supplier onboarding, and stacked PR verification in `docs/supplier-mirror.md`.
+None.
 
 ## Verification
 
@@ -62,6 +63,10 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - `npm run typecheck` — passed.
 - `npm run lint` — passed.
 - `npm run format:check` — passed.
+- `npm test -- packages/agent/src/agent.test.ts` — passed, 1 file / 33 tests.
+- `npm run typecheck` — passed.
+- `npm run lint` — passed.
+- `npm run format:check` — passed.
 
 ## Notes
 
@@ -81,6 +86,10 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - PR 5/Phase 4 adds CEO-facing Supplier Mirror tools only when a `supplierMirrorStore` is injected into the agent loop; tools are read/proposal-only and return `noMutationExecuted`/`workerSelectionExposed: false` evidence.
 - Deterministic pricing policy parsing supports `x2`, `x3`, `x4`, and fixed CLP uplift forms like `+50,000 CLP`; unsupported natural language returns a missing-policy CEO prompt instead of guessing.
 - Supplier Mirror notification review required adding a bounded `listNotificationEvents()` read method to the operational store; it is read-only and capped by limit.
+- Final Phase 5 adds a CEO-only `record_supplier_mirror_fallback_lesson` tool that persists learned fallback policies and notification suppression preferences locally without external mutations.
+- Final Phase 5 adds `plan_supplier_mirror_deepseek_usage` plus `supplierMirrorDeepSeekPolicy.ts` with DeepSeek V4 Flash/Pro model selection, stable prefix/cacheable context planning, official cache hit/miss/output pricing constants, and cost estimate helpers.
+- Agent-loop DeepSeek usage ledger entries now include estimated USD micros when the model is `deepseek-v4-flash` or `deepseek-v4-pro`; the ledger still stores no raw prompts, responses, or secrets.
+- `docs/supplier-mirror.md` documents rollout, safety gates, supplier onboarding, staged autonomy, and stacked PR verification.
 
 ## PR 1 Verification Fixes
 
