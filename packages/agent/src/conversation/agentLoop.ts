@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { GraphEngine } from "@msl/memory";
+import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
   AgentProposal,
@@ -88,6 +88,7 @@ import type {
   WorkforceCacheStatus,
   WorkforceCostCacheLedgerStore,
 } from "./workforceCostCacheLedgerStore.js";
+import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -253,6 +254,12 @@ export type AgentLoopConfig = {
    * `companyAgentAdminAuthorized` is explicitly true.
    */
   workforceCostCacheLedgerStore?: WorkforceCostCacheLedgerStore;
+  /**
+   * Optional Supplier Mirror operational store. When provided, registers
+   * CEO-facing read/proposal tools only; supplier workers remain hidden and no
+   * external supplier or MercadoLibre mutation is executed by these tools.
+   */
+  supplierMirrorStore?: SupplierMirrorStore;
   /**
    * Explicit company-agent identity for read-only workforce lesson context.
    * Lessons are never inferred globally; without this target no lesson context
@@ -655,6 +662,11 @@ export function createAgentLoop(config: AgentLoopConfig) {
         authorized: true,
       }),
     );
+  }
+  if (config.supplierMirrorStore) {
+    for (const tool of createSupplierMirrorTools(config.supplierMirrorStore)) {
+      if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
+    }
   }
 
   // ── Create listing tool (new from scratch) ─────────────────────
