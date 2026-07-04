@@ -4,6 +4,7 @@ import type {
   SupplierItemSnapshot,
   SupplierLearnedFallbackPolicy,
   SupplierMirrorLedgerRecord,
+  SupplierMirrorNotificationEvent,
   SupplierNotificationPreference,
   SupplierRegistryEntry,
   SupplierStockObservation,
@@ -98,6 +99,20 @@ type PreferenceRow = {
   preference_json: string;
 };
 
+type NotificationEventRow = {
+  id: string;
+  type: string;
+  status: string;
+  supplier_id: string;
+  supplier_item_id: string | null;
+  target_seller_id: string | null;
+  target_item_id: string | null;
+  reason: string;
+  evidence_ids_json: string;
+  metadata_json: string;
+  created_at: string;
+};
+
 type LearnedFallbackPolicyRow = {
   id: string;
   policy_type: string;
@@ -136,6 +151,10 @@ export type SupplierMirrorStore = {
   }): Promise<SupplierTargetPolicy | null>;
   appendLedger(record: SupplierMirrorLedgerRecord): Promise<SupplierMirrorLedgerRecord>;
   getLedgerByIdempotencyKey(idempotencyKey: string): Promise<SupplierMirrorLedgerRecord | null>;
+  recordNotificationEvent(
+    event: SupplierMirrorNotificationEvent,
+  ): Promise<SupplierMirrorNotificationEvent>;
+  getNotificationEvent(id: string): Promise<SupplierMirrorNotificationEvent | null>;
   saveNotificationPreference(preference: SupplierNotificationPreference): Promise<void>;
   getNotificationPreference(
     scopeType: SupplierTargetPolicyScopeType,
@@ -245,6 +264,20 @@ export function migrateSupplierMirrorStore(db: Database.Database): void {
       PRIMARY KEY (scope_type, scope_id)
     );
 
+    CREATE TABLE IF NOT EXISTS supplier_mirror_notification_events (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      supplier_id TEXT NOT NULL,
+      supplier_item_id TEXT,
+      target_seller_id TEXT,
+      target_item_id TEXT,
+      reason TEXT NOT NULL,
+      evidence_ids_json TEXT NOT NULL,
+      metadata_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS learned_fallback_policies (
       id TEXT PRIMARY KEY,
       policy_type TEXT NOT NULL,
@@ -259,6 +292,7 @@ export function migrateSupplierMirrorStore(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_stock_observations_item ON stock_observations(supplier_id, supplier_item_id, captured_at DESC);
     CREATE INDEX IF NOT EXISTS idx_item_mappings_item ON item_mappings(supplier_id, supplier_item_id);
     CREATE INDEX IF NOT EXISTS idx_sync_ledger_supplier ON sync_ledger(supplier_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_supplier_mirror_notification_events_supplier ON supplier_mirror_notification_events(supplier_id, created_at DESC);
   `);
 
   const mappingColumns = db.prepare("PRAGMA table_info(item_mappings)").all() as Array<{
@@ -383,6 +417,22 @@ function preferenceFromRow(row: PreferenceRow): SupplierNotificationPreference {
   };
 }
 
+function notificationEventFromRow(row: NotificationEventRow): SupplierMirrorNotificationEvent {
+  return {
+    id: row.id,
+    type: row.type as SupplierMirrorNotificationEvent["type"],
+    status: row.status as SupplierMirrorNotificationEvent["status"],
+    supplierId: row.supplier_id,
+    ...(row.supplier_item_id === null ? {} : { supplierItemId: row.supplier_item_id }),
+    ...(row.target_seller_id === null ? {} : { targetSellerId: row.target_seller_id }),
+    ...(row.target_item_id === null ? {} : { targetItemId: row.target_item_id }),
+    reason: row.reason,
+    evidenceIds: parseJson<string[]>(row.evidence_ids_json) ?? [],
+    metadata: parseJson<Readonly<Record<string, unknown>>>(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+  };
+}
+
 function learnedPolicyFromRow(row: LearnedFallbackPolicyRow): SupplierLearnedFallbackPolicy {
   return {
     id: row.id,
@@ -494,6 +544,15 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
   `);
   const getPreferenceStmt = db.prepare(
     "SELECT * FROM notification_preferences WHERE scope_type = ? AND scope_id = ?",
+  );
+  const insertNotificationEventStmt = db.prepare(`
+    INSERT OR REPLACE INTO supplier_mirror_notification_events
+      (id, type, status, supplier_id, supplier_item_id, target_seller_id, target_item_id,
+       reason, evidence_ids_json, metadata_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const getNotificationEventStmt = db.prepare(
+    "SELECT * FROM supplier_mirror_notification_events WHERE id = ?",
   );
   const upsertLearnedPolicyStmt = db.prepare(`
     INSERT INTO learned_fallback_policies
@@ -656,6 +715,26 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
     async getLedgerByIdempotencyKey(idempotencyKey) {
       const row = getLedgerByIdempotencyStmt.get(idempotencyKey) as LedgerRow | undefined;
       return row ? ledgerFromRow(row) : null;
+    },
+    async recordNotificationEvent(event) {
+      insertNotificationEventStmt.run(
+        event.id,
+        event.type,
+        event.status,
+        event.supplierId,
+        event.supplierItemId ?? null,
+        event.targetSellerId ?? null,
+        event.targetItemId ?? null,
+        event.reason,
+        JSON.stringify(event.evidenceIds),
+        JSON.stringify(event.metadata),
+        event.createdAt,
+      );
+      return event;
+    },
+    async getNotificationEvent(id) {
+      const row = getNotificationEventStmt.get(id) as NotificationEventRow | undefined;
+      return row ? notificationEventFromRow(row) : null;
     },
     async saveNotificationPreference(preference) {
       upsertPreferenceStmt.run(

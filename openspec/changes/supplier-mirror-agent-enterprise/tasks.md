@@ -31,7 +31,7 @@ Chain strategy: stacked-to-main
 ## Non-Goals and Safety Gates
 
 - [x] G.1 Do not reuse `assertPlasticovToMaustianDirection` for Supplier Mirror targeting; use explicit `target_policies`.
-- [ ] G.2 Block blind mass publishing/price mutation; allow pause only after short verification, approved policy, ledger, and CEO notice. Deferred to PR 3b for pause execution enforcement.
+- [x] G.2 Block blind mass publishing/price mutation; allow pause only after short verification, approved policy, ledger, and CEO notice. Implemented in PR 4/PR 3b monitor-pause slice.
 
 ## Phase 1: Domain and Store
 
@@ -53,9 +53,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 3b: Stock-Break Verification and Safe Pause
 
-- [ ] 3.4 Create monitor candidate selection, stock-break verifier, and pause/defer planner.
-- [ ] 3.5 Enforce that each approved mapping target is present in `policy.targetSellerIds` before any pause execution.
-- [ ] 3.6 Test confirmed break pause, target-policy mismatch deferral, inconclusive skip/alert, idempotency keys, ledger records, and CEO notification events.
+- [x] 3.4 Create monitor candidate selection, stock-break verifier, and pause/defer planner.
+- [x] 3.5 Enforce that each approved mapping target is present in `policy.targetSellerIds` before any pause execution.
+- [x] 3.6 Test confirmed break pause, target-policy mismatch deferral, inconclusive skip/alert, idempotency keys, ledger records, and CEO notification events.
 
 ## Phase 4: CEO Tools and Pricing
 

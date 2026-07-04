@@ -2,17 +2,16 @@
 
 ## Mode
 
-Standard apply mode. Strict TDD is not active; focused behavior/unit tests were added with the PR 1, PR 2, and PR 3a work units.
+Standard apply mode. Strict TDD is not active; focused behavior/unit tests were added with the PR 1, PR 2, PR 3a, and PR 4/PR 3b work units.
 
 ## Delivery Boundary
 
 - Strategy: stacked-to-main chained PRs.
-- Previous slices: PR 1 — domain types and operational store; PR 2 — supplier source adapter interfaces and read-only source adapters.
-- Current slice: PR 3a — Supplier Mirror worker foundation only.
-- Starts from: PR 2 source adapter branch stack with existing OpenSpec and Engram apply-progress merged from observation #1436.
-- Ends at: Supplier Mirror workers service exported from `packages/workers/src/index.ts`, disabled-by-default ~10-minute scheduler, explicit adapter registry, per-supplier ingestion rate limiter, ingestion persistence, and focused worker foundation tests.
-- Deferred to PR 3b: monitor candidate selection, stock-break verification, safe pause/defer planner, ledger records, CEO notification events, and the required `mapping.targetSellerId` in `policy.targetSellerIds` enforcement before pause execution.
-- Out of scope for this slice: safe pause execution, CEO Telegram tool UX, broad CEO prompt rewrites, pricing policy parsing/proposals, Cortex learning, DeepSeek routing/cost implementation, blind publishing, mass price mutation, and any changes to the old Plasticov→Maustian sync guard.
+- Previous slices: PR 1 — domain types and operational store; PR 2 — supplier source adapter interfaces and read-only source adapters; PR 3a — disabled-by-default worker foundation.
+- Current slice: PR 4 (formerly PR 3b) — stock-break verification and safe pause/defer workflow.
+- Starts from: PR 3a worker foundation branch stack with existing OpenSpec and Engram apply-progress merged from observation #1436.
+- Ends at: monitor candidate selection, authoritative stock-break verification, safe pause/defer planner, ledger records, CEO notification event records, and explicit `mapping.targetSellerId` membership enforcement against `policy.targetSellerIds` before any pause executor call.
+- Out of scope for this slice: broad CEO Telegram tool UX, CEO prompt rewrites, pricing policy parsing/proposals, Cortex learning, DeepSeek routing/cost implementation, blind publishing, mass price mutation, and any changes to the old Plasticov→Maustian sync guard.
 
 ## Completed Tasks
 
@@ -26,13 +25,19 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - [x] 3.1 Create `packages/workers/src/supplierMirror/` registry, rate limiter, ingestion persistence, and disabled-by-default scheduler foundation.
 - [x] 3.2 Wire disabled-by-default runtime in `packages/workers/src/index.ts` with ~10-minute jitter and per-supplier ingestion limits.
 - [x] 3.3 Test registry, disabled scheduler, per-supplier rate limiting, and ingestion persistence in `packages/workers/src/workers.test.ts`.
+- [x] G.2 Block blind mass publishing/price mutation; allow pause only after short verification, approved policy, ledger, and CEO notice.
+- [x] 3.4 Create monitor candidate selection, stock-break verifier, and pause/defer planner.
+- [x] 3.5 Enforce that each approved mapping target is present in `policy.targetSellerIds` before any pause execution.
+- [x] 3.6 Test confirmed break pause, target-policy mismatch deferral, inconclusive skip/alert, idempotency keys, ledger records, and CEO notification events.
 
 ## Deferred Tasks
 
-- [ ] G.2 Block blind mass publishing/price mutation; allow pause only after short verification, approved policy, ledger, and CEO notice.
-- [ ] 3.4 Create monitor candidate selection, stock-break verifier, and pause/defer planner.
-- [ ] 3.5 Enforce that each approved mapping target is present in `policy.targetSellerIds` before any pause execution.
-- [ ] 3.6 Test confirmed break pause, target-policy mismatch deferral, inconclusive skip/alert, idempotency keys, ledger records, and CEO notification events.
+- [ ] 4.1 Create `packages/agent/src/conversation/supplierMirrorTools.ts` for evidence reads, policy proposals, decisions, and mirror requests.
+- [ ] 4.2 Update `packages/agent/src/conversation/lanes.ts` and `agentLoop.ts` to keep supplier workers hidden and CEO-only.
+- [ ] 4.3 Add pricing policy parsing/resolution for `x2`, `x3`, `x4`, fixed CLP uplift, learned, and missing-policy CEO prompts; test proposal flow.
+- [ ] 5.1 Record Cortex lessons for pricing, target policy, stock handling, suppressions, failures, and rejected outcomes.
+- [ ] 5.2 Add DeepSeek V4 Flash/Pro selection plus cache hit/miss, token, cost, and reason evidence to existing cost ledger tests.
+- [ ] 5.3 Document rollout, safety gates, supplier onboarding, and stacked PR verification in `docs/supplier-mirror.md`.
 
 ## Verification
 
@@ -48,6 +53,11 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - `npm run typecheck` — passed.
 - `npm run lint` — passed.
 - `npm run format:check` — passed.
+- `npm test -- packages/workers/src/workers.test.ts packages/memory/src/memory.test.ts` — passed, 2 files / 34 tests.
+- `npm run typecheck` — passed.
+- `npm run lint` — passed.
+- `npm run format:check` — passed.
+- `npm test` — passed, 42 files / 1231 tests.
 
 ## Notes
 
@@ -60,6 +70,10 @@ Standard apply mode. Strict TDD is not active; focused behavior/unit tests were 
 - PR 3a keeps Supplier Mirror runtime disabled by default. The scheduler uses a 10-minute default interval with jitter, and the service consumes explicit adapters/store ports so tests can mock ingestion without mutation scope.
 - PR 3b must restore stock-break verification and safe pause workflow with explicit policy target membership enforcement before any pause execution.
 - Per-supplier rate limiting is local to the worker foundation and skips ingestion cycles rather than forcing reads.
+- PR 4/PR 3b adds stock-break monitor candidate selection from enabled suppliers, snapshots, latest stock observations, approved mappings, and resolved policies.
+- Emergency pause execution is only reached after verified stock-authoritative, high-confidence stock-break evidence, `autoPauseAllowed`, and explicit membership of `mapping.targetSellerId` in `policy.targetSellerIds`.
+- If the mapping target seller is no longer allowed by policy, the monitor records a deferred ledger entry plus CEO notification event and does not call the injected pause executor.
+- Inconclusive verification records a CEO notification event without pause mutation or ledger execution.
 
 ## PR 1 Verification Fixes
 

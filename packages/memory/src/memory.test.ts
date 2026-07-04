@@ -383,6 +383,19 @@ describe("supplier mirror operational store", () => {
         evidenceIds: ["evidence-ceo-answer-1"],
         status: "proposed",
       });
+      await store.recordNotificationEvent({
+        id: "notification-1",
+        type: "pause-deferred",
+        status: "pending",
+        supplierId: "jinpeng",
+        supplierItemId: "XKP-001",
+        targetSellerId: "maustian",
+        targetItemId: "MLC200",
+        reason: "target-seller-not-allowed-by-policy",
+        evidenceIds: ["evidence-stock-1"],
+        metadata: { policyTargetSellerIds: ["plasticov"] },
+        createdAt: "2026-07-04T00:00:00.000Z",
+      });
 
       await expect(store.getNotificationPreference("supplier", "jinpeng")).resolves.toMatchObject({
         preference: { suppressLowConfidenceStock: true },
@@ -392,6 +405,14 @@ describe("supplier mirror operational store", () => {
         confidence: "medium",
         evidenceIds: ["evidence-ceo-answer-1"],
         status: "proposed",
+      });
+      await expect(store.getNotificationEvent("notification-1")).resolves.toMatchObject({
+        type: "pause-deferred",
+        status: "pending",
+        supplierId: "jinpeng",
+        targetSellerId: "maustian",
+        reason: "target-seller-not-allowed-by-policy",
+        evidenceIds: ["evidence-stock-1"],
       });
     } finally {
       db.close();
