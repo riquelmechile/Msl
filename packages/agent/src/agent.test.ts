@@ -21,6 +21,14 @@ import {
   createSupplierMirrorTools,
   parseSupplierPricingPolicyText,
 } from "./conversation/supplierMirrorTools.js";
+import {
+  buildSupplierMirrorDeepSeekPromptPlan,
+  estimateSupplierMirrorDeepSeekCostMicros,
+  selectSupplierMirrorDeepSeekModel,
+  SUPPLIER_MIRROR_DEEPSEEK_PRICING,
+  SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
+  SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
+} from "./conversation/supplierMirrorDeepSeekPolicy.js";
 
 const context: BusinessContext = {
   sellerId: "seller-1",
@@ -592,6 +600,112 @@ describe("Supplier Mirror CEO tools and pricing policy", () => {
     expect(tool.execute({ policyText: "decidilo vos", supplierPrice: 12000 })).toMatchObject({
       status: "missing-policy",
       missingInputs: ["pricing policy: x2, x3, x4, or +CLP uplift"],
+      noMutationExecuted: true,
+    });
+
+    db.close();
+  });
+
+  it("records CEO fallback lessons and notification suppressions locally", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteSupplierMirrorStore(db);
+    const tool = createSupplierMirrorTools(store).find(
+      (candidate) => candidate.name === "record_supplier_mirror_fallback_lesson",
+    )!;
+
+    const response = await tool.execute({
+      lessonType: "notification",
+      supplierId: "jinpeng",
+      supplierItemId: "jp-1",
+      alertType: "pause-deferred",
+      decisionText: "Do not notify me about this anymore.",
+      suppressNotifications: true,
+      evidenceIds: ["evidence:stock-1"],
+    });
+
+    expect(response).toMatchObject({
+      status: "recorded",
+      notificationPreferenceSaved: true,
+      noMutationExecuted: true,
+    });
+    const policyId = response.learnedFallbackPolicyId as string;
+    await expect(store.getLearnedFallbackPolicy(policyId)).resolves.toMatchObject({
+      policyType: "notification",
+      decision: { suppressNotifications: true },
+      evidenceIds: ["evidence:stock-1"],
+      status: "active",
+    });
+    await expect(store.getNotificationPreference("item", "jp-1")).resolves.toMatchObject({
+      preference: {
+        suppress: true,
+        alertType: "pause-deferred",
+        learnedFallbackPolicyId: policyId,
+      },
+    });
+
+    db.close();
+  });
+
+  it("plans DeepSeek V4 supplier usage with cacheable prefixes and official cost constants", () => {
+    expect(selectSupplierMirrorDeepSeekModel({ operation: "supplier-extraction" })).toBe(
+      SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
+    );
+    expect(selectSupplierMirrorDeepSeekModel({ operation: "policy-conflict" })).toBe(
+      SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
+    );
+    expect(SUPPLIER_MIRROR_DEEPSEEK_PRICING[SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH]).toMatchObject({
+      inputCacheHitMicrosPerMillionTokens: 2800,
+      inputCacheMissMicrosPerMillionTokens: 140000,
+      outputMicrosPerMillionTokens: 280000,
+    });
+    expect(
+      estimateSupplierMirrorDeepSeekCostMicros({
+        model: SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
+        promptCacheHitTokens: 1_000_000,
+        promptCacheMissTokens: 1_000_000,
+        outputTokens: 1_000_000,
+      }),
+    ).toBe(422800);
+
+    const plan = buildSupplierMirrorDeepSeekPromptPlan({
+      supplierId: "jinpeng",
+      supplierName: "Jinpeng",
+      targetSellerIds: ["maustian", "plasticov"],
+      policySummary: "x3 pricing, manual pause approval",
+      evidenceIds: ["evidence:price-1"],
+    });
+
+    expect(plan.stablePrefix).toContain("CEO only");
+    expect(plan.cacheableContextBlock).toContain("supplierId: jinpeng");
+    expect(plan.volatileContextBlock).toContain("evidence:price-1");
+    expect(plan.metadata).toMatchObject({
+      modelDefault: SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
+      modelEscalation: SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
+      cacheStrategy: "stable-prefix-plus-refreshable-evidence",
+    });
+  });
+
+  it("exposes a CEO-only DeepSeek planning tool without runtime model calls", () => {
+    const db = new Database(":memory:");
+    const store = createSqliteSupplierMirrorStore(db);
+    const tool = createSupplierMirrorTools(store).find(
+      (candidate) => candidate.name === "plan_supplier_mirror_deepseek_usage",
+    )!;
+
+    expect(
+      tool.execute({
+        operation: "policy-conflict",
+        supplierId: "jinpeng",
+        supplierName: "Jinpeng",
+        promptCacheHitTokens: 1000,
+        promptCacheMissTokens: 2000,
+        outputTokens: 500,
+      }),
+    ).toMatchObject({
+      status: "planned",
+      provider: "deepseek",
+      model: SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
+      currency: "USD",
       noMutationExecuted: true,
     });
 

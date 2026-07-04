@@ -89,6 +89,7 @@ import type {
   WorkforceCostCacheLedgerStore,
 } from "./workforceCostCacheLedgerStore.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
+import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
 
@@ -809,6 +810,17 @@ export function createAgentLoop(config: AgentLoopConfig) {
 
     try {
       const laneId = config.laneId ?? "ceo";
+      const tokenUsage = extractLedgerTokenUsage(llmResponse.usage.usage);
+      const estimatedCostMicros = estimateSupplierMirrorDeepSeekCostMicros({
+        model: llmResponse.usage.model,
+        ...(tokenUsage.promptCacheHitTokens === undefined
+          ? {}
+          : { promptCacheHitTokens: tokenUsage.promptCacheHitTokens }),
+        ...(tokenUsage.promptCacheMissTokens === undefined
+          ? {}
+          : { promptCacheMissTokens: tokenUsage.promptCacheMissTokens }),
+        ...(tokenUsage.outputTokens === undefined ? {} : { outputTokens: tokenUsage.outputTokens }),
+      });
       config.workforceCostCacheLedgerStore.insertEntry({
         entryId: `llm:${Date.now()}:${callIndex}`,
         agentId: laneId,
@@ -816,7 +828,8 @@ export function createAgentLoop(config: AgentLoopConfig) {
         provider: llmResponse.usage.provider,
         model: llmResponse.usage.model,
         operation: "chat.completion",
-        ...extractLedgerTokenUsage(llmResponse.usage.usage),
+        ...tokenUsage,
+        ...(estimatedCostMicros === undefined ? {} : { estimatedCostMicros, currency: "USD" }),
         metadata: { source: "agent_loop", callIndex },
       });
     } catch {
