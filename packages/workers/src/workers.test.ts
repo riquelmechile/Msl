@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   SupplierItemSnapshot,
+  SupplierMirrorLedgerRecord,
+  SupplierMirrorNotificationEvent,
   SupplierRegistryEntry,
   SupplierStockObservation,
+  SupplierTargetMapping,
+  SupplierTargetPolicy,
 } from "@msl/domain";
 
 import {
@@ -13,6 +17,7 @@ import {
   criticalSyncSignals,
   evaluateStaleCriticalSignal,
   persistSupplierMirrorIngestion,
+  runSupplierMirrorStockBreakMonitor,
   startSupplierMirrorScheduler,
   supplierMirrorDefaultPollIntervalMs,
   type SupplierMirrorStorePort,
@@ -140,6 +145,108 @@ describe("Supplier Mirror worker foundation", () => {
     expect(store.snapshots).toEqual([]);
     expect(store.stockObservations).toEqual([]);
   });
+
+  it("pauses a mapped listing only after authoritative stock-break verification and ledgers CEO notice", async () => {
+    const store = createMockSupplierMirrorMonitorStore({ policyTargetSellerIds: ["maustian"] });
+    const pause = vi.fn().mockResolvedValue({ status: "paused", evidenceId: "pause-evidence" });
+
+    const result = await runSupplierMirrorStockBreakMonitor({
+      store,
+      pauseExecutor: { pause },
+      now: () => new Date("2026-07-04T12:00:00.000Z"),
+    });
+
+    expect(pause).toHaveBeenCalledWith({
+      targetSellerId: "maustian",
+      targetItemId: "MLC-target-1",
+      idempotencyKey: "supplier-mirror:stock-break:pause:xkp:XKP-1:maustian:MLC-target-1",
+      evidenceIds: ["verified-stock-evidence", "verified-item-evidence", "mapping-evidence"],
+    });
+    expect(result).toMatchObject({
+      candidatesEvaluated: 1,
+      pausesExecuted: 1,
+      deferred: 0,
+      skipped: 0,
+    });
+    expect(store.ledgerRecords).toMatchObject([
+      {
+        actionType: "pause-listing",
+        status: "executed",
+        reason: "verified-stock-break-auto-pause-executed",
+        targetSellerId: "maustian",
+      },
+    ]);
+    expect(store.notificationEvents).toMatchObject([
+      {
+        type: "stock-break-confirmed",
+        status: "pending",
+        targetSellerId: "maustian",
+      },
+    ]);
+  });
+
+  it("defers and never calls the pause executor when the mapped target seller is no longer allowed by policy", async () => {
+    const store = createMockSupplierMirrorMonitorStore({ policyTargetSellerIds: ["plasticov"] });
+    const pause = vi.fn().mockResolvedValue({ status: "paused" });
+
+    const result = await runSupplierMirrorStockBreakMonitor({
+      store,
+      pauseExecutor: { pause },
+      now: () => new Date("2026-07-04T12:00:00.000Z"),
+    });
+
+    expect(pause).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      candidatesEvaluated: 1,
+      pausesExecuted: 0,
+      deferred: 1,
+      skipped: 0,
+    });
+    expect(store.ledgerRecords).toMatchObject([
+      {
+        actionType: "defer",
+        status: "deferred",
+        reason: "target-seller-not-allowed-by-policy",
+        targetSellerId: "maustian",
+      },
+    ]);
+    expect(store.notificationEvents).toMatchObject([
+      {
+        type: "pause-deferred",
+        reason: "target-seller-not-allowed-by-policy",
+        targetSellerId: "maustian",
+      },
+    ]);
+  });
+
+  it("records an inconclusive verification notification without pausing", async () => {
+    const store = createMockSupplierMirrorMonitorStore({
+      policyTargetSellerIds: ["maustian"],
+      observation: { confidence: "low", authority: "fallback-evidence" },
+    });
+    const pause = vi.fn().mockResolvedValue({ status: "paused" });
+
+    const result = await runSupplierMirrorStockBreakMonitor({
+      store,
+      pauseExecutor: { pause },
+      now: () => new Date("2026-07-04T12:00:00.000Z"),
+    });
+
+    expect(pause).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      candidatesEvaluated: 1,
+      pausesExecuted: 0,
+      deferred: 0,
+      skipped: 1,
+    });
+    expect(store.ledgerRecords).toEqual([]);
+    expect(store.notificationEvents).toMatchObject([
+      {
+        type: "verification-inconclusive",
+        reason: "stock-break-verification-inconclusive",
+      },
+    ]);
+  });
 });
 
 function createMockSupplierMirrorStore(): SupplierMirrorStorePort & {
@@ -228,6 +335,91 @@ function createMockSourceAdapter(
           },
         ],
       });
+    },
+  };
+}
+
+function createMockSupplierMirrorMonitorStore(input: {
+  policyTargetSellerIds: readonly string[];
+  observation?: Partial<
+    Pick<SupplierStockObservation, "authority" | "confidence" | "status" | "quantity">
+  >;
+}): SupplierMirrorStorePort & {
+  ledgerRecords: SupplierMirrorLedgerRecord[];
+  notificationEvents: SupplierMirrorNotificationEvent[];
+} {
+  const supplier: SupplierRegistryEntry = {
+    id: "xkp",
+    name: "Jinpeng / XKP",
+    enabled: true,
+    primarySource: "mercadolibre-api",
+    metadata: {},
+    createdAt: "2026-07-03T11:00:00.000Z",
+    updatedAt: "2026-07-03T11:00:00.000Z",
+  };
+  const snapshot: SupplierItemSnapshot = {
+    supplierId: "xkp",
+    supplierItemId: "XKP-1",
+    mlItemId: "MLC-supplier-1",
+    title: "Supplier item",
+    categoryId: "tires",
+    snapshot: {},
+    source: "mercadolibre-api",
+    confidence: "high",
+    freshness: "fresh",
+    evidenceId: "verified-item-evidence",
+    capturedAt: "2026-07-04T11:59:00.000Z",
+  };
+  const policy: SupplierTargetPolicy = {
+    scopeType: "supplier",
+    scopeId: "xkp",
+    supplierId: "xkp",
+    targetSellerIds: input.policyTargetSellerIds,
+    lowStockThreshold: 2,
+    autoPauseAllowed: true,
+  };
+  const observation: SupplierStockObservation = {
+    id: "stock-observation-1",
+    supplierId: "xkp",
+    supplierItemId: "XKP-1",
+    source: "mercadolibre-api",
+    authority: input.observation?.authority ?? "stock-authoritative",
+    quantity: input.observation?.quantity ?? 0,
+    status: input.observation?.status ?? "out-of-stock",
+    confidence: input.observation?.confidence ?? "high",
+    evidenceId: "verified-stock-evidence",
+    capturedAt: "2026-07-04T11:59:30.000Z",
+  };
+  const mapping: SupplierTargetMapping = {
+    supplierId: "xkp",
+    supplierItemId: "XKP-1",
+    targetSellerId: "maustian",
+    targetItemId: "MLC-target-1",
+    policyRef: { scopeType: "supplier", scopeId: "xkp", supplierId: "xkp" },
+    state: "approved",
+    approvedAt: "2026-07-04T11:00:00.000Z",
+    evidenceIds: ["mapping-evidence"],
+  };
+  const ledgerRecords: SupplierMirrorLedgerRecord[] = [];
+  const notificationEvents: SupplierMirrorNotificationEvent[] = [];
+
+  return {
+    ledgerRecords,
+    notificationEvents,
+    listEnabledSuppliers: () => Promise.resolve([supplier]),
+    upsertSupplierItemSnapshot: () => Promise.resolve(),
+    recordStockObservation: () => Promise.resolve(),
+    listSupplierItemSnapshots: () => Promise.resolve([snapshot]),
+    listStockObservations: () => Promise.resolve([observation]),
+    listTargetMappings: () => Promise.resolve([mapping]),
+    resolveTargetPolicy: () => Promise.resolve(policy),
+    appendLedger(record) {
+      ledgerRecords.push(record);
+      return Promise.resolve(record);
+    },
+    recordNotificationEvent(event) {
+      notificationEvents.push(event);
+      return Promise.resolve(event);
     },
   };
 }

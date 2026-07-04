@@ -123,6 +123,25 @@ export type SupplierMirrorLedgerRecord = {
   createdAt: string;
 };
 
+export type SupplierMirrorNotificationEventType =
+  | "stock-break-confirmed"
+  | "pause-deferred"
+  | "verification-inconclusive";
+
+export type SupplierMirrorNotificationEvent = {
+  id: string;
+  type: SupplierMirrorNotificationEventType;
+  status: "pending" | "recorded";
+  supplierId: SupplierId;
+  supplierItemId?: SupplierItemId;
+  targetSellerId?: SellerId;
+  targetItemId?: string;
+  reason: string;
+  evidenceIds: readonly SupplierEvidenceId[];
+  metadata: Readonly<Record<string, unknown>>;
+  createdAt: string;
+};
+
 export type SupplierNotificationPreference = {
   scopeType: SupplierTargetPolicyScopeType;
   scopeId: string;
