@@ -4,6 +4,8 @@
 > **Alcance:** Análisis completo de cuellos de botella, problemas de cohesión, desconexiones de base de datos y gaps agente↔LLM.
 > **Referencia:** Reemplaza y extiende `docs/observaciones.md`.
 
+> **Snapshot note:** This is a dated architectural analysis. Some gaps have since been closed by Agent Enterprise, Supplier Mirror, and Jinpeng readiness work. Use it as historical diagnosis, then verify current state against `ROADMAP.md`, `ARCHITECTURE.md`, and `docs/supplier-mirror.md`.
+
 ---
 
 ## Resumen Ejecutivo

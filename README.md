@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <code>1104+ tests</code> ·
+  <code>Vitest + Playwright</code> ·
   <code>TypeScript 5.8</code> ·
   <code>Node ≥22</code> ·
   <code>DeepSeek v4</code> ·
@@ -31,9 +31,17 @@ Read the canonical vision in [`docs/agent-enterprise-vision.md`](docs/agent-ente
 git clone https://github.com/riquelmechile/Msl.git
 cd Msl
 npm install
-npm test          # 1104+ tests in 41 files
+npm test          # Vitest unit/integration suite
 npm run dev       # http://127.0.0.1:3000
 ```
+
+### Runtime / ops quick path
+
+```bash
+npm run supplier-mirror:jinpeng:dry-run
+```
+
+Use the Jinpeng dry-run only with environment-provided runtime values. It requires an explicit `MSL_SUPPLIER_MIRROR_DB_PATH`, Jinpeng ML identity/source env, target seller IDs for Maustian/Plasticov, and MercadoLibre credentials. Never paste real secret values into docs, Git, issues, or chat logs.
 
 > **Current runtime boundary:** the Next.js `/api/chat` and Telegram bot stay safe by default with local/mock behavior. When the required env vars are configured, `/api/chat` can persist durable SQLite chat state and use DeepSeek; Telegram can persist per-chat sessions/strategy/autonomy state and optionally write Cortex memory through Escribano. Telegram remains CEO-only for the human: workforce/managers/departments are internal CEO context and delegation details, not user-facing `/agent` selection commands.
 
@@ -72,6 +80,7 @@ Fill only the values you are ready to enable in `.env.local` or your deployment 
 | MCP auth/runtime    | `MSL_MCP_API_KEY`, `MSL_APPROVAL_QUEUE_DB_PATH`                                                                                                                            |
 | OAuth token storage | `MSL_ENCRYPTION_KEY`, `MERCADOLIBRE_CLIENT_ID`, `MERCADOLIBRE_CLIENT_SECRET`, `MERCADOLIBRE_REDIRECT_URI`, `MSL_MERCADOLIBRE_OAUTH_DB_PATH`                                |
 | Dual-account sync   | `MERCADOLIBRE_SOURCE_SELLER_ID`, `MERCADOLIBRE_TARGET_SELLER_ID` (optional aliases: `PLASTICOV_SELLER_ID`, `MAUSTIAN_SELLER_ID`)                                           |
+| Supplier Mirror     | `MSL_SUPPLIER_MIRROR_DB_PATH`, Jinpeng ML identity/source env, `MSL_MAUSTIAN_SELLER_ID`, `MSL_PLASTICOV_SELLER_ID`, MercadoLibre credentials                               |
 
 Telegram durable session keys include the configured seller id (`telegram:<sellerId>:<chatId>`), so reusing a SQLite file after changing `MSL_CHAT_SELLER_ID` does not load a previous seller's chat state. Telegram Cortex/Escribano memory also opens a seller-scoped SQLite filename derived from `MSL_TELEGRAM_CORTEX_SQLITE_PATH` or, if unset, `MSL_CORTEX_SQLITE_PATH`.
 
@@ -84,6 +93,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | Agent workforce    | Durable company-agent registry, internal lessons, and cost/cache ledger evidence can inform CEO orchestration when configured.                                                             | Direct worker-selection UX, worker chat, billing-dashboard behavior, or policy overrides from learned context. |
 | MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                                                                      | Manual raw token setup or account role guessing.                                                               |
 | Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.                                                       | Business hierarchy between accounts or general-purpose bidirectional sync.                                     |
+| Supplier Mirror    | Supplier/Jinpeng readiness can seed local SQLite evidence and CEO-review target proposals for Maustian and Plasticov through `npm run supplier-mirror:jinpeng:dry-run`. Supplier targeting is independent from the old Plasticov → Maustian `sync_product` boundary. | Live autonomous supplier sync, persisted secrets, external API calls in dry-run, or publish/pause/price mutations. |
 | MCP tools          | MCP exposes 30 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration).    | Production business-operation execution through MCP.                                                           |
 | ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram.                                                     | Real-time MercadoLibre data without OAuth tokens for every role.                                               |
 | CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                                                                               | Secrets in CI; use GitHub Secrets/platform secrets.                                                            |
@@ -204,6 +214,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 31  | **Returns Evidence**            | 3 safe-read return tools (detail, reviews, return-cost) via MercadoLibre post-purchase API and MCP; MLC-to-confirm degradation; no mutation, upload, or refund execution                     |
 | 32  | **Agent Workforce Kernel**      | Durable company-agent registry, internal workforce lessons, and CEO-only routing context. Telegram does not expose worker selection or direct worker chat.                                   |
 | 33  | **Cost/Cache Operating Ledger** | Internal bounded ledger for token/cache counters and routing evidence. Summaries stay in Block C, omit raw prompts/responses/secrets/raw IDs, and are not billing truth.                     |
+| 34  | **Supplier Mirror / Jinpeng Readiness** | Local SQLite supplier evidence, target-policy proposals, disabled-by-default scheduler gates, and Jinpeng dry-run bootstrap. No live supplier automation is enabled yet.                     |
 
 ## Stack
 
@@ -215,7 +226,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | **Web UI**   | Next.js 15 + React 19                        | Demo console for deterministic agent interaction            |
 | **Bot**      | Telegram (grammY, proactive messaging)       | Natural language interface, no UI needed                    |
 | **Protocol** | MCP (`@modelcontextprotocol/sdk`)            | Compatible tool surface for business evidence and proposals |
-| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | 1104+ tests, guarded platform support                       |
+| **Testing**  | Vitest (unit/integration) + Playwright (E2E) | Guarded platform support                                    |
 | **Quality**  | ESLint + Prettier + tsc strict               | No warnings, no untyped code                                |
 
 ## Philosophy
@@ -231,7 +242,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 ## Verification
 
 ```bash
-npm test              # 1104+ Vitest tests in 41 files (unit + integration)
+npm test              # Vitest unit + integration suite
 npm run test:e2e      # Playwright E2E (auto-skipped on unsupported platforms)
 npm run typecheck     # TypeScript strict mode — zero tolerance
 npm run lint          # ESLint with typed rules

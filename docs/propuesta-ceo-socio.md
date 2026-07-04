@@ -1,5 +1,7 @@
 # Propuesta por Fases: Sistema Jerárquico CEO-Socio
 
+> **Historical / superseded:** This is an early planning proposal. It is preserved as product-history context only. Current implementation status and operational next steps live in `README.md`, `ROADMAP.md`, `ARCHITECTURE.md`, and `docs/supplier-mirror.md`.
+
 Para hacer realidad tu visión de manera segura y eficiente, estructuraremos la implementación en **4 fases incrementales**.
 
 Dado que el monorepo ya cuenta con las bases del bot de Telegram (`@msl/bot`), la base de datos neural (`@msl/memory` / Cortex), y las estructuras de campañas creativas (`@msl/workers/src/creative`), usaremos esta infraestructura existente para dar vida al rol del **CEO Virtual** y sus subagentes.

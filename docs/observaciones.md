@@ -1,6 +1,6 @@
 # Observaciones del Estado del Proyecto, Cuellos de Botella y Desconexiones Lógicas
 
-> **Nota de estado:** Documento histórico. El diagnóstico vigente y priorizado está en `docs/analisis-arquitectonico.md`; este archivo se conserva como referencia de las observaciones originales, con algunas notas actualizadas para evitar contradicciones operativas.
+> **Historical / superseded:** This document is a snapshot of an earlier project review. It is preserved for context only and does not describe the current operational state. Use `README.md`, `ROADMAP.md`, `ARCHITECTURE.md`, and `docs/supplier-mirror.md` for current guidance.
 
 Este documento recopila el análisis histórico del proyecto **MSL (Plasticov / Maustian AI Agent)**, detallando su nivel de madurez, cuellos de botella críticos (técnicos y operativos) y desconexiones lógicas entre sus componentes arquitectónicos al momento de la revisión original.
 

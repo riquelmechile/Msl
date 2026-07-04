@@ -61,6 +61,7 @@
 | Auth defaults     | Web chat auth, MCP auth, token encryption, and account role config fail closed.                                                                                                    | Local/demo/test bypasses must be explicit through env flags.                                                                           |
 | OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`.                                                           | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth.                                    |
 | Dual-account sync | `sync_product` is configured as Plasticov → Maustian on MercadoLibre Chile (`MLC`) for one safety-bounded operation.                                                               | Do not model the accounts as factory/store roles; reverse or arbitrary seller IDs are rejected.                                        |
+| Supplier Mirror   | Supplier evidence, target policies, local SQLite readiness records, and Jinpeng bootstrap dry-run are available for CEO review. Supplier Mirror target policies are independent from the Plasticov → Maustian `sync_product` boundary. | Do not enable live workers without explicit runtime gate, stored readiness, and CEO approval; dry-run must not store secrets, call external APIs, publish, pause, or update prices. |
 | MCP               | Stdio server exposes 30 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, and image orchestration. | Treat production business-operation execution as approval-gated and environment-backed.                                                |
 
 ## Data flow: a conversation turn
@@ -124,6 +125,7 @@ User message (Spanish)
 | **Workforce context**      | Active company-agent ID from env/config    | Selects internal lesson/delegation context only; admin authorization remains a separate allowlisted runtime gate.    |
 | **Cost/cache context**     | Ledger summaries injected in Block C       | Keeps dynamic operating evidence out of Block A so prefix-cache stability is preserved. Not billing truth.           |
 | **Operational read model** | SQLite snapshots + checkpoints per seller  | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing). Local-first reads. |
+| **Supplier Mirror**        | Local-first supplier evidence + policies   | Supplier/Jinpeng readiness uses local SQLite records, source adapters, and CEO-review proposals before any worker enablement.          |
 | **Darwinian learning**     | Spreading-activation outcome propagation   | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes.    |
 | **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.                 |
 | **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                           |
@@ -157,6 +159,7 @@ Msl/
 │   │       ├── stock.ts          # Inventory management
 │   │       ├── cacheFreshness.ts # TTL/criticality evaluation
 │   │       ├── readSnapshot.ts   # Read pattern with freshness
+│   │       ├── supplierMirror.ts # Supplier evidence, policies, ledger, lessons
 │   │       ├── preparedAction.ts # Write actions with risk
 │   │       ├── approval.ts       # Approval state machine
 │   │       ├── audit.ts          # Audit trail records
@@ -165,6 +168,7 @@ Msl/
 │   ├── memory/                   # Cortex neural graph memory
 │   │   └── src/
 │   │       ├── index.ts          # Repository boundaries, freshness decisions
+│   │       ├── supplierMirrorStore.ts # Supplier Mirror SQLite store
 │   │       └── cortex/
 │   │           ├── types.ts      # GraphNode, GraphEdge, Activation Snapshot
 │   │           ├── engine.ts     # Graph engine: CRUD, spread, prune, Hebbian
@@ -175,6 +179,7 @@ Msl/
 │   │   └── src/
 │   │       ├── index.ts          # MlClient, OAuth, normalization, mock data
 │   │       ├── types.ts          # MlItem, MlOrder, MlQuestion, MlCategory
+│   │       ├── supplierSource.ts  # Supplier Mirror source adapters
 │   │       ├── oauth/
 │   │       │   ├── oauthManager.ts  # Multi-account OAuth with stub mode
 │   │       │   └── tokenStore.ts    # Token persistence
@@ -211,6 +216,7 @@ Msl/
 │   ├── workers/                  # Background workers
 │   │   └── src/
 │   │       ├── index.ts          # Sync job stubs, stale signal evaluation
+│   │       ├── supplierMirror/    # Disabled-by-default scheduler, monitor, Jinpeng bootstrap
 │   │       ├── insights/
 │   │       │   └── index.ts      # Business insight generation
 │   │       └── creative/
@@ -260,6 +266,22 @@ SQLite-backed graph engine using recursive Common Table Expressions (CTEs) for s
 ### `@msl/mercadolibre` — ML API client
 
 Multi-account OAuth manager with encrypted token persistence and expiration tracking. Token storage validates the returned MercadoLibre `user_id` against the configured Plasticov or Maustian seller account before saving. `MlClient` exposes read operations (items, orders, questions, categories, user info) and write operations (publish, update). Includes a product sync engine (`syncEngine.ts`) for the configured Plasticov → Maustian sync boundary, applying CEO strategies (margin, stock, category, pricing) without treating the accounts as a business hierarchy. Real HTTP transport with exponential backoff. Stub mode is for explicit local/test development without real tokens.
+
+Supplier Mirror source adapters live here too. `supplierSource.ts` can collect supplier evidence from MercadoLibre as stock-authoritative data and treat unsupported/XKP-style sources as enrichment or fallback evidence instead of mutation authority.
+
+### Supplier Mirror runtime modules
+
+Supplier Mirror spans multiple packages but stays local-first and disabled by default:
+
+| Module | Role |
+| ------ | ---- |
+| `packages/domain/src/supplierMirror.ts` | Pure supplier registry, item, stock observation, target policy, ledger, notification, and learned fallback types. |
+| `packages/memory/src/supplierMirrorStore.ts` | SQLite persistence for suppliers, item snapshots, stock observations, mappings, policies, ledger records, notification preferences/events, and fallback policies. |
+| `packages/mercadolibre/src/supplierSource.ts` | Source adapter boundary; MercadoLibre API is stock-authoritative, XKP/fallback evidence is not. |
+| `packages/workers/src/supplierMirror/` | Disabled-by-default scheduler, stock-break monitor, runtime gate checks, and Jinpeng bootstrap/readiness flow. |
+| `scripts/supplier-mirror-jinpeng-bootstrap.mjs` | Operator CLI behind `npm run supplier-mirror:jinpeng:dry-run`; opens only `MSL_SUPPLIER_MIRROR_DB_PATH`, redacts config, and reports safety flags. |
+
+Runtime gate flow: seed/readiness evidence → CEO review of missing credentials/source info and target proposals → explicit worker enablement only when runtime env, stored readiness, and CEO approval all exist. The Jinpeng dry-run never stores secrets, calls external APIs, publishes, pauses, or updates prices.
 
 ### `@msl/agent` — Conversational agent
 

@@ -1,6 +1,16 @@
-# Supplier Mirror Rollout
+# Supplier Mirror Operator Runbook
 
-Supplier Mirror mirrors supplier evidence into the CEO workflow without exposing supplier workers or executing broad automation. The first rollout is evidence-first: read supplier data, learn CEO preferences, and propose safe actions before any external mutation.
+Supplier Mirror mirrors supplier evidence into the CEO workflow without exposing supplier workers or executing broad automation. Current status: the foundation and Jinpeng readiness path are merged, but live autonomous supplier sync is not enabled.
+
+## Current status
+
+| Area | Status |
+| ---- | ------ |
+| Core model/store | Supplier domain model and SQLite store are available. |
+| Source boundary | MercadoLibre API evidence is stock-authoritative; XKP enrichment is supporting catalog/context evidence only. |
+| Worker runtime | Scheduler and stock-break planning exist but remain disabled unless explicit runtime gate + readiness + CEO approval exist. |
+| Jinpeng | Safe local dry-run/bootstrap is ready for operator execution. |
+| Mutations | No publish, pause, or price mutation is enabled by the dry-run. |
 
 ## Quick path
 
@@ -10,7 +20,7 @@ Supplier Mirror mirrors supplier evidence into the CEO workflow without exposing
 4. Allow emergency pause only for verified stock breaks and approved target policies.
 5. Keep publication and price updates proposal-only until a later autonomy gate is approved.
 
-## Jinpeng dry-run bootstrap
+## Jinpeng real dry-run
 
 Run the Jinpeng bootstrap as an admin/operator smoke path before any runtime enablement decision. It opens only the SQLite database named by env, writes local disabled seed/readiness evidence, and prints a redacted report.
 
@@ -33,6 +43,8 @@ npm run supplier-mirror:jinpeng:dry-run
 | `MSL_PLASTICOV_SELLER_ID`                                   | No                        | Defaults to `plasticov` if omitted. Use real seller ID outside git.      |
 | `MELI_ACCESS_TOKEN`, `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET` | Yes for ready report      | Presence is reported; secret values are not stored or printed.           |
 
+> Keep real values in the shell environment, `.env.local`, or a deployment secret store only. Do not put real credential values in this file, commits, issues, or chat logs.
+
 ### What the operator/CEO reviews
 
 - `readinessReport.status`: `blocked` means missing credentials/source decisions; `ready-for-ceo-decision` still requires explicit CEO approval before runtime.
@@ -41,11 +53,12 @@ npm run supplier-mirror:jinpeng:dry-run
 - `ledgerIds`: stable local evidence for skipped validation, target proposals, and blocked/deferred enablement.
 - `safety`: confirm `noMutationExecuted: true`, `workerEnabled: false`, and all external mutation flags are `false`.
 
-### Safety boundaries
+### Safety checklist
 
 - The dry-run does not publish listings, pause listings, update prices, enable the worker, store secrets, or call external APIs.
 - MercadoLibre remains the stock authority. XKP enrichment may support catalog/spec/photo/description context but MUST NOT override ML stock evidence.
 - Runtime workers remain disabled unless `MSL_SUPPLIER_MIRROR_WORKER_ENABLED=true` and stored Jinpeng readiness has been explicitly approved after CEO confirmation.
+- Supplier Mirror target policies are separate from the old Plasticov → Maustian `sync_product` boundary; do not reuse that one-way sync rule as the supplier targeting model.
 
 ## Safety gates
 
@@ -76,13 +89,13 @@ npm run supplier-mirror:jinpeng:dry-run
 | 3. Verified pause | Pause mapped target listings only after verified stock break, policy membership, ledger, and CEO notice. | Broad autonomous sync.         |
 | 4. Learned policy | Propose deterministic policies from repeated CEO answers and saved fallback lessons.                     | Self-approved autonomy.        |
 
-## Stacked PR verification
+## Operational verification
 
-- PR 1: domain and operational store.
-- PR 2: API-first supplier source adapters and isolated fallback evidence.
-- PR 3a: disabled-by-default worker foundation.
-- PR 3b: stock-break monitor and safe pause planning.
-- PR 4: CEO tools and deterministic pricing policy proposals.
-- PR 6 final slice: Cortex fallback learning foundations, DeepSeek cost/cache evidence, and rollout documentation.
+The historical stacked PR rollout is complete and archived. For current operator work:
 
-Run focused tests for the changed package, then `npm run typecheck`, `npm run lint`, and `npm run format:check` before review.
+1. Run `npm run supplier-mirror:jinpeng:dry-run` with environment-only values.
+2. Review the redacted readiness report and `ledgerIds`.
+3. Resolve missing credentials/source info outside Git.
+4. Get explicit CEO approval before enabling any runtime worker gate.
+
+For code changes, run focused tests for the changed package, then `npm run typecheck`, `npm run lint`, and `npm run format:check` before review.
