@@ -34,11 +34,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Jinpeng Bootstrap and Idempotent Store Evidence
 
-- [ ] 2.1 Create `packages/workers/src/supplierMirror/jinpengBootstrap.ts` with env/CLI config parsing, dry-run/apply-seed modes, and no secret persistence.
-- [ ] 2.2 Seed supplier `jinpeng`, ML/XKP source metadata, both target proposals, low-stock threshold `2`, and `enabled: false` defaults.
-- [ ] 2.3 Store per-target Maustian `x2.5` owned/improved content and Plasticov `x2` as proposed learned fallback metadata, not approved operational policy.
-- [ ] 2.4 Use stable ledger idempotency keys for validation skips, blocked enablement, target proposals, and report evidence.
-- [ ] 2.5 Add SQLite integration tests in `packages/workers/src/workers.test.ts` for repeat bootstrap idempotency and missing credential blocking.
+- [x] 2.1 Create `packages/workers/src/supplierMirror/jinpengBootstrap.ts` with env/CLI config parsing, dry-run/apply-seed modes, and no secret persistence.
+- [x] 2.2 Seed supplier `jinpeng`, ML/XKP source metadata, both target proposals, low-stock threshold `2`, and `enabled: false` defaults.
+- [x] 2.3 Store per-target Maustian `x2.5` owned/improved content and Plasticov `x2` as proposed learned fallback metadata, not approved operational policy.
+- [x] 2.4 Use stable ledger idempotency keys for validation skips, blocked enablement, target proposals, and report evidence.
+- [x] 2.5 Add SQLite integration tests in `packages/workers/src/workers.test.ts` for repeat bootstrap idempotency and missing credential blocking.
 
 ## Phase 3: CEO Readiness and Runtime Gates
 

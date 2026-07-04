@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import Database from "better-sqlite3";
+import { createSqliteSupplierMirrorStore } from "@msl/memory";
 import type {
   SupplierItemSnapshot,
   SupplierMirrorLedgerRecord,
@@ -23,6 +25,7 @@ import {
   type SupplierMirrorStorePort,
   type SupplierSourceAdapter,
 } from "./index.js";
+import { runJinpengBootstrap } from "./supplierMirror/jinpengBootstrap.js";
 
 describe("MercadoLibre sync job stubs", () => {
   it("creates scoped stubs for every critical business signal", async () => {
@@ -246,6 +249,132 @@ describe("Supplier Mirror worker foundation", () => {
         reason: "stock-break-verification-inconclusive",
       },
     ]);
+  });
+});
+
+describe("Jinpeng Supplier Mirror bootstrap", () => {
+  it("seeds disabled Jinpeng policy proposals idempotently with SQLite store evidence", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteSupplierMirrorStore(db);
+      const options = {
+        store,
+        config: {
+          mode: "apply-seed" as const,
+          mlSellerId: "123456",
+          mlNickname: "JINPENG-CL",
+          xkpUrl: "https://www.xkp.cl/products",
+          maustianSellerId: "maustian-ml",
+          plasticovSellerId: "plasticov-ml",
+          mlAccessTokenPresent: true,
+          mlClientIdPresent: true,
+          mlClientSecretPresent: true,
+        },
+        now: () => new Date("2026-07-04T12:00:00.000Z"),
+      };
+
+      const first = await runJinpengBootstrap(options);
+      const second = await runJinpengBootstrap(options);
+
+      await expect(store.getSupplier("jinpeng")).resolves.toMatchObject({
+        id: "jinpeng",
+        enabled: false,
+        metadata: {
+          secretsPersisted: false,
+          runtimeEnabled: false,
+          workerEnabled: false,
+          defaultLowStockThreshold: 2,
+        },
+      });
+      await expect(
+        store.resolveTargetPolicy({ supplierId: "jinpeng", supplierItemId: "any-item" }),
+      ).resolves.toMatchObject({
+        scopeType: "supplier",
+        scopeId: "jinpeng",
+        targetSellerIds: ["maustian-ml", "plasticov-ml"],
+        lowStockThreshold: 2,
+        autoPauseAllowed: false,
+      });
+      await expect(
+        store.getLearnedFallbackPolicy("supplier-mirror:pricing:jinpeng:maustian"),
+      ).resolves.toMatchObject({
+        policyType: "pricing",
+        status: "proposed",
+        decision: {
+          multiplier: 2.5,
+          contentPolicy: "owned/improved titles and descriptions",
+          requiresCeoConfirmation: true,
+        },
+      });
+      await expect(
+        store.getLearnedFallbackPolicy("supplier-mirror:pricing:jinpeng:plasticov"),
+      ).resolves.toMatchObject({
+        policyType: "pricing",
+        status: "proposed",
+        decision: { multiplier: 2, requiresCeoConfirmation: true },
+      });
+      expect(second.ledgerRecords.map((record) => record.id)).toEqual(
+        first.ledgerRecords.map((record) => record.id),
+      );
+      expect(db.prepare("SELECT COUNT(*) AS count FROM sync_ledger").get()).toEqual({ count: 3 });
+      await expect(store.listEnabledSuppliers()).resolves.toEqual([]);
+      expect(first.readinessReport).toMatchObject({
+        status: "ready-for-ceo-decision",
+        noMutationExecuted: true,
+        workerEnabled: false,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("records missing credentials and source gaps as blocked data without enabling runtime", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteSupplierMirrorStore(db);
+
+      const result = await runJinpengBootstrap({
+        store,
+        config: {
+          mode: "dry-run",
+          mlAccessTokenPresent: false,
+          mlClientIdPresent: false,
+          mlClientSecretPresent: false,
+        },
+        now: () => new Date("2026-07-04T12:00:00.000Z"),
+      });
+
+      expect(result.readinessReport).toMatchObject({
+        status: "blocked",
+        missingCredentials: ["MELI_ACCESS_TOKEN", "MELI_CLIENT_ID", "MELI_CLIENT_SECRET"],
+        missingSourceInfo: [
+          "MSL_JINPENG_ML_SELLER_ID or MSL_JINPENG_ML_NICKNAME",
+          "MSL_JINPENG_XKP_URL",
+        ],
+        noMutationExecuted: true,
+        workerEnabled: false,
+      });
+      await expect(store.getSupplier("jinpeng")).resolves.toMatchObject({ enabled: false });
+      await expect(store.listEnabledSuppliers()).resolves.toEqual([]);
+      await expect(
+        store.getLedgerByIdempotencyKey(
+          "supplier-mirror:jinpeng-bootstrap:validation-skip:credentials",
+        ),
+      ).resolves.toMatchObject({
+        actionType: "skip",
+        status: "skipped",
+        reason: "missing-mercadolibre-runtime-credentials",
+      });
+      await expect(
+        store.getLedgerByIdempotencyKey("supplier-mirror:jinpeng-bootstrap:enablement-block"),
+      ).resolves.toMatchObject({
+        actionType: "defer",
+        status: "deferred",
+        reason: "jinpeng-enable-blocked-by-readiness-gaps",
+      });
+    } finally {
+      db.close();
+    }
   });
 });
 
