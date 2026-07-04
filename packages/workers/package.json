@@ -17,6 +17,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@msl/domain": "0.1.0"
+    "@msl/domain": "0.1.0",
+    "@msl/memory": "0.1.0",
+    "better-sqlite3": "^12.11.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
   }
 }
