@@ -7,6 +7,7 @@ import {
 
 export * from "./creative/index.js";
 export * from "./insights/index.js";
+export * from "./supplierMirror/index.js";
 
 export type CriticalSyncSignal = Extract<
   BusinessSignalKind,

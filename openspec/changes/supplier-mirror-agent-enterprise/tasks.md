@@ -8,7 +8,7 @@
 | Configured review budget | 800 changed lines |
 | 400-line budget risk | High |
 | Chained PRs recommended | Yes |
-| Suggested split | PR 1 store/types → PR 2 sources → PR 3 monitor/pause → PR 4 CEO tools/pricing → PR 5 Cortex/cost/docs |
+| Suggested split | PR 1 store/types → PR 2 sources → PR 3a worker foundation → PR 3b monitor/pause → PR 4 CEO tools/pricing → PR 5 Cortex/cost/docs |
 | Delivery strategy | auto-forecast |
 | Chain strategy | stacked-to-main |
 
@@ -23,14 +23,15 @@ Chain strategy: stacked-to-main
 |------|------|-----------|-------|
 | 1 | Domain and operational store | PR 1 | Tests with in-memory SQLite; no runtime polling. |
 | 2 | ML/API-first source adapters | PR 2 | Depends on PR 1; scraper fallback is evidence-only. |
-| 3 | Scheduler, monitor, verification, pause | PR 3 | Depends on PR 1-2; pause only after verified policy. |
+| 3a | Worker foundation | PR 3a | Depends on PR 1-2; disabled-by-default scheduler, registry, rate limiter, and ingestion persistence only. |
+| 3b | Monitor, verification, pause | PR 3b | Depends on PR 3a; pause only after verified policy and explicit `targetSellerIds` membership. |
 | 4 | CEO tools, lane wiring, pricing policy | PR 4 | Depends on PR 1-3; proposal-first UX. |
 | 5 | Cortex learning, DeepSeek evidence, docs | PR 5 | Depends on PR 4; cost/cache proof and rollout docs. |
 
 ## Non-Goals and Safety Gates
 
 - [x] G.1 Do not reuse `assertPlasticovToMaustianDirection` for Supplier Mirror targeting; use explicit `target_policies`.
-- [ ] G.2 Block blind mass publishing/price mutation; allow pause only after short verification, approved policy, ledger, and CEO notice.
+- [ ] G.2 Block blind mass publishing/price mutation; allow pause only after short verification, approved policy, ledger, and CEO notice. Deferred to PR 3b for pause execution enforcement.
 
 ## Phase 1: Domain and Store
 
@@ -44,11 +45,17 @@ Chain strategy: stacked-to-main
 - [x] 2.2 Create `packages/mercadolibre/src/scraperFallback.ts` with isolated low-concurrency fallback evidence and no mutation exports.
 - [x] 2.3 Test API stock authority, API-gap fallback confidence, and XKP non-stock enrichment in `packages/mercadolibre/src/mercadolibre.test.ts`.
 
-## Phase 3: Scheduler and Safe Pause
+## Phase 3a: Worker Foundation
 
-- [ ] 3.1 Create `packages/workers/src/supplierMirror/` registry, rate limiter, ingestion, scheduler, monitor, verifier, and planner.
-- [ ] 3.2 Wire disabled-by-default runtime in `packages/workers/src/index.ts` with ~10-minute jitter and per-supplier/account limits.
-- [ ] 3.3 Test confirmed break pauses, inconclusive skip/alert, idempotency keys, and pause-not-permitted behavior in `packages/workers/src/workers.test.ts`.
+- [x] 3.1 Create `packages/workers/src/supplierMirror/` registry, rate limiter, ingestion persistence, and disabled-by-default scheduler foundation.
+- [x] 3.2 Wire disabled-by-default runtime in `packages/workers/src/index.ts` with ~10-minute jitter and per-supplier ingestion limits.
+- [x] 3.3 Test registry, disabled scheduler, per-supplier rate limiting, and ingestion persistence in `packages/workers/src/workers.test.ts`.
+
+## Phase 3b: Stock-Break Verification and Safe Pause
+
+- [ ] 3.4 Create monitor candidate selection, stock-break verifier, and pause/defer planner.
+- [ ] 3.5 Enforce that each approved mapping target is present in `policy.targetSellerIds` before any pause execution.
+- [ ] 3.6 Test confirmed break pause, target-policy mismatch deferral, inconclusive skip/alert, idempotency keys, ledger records, and CEO notification events.
 
 ## Phase 4: CEO Tools and Pricing
 
