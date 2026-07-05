@@ -49,6 +49,15 @@ export {
   createSqliteSupplierMirrorStore,
   migrateSupplierMirrorStore,
 } from "./supplierMirrorStore.js";
+export type {
+  OwnedEcommerceApprovalRecord,
+  OwnedEcommerceStore,
+  OwnedEcommerceValidationRecord,
+} from "./ownedEcommerceStore.js";
+export {
+  createSqliteOwnedEcommerceStore,
+  migrateOwnedEcommerceStore,
+} from "./ownedEcommerceStore.js";
 
 // Re-export shared connection pool and backup utilities.
 export { getSharedDb, closeSharedDb } from "./connectionPool.js";

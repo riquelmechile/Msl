@@ -18,6 +18,10 @@ export const WRITE_ACTION_KINDS = [
   "supplier-mirror-publish-proposal",
   "supplier-mirror-price-proposal",
   "supplier-mirror-pause-listing",
+  "owned-ecommerce-publish",
+  "owned-ecommerce-checkout-activation",
+  "owned-ecommerce-price-change",
+  "owned-ecommerce-stock-change",
 ] as const;
 
 export type WriteActionKind = (typeof WRITE_ACTION_KINDS)[number];
@@ -31,6 +35,8 @@ export const ACTION_TARGET_FIELD_BY_TYPE = {
   "creative-asset": "assetId",
   "product-ads-campaign": "campaignId",
   "product-ads-ad": "adId",
+  "storefront-projection": "projectionId",
+  "ecommerce-catalog-item": "itemRef",
 } as const;
 
 type ActionTargetFieldByType = typeof ACTION_TARGET_FIELD_BY_TYPE;
@@ -79,6 +85,10 @@ const riskByKind: Record<WriteActionKind, RiskLevel> = {
   "supplier-mirror-publish-proposal": "high",
   "supplier-mirror-price-proposal": "medium",
   "supplier-mirror-pause-listing": "high",
+  "owned-ecommerce-publish": "high",
+  "owned-ecommerce-checkout-activation": "critical",
+  "owned-ecommerce-price-change": "high",
+  "owned-ecommerce-stock-change": "high",
 };
 
 export function riskLevelForAction(kind: WriteActionKind): RiskLevel {
@@ -93,9 +103,29 @@ export function requiresApproval(kind: WriteActionKind): true {
 export function createPreparedAction(
   input: Omit<PreparedAction, "approvalStatus" | "riskLevel">,
 ): PreparedAction {
+  assertPreparedActionTarget(input.kind, input.target);
+
   return {
     ...input,
     approvalStatus: "pending",
     riskLevel: riskLevelForAction(input.kind),
   };
+}
+
+export function assertPreparedActionTarget(kind: WriteActionKind, target: ActionTarget): void {
+  if (kind === "owned-ecommerce-publish" && target.type !== "storefront-projection") {
+    throw new Error(`Invalid target ${target.type} for ${kind}: expected storefront-projection`);
+  }
+
+  if (kind === "owned-ecommerce-checkout-activation" && target.type !== "storefront-projection") {
+    throw new Error(`Invalid target ${target.type} for ${kind}: expected storefront-projection`);
+  }
+
+  if (kind === "owned-ecommerce-price-change" && target.type !== "ecommerce-catalog-item") {
+    throw new Error(`Invalid target ${target.type} for ${kind}: expected ecommerce-catalog-item`);
+  }
+
+  if (kind === "owned-ecommerce-stock-change" && target.type !== "ecommerce-catalog-item") {
+    throw new Error(`Invalid target ${target.type} for ${kind}: expected ecommerce-catalog-item`);
+  }
 }

@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
+import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
   AgentProposal,
@@ -89,6 +89,7 @@ import type {
   WorkforceCostCacheLedgerStore,
 } from "./workforceCostCacheLedgerStore.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
+import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
 import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
 
 // ── Token budget (bottleneck 2.4) ──────────────────────────────────────
@@ -262,6 +263,13 @@ export type AgentLoopConfig = {
    */
   supplierMirrorStore?: SupplierMirrorStore;
   /**
+   * Optional Owned Ecommerce operational store. When provided, registers
+   * CEO-facing review/approval-preparation tools only; ecommerce workers stay
+   * internal and no public publish, checkout/payment, price, or stock mutation
+   * is executed by these tools.
+   */
+  ownedEcommerceStore?: OwnedEcommerceStore;
+  /**
    * Explicit company-agent identity for read-only workforce lesson context.
    * Lessons are never inferred globally; without this target no lesson context
    * is injected.
@@ -332,6 +340,7 @@ const WORKFORCE_LESSON_OMISSION_NOTICE =
 const WORKFORCE_COST_CACHE_CONTEXT_LIMIT = 10;
 const WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT = 6;
 const WORKFORCE_COST_CACHE_CONTEXT_MAX_CHARS = 1_400;
+const CREDENTIAL_REF_REDACTED = "[credential-ref-redacted]";
 
 function sanitizeLessonText(value: string, maxChars: number): string {
   const withoutControlCharacters = Array.from(value, (character) => {
@@ -551,7 +560,7 @@ export function extractPromptCacheTelemetry(input: {
     laneId: input.laneId,
     promptCacheHitTokens: readNumericCounter(input.usage, "prompt_cache_hit_tokens"),
     promptCacheMissTokens: readNumericCounter(input.usage, "prompt_cache_miss_tokens"),
-    ...(input.credentialRef ? { credentialRef: input.credentialRef } : {}),
+    ...(input.credentialRef ? { credentialRefRedacted: CREDENTIAL_REF_REDACTED } : {}),
     measuredAt: input.measuredAt ?? new Date().toISOString(),
   };
 }
@@ -666,6 +675,11 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.supplierMirrorStore) {
     for (const tool of createSupplierMirrorTools(config.supplierMirrorStore)) {
+      if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
+    }
+  }
+  if (config.ownedEcommerceStore) {
+    for (const tool of createOwnedEcommerceTools(config.ownedEcommerceStore)) {
       if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
     }
   }

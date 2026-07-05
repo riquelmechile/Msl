@@ -1,4 +1,9 @@
-export type LaneId = "ceo" | "cost-supplier" | "market-catalog" | "creative-commercial";
+export type LaneId =
+  | "ceo"
+  | "cost-supplier"
+  | "market-catalog"
+  | "creative-commercial"
+  | "owned-ecommerce";
 
 export type CacheTelemetry = {
   provider: string;
@@ -6,7 +11,7 @@ export type CacheTelemetry = {
   laneId: LaneId;
   promptCacheHitTokens: number | null;
   promptCacheMissTokens: number | null;
-  credentialRef?: string;
+  credentialRefRedacted?: string;
   measuredAt: string;
 };
 
@@ -42,7 +47,7 @@ export const CEO_LANE: LaneContract = {
   stablePrefix: [
     "You are the CEO/Socio lane for the seller.",
     "Coordinate bounded specialist investigations and synthesize one Spanish proposal.",
-    "For Supplier Mirror, review evidence, alerts, mappings, and policy proposals through CEO-facing tools only; never ask the user to select supplier workers.",
+    "For Supplier Mirror and Owned Ecommerce, review evidence, alerts, mappings, projections, and policy proposals through CEO-facing tools only; never ask the user to select internal workers.",
     phaseOneBoundary,
   ].join("\n"),
   refreshableContextProvider:
@@ -52,6 +57,7 @@ export const CEO_LANE: LaneContract = {
     "approved scope",
     "specialist lane outputs",
     "Supplier Mirror evidence",
+    "Owned Ecommerce projection evidence",
   ],
   outputs: ["combined recommendation", "rationale", "risks", "missing inputs", "evidence IDs"],
   boundaries: [
@@ -120,11 +126,51 @@ export const CREATIVE_COMMERCIAL_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const OWNED_ECOMMERCE_LANE: LaneContract = {
+  laneId: "owned-ecommerce",
+  label: "Owned Ecommerce",
+  stablePrefix: [
+    "You are the internal Owned Ecommerce specialist lane.",
+    "Prepare Medusa-ready storefront recommendations, projection readiness, SEO/GEO positioning, and approval needs for the CEO Agent only.",
+    "Return evidence-backed outputs to the CEO lane; never message the human directly or expose internal worker selection.",
+    "Preview/proposal-only: never publish publicly, activate checkout or payments, change prices or stock, expose credentials, or approve risky claims.",
+  ].join("\n"),
+  refreshableContextProvider:
+    "owned ecommerce candidates, storefront projections, readiness checks, validation results, approval records, and evidence IDs",
+  inputs: [
+    "storefront candidates",
+    "projection evidence",
+    "readiness checks",
+    "validation results",
+    "CEO approval scope",
+  ],
+  outputs: [
+    "ranked storefront recommendations",
+    "readiness summary",
+    "risks",
+    "approval needs",
+    "evidence IDs",
+  ],
+  boundaries: [
+    "CEO-only Telegram path; do not message the human directly",
+    "proposal-only; no public publish, checkout/payment activation, price mutation, or stock mutation",
+    "fail closed for unsupported risky claims, missing credentials, missing audit records, and failed readiness checks",
+  ],
+  requiredEvidenceKinds: [
+    "storefront-projection",
+    "readiness-check",
+    "approval-scope",
+    "evidence-id",
+  ],
+  credentialScope: "provider-default",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
   MARKET_CATALOG_LANE,
   CREATIVE_COMMERCIAL_LANE,
+  OWNED_ECOMMERCE_LANE,
 ];
 
 export function getLaneContract(laneId: LaneId): LaneContract {

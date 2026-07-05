@@ -5,6 +5,7 @@
     { "path": "./packages/mercadolibre" },
     { "path": "./packages/memory" },
     { "path": "./packages/workers" },
+    { "path": "./packages/ecommerce-medusa" },
     { "path": "./packages/tools" },
     { "path": "./packages/agent" },
     { "path": "./packages/bot" },

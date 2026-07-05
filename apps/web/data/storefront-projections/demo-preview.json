@@ -1,0 +1,62 @@
+{
+  "id": "demo-preview",
+  "candidateIds": ["vaso-termico-preview"],
+  "status": "preview",
+  "catalog": {
+    "collectionHandle": "plasticov-preview",
+    "products": [
+      {
+        "handle": "vaso-termico-preview",
+        "title": "Vaso térmico institucional",
+        "description": "Preview product generated from stored evidence only.",
+        "variants": [
+          {
+            "sku": "VASO-TERMICO-001",
+            "title": "Default",
+            "price": 12990,
+            "currency": "CLP",
+            "inventoryQuantity": 24,
+            "evidenceIds": ["stock-demo-1", "price-demo-1"]
+          }
+        ],
+        "evidenceIds": ["product-demo-1"]
+      }
+    ]
+  },
+  "content": {
+    "seoTitle": "Plasticov owned ecommerce preview",
+    "geoCopy": "Stored preview projection for a fast owned storefront surface.",
+    "claims": [
+      {
+        "id": "claim-1",
+        "text": "Inventory and price copy is backed by stored preview evidence.",
+        "claimType": "availability",
+        "evidenceIds": ["stock-demo-1", "price-demo-1"],
+        "status": "allowed"
+      }
+    ],
+    "schemaMetadata": {
+      "@type": "CollectionPage",
+      "name": "Plasticov owned ecommerce preview"
+    }
+  },
+  "media": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 1200'%3E%3Crect width='1200' height='1200' fill='%23f4f1ea'/%3E%3Ccircle cx='600' cy='520' r='260' fill='%23835c3b' opacity='0.18'/%3E%3Cpath d='M420 390h330v360a120 120 0 0 1-120 120h-90a120 120 0 0 1-120-120V390Z' fill='%23835c3b'/%3E%3Cpath d='M750 470h70a95 95 0 0 1 0 190h-70v-70h70a25 25 0 0 0 0-50h-70v-70Z' fill='%23835c3b'/%3E%3Ctext x='600' y='1010' text-anchor='middle' font-family='Arial, sans-serif' font-size='54' fill='%23352a22'%3EStored preview media%3C/text%3E%3C/svg%3E",
+      "alt": "Vaso térmico institucional preview image",
+      "width": 1200,
+      "height": 1200,
+      "sizes": "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw",
+      "hash": "demo-media-hash",
+      "priority": true,
+      "evidenceIds": ["media-demo-1"]
+    }
+  ],
+  "readiness": {
+    "status": "ready",
+    "checks": [],
+    "generatedAt": "2026-07-05T00:00:00.000Z"
+  },
+  "evidenceIds": ["product-demo-1", "stock-demo-1", "price-demo-1", "media-demo-1"],
+  "generatedAt": "2026-07-05T00:00:00.000Z"
+}

@@ -12,3 +12,4 @@ export * from "./approval.js";
 export * from "./audit.js";
 export * from "./specializationEvidence.js";
 export * from "./supplierMirror.js";
+export * from "./ownedEcommerce.js";

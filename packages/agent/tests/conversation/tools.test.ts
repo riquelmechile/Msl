@@ -379,7 +379,7 @@ describe("createDelegateToSubagentTool", () => {
     const properties = schema?.function.parameters.properties as Record<string, unknown>;
     expect(properties.laneId).toMatchObject({
       type: "string",
-      enum: ["cost-supplier", "market-catalog", "creative-commercial"],
+      enum: ["cost-supplier", "market-catalog", "creative-commercial", "owned-ecommerce"],
     });
   });
 
@@ -413,6 +413,7 @@ describe("company agent registry and request_agent_evidence", () => {
       "cost-supplier",
       "market-catalog",
       "creative-commercial",
+      "owned-ecommerce",
     ]);
     const marketCatalog = agents.find((agent) => agent.id === "market-catalog");
     expect(marketCatalog?.source).toBe("lane-contract");
