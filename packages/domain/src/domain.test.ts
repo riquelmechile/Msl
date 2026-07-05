@@ -7,11 +7,15 @@ import {
   confidenceForOperationalEvidence,
   evaluateFreshness,
   evaluateSpecializationReadiness,
+  guardrailsForCandidateEvidence,
+  isOwnedEcommerceGuardrailCode,
   isReadSnapshotFresh,
   isReadSnapshotReliable,
   requiresApproval,
   riskLevelForAction,
+  summarizeProjectionReadiness,
   type ApprovalRecord,
+  type CandidateProvenance,
   type MlClaim,
   type Listing,
   type MlMessage,
@@ -28,11 +32,17 @@ const future = new Date("2030-01-01T00:00:00.000Z");
 const now = new Date("2026-06-25T12:00:00.000Z");
 
 function preparedAction(kind: WriteActionKind): PreparedAction {
+  const target = kind.startsWith("owned-ecommerce-")
+    ? kind === "owned-ecommerce-price-change" || kind === "owned-ecommerce-stock-change"
+      ? ({ type: "ecommerce-catalog-item", itemRef: "jinpeng:XKP-001" } as const)
+      : ({ type: "storefront-projection", projectionId: "projection-1" } as const)
+    : ({ type: "listing", listingId: "MLC123" } as const);
+
   return createPreparedAction({
     id: `action-${kind}`,
     sellerId: "seller-1",
     kind,
-    target: { type: "listing", listingId: "MLC123" },
+    target,
     exactChange: [{ field: "price", from: 1000, to: 1100 }],
     rationale: "Improve margin while keeping the offer competitive.",
     expiresAt: future,
@@ -51,6 +61,10 @@ describe("approval-required writes", () => {
     "supplier-mirror-publish-proposal",
     "supplier-mirror-price-proposal",
     "supplier-mirror-pause-listing",
+    "owned-ecommerce-publish",
+    "owned-ecommerce-checkout-activation",
+    "owned-ecommerce-price-change",
+    "owned-ecommerce-stock-change",
   ])("requires explicit approval before executing %s", (kind) => {
     const action = preparedAction(kind);
 
@@ -166,8 +180,118 @@ describe("risk labels", () => {
     ["supplier-mirror-publish-proposal", "high"],
     ["supplier-mirror-price-proposal", "medium"],
     ["supplier-mirror-pause-listing", "high"],
+    ["owned-ecommerce-publish", "high"],
+    ["owned-ecommerce-checkout-activation", "critical"],
+    ["owned-ecommerce-price-change", "high"],
+    ["owned-ecommerce-stock-change", "high"],
   ] satisfies Array<[WriteActionKind, string]>)('labels "%s" as %s risk', (kind, risk) => {
     expect(riskLevelForAction(kind)).toBe(risk);
+  });
+});
+
+describe("owned ecommerce domain contracts", () => {
+  it("preserves candidate provenance and evidence identifiers", () => {
+    const provenance: CandidateProvenance = {
+      source: "supplier-mirror",
+      sourceId: "jinpeng:XKP-001",
+      supplierId: "jinpeng",
+      snapshotIds: ["snapshot-1"],
+      cortexNodeIds: ["node-1"],
+      evidenceIds: ["evidence-supplier-1", "evidence-stock-1"],
+    };
+
+    expect(provenance.source).toBe("supplier-mirror");
+    expect(provenance.evidenceIds).toContain("evidence-stock-1");
+  });
+
+  it("emits stable risk codes and fails closed for stale or incomplete evidence", () => {
+    const checks = guardrailsForCandidateEvidence({
+      stockFreshness: "stale",
+      marginFreshness: "fresh",
+      supplierFreshness: "unknown",
+      completeness: "partial",
+      evidenceIds: ["evidence-stale-1"],
+    });
+
+    expect(checks.map((check) => check.code)).toEqual([
+      "stale-stock-evidence",
+      "unknown-supplier-evidence",
+      "incomplete-evidence",
+    ]);
+    expect(checks.every((check) => isOwnedEcommerceGuardrailCode(check.code))).toBe(true);
+    expect(summarizeProjectionReadiness(checks)).toBe("blocked");
+  });
+
+  it("types owned ecommerce actions as approval-only prepared writes", () => {
+    const action = createPreparedAction({
+      id: "action-owned-ecommerce-publish-1",
+      sellerId: "seller-1",
+      kind: "owned-ecommerce-publish",
+      target: { type: "storefront-projection", projectionId: "projection-1" },
+      exactChange: [{ field: "status", from: "preview", to: "published" }],
+      rationale: "Publish the approved storefront projection.",
+      expiresAt: future,
+    });
+
+    expect(action.approvalStatus).toBe("pending");
+    expect(requiresApproval(action.kind)).toBe(true);
+    expect(riskLevelForAction(action.kind)).toBe("high");
+  });
+
+  it("fails closed for invalid owned ecommerce action targets", () => {
+    expect(() =>
+      createPreparedAction({
+        id: "action-invalid-checkout-1",
+        sellerId: "seller-1",
+        kind: "owned-ecommerce-checkout-activation",
+        target: { type: "ecommerce-catalog-item", itemRef: "jinpeng:XKP-001" },
+        exactChange: [{ field: "checkout", from: false, to: true }],
+        rationale: "Activate checkout for a preview.",
+        expiresAt: future,
+      }),
+    ).toThrow(
+      "Invalid target ecommerce-catalog-item for owned-ecommerce-checkout-activation: expected storefront-projection",
+    );
+
+    expect(() =>
+      createPreparedAction({
+        id: "action-invalid-price-1",
+        sellerId: "seller-1",
+        kind: "owned-ecommerce-price-change",
+        target: { type: "storefront-projection", projectionId: "projection-1" },
+        exactChange: [{ field: "price", from: 1000, to: 1100 }],
+        rationale: "Change the projection price.",
+        expiresAt: future,
+      }),
+    ).toThrow(
+      "Invalid target storefront-projection for owned-ecommerce-price-change: expected ecommerce-catalog-item",
+    );
+  });
+
+  it("accepts valid owned ecommerce action targets deterministically", () => {
+    expect(
+      createPreparedAction({
+        id: "action-valid-checkout-1",
+        sellerId: "seller-1",
+        kind: "owned-ecommerce-checkout-activation",
+        target: { type: "storefront-projection", projectionId: "projection-1" },
+        exactChange: [{ field: "checkout", from: false, to: true }],
+        rationale: "Activate checkout for an approved projection.",
+        expiresAt: future,
+      }).riskLevel,
+    ).toBe("critical");
+
+    expect(
+      createPreparedAction({
+        id: "action-valid-stock-1",
+        sellerId: "seller-1",
+        kind: "owned-ecommerce-stock-change",
+        target: { type: "ecommerce-catalog-item", itemRef: "jinpeng:XKP-001" },
+        exactChange: [{ field: "inventoryQuantity", from: 10, to: 8 }],
+        rationale: "Sync inventory from authoritative evidence.",
+        expiresAt: future,
+      }).riskLevel,
+    ).toBe("high");
   });
 });
 

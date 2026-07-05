@@ -1,19 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { answerBusinessQuestion, type BusinessContext } from "./index.js";
-import { hasRejectionPattern, resolveTurnOutcome } from "./conversation/agentLoop.js";
+import {
+  answerBusinessQuestion,
+  createAgentLoop,
+  LANE_CONTRACTS,
+  getLaneContract,
+  type BusinessContext,
+} from "./index.js";
+import {
+  extractPromptCacheTelemetry,
+  hasRejectionPattern,
+  resolveTurnOutcome,
+} from "./conversation/agentLoop.js";
 import { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
 import { createCompanyAgentLearningStore } from "./conversation/companyAgentLearningStore.js";
 import { createRequestAgentEvidenceTool } from "./conversation/tools.js";
 import {
   createGraphEngine,
+  createSqliteOwnedEcommerceStore,
   createSqliteSupplierMirrorStore,
   type SupplierMirrorStore,
 } from "@msl/memory";
+import type { GuardrailResult, StorefrontProjection } from "@msl/domain";
 import { EscribanoObserver } from "./conversation/escribano.js";
 import type { AgentProposal, ConversationState } from "./conversation/types.js";
 import {
@@ -21,6 +33,7 @@ import {
   createSupplierMirrorTools,
   parseSupplierPricingPolicyText,
 } from "./conversation/supplierMirrorTools.js";
+import { createOwnedEcommerceTools } from "./conversation/ownedEcommerceTools.js";
 import {
   buildSupplierMirrorDeepSeekPromptPlan,
   estimateSupplierMirrorDeepSeekCostMicros,
@@ -876,6 +889,356 @@ describe("Supplier Mirror CEO tools and pricing policy", () => {
   });
 });
 
+describe("owned ecommerce CEO orchestration tools", () => {
+  it("registers owned ecommerce as an internal CEO-controlled lane", () => {
+    const lane = getLaneContract("owned-ecommerce");
+
+    expect(lane.stablePrefix).toContain("CEO Agent only");
+    expect(lane.boundaries).toEqual(
+      expect.arrayContaining([
+        "CEO-only Telegram path; do not message the human directly",
+        "proposal-only; no public publish, checkout/payment activation, price mutation, or stock mutation",
+      ]),
+    );
+    expect(LANE_CONTRACTS.map((contract) => contract.laneId)).toContain("owned-ecommerce");
+  });
+
+  it("registers owned ecommerce tools only when the owned ecommerce store is provided", () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+
+    const withoutStore = createAgentLoop({ systemPrompt: "CEO", mockClient: true });
+    const withStore = createAgentLoop({
+      systemPrompt: "CEO",
+      mockClient: true,
+      ownedEcommerceStore: store,
+    });
+
+    expect(withoutStore.getToolNames()).not.toEqual(
+      expect.arrayContaining([
+        "review_owned_ecommerce_projection",
+        "prepare_owned_ecommerce_approval_request",
+      ]),
+    );
+    expect(withStore.getToolNames()).toEqual(
+      expect.arrayContaining([
+        "review_owned_ecommerce_projection",
+        "prepare_owned_ecommerce_approval_request",
+      ]),
+    );
+
+    db.close();
+  });
+
+  it("redacts credential refs from cache telemetry metadata", () => {
+    const rawCredentialRef = "credential-ref:deepseek-secret";
+
+    const telemetry = extractPromptCacheTelemetry({
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      laneId: "owned-ecommerce",
+      usage: null,
+      credentialRef: rawCredentialRef,
+      measuredAt: "2026-07-05T00:00:00.000Z",
+    });
+
+    expect(JSON.stringify(telemetry)).not.toContain(rawCredentialRef);
+    expect(telemetry).toMatchObject({
+      credentialRefRedacted: "[credential-ref-redacted]",
+      measuredAt: "2026-07-05T00:00:00.000Z",
+    });
+  });
+
+  it("returns evidence-backed owned ecommerce worker results to the CEO without messaging the human", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const projection = makeStorefrontProjection();
+    await store.upsertProjection(projection);
+    await store.recordValidation({
+      id: "validation:projection-1:publish",
+      projectionId: projection.id,
+      result: approvalCheck("publish-approval-required"),
+      evidenceIds: ["evidence:projection-1"],
+      redactedMessage: "Public publishing requires exact CEO approval.",
+      createdAt: "2026-07-05T00:00:00.000Z",
+    });
+
+    const tool = createOwnedEcommerceTools(store).find(
+      (candidate) => candidate.name === "review_owned_ecommerce_projection",
+    )!;
+    const review = await tool.execute({ projectionId: projection.id });
+
+    expect(review).toMatchObject({
+      status: "ready-for-ceo-review",
+      noMutationExecuted: true,
+      workerReturnedToCeo: true,
+      humanMessageSent: false,
+      ceoTelegramOnly: true,
+      projection: {
+        projectionId: "projection-1",
+        readinessStatus: "ready",
+        productCount: 1,
+      },
+    });
+    expect((review as { evidenceIds: string[] }).evidenceIds).toEqual(
+      expect.arrayContaining(["evidence:projection-1", "evidence:variant-1"]),
+    );
+
+    db.close();
+  });
+
+  it.each([
+    ["publish", "owned-ecommerce-publish"],
+    ["checkout", "owned-ecommerce-checkout-activation"],
+    ["payment", "owned-ecommerce-checkout-activation"],
+    ["price", "owned-ecommerce-price-change"],
+    ["stock", "owned-ecommerce-stock-change"],
+  ] as const)(
+    "requires credentials, audit records, and readiness before %s preparation without recording approval",
+    async (operation, actionKind) => {
+      const db = new Database(":memory:");
+      const store = createSqliteOwnedEcommerceStore(db);
+      await store.upsertProjection(makeStorefrontProjection());
+      const recordApproval = vi.spyOn(store, "recordApproval");
+      const tool = createOwnedEcommerceTools(store).find(
+        (candidate) => candidate.name === "prepare_owned_ecommerce_approval_request",
+      )!;
+
+      const missingApproval = (await tool.execute({
+        projectionId: "projection-1",
+        operation,
+      })) as { missingInputs: string[] };
+      expect(missingApproval).toMatchObject({
+        status: "approval-required",
+        noMutationExecuted: true,
+        approvalRequired: true,
+        humanMessageSent: false,
+        ceoTelegramRequired: true,
+      });
+      expect(missingApproval.missingInputs).toEqual(
+        expect.arrayContaining(["redacted audit record id", "configured credential reference"]),
+      );
+
+      await expect(
+        tool.execute({
+          projectionId: "projection-1",
+          operation,
+          exactCeoApproval: true,
+          credentialRef: "credential-ref:medusa-preview",
+          auditId: `audit:${operation}:1`,
+          approvalId: `approval:${operation}:1`,
+          evidenceIds: ["evidence:approval"],
+        }),
+      ).resolves.toMatchObject({
+        status: "proposal-prepared",
+        preparedAction: { kind: actionKind, approvalStatus: "pending" },
+        credentialRequired: true,
+        credentialProvided: true,
+        credentialRefRedacted: "[credential-ref-redacted]",
+        noMutationExecuted: true,
+        approvalRequired: true,
+        checkoutActivated: false,
+        paymentActivated: false,
+        publicPublishExecuted: false,
+        priceMutationExecuted: false,
+        stockMutationExecuted: false,
+        humanMessageSent: false,
+      });
+      expect(recordApproval).not.toHaveBeenCalled();
+      await expect(store.getApproval(`approval:${operation}:1`)).resolves.toBeNull();
+
+      db.close();
+    },
+  );
+
+  it("redacts credential refs from approval responses without persisting approval records", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const fixedNow = new Date("2026-07-05T12:34:56.000Z");
+    await store.upsertProjection(makeStorefrontProjection());
+    const recordApproval = vi.spyOn(store, "recordApproval");
+    const tool = createOwnedEcommerceTools(store, { now: () => fixedNow }).find(
+      (candidate) => candidate.name === "prepare_owned_ecommerce_approval_request",
+    )!;
+    const rawCredentialRef = "credential-ref:medusa-prod-secret-123";
+
+    const result = await tool.execute({
+      projectionId: "projection-1",
+      operation: "publish",
+      exactCeoApproval: true,
+      credentialRef: rawCredentialRef,
+      auditId: "audit:publish:redacted",
+      approvalId: "approval:publish:redacted",
+    });
+
+    expect(JSON.stringify(result)).not.toContain(rawCredentialRef);
+    expect(result).toMatchObject({
+      status: "proposal-prepared",
+      credentialRequired: true,
+      credentialProvided: true,
+      credentialRefRedacted: "[credential-ref-redacted]",
+      preparedAction: {
+        expiresAt: new Date("2026-07-06T12:34:56.000Z"),
+      },
+      approvalRequired: true,
+      noMutationExecuted: true,
+      approvalId: null,
+      ignoredApprovalId: true,
+    });
+
+    expect(recordApproval).not.toHaveBeenCalled();
+    await expect(store.getApproval("approval:publish:redacted")).resolves.toBeNull();
+
+    db.close();
+  });
+
+  it("does not expose credential refs in LLM-facing tool transcripts", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    await store.upsertProjection(makeStorefrontProjection());
+    const rawCredentialRef = "credential-ref:llm-transcript-secret";
+    const observedToolMessages: Array<{ role: string; content: string }> = [];
+
+    const loop = createAgentLoop({
+      systemPrompt: "CEO",
+      ownedEcommerceStore: store,
+      llmClient: {
+        chat(messages) {
+          if (messages.some((message) => message.role === "tool")) {
+            observedToolMessages.push(...messages.filter((message) => message.role === "tool"));
+            return Promise.resolve({ content: "Preparado sin exponer credenciales." });
+          }
+          return Promise.resolve({
+            content: "",
+            toolCalls: [
+              {
+                name: "prepare_owned_ecommerce_approval_request",
+                arguments: {
+                  projectionId: "projection-1",
+                  operation: "publish",
+                  exactCeoApproval: true,
+                  credentialRef: rawCredentialRef,
+                  auditId: "audit:publish:llm",
+                },
+              },
+            ],
+          });
+        },
+        stream() {
+          return (async function* streamResponse() {
+            await Promise.resolve();
+            yield { delta: "", done: true };
+          })();
+        },
+      },
+    });
+
+    await loop.converse("Prepará la aprobación de publicación.", makeState());
+
+    expect(observedToolMessages).toHaveLength(1);
+    expect(observedToolMessages[0]!.content).not.toContain(rawCredentialRef);
+    expect(observedToolMessages[0]!.content).toContain("[credential-ref-redacted]");
+
+    db.close();
+  });
+
+  it("prepares risky-claim approval without requiring credentials or external mutation actions", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    await store.upsertProjection(makeStorefrontProjection());
+    const tool = createOwnedEcommerceTools(store).find(
+      (candidate) => candidate.name === "prepare_owned_ecommerce_approval_request",
+    )!;
+
+    const result = await tool.execute({
+      projectionId: "projection-1",
+      operation: "risky-claim",
+      exactCeoApproval: true,
+      auditId: "audit:risky-claim:1",
+      evidenceIds: ["evidence:claim-review"],
+      rationale: "CEO needs to review a claim before storefront use.",
+    });
+
+    expect(result).toMatchObject({
+      status: "proposal-prepared",
+      operation: "risky-claim",
+      approvalRequest: {
+        auditId: "audit:risky-claim:1",
+        rationale: "CEO needs to review a claim before storefront use.",
+      },
+      credentialRequired: false,
+      credentialProvided: false,
+      credentialRefRedacted: null,
+      noMutationExecuted: true,
+    });
+    expect(
+      (result as { approvalRequest: { evidenceIds: string[] } }).approvalRequest.evidenceIds,
+    ).toEqual(expect.arrayContaining(["evidence:projection-1", "evidence:claim-review"]));
+
+    db.close();
+  });
+
+  it("fails closed for unsupported risky claims and blocked readiness without echoing credentials", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    await store.upsertProjection(
+      makeStorefrontProjection({
+        readiness: {
+          status: "blocked",
+          checks: [blockingCheck("missing-readiness-check")],
+          generatedAt: "2026-07-05T00:00:00.000Z",
+        },
+        content: {
+          seoTitle: "Preview",
+          geoCopy: "Preview copy",
+          claims: [
+            {
+              id: "claim-unsupported",
+              text: "Best legal guarantee in the market.",
+              claimType: "superiority",
+              evidenceIds: [],
+              status: "blocked",
+              redactedReason: "Unsupported superiority claim.",
+            },
+          ],
+          schemaMetadata: {},
+        },
+      }),
+    );
+    const tool = createOwnedEcommerceTools(store).find(
+      (candidate) => candidate.name === "prepare_owned_ecommerce_approval_request",
+    )!;
+
+    const result = await tool.execute({
+      projectionId: "projection-1",
+      operation: "publish",
+      exactCeoApproval: true,
+      credentialRef: "runtime credential placeholder",
+      auditId: "audit:publish:blocked",
+    });
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      readinessCodes: ["missing-readiness-check"],
+      blockedClaimIds: ["claim-unsupported"],
+      credentialRequired: true,
+      credentialProvided: true,
+      credentialRefRedacted: "[credential-ref-redacted]",
+      noMutationExecuted: true,
+      humanMessageSent: false,
+    });
+    expect((result as { failures: string[] }).failures).toEqual(
+      expect.arrayContaining([
+        "projection readiness is blocked",
+        "unsupported risky claims remain in the projection",
+      ]),
+    );
+    expect(JSON.stringify(result)).not.toContain("runtime credential placeholder");
+
+    db.close();
+  });
+});
+
 // ── Test helpers ─────────────────────────────────────────────────────
 
 function makeProposal(kind: string = "price-change"): AgentProposal {
@@ -912,6 +1275,91 @@ function userMsg(content: string): ConversationState["messages"][number] {
 
 function asstMsg(content: string): ConversationState["messages"][number] {
   return { role: "assistant", content, timestamp: new Date() };
+}
+
+function approvalCheck(code: GuardrailResult["code"]): GuardrailResult {
+  return {
+    passed: false,
+    severity: "approval-required",
+    code,
+    evidenceIds: ["evidence:projection-1"],
+    redactedMessage: "CEO approval is required.",
+  };
+}
+
+function blockingCheck(code: GuardrailResult["code"]): GuardrailResult {
+  return {
+    passed: false,
+    severity: "block",
+    code,
+    evidenceIds: ["evidence:readiness-block"],
+    redactedMessage: "Projection readiness is blocked.",
+  };
+}
+
+function makeStorefrontProjection(
+  overrides: Partial<StorefrontProjection> = {},
+): StorefrontProjection {
+  return {
+    id: "projection-1",
+    candidateIds: ["candidate-1"],
+    status: "preview",
+    catalog: {
+      collectionHandle: "owned-preview",
+      products: [
+        {
+          handle: "product-1",
+          title: "Evidence-backed product",
+          description: "Preview-only product description.",
+          variants: [
+            {
+              sku: "SKU-1",
+              title: "Default",
+              price: 19990,
+              currency: "CLP",
+              inventoryQuantity: 4,
+              evidenceIds: ["evidence:variant-1"],
+            },
+          ],
+          evidenceIds: ["evidence:product-1"],
+        },
+      ],
+    },
+    content: {
+      seoTitle: "Evidence-backed preview",
+      geoCopy: "Preview copy with evidence.",
+      claims: [
+        {
+          id: "claim-availability",
+          text: "Availability backed by current stock evidence.",
+          claimType: "availability",
+          evidenceIds: ["evidence:stock-1"],
+          status: "allowed",
+        },
+      ],
+      schemaMetadata: { type: "Product" },
+    },
+    media: [
+      {
+        src: "https://example.com/product.webp",
+        alt: "Evidence-backed product",
+        width: 1200,
+        height: 1200,
+        sizes: "100vw",
+        hash: "hash-1",
+        priority: true,
+        evidenceIds: ["evidence:media-1"],
+      },
+    ],
+    readiness: {
+      status: "ready",
+      checks: [],
+      generatedAt: "2026-07-05T00:00:00.000Z",
+    },
+    evidenceIds: ["evidence:projection-1"],
+    generatedAt: "2026-07-05T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 // ── Phase 3 tests: Cortex Darwinian Feedback ──────────────────────────

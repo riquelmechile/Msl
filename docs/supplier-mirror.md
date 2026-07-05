@@ -4,13 +4,13 @@ Supplier Mirror mirrors supplier evidence into the CEO workflow without exposing
 
 ## Current status
 
-| Area | Status |
-| ---- | ------ |
-| Core model/store | Supplier domain model and SQLite store are available. |
-| Source boundary | MercadoLibre API evidence is stock-authoritative; XKP enrichment is supporting catalog/context evidence only. |
-| Worker runtime | Scheduler and stock-break planning exist but remain disabled unless explicit runtime gate + readiness + CEO approval exist. |
-| Jinpeng | Safe local dry-run/bootstrap is ready for operator execution. |
-| Mutations | No publish, pause, or price mutation is enabled by the dry-run. |
+| Area             | Status                                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Core model/store | Supplier domain model and SQLite store are available.                                                                       |
+| Source boundary  | MercadoLibre API evidence is stock-authoritative; XKP enrichment is supporting catalog/context evidence only.               |
+| Worker runtime   | Scheduler and stock-break planning exist but remain disabled unless explicit runtime gate + readiness + CEO approval exist. |
+| Jinpeng          | Safe local dry-run/bootstrap is ready for operator execution.                                                               |
+| Mutations        | No publish, pause, or price mutation is enabled by the dry-run.                                                             |
 
 ## Quick path
 

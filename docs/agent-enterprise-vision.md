@@ -139,7 +139,7 @@ The business model is hybrid: dropshipping, arbitrage, and some owned stock. The
 
 MSL must grow beyond MercadoLibre:
 
-- Owned ecommerce storefront.
+- Owned ecommerce storefront preview foundation: evidence-backed Medusa-oriented projections and static previews are implemented; live Medusa deployment, checkout, and public publish remain future gated work.
 - Social channels and content/creative workflows.
 - Ripley and other marketplaces.
 - Supplier discovery, negotiation, and catalog intelligence.

@@ -109,6 +109,7 @@ export {
   parseSupplierPricingPolicyText,
 } from "./conversation/supplierMirrorTools.js";
 export type { ParsedSupplierPricingPolicy } from "./conversation/supplierMirrorTools.js";
+export { createOwnedEcommerceTools } from "./conversation/ownedEcommerceTools.js";
 
 export type {
   CompanyAgent,

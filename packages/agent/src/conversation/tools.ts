@@ -532,7 +532,7 @@ export function createDelegateToSubagentTool(): ToolDefinition {
       properties: {
         laneId: {
           type: "string",
-          enum: ["cost-supplier", "market-catalog", "creative-commercial"],
+          enum: ["cost-supplier", "market-catalog", "creative-commercial", "owned-ecommerce"],
         },
         scope: { type: "string" },
         requestedAction: { type: "string" },
