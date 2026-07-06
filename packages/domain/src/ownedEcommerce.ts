@@ -21,9 +21,12 @@ export type OwnedEcommerceExecutionGateReason =
   | "blocked-projection"
   | "unsafe-claim"
   | "missing-credentials"
+  | "approval-already-executed"
   | "duplicate-idempotency-key"
   | "missing-audit-storage"
-  | "missing-rollback-evidence";
+  | "missing-rollback-evidence"
+  | "write-boundary-failed"
+  | "execution-evidence-persistence-failed";
 
 export type OwnedEcommerceExecutionRequest = {
   operation: OwnedEcommerceExecutionOperation;
@@ -62,9 +65,10 @@ export type OwnedEcommerceExecutionAuditSummary = {
 export type OwnedEcommerceExecutionResult =
   | { status: "executed"; auditId: string; rollbackRef: string; publicUrl?: string }
   | {
-      status: "blocked" | "duplicate";
+      status: "blocked" | "duplicate" | "failed";
       reasonCodes: OwnedEcommerceExecutionGateReason[];
       auditId?: string;
+      rollbackRef?: string;
     };
 
 export type CandidateSourceKind =

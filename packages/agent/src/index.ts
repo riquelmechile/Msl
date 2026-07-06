@@ -110,6 +110,12 @@ export {
 } from "./conversation/supplierMirrorTools.js";
 export type { ParsedSupplierPricingPolicy } from "./conversation/supplierMirrorTools.js";
 export { createOwnedEcommerceTools } from "./conversation/ownedEcommerceTools.js";
+export { createOwnedEcommerceRuntimeExecutor } from "./runtime/ownedEcommerceExecutor.js";
+export type {
+  OwnedEcommerceRuntimeExecutor,
+  OwnedEcommerceRuntimeExecutorOptions,
+  OwnedEcommerceRuntimeExecutionObserver,
+} from "./runtime/ownedEcommerceExecutor.js";
 
 export type {
   CompanyAgent,

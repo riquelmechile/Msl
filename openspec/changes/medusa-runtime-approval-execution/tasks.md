@@ -33,17 +33,19 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Runtime Boundary and Executor
 
-- [ ] 2.1 Extend `packages/ecommerce-medusa/src/index.ts` `MedusaWriteBoundary` with `publish()` and `activateCheckout()` plus fail-closed env/config defaults.
-- [ ] 2.2 Create `packages/agent/src/runtime/ownedEcommerceExecutor.ts` to coordinate store reads, exact approval, readiness, claims, rollback, idempotency, audit, and write calls.
-- [ ] 2.3 In `packages/agent/src/runtime/ownedEcommerceExecutor.ts`, block missing credentials, stale readiness, guardrail failures, approval mismatch, duplicate keys, and missing audit/rollback before writes.
-- [ ] 2.4 Harden `packages/agent/src/conversation/ownedEcommerceTools.ts` so approval claims are ignored and `noMutationExecuted: true` remains enforced.
+- [x] 2.1 Extend `packages/ecommerce-medusa/src/index.ts` `MedusaWriteBoundary` with `publish()` and `activateCheckout()` plus fail-closed env/config defaults.
+- [x] 2.2 Create `packages/agent/src/runtime/ownedEcommerceExecutor.ts` to coordinate store reads, exact approval, readiness, claims, rollback, idempotency, audit, and write calls.
+- [x] 2.3 In `packages/agent/src/runtime/ownedEcommerceExecutor.ts`, block missing credentials, stale readiness, guardrail failures, approval mismatch, duplicate keys, and missing audit/rollback before writes.
+- [x] 2.4 Harden `packages/agent/src/conversation/ownedEcommerceTools.ts` so approval claims are ignored and `noMutationExecuted: true` remains enforced.
 
-## Phase 3: Tests Mapped to Specs
+## Phase 3: Tests Mapped to Specs (PR 3 Broad Regression Matrix)
 
-- [ ] 3.1 Update `packages/domain/src/domain.test.ts` for exact approval pass, mismatch, expiry, and user-claim-not-proof scenarios.
-- [ ] 3.2 Update `packages/memory/src/memory.test.ts` for projection-version persistence, durable audit/rollback evidence, and duplicate idempotency behavior.
-- [ ] 3.3 Update `packages/ecommerce-medusa/src/index.test.ts` for missing credentials fail-closed and injected publish/checkout success paths.
-- [ ] 3.4 Update `packages/agent/src/agent.test.ts` for approved backend execution, unsafe runtime blocked without boundary call, public-publish-without-checkout, checkout activation approved, and LLM tool cannot execute.
+PR 2 includes targeted support regressions for runtime executor and Medusa boundary review fixes. The unchecked items below remain the broader PR 3 matrix and should not be treated as completed by PR 2 support coverage alone.
+
+- [ ] 3.1 PR 3 broad matrix: update `packages/domain/src/domain.test.ts` for exact approval pass, mismatch, expiry, and user-claim-not-proof scenarios.
+- [ ] 3.2 PR 3 broad matrix: update `packages/memory/src/memory.test.ts` for projection-version persistence, durable audit/rollback evidence, and duplicate idempotency behavior.
+- [ ] 3.3 PR 3 broad matrix: update `packages/ecommerce-medusa/src/index.test.ts` for missing credentials fail-closed and injected publish/checkout success paths.
+- [ ] 3.4 PR 3 broad matrix: update `packages/agent/src/agent.test.ts` for approved backend execution, unsafe runtime blocked without boundary call, public-publish-without-checkout, checkout activation approved, and LLM tool cannot execute.
 
 ## Phase 4: Verification and Cleanup
 

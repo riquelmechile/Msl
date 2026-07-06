@@ -151,6 +151,12 @@ export type OwnedEcommerceExecutionAuditRecord = {
   createdAt: string;
 };
 
+export type OwnedEcommerceApprovalConsumptionResult =
+  | { status: "consumed"; approvalRecord: OwnedEcommerceApprovalRecord }
+  | { status: "already-consumed"; approvalRecord: OwnedEcommerceApprovalRecord }
+  | { status: "missing" }
+  | { status: "mismatch"; approvalRecord: OwnedEcommerceApprovalRecord };
+
 export type OwnedEcommerceStore = {
   upsertCandidate(candidate: StorefrontCandidate): Promise<void>;
   getCandidate(id: OwnedEcommerceCandidateId): Promise<StorefrontCandidate | null>;
@@ -167,6 +173,9 @@ export type OwnedEcommerceStore = {
   ): Promise<OwnedEcommerceValidationRecord[]>;
   recordApproval(record: OwnedEcommerceApprovalRecord): Promise<OwnedEcommerceApprovalRecord>;
   getApproval(id: string): Promise<OwnedEcommerceApprovalRecord | null>;
+  consumeExecutionApproval(
+    request: OwnedEcommerceExecutionRequest,
+  ): Promise<OwnedEcommerceApprovalConsumptionResult>;
   reserveExecutionIdempotency(
     reservation: OwnedEcommerceIdempotencyReservation,
   ): Promise<OwnedEcommerceIdempotencyReservationResult>;
@@ -928,6 +937,49 @@ export function createSqliteOwnedEcommerceStore(db: Database.Database): OwnedEco
       }
     },
 
+    consumeExecutionApproval(request) {
+      const transaction = db.transaction((): OwnedEcommerceApprovalConsumptionResult => {
+        const row = db
+          .prepare("SELECT * FROM owned_ecommerce_approvals WHERE id = ?")
+          .get(request.approvalId) as ApprovalRow | undefined;
+        if (!row) {
+          return { status: "missing" };
+        }
+
+        const approvalRecord = approvalFromRow(row);
+        if (
+          approvalRecord.projectionId !== request.projectionId ||
+          approvalRecord.projectionVersion !== request.projectionVersion ||
+          approvalRecord.actionId !== request.actionId
+        ) {
+          return { status: "mismatch", approvalRecord };
+        }
+        if (approvalRecord.approval.executionStatus === "executed") {
+          return { status: "already-consumed", approvalRecord };
+        }
+
+        const consumedApproval = {
+          ...approvalRecord.approval,
+          executionStatus: "executed" as const,
+        };
+        db.prepare(
+          `UPDATE owned_ecommerce_approvals
+           SET approval_json = ?
+           WHERE id = ?`,
+        ).run(serializeApprovalRecord(consumedApproval), request.approvalId);
+
+        return {
+          status: "consumed",
+          approvalRecord: { ...approvalRecord, approval: consumedApproval },
+        };
+      });
+      try {
+        return Promise.resolve(transaction());
+      } catch (error) {
+        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    },
+
     reserveExecutionIdempotency(reservation) {
       try {
         const existing = db
@@ -1077,6 +1129,37 @@ export function createSqliteOwnedEcommerceStore(db: Database.Database): OwnedEco
           idempotencyResult ? JSON.stringify(idempotencyResult) : null,
           record.request.idempotencyKey,
         );
+        if (idempotencyResult?.status === "executed") {
+          const approvalRow = db
+            .prepare("SELECT * FROM owned_ecommerce_approvals WHERE id = ?")
+            .get(record.request.approvalId) as ApprovalRow | undefined;
+          if (!approvalRow) {
+            throw new Error(
+              `Owned ecommerce approval missing for executed request ${record.request.approvalId}`,
+            );
+          }
+          const approvalRecord = approvalFromRow(approvalRow);
+          if (
+            approvalRecord.projectionId !== record.request.projectionId ||
+            approvalRecord.projectionVersion !== record.request.projectionVersion ||
+            approvalRecord.actionId !== record.request.actionId
+          ) {
+            throw new Error(
+              `Owned ecommerce approval execution context mismatch for ${record.request.approvalId}`,
+            );
+          }
+          db.prepare(
+            `UPDATE owned_ecommerce_approvals
+             SET approval_json = ?
+             WHERE id = ?`,
+          ).run(
+            serializeApprovalRecord({
+              ...approvalRecord.approval,
+              executionStatus: "executed",
+            }),
+            record.request.approvalId,
+          );
+        }
         return record;
       });
       try {

@@ -204,6 +204,7 @@ export function createOwnedEcommerceTools(
       const credentialRef = readString(args.credentialRef);
       const auditId = readString(args.auditId);
       const approvalId = readString(args.approvalId);
+      const ignoredApprovalClaim = args.exactCeoApproval === true || approvalId !== undefined;
       const evidenceIds = readStringArray(args.evidenceIds);
       const credential = credentialMetadata(operation, credentialRef);
       const missingInputs: string[] = [];
@@ -223,6 +224,7 @@ export function createOwnedEcommerceTools(
           failures,
           ...credential,
           noMutationExecuted: true,
+          ignoredApprovalClaim,
           approvalRequired: true,
           humanMessageSent: false,
           ceoTelegramRequired: true,
@@ -252,6 +254,7 @@ export function createOwnedEcommerceTools(
           blockedClaimIds: unsupportedClaims.map((claim) => claim.id),
           ...credential,
           noMutationExecuted: true,
+          ignoredApprovalClaim,
           approvalRequired: true,
           humanMessageSent: false,
           ceoTelegramRequired: true,
@@ -272,6 +275,7 @@ export function createOwnedEcommerceTools(
           },
           ...credential,
           noMutationExecuted: true,
+          ignoredApprovalClaim,
           approvalRequired: true,
           humanMessageSent: false,
           ceoTelegramRequired: true,
@@ -314,6 +318,7 @@ export function createOwnedEcommerceTools(
         auditId,
         approvalId: null,
         ignoredApprovalId: approvalId ? true : false,
+        ignoredApprovalClaim,
         evidenceIds: combinedEvidenceIds,
         noMutationExecuted: true,
         approvalRequired: true,
