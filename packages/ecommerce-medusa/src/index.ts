@@ -4,6 +4,7 @@ import type {
   EcommerceAdapterPreviewResult,
   EcommerceAdapterPublishResult,
   GuardrailResult,
+  OwnedEcommerceExecutionOperation,
   StorefrontProjection,
 } from "@msl/domain";
 
@@ -37,7 +38,14 @@ export type MedusaStorefrontPreview = {
 
 export type MedusaWriteBoundaryDecision =
   | { allowed: true; publicUrl: string }
-  | { allowed: false; reason: "approval-required" | "readiness-blocked" | "publishing-disabled" };
+  | {
+      allowed: false;
+      reason:
+        | "approval-required"
+        | "readiness-blocked"
+        | "publishing-disabled"
+        | "credentials-missing";
+    };
 
 export type MedusaWriteBoundaryRejectionReason = Extract<
   MedusaWriteBoundaryDecision,
@@ -45,15 +53,28 @@ export type MedusaWriteBoundaryRejectionReason = Extract<
 >["reason"];
 
 export type MedusaWriteBoundary = {
-  publish(input: {
-    projection: StorefrontProjection;
-    approval: ApprovalRecord;
-  }): Promise<MedusaWriteBoundaryDecision>;
+  isConfigured(): boolean;
+  publish(input: ApprovedMedusaWriteInput): Promise<MedusaWriteBoundaryDecision>;
+  activateCheckout(input: ApprovedMedusaWriteInput): Promise<MedusaWriteBoundaryDecision>;
+};
+
+export type ApprovedMedusaWriteInput = {
+  projection: StorefrontProjection;
+  approval: ApprovalRecord;
+  auditId: string;
+  rollbackRef: string;
+  operation: OwnedEcommerceExecutionOperation;
+};
+
+export type MedusaRuntimeConfig = {
+  enabled: boolean;
+  backendUrl?: string;
+  adminApiToken?: string;
+  liveWriter?: Pick<MedusaWriteBoundary, "publish" | "activateCheckout">;
 };
 
 export type MedusaPreviewAdapterOptions = {
   previewRefPrefix?: string;
-  writeBoundary?: MedusaWriteBoundary;
 };
 
 export class MedusaWriteBoundaryError extends Error {
@@ -64,6 +85,45 @@ export class MedusaWriteBoundaryError extends Error {
     super(message);
     this.name = "MedusaWriteBoundaryError";
   }
+}
+
+export function createFailClosedMedusaWriteBoundary(
+  reason: MedusaWriteBoundaryRejectionReason = "credentials-missing",
+): MedusaWriteBoundary {
+  const reject = (): Promise<MedusaWriteBoundaryDecision> =>
+    Promise.resolve({ allowed: false, reason });
+  return {
+    isConfigured: () => false,
+    publish: reject,
+    activateCheckout: reject,
+  };
+}
+
+export function createConfiguredMedusaWriteBoundary(
+  config: MedusaRuntimeConfig,
+): MedusaWriteBoundary {
+  if (!config.enabled || !config.backendUrl || !config.adminApiToken) {
+    return createFailClosedMedusaWriteBoundary();
+  }
+  if (!config.liveWriter) {
+    return createFailClosedMedusaWriteBoundary("publishing-disabled");
+  }
+
+  return {
+    isConfigured: () => true,
+    publish: (input) => config.liveWriter!.publish(input),
+    activateCheckout: (input) => config.liveWriter!.activateCheckout(input),
+  };
+}
+
+export function createMedusaWriteBoundaryFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): MedusaWriteBoundary {
+  return createConfiguredMedusaWriteBoundary({
+    enabled: env.MEDUSA_RUNTIME_WRITE_ENABLED === "true",
+    ...(env.MEDUSA_BACKEND_URL ? { backendUrl: env.MEDUSA_BACKEND_URL } : {}),
+    ...(env.MEDUSA_ADMIN_API_TOKEN ? { adminApiToken: env.MEDUSA_ADMIN_API_TOKEN } : {}),
+  });
 }
 
 export function buildMedusaStorefrontPreview(
@@ -103,33 +163,26 @@ export function createMedusaPreviewAdapter(
       return Promise.resolve({ previewRef: `${previewRefPrefix}:${input.id}` });
     },
 
-    async publish(
+    publish(
       input: StorefrontProjection,
       approval: ApprovalRecord,
     ): Promise<EcommerceAdapterPublishResult> {
       if (collectMedusaPreviewBlockingChecks(input).length > 0) {
-        throw new MedusaWriteBoundaryError(
-          "readiness-blocked",
-          "Medusa publish is blocked by projection readiness checks.",
+        return Promise.reject(
+          new MedusaWriteBoundaryError(
+            "readiness-blocked",
+            "Medusa publish is blocked by projection readiness checks.",
+          ),
         );
       }
 
-      if (!options.writeBoundary) {
-        throw new MedusaWriteBoundaryError(
+      void approval;
+      return Promise.reject(
+        new MedusaWriteBoundaryError(
           "publishing-disabled",
-          "Medusa public publishing is disabled for the preview-only adapter.",
-        );
-      }
-
-      const decision = await options.writeBoundary.publish({ projection: input, approval });
-      if (!decision.allowed) {
-        throw new MedusaWriteBoundaryError(
-          decision.reason,
-          `Medusa write boundary rejected publish: ${decision.reason}.`,
-        );
-      }
-
-      return { publicUrl: decision.publicUrl };
+          "Medusa public publishing is disabled for the preview-only adapter; use the backend runtime executor for live writes.",
+        ),
+      );
     },
   };
 }

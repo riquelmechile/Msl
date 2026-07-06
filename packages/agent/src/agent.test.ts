@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   answerBusinessQuestion,
   createAgentLoop,
+  createOwnedEcommerceRuntimeExecutor,
   LANE_CONTRACTS,
   getLaneContract,
   type BusinessContext,
@@ -25,7 +26,12 @@ import {
   createSqliteSupplierMirrorStore,
   type SupplierMirrorStore,
 } from "@msl/memory";
-import type { GuardrailResult, StorefrontProjection } from "@msl/domain";
+import type {
+  ApprovalRecord,
+  GuardrailResult,
+  OwnedEcommerceExecutionRequest,
+  StorefrontProjection,
+} from "@msl/domain";
 import { EscribanoObserver } from "./conversation/escribano.js";
 import type { AgentProposal, ConversationState } from "./conversation/types.js";
 import {
@@ -1237,6 +1243,757 @@ describe("owned ecommerce CEO orchestration tools", () => {
 
     db.close();
   });
+
+  it("executes approved publish once through the backend runtime boundary and returns duplicates safely", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const projection = makeStorefrontProjection();
+    const request = makeExecutionRequest();
+    const approval = makeExecutionApproval(request);
+    await store.upsertProjection(projection);
+    await store.recordApproval({
+      id: approval.id,
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      actionId: request.actionId,
+      approval,
+      evidenceIds: ["evidence:approval"],
+      redactedReason: "CEO approved exact owned ecommerce execution.",
+      createdAt: "2026-07-05T00:01:00.000Z",
+    });
+    await store.recordRollbackRef({
+      ref: "rollback:projection-1:projection-1:v1:publish",
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      operation: "publish",
+      redactedSummary: "Restore previous storefront publication state.",
+      createdAt: "2026-07-05T00:02:00.000Z",
+    });
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const activateCheckout = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const executor = createOwnedEcommerceRuntimeExecutor({
+      store,
+      writeBoundary: { isConfigured: () => true, publish, activateCheckout },
+      now: () => new Date("2026-07-05T00:05:00.000Z"),
+    });
+
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "executed",
+      auditId: "audit:idem-1",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+      publicUrl: "https://owned.example.test",
+    });
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "executed",
+      auditId: "audit:idem-1",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+      publicUrl: "https://owned.example.test",
+    });
+    await expect(store.getApproval(request.approvalId)).resolves.toMatchObject({
+      approval: { executionStatus: "executed" },
+    });
+    await expect(
+      executor.execute({ ...request, idempotencyKey: "idem-approval-reuse" }),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-already-executed"] });
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(activateCheckout).not.toHaveBeenCalled();
+
+    db.close();
+  });
+
+  it("blocks approvals that were already executed before runtime writes", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const request = makeExecutionRequest({ idempotencyKey: "idem-already-executed" });
+    const approval = makeExecutionApproval(request);
+    approval.executionStatus = "executed";
+    await store.upsertProjection(makeStorefrontProjection());
+    await store.recordApproval({
+      id: request.approvalId,
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      actionId: request.actionId,
+      approval,
+      evidenceIds: ["evidence:approval"],
+      redactedReason: "CEO approved exact owned ecommerce execution.",
+      createdAt: "2026-07-05T00:01:00.000Z",
+    });
+    await store.recordRollbackRef({
+      ref: "rollback:projection-1:projection-1:v1:publish",
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      operation: "publish",
+      redactedSummary: "Restore previous storefront publication state.",
+      createdAt: "2026-07-05T00:02:00.000Z",
+    });
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const recordExecutionAudit = vi.spyOn(store, "recordExecutionAudit");
+
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-already-executed"] });
+    expect(recordExecutionAudit).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+
+    db.close();
+  });
+
+  it("executes approved checkout activation through the backend runtime boundary", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const request = makeExecutionRequest({
+      operation: "checkout-activation",
+      actionId: "action:checkout:1",
+      approvalId: "approval:checkout:1",
+      idempotencyKey: "idem-checkout-1",
+    });
+    await seedExecutableOwnedEcommerceRequest(store, request);
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const activateCheckout = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://checkout.example.test" }),
+    );
+
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({
+      status: "executed",
+      auditId: "audit:idem-checkout-1",
+      rollbackRef: "rollback:projection-1:projection-1:v1:checkout-activation",
+      publicUrl: "https://checkout.example.test",
+    });
+    expect(publish).not.toHaveBeenCalled();
+    expect(activateCheckout).toHaveBeenCalledTimes(1);
+
+    db.close();
+  });
+
+  it("blocks unsafe runtime requests before write boundary calls", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const staleProjection = makeStorefrontProjection({
+      readiness: { status: "ready", checks: [], generatedAt: "2026-07-04T00:00:00.000Z" },
+    });
+    const request = makeExecutionRequest();
+    await store.upsertProjection(staleProjection);
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const executor = createOwnedEcommerceRuntimeExecutor({
+      store,
+      writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+      now: () => new Date("2026-07-05T00:05:00.000Z"),
+    });
+
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "blocked",
+      reasonCodes: ["stale-readiness"],
+    });
+    expect(publish).not.toHaveBeenCalled();
+
+    db.close();
+  });
+
+  it("blocks missing credentials, approval mismatch, rollback, and audit before runtime writes", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const request = makeExecutionRequest();
+    await store.upsertProjection(makeStorefrontProjection());
+    await store.recordApproval({
+      id: request.approvalId,
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      actionId: request.actionId,
+      approval: makeExecutionApproval({ ...request, projectionVersion: "other-version" }),
+      evidenceIds: ["evidence:approval"],
+      redactedReason: "Mismatched approval.",
+      createdAt: "2026-07-05T00:01:00.000Z",
+    });
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store,
+        writeBoundary: { isConfigured: () => false, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["missing-credentials"] });
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-binding-mismatch"] });
+    expect(publish).not.toHaveBeenCalled();
+
+    db.close();
+
+    const rollbackDb = new Database(":memory:");
+    const rollbackStore = createSqliteOwnedEcommerceStore(rollbackDb);
+    await rollbackStore.upsertProjection(makeStorefrontProjection());
+    await rollbackStore.recordApproval({
+      id: request.approvalId,
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      actionId: request.actionId,
+      approval: makeExecutionApproval(request),
+      evidenceIds: ["evidence:approval"],
+      redactedReason: "CEO approved exact owned ecommerce execution.",
+      createdAt: "2026-07-05T00:01:00.000Z",
+    });
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store: rollbackStore,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["missing-rollback-evidence"] });
+    expect(publish).not.toHaveBeenCalled();
+    rollbackDb.close();
+
+    const auditDb = new Database(":memory:");
+    const auditStore = createSqliteOwnedEcommerceStore(auditDb);
+    await auditStore.upsertProjection(makeStorefrontProjection());
+    await auditStore.recordApproval({
+      id: request.approvalId,
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      actionId: request.actionId,
+      approval: makeExecutionApproval(request),
+      evidenceIds: ["evidence:approval"],
+      redactedReason: "CEO approved exact owned ecommerce execution.",
+      createdAt: "2026-07-05T00:01:00.000Z",
+    });
+    await auditStore.recordRollbackRef({
+      ref: "rollback:projection-1:projection-1:v1:publish",
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      operation: "publish",
+      redactedSummary: "Restore previous storefront publication state.",
+      createdAt: "2026-07-05T00:02:00.000Z",
+    });
+    const auditFailingStore = {
+      ...auditStore,
+      recordExecutionAudit: vi.fn(() => Promise.reject(new Error("audit storage down"))),
+    };
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store: auditFailingStore,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["missing-audit-storage"] });
+    await expect(auditStore.getApproval(request.approvalId)).resolves.toMatchObject({
+      approval: { executionStatus: "not-executed" },
+    });
+    expect(publish).not.toHaveBeenCalled();
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store: auditStore,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:06:00.000Z"),
+      }).execute({ ...request, idempotencyKey: "idem-after-preflight-audit-retry" }),
+    ).resolves.toMatchObject({
+      status: "executed",
+      auditId: "audit:idem-after-preflight-audit-retry",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+    });
+    expect(publish).toHaveBeenCalledTimes(1);
+    auditDb.close();
+  });
+
+  it.each([
+    [
+      "target type",
+      { type: "ecommerce-catalog-item", itemRef: "product-1", projectionId: "projection-1" },
+    ],
+    [
+      "item ref",
+      { type: "ecommerce-catalog-item", itemRef: "product-other", projectionId: "projection-1" },
+    ],
+    ["projection target", { type: "storefront-projection", projectionId: "projection-other" }],
+  ] as const)(
+    "blocks approval bound to mismatched %s before runtime writes",
+    async (_caseName, target) => {
+      const db = new Database(":memory:");
+      const store = createSqliteOwnedEcommerceStore(db);
+      const request = makeExecutionRequest();
+      const approval = makeExecutionApproval(request);
+      approval.ownedEcommerceBinding!.target = target;
+      await store.upsertProjection(makeStorefrontProjection());
+      await store.recordApproval({
+        id: request.approvalId,
+        projectionId: request.projectionId,
+        projectionVersion: request.projectionVersion,
+        actionId: request.actionId,
+        approval,
+        evidenceIds: ["evidence:approval"],
+        redactedReason: "CEO approved mismatched owned ecommerce target.",
+        createdAt: "2026-07-05T00:01:00.000Z",
+      });
+      await store.recordRollbackRef({
+        ref: "rollback:projection-1:projection-1:v1:publish",
+        projectionId: request.projectionId,
+        projectionVersion: request.projectionVersion,
+        operation: "publish",
+        redactedSummary: "Restore previous storefront publication state.",
+        createdAt: "2026-07-05T00:02:00.000Z",
+      });
+      const publish = vi.fn(() =>
+        Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+      );
+      const recordExecutionAudit = vi.spyOn(store, "recordExecutionAudit");
+
+      await expect(
+        createOwnedEcommerceRuntimeExecutor({
+          store,
+          writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+          now: () => new Date("2026-07-05T00:05:00.000Z"),
+        }).execute(request),
+      ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-binding-mismatch"] });
+      expect(recordExecutionAudit).not.toHaveBeenCalled();
+      expect(publish).not.toHaveBeenCalled();
+
+      db.close();
+    },
+  );
+
+  it("blocks approval whose stored action differs from the runtime request action", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const request = makeExecutionRequest();
+    await store.upsertProjection(makeStorefrontProjection());
+    await store.recordApproval({
+      id: request.approvalId,
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      actionId: request.actionId,
+      approval: makeExecutionApproval({ ...request, actionId: "action:publish:other" }),
+      evidenceIds: ["evidence:approval"],
+      redactedReason: "CEO approved a different action.",
+      createdAt: "2026-07-05T00:01:00.000Z",
+    });
+    await store.recordRollbackRef({
+      ref: "rollback:projection-1:projection-1:v1:publish",
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      operation: "publish",
+      redactedSummary: "Restore previous storefront publication state.",
+      createdAt: "2026-07-05T00:02:00.000Z",
+    });
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const recordExecutionAudit = vi.spyOn(store, "recordExecutionAudit");
+
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-binding-mismatch"] });
+    expect(recordExecutionAudit).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+
+    db.close();
+  });
+
+  it.each([
+    [
+      "projection revision read",
+      "missing-projection-revision",
+      async (
+        store: ReturnType<typeof createSqliteOwnedEcommerceStore>,
+        request: OwnedEcommerceExecutionRequest,
+      ) => {
+        await store.recordApproval({
+          id: request.approvalId,
+          projectionId: request.projectionId,
+          projectionVersion: request.projectionVersion,
+          actionId: request.actionId,
+          approval: makeExecutionApproval(request),
+          evidenceIds: ["evidence:approval"],
+          redactedReason: "CEO approved exact owned ecommerce execution.",
+          createdAt: "2026-07-05T00:01:00.000Z",
+        });
+        await store.recordRollbackRef({
+          ref: `rollback:${request.projectionId}:${request.projectionVersion}:${request.operation}`,
+          projectionId: request.projectionId,
+          projectionVersion: request.projectionVersion,
+          operation: request.operation,
+          redactedSummary: "Restore previous storefront publication state.",
+          createdAt: "2026-07-05T00:02:00.000Z",
+        });
+        vi.spyOn(store, "getProjectionRevision").mockRejectedValueOnce(
+          new Error("fixture projection read unavailable"),
+        );
+      },
+    ],
+    [
+      "approval read",
+      "missing-approval",
+      async (
+        store: ReturnType<typeof createSqliteOwnedEcommerceStore>,
+        request: OwnedEcommerceExecutionRequest,
+      ) => {
+        await store.upsertProjection(makeStorefrontProjection());
+        await store.recordRollbackRef({
+          ref: `rollback:${request.projectionId}:${request.projectionVersion}:${request.operation}`,
+          projectionId: request.projectionId,
+          projectionVersion: request.projectionVersion,
+          operation: request.operation,
+          redactedSummary: "Restore previous storefront publication state.",
+          createdAt: "2026-07-05T00:02:00.000Z",
+        });
+        vi.spyOn(store, "getApproval").mockRejectedValueOnce(
+          new Error("fixture approval read unavailable"),
+        );
+      },
+    ],
+    [
+      "rollback read",
+      "missing-rollback-evidence",
+      async (
+        store: ReturnType<typeof createSqliteOwnedEcommerceStore>,
+        request: OwnedEcommerceExecutionRequest,
+      ) => {
+        await seedExecutableOwnedEcommerceRequest(store, request);
+        vi.spyOn(store, "resolveRollbackRef").mockRejectedValueOnce(
+          new Error("fixture rollback read unavailable"),
+        );
+      },
+    ],
+  ] as const)(
+    "returns controlled fail-closed result when %s fails before execution",
+    async (_caseName, expectedReason, arrangeStoreFailure) => {
+      const db = new Database(":memory:");
+      const store = createSqliteOwnedEcommerceStore(db);
+      const request = makeExecutionRequest({ idempotencyKey: `idem-store-read-${expectedReason}` });
+      const publish = vi.fn(() =>
+        Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+      );
+      const observer = vi.fn();
+      await arrangeStoreFailure(store, request);
+
+      await expect(
+        createOwnedEcommerceRuntimeExecutor({
+          store,
+          writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+          observer,
+          now: () => new Date("2026-07-05T00:05:00.000Z"),
+        }).execute(request),
+      ).resolves.toEqual({ status: "blocked", reasonCodes: [expectedReason] });
+
+      expect(observer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phase: "persistence-failed",
+          status: "blocked",
+          reasonCodes: [expectedReason],
+        }),
+      );
+      expect(JSON.stringify(observer.mock.calls)).not.toMatch(/read unavailable/);
+      expect(publish).not.toHaveBeenCalled();
+      db.close();
+    },
+  );
+
+  it.each([
+    [
+      "rejection",
+      () => Promise.resolve({ allowed: false as const, reason: "publishing-disabled" as const }),
+    ],
+    ["throw", () => Promise.reject(new Error("Medusa unavailable"))],
+  ] as const)(
+    "returns a safe failure and avoids retry writes after write boundary %s",
+    async (_caseName, publishImpl) => {
+      const db = new Database(":memory:");
+      const store = createSqliteOwnedEcommerceStore(db);
+      const request = makeExecutionRequest({ idempotencyKey: `idem-write-${_caseName}` });
+      await seedExecutableOwnedEcommerceRequest(store, request);
+      const publish = vi.fn(publishImpl);
+      const executor = createOwnedEcommerceRuntimeExecutor({
+        store,
+        writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      });
+
+      const expectedReason =
+        _caseName === "throw" ? "write-boundary-failed" : "missing-credentials";
+      const expectedResult = {
+        status: _caseName === "throw" ? "failed" : "blocked",
+        reasonCodes: [expectedReason],
+        auditId: `audit:idem-write-${_caseName}:preflight`,
+        rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+      };
+      await expect(executor.execute(request)).resolves.toEqual(expectedResult);
+      await expect(executor.execute(request)).resolves.toEqual(expectedResult);
+      expect(JSON.stringify(expectedResult)).not.toContain("Medusa unavailable");
+      await expect(
+        executor.execute({ ...request, idempotencyKey: `idem-write-${_caseName}-reuse` }),
+      ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-already-executed"] });
+      expect(publish).toHaveBeenCalledTimes(1);
+      expect(
+        db
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM owned_ecommerce_execution_audits
+             WHERE JSON_EXTRACT(summary_json, '$.status') = 'executed'`,
+          )
+          .get(),
+      ).toMatchObject({ count: 0 });
+
+      db.close();
+    },
+  );
+
+  it("emits redacted observability events for gate, write, and persistence failures", async () => {
+    const gateDb = new Database(":memory:");
+    const gateStore = createSqliteOwnedEcommerceStore(gateDb);
+    const gateObserver = vi.fn();
+    const request = makeExecutionRequest({ idempotencyKey: "idem-observe-gate" });
+
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store: gateStore,
+        writeBoundary: {
+          isConfigured: () => false,
+          publish: vi.fn(),
+          activateCheckout: vi.fn(),
+        },
+        observer: gateObserver,
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(request),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["missing-credentials"] });
+
+    expect(gateObserver).toHaveBeenCalledWith({
+      phase: "gate-blocked",
+      status: "blocked",
+      reasonCodes: ["missing-credentials"],
+      operation: "publish",
+      projectionId: "projection-1",
+      projectionVersion: "projection-1:v1",
+      actionId: "action:publish:1",
+      approvalId: "approval:publish:1",
+    });
+    expect(JSON.stringify(gateObserver.mock.calls)).not.toMatch(/token|secret/i);
+    gateDb.close();
+
+    const writeDb = new Database(":memory:");
+    const writeStore = createSqliteOwnedEcommerceStore(writeDb);
+    const writeRequest = makeExecutionRequest({ idempotencyKey: "idem-observe-write" });
+    await seedExecutableOwnedEcommerceRequest(writeStore, writeRequest);
+    const writeObserver = vi.fn();
+
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store: writeStore,
+        writeBoundary: {
+          isConfigured: () => true,
+          publish: vi.fn(() => Promise.reject(new Error("fixture write boundary unavailable"))),
+          activateCheckout: vi.fn(),
+        },
+        observer: writeObserver,
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(writeRequest),
+    ).resolves.toMatchObject({ status: "failed", reasonCodes: ["write-boundary-failed"] });
+
+    expect(writeObserver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: "write-boundary-failed",
+        status: "failed",
+        reasonCodes: ["write-boundary-failed"],
+        auditId: "audit:idem-observe-write:preflight",
+      }),
+    );
+    expect(JSON.stringify(writeObserver.mock.calls)).not.toContain(
+      "fixture write boundary unavailable",
+    );
+    writeDb.close();
+
+    const persistenceDb = new Database(":memory:");
+    const persistenceStore = createSqliteOwnedEcommerceStore(persistenceDb);
+    const persistenceRequest = makeExecutionRequest({ idempotencyKey: "idem-observe-persist" });
+    await seedExecutableOwnedEcommerceRequest(persistenceStore, persistenceRequest);
+    const persistenceObserver = vi.fn();
+    const failingStore = {
+      ...persistenceStore,
+      recordExecutionAudit: vi
+        .fn()
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error("fixture final audit storage unavailable")),
+    };
+
+    await expect(
+      createOwnedEcommerceRuntimeExecutor({
+        store: failingStore,
+        writeBoundary: {
+          isConfigured: () => true,
+          publish: vi.fn(() =>
+            Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+          ),
+          activateCheckout: vi.fn(),
+        },
+        observer: persistenceObserver,
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      }).execute(persistenceRequest),
+    ).resolves.toEqual({
+      status: "failed",
+      reasonCodes: ["execution-evidence-persistence-failed"],
+      auditId: "audit:idem-observe-persist:preflight",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+    });
+
+    expect(persistenceObserver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: "persistence-failed",
+        status: "failed",
+        reasonCodes: ["execution-evidence-persistence-failed"],
+        auditId: "audit:idem-observe-persist:preflight",
+      }),
+    );
+    expect(JSON.stringify(persistenceObserver.mock.calls)).not.toContain(
+      "fixture final audit storage unavailable",
+    );
+    persistenceDb.close();
+  });
+
+  it("does not claim success when final execution evidence persistence fails after a write", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const request = makeExecutionRequest({ idempotencyKey: "idem-record-failure" });
+    await seedExecutableOwnedEcommerceRequest(store, request);
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const failingStore = {
+      ...store,
+      recordExecution: vi.fn(() => Promise.reject(new Error("execution storage down"))),
+    };
+    const executor = createOwnedEcommerceRuntimeExecutor({
+      store: failingStore,
+      writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+      now: () => new Date("2026-07-05T00:05:00.000Z"),
+    });
+
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "failed",
+      reasonCodes: ["execution-evidence-persistence-failed"],
+      auditId: "audit:idem-record-failure:preflight",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+    });
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "duplicate",
+      reasonCodes: ["duplicate-idempotency-key"],
+      auditId: "audit:idem-record-failure:preflight",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+    });
+    await expect(
+      executor.execute({ ...request, idempotencyKey: "idem-record-failure-reuse" }),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-already-executed"] });
+    expect(publish).toHaveBeenCalledTimes(1);
+
+    db.close();
+  });
+
+  it("does not claim success when final audit persistence fails after a write", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const request = makeExecutionRequest({ idempotencyKey: "idem-final-audit-failure" });
+    await seedExecutableOwnedEcommerceRequest(store, request);
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const failingStore = {
+      ...store,
+      recordExecutionAudit: vi
+        .fn()
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error("final audit storage down")),
+    };
+    const executor = createOwnedEcommerceRuntimeExecutor({
+      store: failingStore,
+      writeBoundary: { isConfigured: () => true, publish, activateCheckout: publish },
+      now: () => new Date("2026-07-05T00:05:00.000Z"),
+    });
+
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "failed",
+      reasonCodes: ["execution-evidence-persistence-failed"],
+      auditId: "audit:idem-final-audit-failure:preflight",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+    });
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "failed",
+      reasonCodes: ["execution-evidence-persistence-failed"],
+      auditId: "audit:idem-final-audit-failure:preflight",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+    });
+    await expect(
+      executor.execute({ ...request, idempotencyKey: "idem-final-audit-failure-reuse" }),
+    ).resolves.toEqual({ status: "blocked", reasonCodes: ["approval-already-executed"] });
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(failingStore.recordExecutionAudit).toHaveBeenCalledTimes(2);
+    expect(
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM owned_ecommerce_execution_audits
+           WHERE JSON_EXTRACT(summary_json, '$.status') = 'executed'`,
+        )
+        .get(),
+    ).toMatchObject({ count: 0 });
+
+    db.close();
+  });
+
+  it("ignores conversational approval claims while keeping LLM tools prepare-only", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    await store.upsertProjection(makeStorefrontProjection());
+    const tool = createOwnedEcommerceTools(store).find(
+      (candidate) => candidate.name === "prepare_owned_ecommerce_approval_request",
+    )!;
+
+    await expect(
+      tool.execute({
+        projectionId: "projection-1",
+        operation: "publish",
+        exactCeoApproval: true,
+        approvalId: "approval-claim-only",
+        credentialRef: "credential-ref:runtime",
+        auditId: "audit:claim-only",
+      }),
+    ).resolves.toMatchObject({
+      status: "proposal-prepared",
+      approvalId: null,
+      ignoredApprovalId: true,
+      ignoredApprovalClaim: true,
+      noMutationExecuted: true,
+      publicPublishExecuted: false,
+    });
+    await expect(store.getApproval("approval-claim-only")).resolves.toBeNull();
+
+    db.close();
+  });
 });
 
 // ── Test helpers ─────────────────────────────────────────────────────
@@ -1361,6 +2118,69 @@ function makeStorefrontProjection(
     generatedAt: "2026-07-05T00:00:00.000Z",
     ...overrides,
   };
+}
+
+function makeExecutionRequest(
+  overrides: Partial<OwnedEcommerceExecutionRequest> = {},
+): OwnedEcommerceExecutionRequest {
+  return {
+    operation: "publish",
+    projectionId: "projection-1",
+    projectionVersion: "projection-1:v1",
+    actionId: "action:publish:1",
+    approvalId: "approval:publish:1",
+    idempotencyKey: "idem-1",
+    ...overrides,
+  };
+}
+
+function makeExecutionApproval(request: OwnedEcommerceExecutionRequest): ApprovalRecord {
+  return {
+    id: request.approvalId,
+    actionId: request.actionId,
+    sellerId: "seller-1",
+    approvedBy: "seller",
+    approvedAt: new Date("2026-07-05T00:01:00.000Z"),
+    exactChangeAccepted: [{ field: request.operation, from: "preview-only", to: "approved" }],
+    riskAccepted: request.operation === "publish" ? "high" : "critical",
+    executionStatus: "not-executed",
+    ownedEcommerceBinding: {
+      actionId: request.actionId,
+      projectionId: request.projectionId,
+      projectionVersion: request.projectionVersion,
+      target: { type: "storefront-projection", projectionId: request.projectionId },
+      operation: request.operation,
+      approver: "seller",
+      risk: request.operation === "publish" ? "high" : "critical",
+      rationale: "Approve exact owned ecommerce runtime execution.",
+      expiresAt: new Date("2026-07-06T00:00:00.000Z"),
+    },
+  };
+}
+
+async function seedExecutableOwnedEcommerceRequest(
+  store: ReturnType<typeof createSqliteOwnedEcommerceStore>,
+  request: OwnedEcommerceExecutionRequest,
+): Promise<void> {
+  await store.upsertProjection(makeStorefrontProjection());
+  await store.recordApproval({
+    id: request.approvalId,
+    projectionId: request.projectionId,
+    projectionVersion: request.projectionVersion,
+    actionId: request.actionId,
+    approval: makeExecutionApproval(request),
+    evidenceIds: ["evidence:approval"],
+    redactedReason: "CEO approved exact owned ecommerce execution.",
+    createdAt: "2026-07-05T00:01:00.000Z",
+  });
+  await store.recordRollbackRef({
+    ref: `rollback:${request.projectionId}:${request.projectionVersion}:${request.operation}`,
+    projectionId: request.projectionId,
+    projectionVersion: request.projectionVersion,
+    operation: request.operation,
+    redactedSummary: "Restore previous storefront publication state.",
+    createdAt: "2026-07-05T00:02:00.000Z",
+  });
 }
 
 // ── Phase 3 tests: Cortex Darwinian Feedback ──────────────────────────

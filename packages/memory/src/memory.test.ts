@@ -707,6 +707,36 @@ describe("owned ecommerce operational store", () => {
         idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1",
         createdAt: "2026-07-05T00:02:00.000Z",
       };
+      const runtimeApproval: ApprovalRecord = {
+        id: reservation.approvalId,
+        actionId: reservation.actionId,
+        sellerId: "seller-1",
+        approvedBy: "seller",
+        approvedAt: new Date("2026-07-05T00:01:00.000Z"),
+        exactChangeAccepted: [{ field: "publish", from: "preview-only", to: "approved" }],
+        riskAccepted: "high",
+        executionStatus: "not-executed",
+      };
+      await store.recordApproval({
+        id: runtimeApproval.id,
+        projectionId: reservation.projectionId,
+        projectionVersion: reservation.projectionVersion,
+        actionId: reservation.actionId,
+        approval: runtimeApproval,
+        evidenceIds: ["evidence-approval-runtime-1"],
+        redactedReason: "CEO approved exact runtime execution.",
+        createdAt: "2026-07-05T00:01:00.000Z",
+      });
+      await expect(store.consumeExecutionApproval(reservation)).resolves.toMatchObject({
+        status: "consumed",
+        approvalRecord: { approval: { executionStatus: "executed" } },
+      });
+      await expect(store.consumeExecutionApproval(reservation)).resolves.toMatchObject({
+        status: "already-consumed",
+      });
+      await expect(
+        store.consumeExecutionApproval({ ...reservation, actionId: "action-runtime-other" }),
+      ).resolves.toMatchObject({ status: "mismatch" });
       await expect(store.reserveExecutionIdempotency(reservation)).resolves.toMatchObject({
         status: "reserved",
       });

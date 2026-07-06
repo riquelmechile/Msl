@@ -3,8 +3,9 @@ import type { ApprovalRecord, StorefrontProjection } from "@msl/domain";
 import {
   collectMedusaPreviewBlockingChecks,
   buildMedusaStorefrontPreview,
+  createConfiguredMedusaWriteBoundary,
+  createFailClosedMedusaWriteBoundary,
   createMedusaPreviewAdapter,
-  MedusaWriteBoundaryError,
 } from "./index.js";
 
 const projection: StorefrontProjection = {
@@ -90,10 +91,7 @@ describe("Medusa preview adapter", () => {
     });
   });
 
-  it("fails blocked readiness before invoking the write boundary", async () => {
-    const publish = vi.fn(() =>
-      Promise.resolve({ allowed: true as const, publicUrl: "https://example.test" }),
-    );
+  it("fails blocked readiness before preview publish can reach a write path", async () => {
     const blockedProjection: StorefrontProjection = {
       ...projection,
       readiness: {
@@ -112,33 +110,75 @@ describe("Medusa preview adapter", () => {
     };
 
     await expect(
-      createMedusaPreviewAdapter({ writeBoundary: { publish } }).publish(
-        blockedProjection,
-        approval,
-      ),
+      createMedusaPreviewAdapter().publish(blockedProjection, approval),
     ).rejects.toMatchObject({ code: "readiness-blocked" });
-    expect(publish).not.toHaveBeenCalled();
   });
 
-  it("fails closed for public publish unless an explicit write boundary allows it", async () => {
+  it("keeps preview publish fail-closed instead of acting as a live write path", async () => {
     await expect(createMedusaPreviewAdapter().publish(projection, approval)).rejects.toMatchObject({
       code: "publishing-disabled",
     });
+  });
 
+  it("provides fail-closed runtime boundaries and never fakes configured write success", async () => {
+    const failClosed = createFailClosedMedusaWriteBoundary();
+    expect(failClosed.isConfigured()).toBe(false);
     await expect(
-      createMedusaPreviewAdapter({
-        writeBoundary: {
-          publish: () => Promise.resolve({ allowed: false, reason: "approval-required" }),
-        },
-      }).publish(projection, approval),
-    ).rejects.toBeInstanceOf(MedusaWriteBoundaryError);
+      failClosed.publish({
+        projection,
+        approval,
+        auditId: "audit-1",
+        rollbackRef: "rollback-1",
+        operation: "publish",
+      }),
+    ).resolves.toEqual({ allowed: false, reason: "credentials-missing" });
 
+    const configuredWithoutWriter = createConfiguredMedusaWriteBoundary({
+      enabled: true,
+      backendUrl: "https://medusa.example.test/",
+      adminApiToken: "redacted",
+    });
+    expect(configuredWithoutWriter.isConfigured()).toBe(false);
     await expect(
-      createMedusaPreviewAdapter({
-        writeBoundary: {
-          publish: () => Promise.resolve({ allowed: true, publicUrl: "https://example.test" }),
-        },
-      }).publish(projection, approval),
-    ).resolves.toEqual({ publicUrl: "https://example.test" });
+      configuredWithoutWriter.activateCheckout({
+        projection,
+        approval,
+        auditId: "audit-1",
+        rollbackRef: "rollback-1",
+        operation: "checkout-activation",
+      }),
+    ).resolves.toEqual({ allowed: false, reason: "publishing-disabled" });
+
+    const liveWriter = {
+      publish: vi.fn(() =>
+        Promise.resolve({
+          allowed: true as const,
+          publicUrl: "https://medusa.example.test/store/owned",
+        }),
+      ),
+      activateCheckout: vi.fn(() =>
+        Promise.resolve({
+          allowed: true as const,
+          publicUrl: "https://medusa.example.test/store/owned",
+        }),
+      ),
+    };
+    const configured = createConfiguredMedusaWriteBoundary({
+      enabled: true,
+      backendUrl: "https://medusa.example.test/",
+      adminApiToken: "redacted",
+      liveWriter,
+    });
+    expect(configured.isConfigured()).toBe(true);
+    await expect(
+      configured.activateCheckout({
+        projection,
+        approval,
+        auditId: "audit-1",
+        rollbackRef: "rollback-1",
+        operation: "checkout-activation",
+      }),
+    ).resolves.toEqual({ allowed: true, publicUrl: "https://medusa.example.test/store/owned" });
+    expect(liveWriter.activateCheckout).toHaveBeenCalledTimes(1);
   });
 });
