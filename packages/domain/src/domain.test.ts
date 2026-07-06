@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canExecutePreparedAction,
+  canExecuteOwnedEcommerceAction,
   canMakeHighConfidenceClaimFromEvidence,
   createPreparedAction,
   confidenceForOperationalEvidence,
@@ -16,6 +17,7 @@ import {
   summarizeProjectionReadiness,
   type ApprovalRecord,
   type CandidateProvenance,
+  type OwnedEcommerceExecutionApprovalBinding,
   type MlClaim,
   type Listing,
   type MlMessage,
@@ -163,6 +165,227 @@ describe("approval-required writes", () => {
       allowed: false,
       reason: "expired-action",
     });
+  });
+});
+
+describe("owned ecommerce execution approval binding", () => {
+  function approvedOwnedEcommerceAction(): PreparedAction {
+    return {
+      ...preparedAction("owned-ecommerce-publish"),
+      approvalStatus: "approved",
+      rationale: "Publish the approved storefront projection.",
+    };
+  }
+
+  function executionBinding(
+    action: PreparedAction,
+    overrides: Partial<OwnedEcommerceExecutionApprovalBinding> = {},
+  ): OwnedEcommerceExecutionApprovalBinding {
+    return {
+      actionId: action.id,
+      projectionId: "projection-1",
+      projectionVersion: "projection-1:v1",
+      target: { type: "storefront-projection", projectionId: "projection-1" },
+      operation: "publish",
+      approver: "seller",
+      risk: action.riskLevel,
+      rationale: action.rationale,
+      expiresAt: future,
+      ...overrides,
+    };
+  }
+
+  function approvalFor(
+    action: PreparedAction,
+    binding: OwnedEcommerceExecutionApprovalBinding,
+  ): ApprovalRecord {
+    return {
+      id: "approval-owned-ecommerce-1",
+      actionId: action.id,
+      sellerId: action.sellerId,
+      approvedBy: "seller",
+      approvedAt: now,
+      exactChangeAccepted: action.exactChange,
+      riskAccepted: action.riskLevel,
+      executionStatus: "not-executed",
+      ownedEcommerceBinding: binding,
+    };
+  }
+
+  it("authorizes exact owned ecommerce approval bindings", () => {
+    const action = approvedOwnedEcommerceAction();
+    const binding = executionBinding(action);
+    const approval = approvalFor(action, binding);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approval,
+      ),
+    ).toEqual({ allowed: true, reason: "approved" });
+  });
+
+  it("treats semantically identical targets as matching regardless of property insertion order", () => {
+    const action = approvedOwnedEcommerceAction();
+    const approval = approvalFor(
+      action,
+      executionBinding(action, {
+        target: { projectionId: "projection-1", type: "storefront-projection" },
+      }),
+    );
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approval,
+      ),
+    ).toEqual({ allowed: true, reason: "approved" });
+  });
+
+  it("blocks mismatched owned ecommerce approval bindings and expired approvals", () => {
+    const action = approvedOwnedEcommerceAction();
+    const binding = executionBinding(action);
+    const expectedMismatch = { allowed: false, reason: "approval-mismatch" } as const;
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, executionBinding(action, { actionId: "action-owned-ecommerce-other" })),
+      ),
+    ).toEqual(expectedMismatch);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v2",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, binding),
+      ),
+    ).toEqual(expectedMismatch);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-2",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, binding),
+      ),
+    ).toEqual(expectedMismatch);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-2" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, binding),
+      ),
+    ).toEqual(expectedMismatch);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "checkout-activation",
+        },
+        now,
+        approvalFor(action, binding),
+      ),
+    ).toEqual(expectedMismatch);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, executionBinding(action, { risk: "critical" })),
+      ),
+    ).toEqual(expectedMismatch);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, executionBinding(action, { rationale: "Different rationale." })),
+      ),
+    ).toEqual(expectedMismatch);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, executionBinding(action, { expiresAt: now })),
+      ),
+    ).toEqual({ allowed: false, reason: "expired-approval" });
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approvalFor(action, executionBinding(action, { expiresAt: new Date("not-a-date") })),
+      ),
+    ).toEqual({ allowed: false, reason: "expired-approval" });
   });
 });
 

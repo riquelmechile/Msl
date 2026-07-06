@@ -3,7 +3,69 @@ import type { PreparedAction } from "./preparedAction.js";
 
 export type OwnedEcommerceCandidateId = string;
 export type StorefrontProjectionId = string;
+export type StorefrontProjectionVersion = string;
 export type EvidenceId = string;
+
+export type OwnedEcommerceExecutionOperation = "publish" | "checkout-activation";
+
+export type OwnedEcommerceExecutionTarget =
+  | { type: "storefront-projection"; projectionId: StorefrontProjectionId }
+  | { type: "ecommerce-catalog-item"; itemRef: string; projectionId?: StorefrontProjectionId };
+
+export type OwnedEcommerceExecutionGateReason =
+  | "missing-approval"
+  | "expired-approval"
+  | "approval-binding-mismatch"
+  | "missing-projection-revision"
+  | "stale-readiness"
+  | "blocked-projection"
+  | "unsafe-claim"
+  | "missing-credentials"
+  | "duplicate-idempotency-key"
+  | "missing-audit-storage"
+  | "missing-rollback-evidence";
+
+export type OwnedEcommerceExecutionRequest = {
+  operation: OwnedEcommerceExecutionOperation;
+  projectionId: StorefrontProjectionId;
+  projectionVersion: StorefrontProjectionVersion;
+  actionId: string;
+  approvalId: string;
+  idempotencyKey: string;
+};
+
+export type OwnedEcommerceRollbackRef = {
+  ref: string;
+  projectionId: StorefrontProjectionId;
+  projectionVersion: StorefrontProjectionVersion;
+  operation: OwnedEcommerceExecutionOperation;
+  redactedSummary: string;
+  createdAt: string;
+};
+
+export type OwnedEcommerceExecutionAuditSummary = {
+  auditId: string;
+  projectionId: StorefrontProjectionId;
+  projectionVersion: StorefrontProjectionVersion;
+  actionId: string;
+  approvalId: string;
+  operation: OwnedEcommerceExecutionOperation;
+  status: "started" | "executed" | "blocked" | "duplicate" | "failed";
+  approver: "seller";
+  risk: string;
+  rationale: string;
+  reasonCodes: OwnedEcommerceExecutionGateReason[];
+  rollbackRef?: string;
+  createdAt: string;
+};
+
+export type OwnedEcommerceExecutionResult =
+  | { status: "executed"; auditId: string; rollbackRef: string; publicUrl?: string }
+  | {
+      status: "blocked" | "duplicate";
+      reasonCodes: OwnedEcommerceExecutionGateReason[];
+      auditId?: string;
+    };
 
 export type CandidateSourceKind =
   | "plasticov"
@@ -140,6 +202,7 @@ export type ProjectionReadiness = {
 
 export type StorefrontProjection = {
   id: StorefrontProjectionId;
+  projectionVersion: StorefrontProjectionVersion;
   candidateIds: OwnedEcommerceCandidateId[];
   status: "preview" | "approved" | "published";
   catalog: MedusaCatalogProjection;
@@ -172,9 +235,7 @@ export type OwnedEcommercePreparedAction = PreparedAction & {
     | "owned-ecommerce-checkout-activation"
     | "owned-ecommerce-price-change"
     | "owned-ecommerce-stock-change";
-  target:
-    | { type: "storefront-projection"; projectionId: StorefrontProjectionId }
-    | { type: "ecommerce-catalog-item"; itemRef: string; projectionId?: StorefrontProjectionId };
+  target: OwnedEcommerceExecutionTarget;
 };
 
 export function guardrailsForCandidateEvidence(
