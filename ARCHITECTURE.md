@@ -35,7 +35,7 @@
           │                     │  ┌──────────┐  ┌──────────┐  ┌───────────┐
           │                     │  │@msl/tools│  │@msl/mcp  │  │@msl/      │
           │                     │  │Approval  │  │Stdio MCP │  │workers    │
-          │                     │  │queue     │  │30 tools  │  │Insights   │
+          │                     │  │queue     │  │31 tools  │  │Insights   │
           │                     │  │Audit     │  │          │  │Creative   │
           │                     │  └──────────┘  └──────────┘  │Sync jobs  │
           │                     │                              └───────────┘
@@ -62,7 +62,7 @@
 | OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`.                                                                                                               | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth.                                                                                 |
 | Dual-account sync | `sync_product` is configured as Plasticov → Maustian on MercadoLibre Chile (`MLC`) for one safety-bounded operation.                                                                                                                   | Do not model the accounts as factory/store roles; reverse or arbitrary seller IDs are rejected.                                                                                     |
 | Supplier Mirror   | Supplier evidence, target policies, local SQLite readiness records, and Jinpeng bootstrap dry-run are available for CEO review. Supplier Mirror target policies are independent from the Plasticov → Maustian `sync_product` boundary. | Do not enable live workers without explicit runtime gate, stored readiness, and CEO approval; dry-run must not store secrets, call external APIs, publish, pause, or update prices. |
-| MCP               | Stdio server exposes 30 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, and image orchestration.                                                     | Treat production business-operation execution as approval-gated and environment-backed.                                                                                             |
+| MCP               | Stdio server exposes 31 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, and image orchestration.                                                     | Treat production business-operation execution as approval-gated and environment-backed.                                                                                             |
 
 ## Data flow: a conversation turn
 
@@ -129,7 +129,7 @@ User message (Spanish)
 | **Darwinian learning**     | Spreading-activation outcome propagation   | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes.             |
 | **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.                          |
 | **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                                    |
-| **MCP protocol**           | Stdio server with 30 compatible tools      | Compatible clients can exercise read, proposal, approval/status, Cortex, and MercadoLibre evidence surfaces.                  |
+| **MCP protocol**           | Stdio server with 31 compatible tools      | Compatible clients can exercise read, proposal, approval/status, Cortex, and MercadoLibre evidence surfaces.                  |
 | **No framework**           | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                                  |
 
 ## Directory tree
@@ -224,7 +224,7 @@ Msl/
 │   │
 │   ├── mcp/                      # MCP (Model Context Protocol) server
 │   │   └── src/
-│   │       └── index.ts          # 30 tools: ML evidence, proposal/approval/status,
+│   │       └── index.ts          # 31 tools: ML evidence, proposal/approval/status,
 │   │                             #   Cortex, claims, shipping, moderation, notices
 │   │
 │   └── bot/                      # Telegram bot runtime
@@ -297,7 +297,7 @@ Sync job stubs for critical business signals (orders, claims, cancellations, sto
 
 ### `@msl/mcp` — Model Context Protocol server
 
-Stdio-based MCP server exposing 30 compatible tools across agent simulation, Cortex consultation, strategy reads, MercadoLibre evidence, proposal preparation, approval/status, claims, shipping, moderation, notices, and image orchestration. Compatible with MCP clients that can launch the stdio server. Schema definitions use zod for input validation. Production business-operation execution remains approval-gated and environment-backed.
+Stdio-based MCP server exposing 31 compatible tools across agent simulation, Cortex consultation, strategy reads, MercadoLibre evidence, proposal preparation, approval/status, claims, shipping, moderation, notices, and image orchestration. Compatible with MCP clients that can launch the stdio server. Schema definitions use zod for input validation. Production business-operation execution remains approval-gated and environment-backed.
 
 ### `@msl/bot` — Telegram bot
 

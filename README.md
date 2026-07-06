@@ -94,8 +94,8 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | MercadoLibre OAuth | OAuth flow stores tokens only after validating returned `user_id` against the configured seller role.                                                                                                                                                                | Manual raw token setup or account role guessing.                                                                             |
 | Product sync       | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse/arbitrary seller IDs are rejected as a safety boundary.                                                                                                                                 | Business hierarchy between accounts or general-purpose bidirectional sync.                                                   |
 | Supplier Mirror    | Supplier/Jinpeng readiness can seed local SQLite evidence and CEO-review target proposals for Maustian and Plasticov through `npm run supplier-mirror:jinpeng:dry-run`. Supplier targeting is independent from the old Plasticov → Maustian `sync_product` boundary. | Live autonomous supplier sync, persisted secrets, external API calls in dry-run, or publish/pause/price mutations.           |
-| Owned ecommerce    | Preview foundation is implemented: the worker builds deterministic Medusa-oriented storefront projections, stores static preview JSON, validates local/data preview media, and serves the static `/storefront/[projectionId]` route without request-time LLM calls.  | Live Medusa deployment, checkout/payment activation, public publish, price/stock mutation, or stored production credentials. |
-| MCP tools          | MCP exposes 30 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration).                                                                              | Production business-operation execution through MCP.                                                                         |
+| Owned ecommerce    | Preview foundation is implemented: the worker builds deterministic Medusa-oriented storefront projections, stores static preview JSON, validates local/data preview media, and serves the static `/storefront/[projectionId]` route without request-time LLM calls. Runtime approval execution (domain/store contracts, Medusa runtime executor, regression verification) is merged and gated behind approvals + env credentials. | Live Medusa deployment, checkout/payment activation, public publish, price/stock mutation, or stored production credentials. |
+| MCP tools          | MCP exposes 31 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration).                                                                              | Production business-operation execution through MCP.                                                                         |
 | ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram.                                                                                                                               | Real-time MercadoLibre data without OAuth tokens for every role.                                                             |
 | CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                                                                                                                                                         | Secrets in CI; use GitHub Secrets/platform secrets.                                                                          |
 
@@ -117,7 +117,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  └───────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘ │
 │          │                 │                      │                  │
 │  ┌───────┴─────────────────┴──────────────────────┴────────────────┐ │
-│  │              30 ML Business Tools                               │ │
+│  │              31 ML Business Tools                               │ │
 │  │  calculate_listing_fees · read_my_listings · find_paused_listings│ │
 │  │  check_listing_visits · read_product_ads_insights · read_orders  │ │
 │  │  check_listing_quality · relist_listing · diagnose_image · upload│ │
@@ -170,7 +170,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  @msl/bot  │  │ @msl/mcp │  │@msl/     │
 │  Telegram  │  │ Stdio    │  │workers   │
 │  grammY    │  │ MCP srv  │  │Insights  │
-│  Proactive │  │30 tools  │  │Creative  │
+│  Proactive │  │31 tools  │  │Creative  │
 │  alerts    │  │          │  │Sync jobs │
 │  Multi-    │  │          │  │Ingestion │
 │  seller    │  │          │  │worker    │
@@ -194,7 +194,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 10  | **Autonomy Engine**                     | 6 autonomy levels (CONSULTA → FULL) with KPI tracking and auto-degradation                                                                                                                                      |
 | 11  | **Product Sync**                        | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary                                                                                                   |
 | 12  | **Approval Queue**                      | Every write action goes through prepare → approve → execute → audit                                                                                                                                             |
-| 13  | **ML Business Tools**                   | 30 tools for real MercadoLibre data: listings, fees, orders, ads, pricing, promotions, quality, relist, images, visits, claims, returns, shipping, moderation, notices, orchestration                           |
+| 13  | **ML Business Tools**                   | 31 tools for real MercadoLibre data: listings, fees, orders, ads, pricing, promotions, quality, relist, images, visits, claims, returns, shipping, moderation, notices, orchestration                           |
 | 14  | **Background Ingestion**                | 6h worker ingesting 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing) into operational DB with per-kind checkpoints and freshness TTLs                           |
 | 15  | **Seasonal Detection**                  | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts                                                                                                              |
 | 16  | **Cross-Account Intelligence**          | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                                                                                                                           |
@@ -216,7 +216,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 32  | **Agent Workforce Kernel**              | Durable company-agent registry, internal workforce lessons, and CEO-only routing context. Telegram does not expose worker selection or direct worker chat.                                                      |
 | 33  | **Cost/Cache Operating Ledger**         | Internal bounded ledger for token/cache counters and routing evidence. Summaries stay in Block C, omit raw prompts/responses/secrets/raw IDs, and are not billing truth.                                        |
 | 34  | **Supplier Mirror / Jinpeng Readiness** | Local SQLite supplier evidence, target-policy proposals, disabled-by-default scheduler gates, and Jinpeng dry-run bootstrap. No live supplier automation is enabled yet.                                        |
-| 35  | **Owned Ecommerce Preview Foundation**  | Medusa-oriented storefront candidates/projections, static preview route, readiness/approval guardrails, local/data media boundary, and DeepSeek fallback behavior. Live Medusa publish/checkout remains future. |
+| 35  | **Owned Ecommerce (Preview + Runtime)** | Medusa-oriented storefront candidates/projections, static preview route, readiness/approval guardrails, local/data media boundary, and DeepSeek fallback behavior. Runtime approval execution (contracts, Medusa executor, regression matrix) is merged and gated behind approvals + env credentials. Live Medusa publish/checkout remains future. |
 
 ## Stack
 

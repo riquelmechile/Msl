@@ -1,5 +1,7 @@
 # MSL vs API Oficial de MercadoLibre — Auditoría de Gaps
 
+> **Historical / superseded:** This document is a dated API audit from an earlier project review (2026-07-02). It is preserved for context only and does not describe the current operational state. Use `ROADMAP.md`, `ARCHITECTURE.md`, and the latest ML API client code for current coverage.
+
 > **Fecha:** 2026-07-02
 > **Fuente:** Documentación oficial de MercadoLibre Developers (vía MCP, actualizada a junio 2026)
 > **Propósito:** Identificar todo lo que falta en MSL respecto a la API oficial de ML

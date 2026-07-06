@@ -1,5 +1,7 @@
 # Análisis Arquitectónico MSL — Diagnóstico y Plan de Acción
 
+> **Historical / superseded:** This document is a dated architectural analysis from an earlier project review (2026-07-02). It is preserved for context only and does not describe the current operational state. Use `README.md`, `ROADMAP.md`, and `ARCHITECTURE.md` for current guidance.
+
 > **Fecha:** 2026-07-02
 > **Alcance:** Análisis completo de cuellos de botella, problemas de cohesión, desconexiones de base de datos y gaps agente↔LLM.
 > **Referencia:** Reemplaza y extiende `docs/observaciones.md`.

@@ -139,7 +139,7 @@ The business model is hybrid: dropshipping, arbitrage, and some owned stock. The
 
 MSL must grow beyond MercadoLibre:
 
-- Owned ecommerce storefront preview foundation: evidence-backed Medusa-oriented projections and static previews are implemented; live Medusa deployment, checkout, and public publish remain future gated work.
+- Owned ecommerce: evidence-backed Medusa-oriented storefront projections and static previews are implemented. Runtime approval execution (domain/store contracts, Medusa runtime executor, regression verification) is merged as a stacked-PR SDD cycle and gated behind approvals + env credentials. Live Medusa deployment, checkout, and public publish remain future gated work.
 - Social channels and content/creative workflows.
 - Ripley and other marketplaces.
 - Supplier discovery, negotiation, and catalog intelligence.
@@ -162,7 +162,7 @@ The current branch includes the first durable company-agent foundation. It makes
 | Proposal escalation contract | Keeps Telegram focused on CEO approve/reject/redirect decisions.                                              |
 | Outcome feedback             | Connects approvals, rejections, operational outcomes, and corrections back into Cortex.                       |
 
-This kernel should start proposal-only. It should make collaboration and learning real before enabling broader production mutations.
+The kernel foundation is live: company-agent registry, learning store, admin learning tools, cost/cache ledger, and runtime approval execution contracts are all merged. Collaboration and learning are real; broader production mutations remain gated behind explicit approvals, env credentials, and CEO authorization.
 
 ## Current repository alignment
 
@@ -177,7 +177,7 @@ The repository already contains important foundations:
 - `delegate_to_subagent` as a static proposal-oriented primitive.
 - MercadoLibre tooling and approval-gated business operations.
 
-The remaining work is product hardening: richer lifecycle workflows, broader evidence protocols, operational utility feedback, production policy, and the roadmap for multichannel expansion.
+The runtime execution path for owned ecommerce (contracts, Medusa executor, regression matrix) was completed as a stacked-PR SDD cycle and is merged. Remaining product hardening includes richer lifecycle workflows, broader evidence protocols, operational utility feedback, live production policy, and the roadmap for multichannel expansion.
 
 ## Related material
 
