@@ -1965,6 +1965,75 @@ describe("owned ecommerce CEO orchestration tools", () => {
     db.close();
   });
 
+  it("publishes without activating checkout and keeps payment inactive", async () => {
+    const db = new Database(":memory:");
+    const store = createSqliteOwnedEcommerceStore(db);
+    const request = makeExecutionRequest({ idempotencyKey: "idem-publish-no-checkout" });
+    await seedExecutableOwnedEcommerceRequest(store, request);
+    const publish = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://owned.example.test" }),
+    );
+    const activateCheckout = vi.fn(() =>
+      Promise.resolve({ allowed: true as const, publicUrl: "https://checkout.example.test" }),
+    );
+    const executor = createOwnedEcommerceRuntimeExecutor({
+      store,
+      writeBoundary: { isConfigured: () => true, publish, activateCheckout },
+      now: () => new Date("2026-07-05T00:05:00.000Z"),
+    });
+
+    await expect(executor.execute(request)).resolves.toEqual({
+      status: "executed",
+      auditId: "audit:idem-publish-no-checkout",
+      rollbackRef: "rollback:projection-1:projection-1:v1:publish",
+      publicUrl: "https://owned.example.test",
+    });
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(activateCheckout).not.toHaveBeenCalled();
+    await expect(store.getApproval(request.approvalId)).resolves.toMatchObject({
+      approval: { executionStatus: "executed" },
+    });
+
+    // A separate checkout request with the same projection requires its own approval
+    await store.upsertProjection(makeStorefrontProjection());
+    const checkoutRequest = makeExecutionRequest({
+      operation: "checkout-activation",
+      actionId: "action:checkout:2",
+      approvalId: "approval:checkout:2",
+      idempotencyKey: "idem-checkout-separate",
+    });
+    await store.recordApproval({
+      id: checkoutRequest.approvalId,
+      projectionId: checkoutRequest.projectionId,
+      projectionVersion: checkoutRequest.projectionVersion,
+      actionId: checkoutRequest.actionId,
+      approval: makeExecutionApproval(checkoutRequest),
+      evidenceIds: ["evidence:approval-checkout"],
+      redactedReason: "CEO approved checkout activation.",
+      createdAt: "2026-07-05T00:06:00.000Z",
+    });
+    await store.recordRollbackRef({
+      ref: "rollback:projection-1:projection-1:v1:checkout-activation",
+      projectionId: checkoutRequest.projectionId,
+      projectionVersion: checkoutRequest.projectionVersion,
+      operation: "checkout-activation",
+      redactedSummary: "Restore previous checkout/activation state.",
+      createdAt: "2026-07-05T00:07:00.000Z",
+    });
+
+    await expect(executor.execute(checkoutRequest)).resolves.toEqual({
+      status: "executed",
+      auditId: "audit:idem-checkout-separate",
+      rollbackRef: "rollback:projection-1:projection-1:v1:checkout-activation",
+      publicUrl: "https://checkout.example.test",
+    });
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(activateCheckout).toHaveBeenCalledTimes(1);
+
+    db.close();
+  });
+
   it("ignores conversational approval claims while keeping LLM tools prepare-only", async () => {
     const db = new Database(":memory:");
     const store = createSqliteOwnedEcommerceStore(db);

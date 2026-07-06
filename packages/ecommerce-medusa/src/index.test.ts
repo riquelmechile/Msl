@@ -181,4 +181,71 @@ describe("Medusa preview adapter", () => {
     ).resolves.toEqual({ allowed: true, publicUrl: "https://medusa.example.test/store/owned" });
     expect(liveWriter.activateCheckout).toHaveBeenCalledTimes(1);
   });
+
+  it("blocks publish and checkout activation independently when credentials are missing", async () => {
+    const failClosed = createFailClosedMedusaWriteBoundary();
+
+    await expect(
+      failClosed.publish({
+        projection,
+        approval,
+        auditId: "audit-publish-1",
+        rollbackRef: "rollback-publish-1",
+        operation: "publish",
+      }),
+    ).resolves.toEqual({ allowed: false, reason: "credentials-missing" });
+
+    await expect(
+      failClosed.activateCheckout({
+        projection,
+        approval,
+        auditId: "audit-checkout-1",
+        rollbackRef: "rollback-checkout-1",
+        operation: "checkout-activation",
+      }),
+    ).resolves.toEqual({ allowed: false, reason: "credentials-missing" });
+  });
+
+  it("never activates checkout when only publish is explicitly configured", async () => {
+    const publishOnlyWriter = {
+      publish: vi.fn(() =>
+        Promise.resolve({
+          allowed: true as const,
+          publicUrl: "https://medusa.example.test/store/owned",
+        }),
+      ),
+      activateCheckout: vi.fn(() =>
+        Promise.resolve({ allowed: false as const, reason: "publishing-disabled" as const }),
+      ),
+    };
+    const configured = createConfiguredMedusaWriteBoundary({
+      enabled: true,
+      backendUrl: "https://medusa.example.test/",
+      adminApiToken: "redacted",
+      liveWriter: publishOnlyWriter,
+    });
+
+    expect(configured.isConfigured()).toBe(true);
+    await expect(
+      configured.publish({
+        projection,
+        approval,
+        auditId: "audit-publish-only-1",
+        rollbackRef: "rollback-publish-only-1",
+        operation: "publish",
+      }),
+    ).resolves.toEqual({ allowed: true, publicUrl: "https://medusa.example.test/store/owned" });
+    expect(publishOnlyWriter.publish).toHaveBeenCalledTimes(1);
+
+    await expect(
+      configured.activateCheckout({
+        projection,
+        approval,
+        auditId: "audit-checkout-only-1",
+        rollbackRef: "rollback-checkout-only-1",
+        operation: "checkout-activation",
+      }),
+    ).resolves.toEqual({ allowed: false, reason: "publishing-disabled" });
+    expect(publishOnlyWriter.activateCheckout).toHaveBeenCalledTimes(1);
+  });
 });

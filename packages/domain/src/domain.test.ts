@@ -256,6 +256,75 @@ describe("owned ecommerce execution approval binding", () => {
     ).toEqual({ allowed: true, reason: "approved" });
   });
 
+  it("treats an approval without owned ecommerce binding as unapproved for execution", () => {
+    const action = approvedOwnedEcommerceAction();
+    const approval: ApprovalRecord = {
+      id: "approval-no-binding",
+      actionId: action.id,
+      sellerId: action.sellerId,
+      approvedBy: "seller",
+      approvedAt: now,
+      exactChangeAccepted: action.exactChange,
+      riskAccepted: action.riskLevel,
+      executionStatus: "not-executed",
+    };
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approval,
+      ),
+    ).toEqual({ allowed: false, reason: "approval-mismatch" });
+  });
+
+  it("authorizes exact owned ecommerce approval bindings with critical risk", () => {
+    const action = approvedOwnedEcommerceAction();
+    const binding = executionBinding(action, { risk: "critical" });
+    const approval = approvalFor(action, binding);
+    approval.riskAccepted = "critical";
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action: { ...action, riskLevel: "critical" },
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        now,
+        approval,
+      ),
+    ).toEqual({ allowed: true, reason: "approved" });
+  });
+
+  it("blocks approvals whose owned ecommerce binding expires exactly at the evaluation moment", () => {
+    const action = approvedOwnedEcommerceAction();
+    const nowMs = new Date("2026-07-05T12:00:00.000Z").getTime();
+    const exactNow = new Date(nowMs);
+
+    expect(
+      canExecuteOwnedEcommerceAction(
+        {
+          action,
+          projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
+          target: { type: "storefront-projection", projectionId: "projection-1" },
+          operation: "publish",
+        },
+        exactNow,
+        approvalFor(action, executionBinding(action, { expiresAt: exactNow })),
+      ),
+    ).toEqual({ allowed: false, reason: "expired-approval" });
+  });
+
   it("blocks mismatched owned ecommerce approval bindings and expired approvals", () => {
     const action = approvedOwnedEcommerceAction();
     const binding = executionBinding(action);
