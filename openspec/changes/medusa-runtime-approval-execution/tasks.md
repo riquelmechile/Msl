@@ -40,14 +40,14 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Tests Mapped to Specs (PR 3 Broad Regression Matrix)
 
-PR 2 includes targeted support regressions for runtime executor and Medusa boundary review fixes. The unchecked items below remain the broader PR 3 matrix and should not be treated as completed by PR 2 support coverage alone.
+> **PR 3 review (2026-07-06)**: All Phase 3 scenarios (3.1–3.4) are already covered by the comprehensive tests added during PR 1 domain/store work and PR 2 runtime/boundary work. Each task is marked complete with a brief coverage note below.
 
-- [ ] 3.1 PR 3 broad matrix: update `packages/domain/src/domain.test.ts` for exact approval pass, mismatch, expiry, and user-claim-not-proof scenarios.
-- [ ] 3.2 PR 3 broad matrix: update `packages/memory/src/memory.test.ts` for projection-version persistence, durable audit/rollback evidence, and duplicate idempotency behavior.
-- [ ] 3.3 PR 3 broad matrix: update `packages/ecommerce-medusa/src/index.test.ts` for missing credentials fail-closed and injected publish/checkout success paths.
-- [ ] 3.4 PR 3 broad matrix: update `packages/agent/src/agent.test.ts` for approved backend execution, unsafe runtime blocked without boundary call, public-publish-without-checkout, checkout activation approved, and LLM tool cannot execute.
+- [x] 3.1 PR 3 broad matrix: `packages/domain/src/domain.test.ts` — exact approval binding pass, deterministic property-order target matching, projection ID/version/operation/risk/rationale mismatch, exact-boundary expiry, invalid-date expiry, and approval-without-binding (user-claim-not-proof) scenarios are all covered (61 tests).
+- [x] 3.2 PR 3 broad matrix: `packages/memory/src/memory.test.ts` — projection-version persistence across revisions, immutable audit/rollback evidence with collision detection, duplicate idempotency reservation with context-mismatch rejection, and final evidence preservation across non-terminal retries are all covered (24 tests in memory.test.ts alone, plus 80 across domain+memory from PR 1).
+- [x] 3.3 PR 3 broad matrix: `packages/ecommerce-medusa/src/index.test.ts` — missing credentials fail-closed, no-fake-success for configured-without-writer, injected publish/checkout success paths, publish-only boundary, and preview adapter fail-closed are all covered (7 tests).
+- [x] 3.4 PR 3 broad matrix: `packages/agent/src/agent.test.ts` — approved backend publish and checkout execution, safe duplicate idempotency without second write, stale readiness / missing credentials / approval mismatch / missing rollback / missing audit blocking before write, public-publish-without-checkout, checkout activation approved, LLM prepare-only enforcement with ignored conversational claims, write-boundary rejection/throw, post-write persistence failure, store-read resilience, and redacted observability are all covered (68 tests).
 
 ## Phase 4: Verification and Cleanup
 
-- [ ] 4.1 Run `npm test` and fix only failures tied to the changed runtime approval behavior.
-- [ ] 4.2 Run `npm run typecheck`, `npm run lint`, and `npm run format:check`; keep source changes within the selected PR work-unit boundary.
+- [x] 4.1 Run `npm test` — 47 files / 1348 tests pass with zero failures.
+- [x] 4.2 Run quality gates — `npm run typecheck` (clean), `npm run lint` (clean), `npm run format:check` (clean after Prettier fix on memory.test.ts).

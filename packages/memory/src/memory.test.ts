@@ -1579,6 +1579,198 @@ describe("owned ecommerce operational store", () => {
       db.close();
     }
   });
+
+  it("independently retrieves multiple projection revisions without cross-contamination", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteOwnedEcommerceStore(db);
+      const v1 = {
+        id: "projection-multi-1",
+        projectionVersion: "projection-multi-1:v1",
+        candidateIds: [],
+        status: "preview" as const,
+        catalog: { collectionHandle: "multi-test", products: [] },
+        content: {
+          seoTitle: "Version 1",
+          geoCopy: "First revision.",
+          claims: [],
+          schemaMetadata: {},
+        },
+        media: [],
+        readiness: {
+          status: "ready" as const,
+          checks: [],
+          generatedAt: "2026-07-06T00:00:00.000Z",
+        },
+        evidenceIds: ["ev-v1"],
+        generatedAt: "2026-07-06T00:00:00.000Z",
+      };
+      const v2 = {
+        ...v1,
+        projectionVersion: "projection-multi-1:v2",
+        content: { ...v1.content, seoTitle: "Version 2" },
+        evidenceIds: ["ev-v2"],
+        generatedAt: "2026-07-06T00:01:00.000Z",
+      };
+      const v3 = {
+        ...v1,
+        projectionVersion: "projection-multi-1:v3",
+        content: { ...v1.content, seoTitle: "Version 3" },
+        evidenceIds: ["ev-v3"],
+        generatedAt: "2026-07-06T00:02:00.000Z",
+      };
+
+      await store.upsertProjection(v1);
+      await store.upsertProjection(v2);
+      await store.upsertProjection(v3);
+
+      await expect(
+        store.getProjectionRevision("projection-multi-1", "projection-multi-1:v1"),
+      ).resolves.toMatchObject({
+        projectionVersion: "projection-multi-1:v1",
+        evidenceIds: ["ev-v1"],
+      });
+      await expect(
+        store.getProjectionRevision("projection-multi-1", "projection-multi-1:v2"),
+      ).resolves.toMatchObject({
+        projectionVersion: "projection-multi-1:v2",
+        evidenceIds: ["ev-v2"],
+      });
+      await expect(
+        store.getProjectionRevision("projection-multi-1", "projection-multi-1:v3"),
+      ).resolves.toMatchObject({
+        projectionVersion: "projection-multi-1:v3",
+        evidenceIds: ["ev-v3"],
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("preserves durable audit and rollback evidence after execution evidence chain completes", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteOwnedEcommerceStore(db);
+      const projection: StorefrontProjection = {
+        id: "projection-durable-1",
+        projectionVersion: "projection-durable-1:v1",
+        candidateIds: [],
+        status: "approved",
+        catalog: { collectionHandle: "durable-test", products: [] },
+        content: {
+          seoTitle: "Durable evidence test",
+          geoCopy: "Testing durable audit trail.",
+          claims: [],
+          schemaMetadata: {},
+        },
+        media: [],
+        readiness: { status: "ready", checks: [], generatedAt: "2026-07-06T00:00:00.000Z" },
+        evidenceIds: ["ev-durable"],
+        generatedAt: "2026-07-06T00:00:00.000Z",
+      };
+      await store.upsertProjection(projection);
+
+      const reservation = {
+        operation: "publish" as const,
+        projectionId: "projection-durable-1",
+        projectionVersion: "projection-durable-1:v1",
+        actionId: "action-durable-1",
+        approvalId: "approval-durable-1",
+        idempotencyKey: "owned-ecommerce:publish:projection-durable-1:v1:durable",
+        createdAt: "2026-07-06T00:01:00.000Z",
+      };
+
+      const approval: ApprovalRecord = {
+        id: reservation.approvalId,
+        actionId: reservation.actionId,
+        sellerId: "seller-1",
+        approvedBy: "seller",
+        approvedAt: new Date("2026-07-06T00:00:00.000Z"),
+        exactChangeAccepted: [{ field: "publish", from: "preview-only", to: "approved" }],
+        riskAccepted: "high",
+        executionStatus: "not-executed",
+      };
+      await store.recordApproval({
+        id: approval.id,
+        projectionId: reservation.projectionId,
+        projectionVersion: reservation.projectionVersion,
+        actionId: reservation.actionId,
+        approval,
+        evidenceIds: ["ev-approval-durable"],
+        redactedReason: "CEO approved exact runtime execution.",
+        createdAt: "2026-07-06T00:02:00.000Z",
+      });
+
+      const rollback = {
+        ref: "rollback-durable-1",
+        projectionId: "projection-durable-1",
+        projectionVersion: "projection-durable-1:v1",
+        operation: "publish" as const,
+        redactedSummary: "Restore previous publication state.",
+        createdAt: "2026-07-06T00:03:00.000Z",
+      };
+      await store.recordRollbackRef(rollback);
+
+      const auditSummary: OwnedEcommerceExecutionAuditSummary = {
+        auditId: "audit-durable-1",
+        projectionId: "projection-durable-1",
+        projectionVersion: "projection-durable-1:v1",
+        actionId: "action-durable-1",
+        approvalId: "approval-durable-1",
+        operation: "publish",
+        status: "executed",
+        approver: "seller",
+        risk: "high",
+        rationale: "Publish the approved storefront projection.",
+        reasonCodes: [],
+        rollbackRef: rollback.ref,
+        createdAt: "2026-07-06T00:04:00.000Z",
+      };
+      await store.recordExecutionAudit({
+        id: auditSummary.auditId,
+        summary: auditSummary,
+        redactedPreState: { status: "preview", credentialRef: "redacted" },
+        createdAt: auditSummary.createdAt,
+      });
+
+      await expect(store.consumeExecutionApproval(reservation)).resolves.toMatchObject({
+        status: "consumed",
+      });
+      await store.reserveExecutionIdempotency(reservation);
+      await store.recordExecution({
+        id: "execution-durable-1",
+        request: reservation,
+        status: "executed",
+        auditId: auditSummary.auditId,
+        rollbackRef: rollback.ref,
+        result: {
+          status: "executed",
+          auditId: auditSummary.auditId,
+          rollbackRef: rollback.ref,
+        },
+        createdAt: "2026-07-06T00:05:00.000Z",
+        updatedAt: "2026-07-06T00:06:00.000Z",
+      });
+
+      // Prove each piece of the evidence chain is independently durable
+      await expect(store.resolveRollbackRef(rollback.ref)).resolves.toMatchObject({
+        ref: "rollback-durable-1",
+        operation: "publish",
+      });
+      await expect(store.getApproval(approval.id)).resolves.toMatchObject({
+        approval: { executionStatus: "executed" },
+      });
+      await expect(store.reserveExecutionIdempotency(reservation)).resolves.toMatchObject({
+        status: "duplicate",
+        reservation: {
+          auditId: "audit-durable-1",
+          result: { status: "executed" },
+        },
+      });
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("Cortex delegation feedback boundaries", () => {
