@@ -8,6 +8,7 @@ import {
   guardrailsForCandidateEvidence,
   summarizeProjectionReadiness,
   type ApprovalRecord,
+  type OwnedEcommerceExecutionAuditSummary,
   type ReadSnapshot,
   type StorefrontCandidate,
   type StorefrontProjection,
@@ -481,6 +482,7 @@ describe("owned ecommerce operational store", () => {
       };
       const projection: StorefrontProjection = {
         id: "projection-1",
+        projectionVersion: "projection-1:v1",
         candidateIds: [candidate.id],
         status: "preview",
         catalog: {
@@ -571,6 +573,7 @@ describe("owned ecommerce operational store", () => {
       await store.recordApproval({
         id: approval.id,
         projectionId: projection.id,
+        projectionVersion: projection.projectionVersion,
         actionId: action.id,
         approval,
         evidenceIds: ["evidence-approval-1"],
@@ -609,6 +612,7 @@ describe("owned ecommerce operational store", () => {
         store.recordApproval({
           id: approval.id,
           projectionId: projection.id,
+          projectionVersion: projection.projectionVersion,
           actionId: action.id,
           approval,
           evidenceIds: ["evidence-approval-1"],
@@ -631,6 +635,7 @@ describe("owned ecommerce operational store", () => {
         store.recordApproval({
           id: approval.id,
           projectionId: projection.id,
+          projectionVersion: projection.projectionVersion,
           actionId: action.id,
           approval: { ...approval, riskAccepted: "critical" },
           evidenceIds: ["evidence-approval-mutated"],
@@ -640,6 +645,809 @@ describe("owned ecommerce operational store", () => {
       ).rejects.toThrow(
         "Owned ecommerce approval id collision for approval-1: existing audit record differs",
       );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("loads exact projection revisions and stores idempotency, redacted audit, and rollback evidence", async () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createSqliteOwnedEcommerceStore(db);
+      const baseProjection: StorefrontProjection = {
+        id: "projection-runtime-1",
+        projectionVersion: "projection-runtime-1:v1",
+        candidateIds: [],
+        status: "approved",
+        catalog: { collectionHandle: "storage", products: [] },
+        content: {
+          seoTitle: "Approved storefront",
+          geoCopy: "Approved runtime projection.",
+          claims: [],
+          schemaMetadata: { type: "CollectionPage" },
+        },
+        media: [],
+        readiness: { status: "ready", checks: [], generatedAt: "2026-07-05T00:00:00.000Z" },
+        evidenceIds: ["evidence-runtime-1"],
+        generatedAt: "2026-07-05T00:00:00.000Z",
+      };
+      await store.upsertProjection(baseProjection);
+      await expect(store.upsertProjection(baseProjection)).resolves.toBeUndefined();
+      await expect(
+        store.upsertProjection({
+          ...baseProjection,
+          status: "published",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce projection revision collision for projection-runtime-1@projection-runtime-1:v1: existing revision differs",
+      );
+      await store.upsertProjection({
+        ...baseProjection,
+        projectionVersion: "projection-runtime-1:v2",
+        status: "preview",
+        generatedAt: "2026-07-05T00:01:00.000Z",
+      });
+
+      await expect(
+        store.getProjectionRevision("projection-runtime-1", "projection-runtime-1:v1"),
+      ).resolves.toMatchObject({
+        projectionVersion: "projection-runtime-1:v1",
+        status: "approved",
+      });
+      await expect(
+        store.getProjectionRevision("projection-runtime-1", "projection-runtime-1:missing"),
+      ).resolves.toBeNull();
+
+      const reservation = {
+        operation: "publish" as const,
+        projectionId: "projection-runtime-1",
+        projectionVersion: "projection-runtime-1:v1",
+        actionId: "action-runtime-1",
+        approvalId: "approval-runtime-1",
+        idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1",
+        createdAt: "2026-07-05T00:02:00.000Z",
+      };
+      await expect(store.reserveExecutionIdempotency(reservation)).resolves.toMatchObject({
+        status: "reserved",
+      });
+      await expect(store.reserveExecutionIdempotency(reservation)).resolves.toMatchObject({
+        status: "duplicate",
+        reservation: { projectionVersion: "projection-runtime-1:v1" },
+      });
+      const reserveExecutionKey = async (idempotencyKey: string) => {
+        await expect(
+          store.reserveExecutionIdempotency({
+            ...reservation,
+            idempotencyKey,
+          }),
+        ).resolves.toMatchObject({ status: "reserved" });
+      };
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...reservation,
+          projectionVersion: "projection-runtime-1:v2",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution idempotency reservation mismatch for owned-ecommerce:publish:projection-runtime-1:v1",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...reservation,
+          actionId: "action-runtime-2",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution idempotency reservation mismatch for owned-ecommerce:publish:projection-runtime-1:v1",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...reservation,
+          approvalId: "approval-runtime-2",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution idempotency reservation mismatch for owned-ecommerce:publish:projection-runtime-1:v1",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...reservation,
+          operation: "checkout-activation",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution idempotency reservation mismatch for owned-ecommerce:publish:projection-runtime-1:v1",
+      );
+
+      const rollback = {
+        ref: "rollback-runtime-1",
+        projectionId: "projection-runtime-1",
+        projectionVersion: "projection-runtime-1:v1",
+        operation: "publish" as const,
+        redactedSummary: "Previous publish state captured without credentials or raw paths.",
+        createdAt: "2026-07-05T00:03:00.000Z",
+      };
+      const summary: OwnedEcommerceExecutionAuditSummary = {
+        auditId: "audit-runtime-1",
+        projectionId: "projection-runtime-1",
+        projectionVersion: "projection-runtime-1:v1",
+        actionId: "action-runtime-1",
+        approvalId: "approval-runtime-1",
+        operation: "publish",
+        status: "executed",
+        approver: "seller",
+        risk: "high",
+        rationale: "Publish the approved storefront projection.",
+        reasonCodes: [],
+        rollbackRef: rollback.ref,
+        createdAt: "2026-07-05T00:04:00.000Z",
+      };
+
+      await expect(store.recordRollbackRef(rollback)).resolves.toEqual(rollback);
+      await expect(store.recordRollbackRef(rollback)).resolves.toEqual(rollback);
+      await expect(
+        store.recordRollbackRef({
+          ...rollback,
+          redactedSummary: "Changed rollback evidence.",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce rollback ref collision for rollback-runtime-1: existing rollback record differs",
+      );
+      await expect(
+        store.recordExecutionAudit({
+          id: summary.auditId,
+          summary,
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: summary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: "audit-runtime-1" });
+      await expect(
+        store.recordExecutionAudit({
+          id: summary.auditId,
+          summary,
+          redactedPreState: { credentialRef: "redacted", status: "preview" },
+          createdAt: summary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: "audit-runtime-1" });
+      await expect(
+        store.recordExecutionAudit({
+          id: summary.auditId,
+          summary: { ...summary, status: "failed" },
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: summary.createdAt,
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution audit collision for audit-runtime-1: existing audit record differs",
+      );
+      await expect(store.resolveRollbackRef(rollback.ref)).resolves.toEqual(rollback);
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-1",
+          request: reservation,
+          status: "executed",
+          auditId: summary.auditId,
+          rollbackRef: rollback.ref,
+          result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+          createdAt: "2026-07-05T00:05:00.000Z",
+          updatedAt: "2026-07-05T00:06:00.000Z",
+        }),
+      ).resolves.toMatchObject({ status: "executed", rollbackRef: "rollback-runtime-1" });
+      await expect(store.reserveExecutionIdempotency(reservation)).resolves.toMatchObject({
+        status: "duplicate",
+        reservation: {
+          auditId: summary.auditId,
+          result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+        },
+      });
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-1",
+          request: reservation,
+          status: "started",
+          createdAt: "2026-07-05T00:05:00.000Z",
+          updatedAt: "2026-07-05T00:07:00.000Z",
+        }),
+      ).resolves.toMatchObject({
+        status: "executed",
+        auditId: summary.auditId,
+        rollbackRef: rollback.ref,
+        result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+      });
+      expect(
+        db
+          .prepare(
+            `SELECT status, audit_id, rollback_ref, result_json
+             FROM owned_ecommerce_executions
+             WHERE id = ?`,
+          )
+          .get("execution-runtime-1"),
+      ).toEqual({
+        status: "executed",
+        audit_id: summary.auditId,
+        rollback_ref: rollback.ref,
+        result_json: JSON.stringify({
+          status: "executed",
+          auditId: summary.auditId,
+          rollbackRef: rollback.ref,
+        }),
+      });
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-final-contradiction",
+          request: reservation,
+          status: "blocked",
+          result: { status: "blocked", reasonCodes: ["missing-audit-storage"] },
+          createdAt: "2026-07-05T00:05:00.000Z",
+          updatedAt: "2026-07-05T00:08:00.000Z",
+        }),
+      ).resolves.toMatchObject({
+        status: "executed",
+        auditId: summary.auditId,
+        rollbackRef: rollback.ref,
+        result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+      });
+      expect(
+        (
+          db
+            .prepare("SELECT COUNT(*) AS count FROM owned_ecommerce_executions WHERE id = ?")
+            .get("execution-runtime-final-contradiction") as { count: number }
+        ).count,
+      ).toBe(0);
+      await expect(store.reserveExecutionIdempotency(reservation)).resolves.toMatchObject({
+        status: "duplicate",
+        reservation: {
+          auditId: summary.auditId,
+          result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+        },
+      });
+      const executedWithoutResultReservation = {
+        ...reservation,
+        idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:executed-without-result",
+      };
+      await expect(
+        store.reserveExecutionIdempotency(executedWithoutResultReservation),
+      ).resolves.toMatchObject({ status: "reserved" });
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-without-result",
+          request: executedWithoutResultReservation,
+          status: "executed",
+          auditId: summary.auditId,
+          rollbackRef: rollback.ref,
+          createdAt: "2026-07-05T00:07:00.000Z",
+          updatedAt: "2026-07-05T00:08:00.000Z",
+        }),
+      ).resolves.toMatchObject({ status: "executed", rollbackRef: rollback.ref });
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-without-result",
+          request: executedWithoutResultReservation,
+          status: "started",
+          createdAt: "2026-07-05T00:07:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).resolves.toMatchObject({
+        status: "executed",
+        auditId: summary.auditId,
+        rollbackRef: rollback.ref,
+        result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+      });
+      await expect(
+        store.reserveExecutionIdempotency(executedWithoutResultReservation),
+      ).resolves.toMatchObject({
+        status: "duplicate",
+        reservation: {
+          auditId: summary.auditId,
+          result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+        },
+      });
+      const mismatchedProjectionVersionRollback = {
+        ...rollback,
+        ref: "rollback-runtime-version-mismatch",
+        projectionVersion: "projection-runtime-1:v2",
+      };
+      const mismatchedOperationRollback = {
+        ...rollback,
+        ref: "rollback-runtime-operation-mismatch",
+        operation: "checkout-activation" as const,
+      };
+      await expect(store.recordRollbackRef(mismatchedProjectionVersionRollback)).resolves.toEqual(
+        mismatchedProjectionVersionRollback,
+      );
+      await expect(store.recordRollbackRef(mismatchedOperationRollback)).resolves.toEqual(
+        mismatchedOperationRollback,
+      );
+      const mismatchedProjectionVersionAuditSummary: OwnedEcommerceExecutionAuditSummary = {
+        ...summary,
+        auditId: "audit-runtime-version-mismatch-rollback",
+        rollbackRef: mismatchedProjectionVersionRollback.ref,
+      };
+      const mismatchedOperationRollbackAuditSummary: OwnedEcommerceExecutionAuditSummary = {
+        ...summary,
+        auditId: "audit-runtime-operation-mismatch-rollback",
+        rollbackRef: mismatchedOperationRollback.ref,
+      };
+      await expect(
+        store.recordExecutionAudit({
+          id: mismatchedProjectionVersionAuditSummary.auditId,
+          summary: mismatchedProjectionVersionAuditSummary,
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: mismatchedProjectionVersionAuditSummary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: mismatchedProjectionVersionAuditSummary.auditId });
+      await expect(
+        store.recordExecutionAudit({
+          id: mismatchedOperationRollbackAuditSummary.auditId,
+          summary: mismatchedOperationRollbackAuditSummary,
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: mismatchedOperationRollbackAuditSummary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: mismatchedOperationRollbackAuditSummary.auditId });
+      await reserveExecutionKey("owned-ecommerce:publish:projection-runtime-1:v1:version-mismatch");
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-version-mismatch",
+          request: {
+            ...reservation,
+            idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:version-mismatch",
+          },
+          status: "executed",
+          auditId: mismatchedProjectionVersionAuditSummary.auditId,
+          rollbackRef: mismatchedProjectionVersionRollback.ref,
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution rollback evidence mismatch for rollback-runtime-version-mismatch",
+      );
+      await reserveExecutionKey(
+        "owned-ecommerce:publish:projection-runtime-1:v1:operation-mismatch",
+      );
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-operation-mismatch",
+          request: {
+            ...reservation,
+            idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:operation-mismatch",
+          },
+          status: "executed",
+          auditId: mismatchedOperationRollbackAuditSummary.auditId,
+          rollbackRef: mismatchedOperationRollback.ref,
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution rollback evidence mismatch for rollback-runtime-operation-mismatch",
+      );
+      const missingRollbackAuditSummary: OwnedEcommerceExecutionAuditSummary = {
+        ...summary,
+        auditId: "audit-runtime-missing-rollback",
+        rollbackRef: "rollback-missing",
+      };
+      await expect(
+        store.recordExecutionAudit({
+          id: missingRollbackAuditSummary.auditId,
+          summary: missingRollbackAuditSummary,
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: missingRollbackAuditSummary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: missingRollbackAuditSummary.auditId });
+      await reserveExecutionKey("owned-ecommerce:publish:projection-runtime-1:v1:missing-rollback");
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-missing-rollback",
+          request: {
+            ...reservation,
+            idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:missing-rollback",
+          },
+          status: "executed",
+          auditId: missingRollbackAuditSummary.auditId,
+          rollbackRef: "rollback-missing",
+          result: {
+            status: "executed",
+            auditId: missingRollbackAuditSummary.auditId,
+            rollbackRef: "rollback-missing",
+          },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow("Owned ecommerce execution rollback evidence missing for rollback-missing");
+      await reserveExecutionKey("owned-ecommerce:publish:projection-runtime-1:v1:missing-audit");
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-missing-audit",
+          request: {
+            ...reservation,
+            idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:missing-audit",
+          },
+          status: "executed",
+          auditId: "audit-missing",
+          rollbackRef: rollback.ref,
+          result: { status: "executed", auditId: "audit-missing", rollbackRef: rollback.ref },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow("Owned ecommerce execution audit evidence missing for audit-missing");
+      const mismatchedAuditSummary: OwnedEcommerceExecutionAuditSummary = {
+        ...summary,
+        auditId: "audit-runtime-operation-mismatch",
+        operation: "checkout-activation",
+      };
+      await expect(
+        store.recordExecutionAudit({
+          id: mismatchedAuditSummary.auditId,
+          summary: mismatchedAuditSummary,
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: mismatchedAuditSummary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: mismatchedAuditSummary.auditId });
+      await reserveExecutionKey("owned-ecommerce:publish:projection-runtime-1:v1:audit-mismatch");
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-audit-mismatch",
+          request: {
+            ...reservation,
+            idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:audit-mismatch",
+          },
+          status: "executed",
+          auditId: mismatchedAuditSummary.auditId,
+          rollbackRef: rollback.ref,
+          result: {
+            status: "executed",
+            auditId: mismatchedAuditSummary.auditId,
+            rollbackRef: rollback.ref,
+          },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution audit evidence mismatch for audit-runtime-operation-mismatch",
+      );
+      const nonExecutedAuditSummary: OwnedEcommerceExecutionAuditSummary = {
+        ...summary,
+        auditId: "audit-runtime-blocked-summary",
+        status: "blocked",
+        reasonCodes: ["missing-audit-storage"],
+      };
+      delete nonExecutedAuditSummary.rollbackRef;
+      await expect(
+        store.recordExecutionAudit({
+          id: nonExecutedAuditSummary.auditId,
+          summary: nonExecutedAuditSummary,
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: nonExecutedAuditSummary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: nonExecutedAuditSummary.auditId });
+      await reserveExecutionKey(
+        "owned-ecommerce:publish:projection-runtime-1:v1:non-executed-audit-summary",
+      );
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-non-executed-audit-summary",
+          request: {
+            ...reservation,
+            idempotencyKey:
+              "owned-ecommerce:publish:projection-runtime-1:v1:non-executed-audit-summary",
+          },
+          status: "executed",
+          auditId: nonExecutedAuditSummary.auditId,
+          rollbackRef: rollback.ref,
+          result: {
+            status: "executed",
+            auditId: nonExecutedAuditSummary.auditId,
+            rollbackRef: rollback.ref,
+          },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution audit evidence mismatch for audit-runtime-blocked-summary",
+      );
+      const rollbackInconsistentAuditSummary: OwnedEcommerceExecutionAuditSummary = {
+        ...summary,
+        auditId: "audit-runtime-rollback-inconsistent-summary",
+        rollbackRef: mismatchedOperationRollback.ref,
+      };
+      await expect(
+        store.recordExecutionAudit({
+          id: rollbackInconsistentAuditSummary.auditId,
+          summary: rollbackInconsistentAuditSummary,
+          redactedPreState: { status: "preview", credentialRef: "redacted" },
+          createdAt: rollbackInconsistentAuditSummary.createdAt,
+        }),
+      ).resolves.toMatchObject({ id: rollbackInconsistentAuditSummary.auditId });
+      await reserveExecutionKey(
+        "owned-ecommerce:publish:projection-runtime-1:v1:rollback-inconsistent-audit-summary",
+      );
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-rollback-inconsistent-audit-summary",
+          request: {
+            ...reservation,
+            idempotencyKey:
+              "owned-ecommerce:publish:projection-runtime-1:v1:rollback-inconsistent-audit-summary",
+          },
+          status: "executed",
+          auditId: rollbackInconsistentAuditSummary.auditId,
+          rollbackRef: rollback.ref,
+          result: {
+            status: "executed",
+            auditId: rollbackInconsistentAuditSummary.auditId,
+            rollbackRef: rollback.ref,
+          },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution audit evidence mismatch for audit-runtime-rollback-inconsistent-summary",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...reservation,
+          idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:executed-blocked-result",
+        }),
+      ).resolves.toMatchObject({ status: "reserved" });
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-executed-blocked-result",
+          request: {
+            ...reservation,
+            idempotencyKey:
+              "owned-ecommerce:publish:projection-runtime-1:v1:executed-blocked-result",
+          },
+          status: "executed",
+          result: { status: "blocked", reasonCodes: ["missing-audit-storage"] },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution result/status mismatch for owned-ecommerce:publish:projection-runtime-1:v1:executed-blocked-result",
+      );
+      await reserveExecutionKey(
+        "owned-ecommerce:publish:projection-runtime-1:v1:executed-duplicate-result",
+      );
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-executed-duplicate-result",
+          request: {
+            ...reservation,
+            idempotencyKey:
+              "owned-ecommerce:publish:projection-runtime-1:v1:executed-duplicate-result",
+          },
+          status: "executed",
+          auditId: summary.auditId,
+          rollbackRef: rollback.ref,
+          result: { status: "duplicate", reasonCodes: ["duplicate-idempotency-key"] },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution result/status mismatch for owned-ecommerce:publish:projection-runtime-1:v1:executed-duplicate-result",
+      );
+      for (const status of ["started", "failed", "blocked", "duplicate"] as const) {
+        await reserveExecutionKey(
+          `owned-ecommerce:publish:projection-runtime-1:v1:${status}-executed-result`,
+        );
+        await expect(
+          store.recordExecution({
+            id: `execution-runtime-${status}-executed-result`,
+            request: {
+              ...reservation,
+              idempotencyKey: `owned-ecommerce:publish:projection-runtime-1:v1:${status}-executed-result`,
+            },
+            status,
+            auditId: summary.auditId,
+            rollbackRef: rollback.ref,
+            result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+            createdAt: "2026-07-05T00:08:00.000Z",
+            updatedAt: "2026-07-05T00:09:00.000Z",
+          }),
+        ).rejects.toThrow(
+          `Owned ecommerce execution result/status mismatch for owned-ecommerce:publish:projection-runtime-1:v1:${status}-executed-result`,
+        );
+      }
+      const mismatchedNonExecutedResults = [
+        {
+          status: "started" as const,
+          result: { status: "blocked" as const, reasonCodes: ["missing-audit-storage" as const] },
+        },
+        {
+          status: "failed" as const,
+          result: { status: "blocked" as const, reasonCodes: ["missing-audit-storage" as const] },
+        },
+        {
+          status: "blocked" as const,
+          result: {
+            status: "duplicate" as const,
+            reasonCodes: ["duplicate-idempotency-key" as const],
+          },
+        },
+        {
+          status: "duplicate" as const,
+          result: { status: "blocked" as const, reasonCodes: ["missing-audit-storage" as const] },
+        },
+      ];
+      for (const { status, result } of mismatchedNonExecutedResults) {
+        await reserveExecutionKey(
+          `owned-ecommerce:publish:projection-runtime-1:v1:${status}-${result.status}-result`,
+        );
+        await expect(
+          store.recordExecution({
+            id: `execution-runtime-${status}-${result.status}-result`,
+            request: {
+              ...reservation,
+              idempotencyKey: `owned-ecommerce:publish:projection-runtime-1:v1:${status}-${result.status}-result`,
+            },
+            status,
+            result,
+            createdAt: "2026-07-05T00:08:00.000Z",
+            updatedAt: "2026-07-05T00:09:00.000Z",
+          }),
+        ).rejects.toThrow(
+          `Owned ecommerce execution result/status mismatch for owned-ecommerce:publish:projection-runtime-1:v1:${status}-${result.status}-result`,
+        );
+      }
+      const finalReservation = {
+        ...reservation,
+        auditId: summary.auditId,
+        result: {
+          status: "executed" as const,
+          auditId: summary.auditId,
+          rollbackRef: rollback.ref,
+        },
+      };
+      const missingAuditReservation = {
+        ...finalReservation,
+        idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:reserve-missing-audit",
+        auditId: "audit-missing",
+        result: { ...finalReservation.result, auditId: "audit-missing" },
+      };
+      await expect(store.reserveExecutionIdempotency(missingAuditReservation)).rejects.toThrow(
+        "Owned ecommerce execution audit evidence missing for audit-missing",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...finalReservation,
+          idempotencyKey: missingAuditReservation.idempotencyKey,
+        }),
+      ).resolves.toMatchObject({
+        status: "reserved",
+        reservation: { result: finalReservation.result },
+      });
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...finalReservation,
+          idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:reserve-audit-mismatch",
+          auditId: mismatchedAuditSummary.auditId,
+          result: { ...finalReservation.result, auditId: mismatchedAuditSummary.auditId },
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution audit evidence mismatch for audit-runtime-operation-mismatch",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...finalReservation,
+          idempotencyKey:
+            "owned-ecommerce:publish:projection-runtime-1:v1:reserve-non-executed-audit-summary",
+          auditId: nonExecutedAuditSummary.auditId,
+          result: { ...finalReservation.result, auditId: nonExecutedAuditSummary.auditId },
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution audit evidence mismatch for audit-runtime-blocked-summary",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...finalReservation,
+          idempotencyKey:
+            "owned-ecommerce:publish:projection-runtime-1:v1:reserve-rollback-inconsistent-audit-summary",
+          auditId: rollbackInconsistentAuditSummary.auditId,
+          result: {
+            ...finalReservation.result,
+            auditId: rollbackInconsistentAuditSummary.auditId,
+          },
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution audit evidence mismatch for audit-runtime-rollback-inconsistent-summary",
+      );
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...finalReservation,
+          idempotencyKey:
+            "owned-ecommerce:publish:projection-runtime-1:v1:reserve-missing-rollback",
+          auditId: missingRollbackAuditSummary.auditId,
+          result: {
+            ...finalReservation.result,
+            auditId: missingRollbackAuditSummary.auditId,
+            rollbackRef: "rollback-missing",
+          },
+        }),
+      ).rejects.toThrow("Owned ecommerce execution rollback evidence missing for rollback-missing");
+      await expect(
+        store.reserveExecutionIdempotency({
+          ...finalReservation,
+          idempotencyKey:
+            "owned-ecommerce:publish:projection-runtime-1:v1:reserve-rollback-mismatch",
+          auditId: mismatchedOperationRollbackAuditSummary.auditId,
+          result: {
+            ...finalReservation.result,
+            auditId: mismatchedOperationRollbackAuditSummary.auditId,
+            rollbackRef: mismatchedOperationRollback.ref,
+          },
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution rollback evidence mismatch for rollback-runtime-operation-mismatch",
+      );
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-missing-reservation",
+          request: {
+            ...reservation,
+            idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:missing-reservation",
+          },
+          status: "executed",
+          auditId: summary.auditId,
+          rollbackRef: rollback.ref,
+          result: { status: "executed", auditId: summary.auditId, rollbackRef: rollback.ref },
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:09:00.000Z",
+        }),
+      ).rejects.toThrow(
+        "Owned ecommerce execution idempotency reservation missing for owned-ecommerce:publish:projection-runtime-1:v1:missing-reservation",
+      );
+      expect(
+        (
+          db
+            .prepare("SELECT COUNT(*) AS count FROM owned_ecommerce_executions WHERE id = ?")
+            .get("execution-runtime-missing-reservation") as { count: number }
+        ).count,
+      ).toBe(0);
+      const collidingExecutionIdReservation = {
+        ...reservation,
+        idempotencyKey: "owned-ecommerce:publish:projection-runtime-1:v1:colliding-id",
+        actionId: "action-runtime-2",
+      };
+      await expect(
+        store.reserveExecutionIdempotency(collidingExecutionIdReservation),
+      ).resolves.toMatchObject({ status: "reserved" });
+      await expect(
+        store.recordExecution({
+          id: "execution-runtime-1",
+          request: collidingExecutionIdReservation,
+          status: "started",
+          createdAt: "2026-07-05T00:08:00.000Z",
+          updatedAt: "2026-07-05T00:10:00.000Z",
+        }),
+      ).rejects.toThrow("Owned ecommerce execution id collision for execution-runtime-1");
+      expect(
+        db
+          .prepare(
+            `SELECT idempotency_key, projection_id, projection_version, action_id, approval_id,
+                    operation, status, audit_id, rollback_ref, result_json
+             FROM owned_ecommerce_executions
+             WHERE id = ?`,
+          )
+          .get("execution-runtime-1"),
+      ).toEqual({
+        idempotency_key: reservation.idempotencyKey,
+        projection_id: reservation.projectionId,
+        projection_version: reservation.projectionVersion,
+        action_id: reservation.actionId,
+        approval_id: reservation.approvalId,
+        operation: reservation.operation,
+        status: "executed",
+        audit_id: summary.auditId,
+        rollback_ref: rollback.ref,
+        result_json: JSON.stringify({
+          status: "executed",
+          auditId: summary.auditId,
+          rollbackRef: rollback.ref,
+        }),
+      });
+      expect(
+        db
+          .prepare(
+            `SELECT status, audit_id, result_json
+             FROM owned_ecommerce_execution_idempotency
+             WHERE idempotency_key = ?`,
+          )
+          .get(collidingExecutionIdReservation.idempotencyKey),
+      ).toEqual({ status: "reserved", audit_id: null, result_json: null });
     } finally {
       db.close();
     }
@@ -672,11 +1480,13 @@ describe("owned ecommerce operational store", () => {
         }
         db.prepare(
           `INSERT INTO owned_ecommerce_approvals (
-            id, projection_id, action_id, approval_json, evidence_ids_json, redacted_reason, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            id, projection_id, projection_version, action_id, approval_json, evidence_ids_json,
+            redacted_reason, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           `approval-malformed-date-${name}`,
           "projection-1",
+          "projection-1:v1",
           `action-owned-ecommerce-publish-${name}`,
           JSON.stringify(approvalJson),
           JSON.stringify(["evidence-approval-1"]),
@@ -711,6 +1521,7 @@ describe("owned ecommerce operational store", () => {
       await store.recordApproval({
         id: approval.id,
         projectionId: "projection-1",
+        projectionVersion: "projection-1:v1",
         actionId: approval.actionId,
         approval,
         evidenceIds: ["evidence-approval-1"],
@@ -722,6 +1533,7 @@ describe("owned ecommerce operational store", () => {
         store.recordApproval({
           id: "approval-2",
           projectionId: "projection-1",
+          projectionVersion: "projection-1:v1",
           actionId: approval.actionId,
           approval: { ...approval, id: "approval-2" },
           evidenceIds: ["evidence-approval-2"],

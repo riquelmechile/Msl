@@ -9,6 +9,7 @@ import {
 
 const projection: StorefrontProjection = {
   id: "projection-1",
+  projectionVersion: "projection-1:v1",
   candidateIds: ["candidate-1"],
   status: "preview",
   catalog: {

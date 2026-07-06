@@ -567,6 +567,7 @@ function buildOwnedEcommerceProjection(input: {
 
   return {
     id: input.projectionId,
+    projectionVersion: `${input.projectionId}:${input.generatedAt}`,
     candidateIds: projectedCandidates.map((candidate) => candidate.id),
     status: "preview",
     catalog: {
