@@ -141,6 +141,13 @@ export {
   getCompanyAgent,
   listCompanyAgents,
 } from "./conversation/companyAgents.js";
+export { createAgentMessageBusStore } from "./conversation/agentMessageBusStore.js";
+export type {
+  AgentMessageBusStore,
+  AgentMessage,
+  EnqueueAgentMessageInput,
+} from "./conversation/agentMessageBusStore.js";
+
 export { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
 export type {
   CompanyAgentStore,
