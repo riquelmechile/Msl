@@ -70,6 +70,11 @@ const mocks = vi.hoisted(() => {
   const mockBuildSystemPrompt = vi.fn((sellerName: string) => `Prompt for ${sellerName}`);
   const mockEscribanoObserver = vi.fn();
   const mockCreateGraphEngine = vi.fn(() => ({ engine: true }));
+  const mockCreateAgentConsensusStore = vi.fn(() => ({
+    submitReview: vi.fn(),
+    getConsensus: vi.fn(),
+    requiresConsensus: vi.fn(() => false),
+  }));
 
   return {
     mockCommand,
@@ -90,6 +95,7 @@ const mocks = vi.hoisted(() => {
     mockEscribanoObserver,
     mockCreateGraphEngine,
     mockCreateAgentLoop,
+    mockCreateAgentConsensusStore,
   };
 });
 
@@ -119,6 +125,7 @@ vi.mock("@msl/agent", () => ({
   createCompanyAgentStore: mocks.mockCreateCompanyAgentStore,
   createCompanyAgentLearningStore: mocks.mockCreateCompanyAgentLearningStore,
   createWorkforceCostCacheLedgerStore: mocks.mockCreateWorkforceCostCacheLedgerStore,
+  createAgentConsensusStore: mocks.mockCreateAgentConsensusStore,
   createSessionStore: mocks.mockCreateSessionStore,
   createAutonomyEngine: mocks.mockCreateAutonomyEngine,
   EscribanoObserver: mocks.mockEscribanoObserver,

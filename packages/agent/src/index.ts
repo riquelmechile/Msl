@@ -34,6 +34,7 @@ export type {
   OpenAiFunctionToolDefinition,
 } from "./conversation/agentLoop.js";
 export {
+  buildConsensusContext,
   buildWorkforceCostCacheContext,
   buildWorkforceLessonContext,
   buildWorkforceSkillContext,

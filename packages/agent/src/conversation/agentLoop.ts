@@ -26,6 +26,7 @@ import {
   autonomyGate,
 } from "./guardrails.js";
 import type { AutonomyEngine } from "./autonomyEngine.js";
+import type { AgentConsensusStore } from "./agentConsensusStore.js";
 import { selfVerify } from "./selfVerify.js";
 import { parseStrategy } from "./strategyParser.js";
 import type { ToolDefinition } from "./tools.js";
@@ -288,6 +289,13 @@ export type AgentLoopConfig = {
    * is executed by these tools.
    */
   ownedEcommerceStore?: OwnedEcommerceStore;
+  /**
+   * Optional consensus store for multi-agent review of high-risk proposals.
+   * When provided, the agent loop checks if a generated proposal requires
+   * consensus and injects the consensus summary (verdict counts + reviewer
+   * rationales) into the response before presenting it to the CEO.
+   */
+  consensusStore?: AgentConsensusStore;
   /**
    * Explicit company-agent identity for read-only workforce lesson context.
    * Lessons are never inferred globally; without this target no lesson context
@@ -605,6 +613,53 @@ export function buildWorkforceSkillContext(
   }
 
   return text;
+}
+
+/**
+ * Build a formatted consensus string for a proposal when it requires
+ * multi-agent review. Returns empty string when:
+ * - The proposal's action kind does not require consensus
+ * - No reviews have been submitted yet
+ *
+ * Format:
+ * ```
+ * 🤝 Consenso: 2 approve, 1 risk_warning
+ * - market-catalog: approve — "Reasoning text"
+ * - operations-manager: risk_warning — "Another reasoning"
+ * ```
+ *
+ * Consensus is advisory — the CEO always retains final "dale" authority.
+ */
+export function buildConsensusContext(
+  proposal: AgentProposal,
+  consensusStore: AgentConsensusStore,
+): string {
+  const kind = proposal.action.kind;
+  if (!consensusStore.requiresConsensus(kind)) return "";
+
+  const proposalId = proposal.action.id;
+  const consensus = consensusStore.getConsensus(proposalId);
+
+  if (consensus.reviews.length === 0) return "";
+
+  // Build verdict summary: "2 approve, 1 risk_warning"
+  const verdictParts = Object.entries(consensus.verdicts)
+    .map(([verdict, count]) => `${count} ${verdict}`)
+    .join(", ");
+
+  const summaryLine = `🤝 Consenso: ${verdictParts}`;
+
+  // Format each reviewer's verdict and rationale
+  const detailLines = consensus.reviews.map(
+    (review) =>
+      `- ${review.reviewerAgentId}: ${review.verdict} — "${review.rationale}"`,
+  );
+
+  return [
+    "",
+    summaryLine,
+    ...detailLines,
+  ].join("\n");
 }
 
 function appendBlockCSection(blockC: string, section: string): string {
@@ -1342,6 +1397,14 @@ ${strategyLines.join("\n")}`;
               .map((c) => `- ${c.name}: ${c.detail}`)
               .join("\n");
             responseText = `⚠️ Requiere tu revisión\n\n${warnings}\n\n---\n\n${responseText}`;
+          }
+        }
+
+        // --- Consensus context injection (advisory, shown before dale) ---
+        if (proposal && config.consensusStore && !isConfirmation(userMessage)) {
+          const consensusContext = buildConsensusContext(proposal, config.consensusStore);
+          if (consensusContext) {
+            responseText = `${responseText}\n\n${consensusContext}`;
           }
         }
 

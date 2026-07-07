@@ -293,14 +293,15 @@ describe("agentConsensusStore", () => {
   // ═══════════════════════════════════════════════════════════════
 
   describe("requiresConsensus", () => {
-    it("returns true for all 6 high-risk kinds", () => {
+    it("returns true for all high-risk kinds", () => {
       const highRisk: Array<{ kind: string; riskDelta?: number }> = [
-        { kind: "publish-product" },
-        { kind: "pause-listing" },
-        { kind: "close-listing" },
-        { kind: "product-ads-budget" },
-        { kind: "sync-product" },
-        { kind: "claim-response" },
+        { kind: "listing-edit" },
+        { kind: "creative-publication" },
+        { kind: "product-ads-action" },
+        { kind: "cancellation" },
+        { kind: "refund" },
+        { kind: "honey-pot-deploy" },
+        { kind: "probe-analysis" },
       ];
 
       for (const { kind, riskDelta } of highRisk) {
@@ -329,8 +330,8 @@ describe("agentConsensusStore", () => {
       expect(store.requiresConsensus("price-change", 0.2)).toBe(false);
     });
 
-    it("price-change without riskDelta returns false", () => {
-      expect(store.requiresConsensus("price-change")).toBe(false);
+    it("price-change without riskDelta returns true (default: requires consensus)", () => {
+      expect(store.requiresConsensus("price-change")).toBe(true);
     });
 
     it("returns false for unknown kind", () => {

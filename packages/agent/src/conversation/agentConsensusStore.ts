@@ -27,12 +27,13 @@ const VALID_VERDICTS = new Set<string>([
 ]);
 
 const HIGH_RISK_KINDS = new Set<string>([
-  "publish-product",
-  "pause-listing",
-  "close-listing",
-  "product-ads-budget",
-  "sync-product",
-  "claim-response",
+  "listing-edit",
+  "creative-publication",
+  "product-ads-action",
+  "cancellation",
+  "refund",
+  "honey-pot-deploy",
+  "probe-analysis",
 ]);
 
 const MIN_REVIEWS_REQUIRED = 2;
@@ -213,7 +214,11 @@ export function createAgentConsensusStore(
     riskDelta?: number,
   ): boolean => {
     if (proposalKind === "price-change") {
-      return riskDelta != null && riskDelta > 0.2;
+      // Default: price-change requires consensus (e.g. when called from agentLoop
+      // without explicit riskDelta). When riskDelta is provided, only require
+      // consensus if the delta exceeds 20%.
+      if (riskDelta == null) return true;
+      return riskDelta > 0.2;
     }
     return HIGH_RISK_KINDS.has(proposalKind);
   };

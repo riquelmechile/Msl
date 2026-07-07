@@ -2279,3 +2279,318 @@ describe("buildMessages — blockC injection", () => {
     expect(messages[1]!.content).toContain(hugeBlockC);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Consensus context injection
+// ---------------------------------------------------------------------------
+
+import {
+  buildConsensusContext,
+  type AgentConsensusStore,
+} from "../../src/conversation/agentLoop.js";
+import type { AgentProposal } from "../../src/conversation/types.js";
+
+describe("buildConsensusContext", () => {
+  function makeProposal(overrides: Partial<AgentProposal> = {}): AgentProposal {
+    return {
+      action: {
+        id: "prop-001",
+        sellerId: "seller-1",
+        kind: "listing-edit",
+        target: { type: "listing", listingId: "MLC-42" },
+        exactChange: [{ field: "price", from: 15000, to: 13500 }],
+        rationale: "Ajuste por análisis de mercado.",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+      naturalSummary: "¿Edito el listing MLC-42?",
+      riskLevel: "high",
+      ...overrides,
+    };
+  }
+
+  function makeConsensusStore(
+    overrides: Partial<AgentConsensusStore> = {},
+  ): AgentConsensusStore {
+    return {
+      submitReview: vi.fn(),
+      getConsensus: vi.fn(),
+      requiresConsensus: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it("returns empty string when action kind does not require consensus", () => {
+    const store = makeConsensusStore({
+      requiresConsensus: vi.fn(() => false),
+    });
+    const proposal = makeProposal({ action: { ...makeProposal().action, kind: "stock-change" } });
+
+    const result = buildConsensusContext(proposal, store);
+
+    expect(result).toBe("");
+    expect(store.requiresConsensus).toHaveBeenCalledWith("stock-change");
+  });
+
+  it("returns empty string when no reviews exist for the proposal", () => {
+    const store = makeConsensusStore({
+      requiresConsensus: vi.fn(() => true),
+      getConsensus: vi.fn(() => ({
+        proposalId: "prop-001",
+        reviews: [],
+        verdicts: {},
+        recommendation: "insufficient_reviews",
+        minReviewsRequired: 2,
+        hasQuorum: false,
+      })),
+    });
+    const proposal = makeProposal();
+
+    const result = buildConsensusContext(proposal, store);
+
+    expect(result).toBe("");
+  });
+
+  it("returns formatted consensus string with verdict counts and reviewer rationales", () => {
+    const store = makeConsensusStore({
+      requiresConsensus: vi.fn(() => true),
+      getConsensus: vi.fn(() => ({
+        proposalId: "prop-001",
+        reviews: [
+          {
+            id: 1,
+            proposalId: "prop-001",
+            reviewerAgentId: "market-catalog",
+            verdict: "approve",
+            rationale: "Price adjustment is within market range",
+            confidence: 0.85,
+            createdAt: "2026-07-06T10:00:00Z",
+          },
+          {
+            id: 2,
+            proposalId: "prop-001",
+            reviewerAgentId: "operations-manager",
+            verdict: "risk_warning",
+            rationale: "Check if this affects claim SLA",
+            confidence: 0.7,
+            createdAt: "2026-07-06T10:01:00Z",
+          },
+          {
+            id: 3,
+            proposalId: "prop-001",
+            reviewerAgentId: "cost-supplier",
+            verdict: "approve",
+            rationale: "Margin remains healthy at 28%",
+            confidence: 0.9,
+            createdAt: "2026-07-06T10:02:00Z",
+          },
+        ],
+        verdicts: { approve: 2, risk_warning: 1 },
+        recommendation: "approved",
+        minReviewsRequired: 2,
+        hasQuorum: true,
+      })),
+    });
+    const proposal = makeProposal();
+
+    const result = buildConsensusContext(proposal, store);
+
+    expect(result).toContain("🤝 Consenso: 2 approve, 1 risk_warning");
+    expect(result).toContain("market-catalog: approve");
+    expect(result).toContain('"Price adjustment is within market range"');
+    expect(result).toContain("operations-manager: risk_warning");
+    expect(result).toContain('"Check if this affects claim SLA"');
+    expect(result).toContain("cost-supplier: approve");
+    expect(result).toContain('"Margin remains healthy at 28%"');
+  });
+
+  it("handles rejected proposals with verdict counts", () => {
+    const store = makeConsensusStore({
+      requiresConsensus: vi.fn(() => true),
+      getConsensus: vi.fn(() => ({
+        proposalId: "prop-002",
+        reviews: [
+          {
+            id: 4,
+            proposalId: "prop-002",
+            reviewerAgentId: "creative-commercial",
+            verdict: "reject",
+            rationale: "Brand conflict detected",
+            confidence: 0.8,
+            createdAt: "2026-07-06T11:00:00Z",
+          },
+          {
+            id: 5,
+            proposalId: "prop-002",
+            reviewerAgentId: "cost-supplier",
+            verdict: "reject",
+            rationale: "Margin drops below threshold",
+            confidence: 0.85,
+            createdAt: "2026-07-06T11:01:00Z",
+          },
+        ],
+        verdicts: { reject: 2 },
+        recommendation: "rejected",
+        minReviewsRequired: 2,
+        hasQuorum: true,
+      })),
+    });
+    const proposal = makeProposal({ action: { ...makeProposal().action, id: "prop-002" } });
+
+    const result = buildConsensusContext(proposal, store);
+
+    expect(result).toContain("🤝 Consenso: 2 reject");
+    expect(result).toContain("creative-commercial: reject");
+    expect(result).toContain('"Brand conflict detected"');
+    expect(result).toContain("cost-supplier: reject");
+    expect(result).toContain('"Margin drops below threshold"');
+  });
+
+  it("calls requiresConsensus with the proposal's action kind", () => {
+    const requiresConsensus = vi.fn(() => false);
+    const store = makeConsensusStore({ requiresConsensus });
+    const proposal = makeProposal({ action: { ...makeProposal().action, kind: "listing-edit" } });
+
+    buildConsensusContext(proposal, store);
+
+    expect(requiresConsensus).toHaveBeenCalledWith("listing-edit");
+  });
+});
+
+describe("createAgentLoop — consensus context integration", () => {
+  it("injects consensus context when consensus store is configured and kind requires it", async () => {
+    const consensusStore: AgentConsensusStore = {
+      submitReview: vi.fn(),
+      getConsensus: vi.fn(() => ({
+        proposalId: "prop-001",
+        reviews: [
+          {
+            id: 1,
+            proposalId: "prop-001",
+            reviewerAgentId: "market-catalog",
+            verdict: "approve",
+            rationale: "Looks good",
+            confidence: 0.85,
+            createdAt: "2026-07-06T10:00:00Z",
+          },
+        ],
+        verdicts: { approve: 1 },
+        recommendation: "insufficient_reviews",
+        minReviewsRequired: 2,
+        hasQuorum: false,
+      })),
+      requiresConsensus: vi.fn((kind: string) => kind === "listing-edit"),
+    };
+    const agent = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+      consensusStore,
+    });
+    const state = makeState();
+
+    // The mock client for "listing-edit" intent returns normal text (no prepare_action).
+    // We need a state where the LLM generates a proposal via prepare_action.
+    // Since the mock client doesn't call prepare_action for listing-edit,
+    // we'll inject a state that triggers extractPendingProposal with a listing-edit kind.
+    const listingState = makeState({
+      messages: [
+        {
+          role: "user",
+          content: "Quiero editar el listing MLC-42",
+          timestamp: new Date("2026-07-06T10:00:00Z"),
+        },
+        {
+          role: "assistant",
+          content:
+            "Te preparo una propuesta de ajuste para el listing MLC-42.",
+          timestamp: new Date("2026-07-06T10:00:01Z"),
+        },
+      ],
+    });
+
+    // "dale" confirms — this goes through extractPendingProposal path
+    const result = await agent.converse("dale", listingState);
+
+    // Consensus should NOT be injected on dale confirmation
+    expect(result.response).not.toContain("🤝 Consenso");
+  });
+
+  it("does not inject consensus context when consensus store is not configured", async () => {
+    const agent = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+    });
+    const state = makeState();
+
+    const result = await agent.converse("Quiero revisar el precio del listing 42", state);
+
+    expect(result.response).not.toContain("🤝 Consenso");
+  });
+
+  it("does not inject consensus context for kinds that do not require consensus", async () => {
+    const consensusStore: AgentConsensusStore = {
+      submitReview: vi.fn(),
+      getConsensus: vi.fn(),
+      requiresConsensus: vi.fn(() => false),
+    };
+    const agent = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+      consensusStore,
+    });
+    const state = makeState();
+
+    const result = await agent.converse("Hola", state);
+
+    expect(result.response).not.toContain("🤝 Consenso");
+  });
+
+  it("does not inject consensus context on dale confirmation", async () => {
+    const consensusStore: AgentConsensusStore = {
+      submitReview: vi.fn(),
+      getConsensus: vi.fn(() => ({
+        proposalId: "prop-pending",
+        reviews: [
+          {
+            id: 1,
+            proposalId: "prop-pending",
+            reviewerAgentId: "market-catalog",
+            verdict: "approve",
+            rationale: "Looks good",
+            confidence: 0.85,
+            createdAt: "2026-07-06T10:00:00Z",
+          },
+        ],
+        verdicts: { approve: 1 },
+        recommendation: "insufficient_reviews",
+        minReviewsRequired: 2,
+        hasQuorum: false,
+      })),
+      requiresConsensus: vi.fn(() => true),
+    };
+    const agent = createAgentLoop({
+      systemPrompt,
+      mockClient: true,
+      consensusStore,
+    });
+    const state = makeState({
+      messages: [
+        {
+          role: "user",
+          content: "Quiero revisar el precio del listing 42",
+          timestamp: new Date("2026-07-06T10:00:00Z"),
+        },
+        {
+          role: "assistant",
+          content:
+            "Veo que podrías ajustar precios. Te preparo una propuesta de ajuste para el listing MLC-42.",
+          timestamp: new Date("2026-07-06T10:00:01Z"),
+        },
+      ],
+    });
+
+    const result = await agent.converse("dale", state);
+
+    // On dale confirmation, response gets phase-one text, not consensus
+    expect(result.response).not.toContain("🤝 Consenso");
+  });
+});

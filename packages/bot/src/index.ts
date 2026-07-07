@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import {
   buildSystemPrompt,
+  createAgentConsensusStore,
   createAgentLoop,
   createAutonomyEngine,
   createCompanyAgentLearningStore,
@@ -229,6 +230,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const sqlitePath = env.MSL_TELEGRAM_SQLITE_PATH?.trim();
   const db = sqlitePath ? new Database(sqlitePath) : null;
   const store = db ? createStrategyStore(db) : undefined;
+  const consensusStore = db ? createAgentConsensusStore(db) : undefined;
   const sessionStore = db ? createSessionStore(db) : undefined;
   const autonomyEngine = db ? createAutonomyEngine(db) : undefined;
   const companyAgentRegistry = db ? createCompanyAgentStore(db) : undefined;
@@ -318,6 +320,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const activeCompanyAgentId = env.MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID?.trim();
   if (activeCompanyAgentId) agentConfig.activeCompanyAgentId = activeCompanyAgentId;
   if (store) agentConfig.store = store;
+  if (consensusStore) agentConfig.consensusStore = consensusStore;
   if (companyAgentRegistry) agentConfig.companyAgentRegistry = companyAgentRegistry;
   if (companyAgentLearningStore) agentConfig.companyAgentLearningStore = companyAgentLearningStore;
   if (workforceCostCacheLedgerStore)
