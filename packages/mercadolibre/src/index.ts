@@ -3648,10 +3648,17 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       return normalizeOrders({ sellerId, payload, now: input.now() });
     },
     getMessages: async (sellerId, options) => {
+      // ML API: /questions/search is the seller question/message endpoint.
+      // /messages/search does NOT exist (404). Post-sale messages are per-order
+      // via /messages/orders/{order_id}, accessed separately through getOrderMessages.
       const query: Record<string, string> = { seller: sellerId, site: "MLC" };
       if (options?.limit !== undefined) query.limit = String(options.limit);
       if (options?.offset !== undefined) query.offset = String(options.offset);
-      const payload = await input.request(sellerId, "/messages/search", query);
+      const payload = await input.request(
+        sellerId,
+        "/questions/search",
+        query,
+      );
       return normalizeMessages({ sellerId, payload, now: input.now() });
     },
     getReputation: (sellerId) =>
