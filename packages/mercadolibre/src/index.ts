@@ -987,7 +987,7 @@ export type MlcApiClient = {
   prepareAnswer?(sellerId: string, input: MlcAnswerInput): Promise<MlcAnswerSnapshot>;
   searchClaims?(
     sellerId: string,
-    options?: { limit?: number; offset?: number; status?: string; sort?: string },
+    options?: { limit?: number; offset?: number; status?: string; sort?: string; type?: string },
   ): Promise<MlcClaimsSearchSnapshot>;
   getClaimDetail?(sellerId: string, claimId: string): Promise<MlcClaimDetailSnapshot>;
   getClaimMessages?(sellerId: string, claimId: string): Promise<MlcClaimMessagesSnapshot>;
@@ -4057,11 +4057,15 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       return Promise.resolve(normalizeAnswer({ sellerId, questionId, text, now: input.now() }));
     },
     searchClaims: async (sellerId, options) => {
-      // ML API requires at least one filter. Default to seller's claims
-      // as respondent, plus any additional filters from options.
+      // ML API requires at least one "search" filter in addition to
+      // players scoping. If no explicit filter is set, default to all statuses
+      // by adding a broad filter. The caller can override with specific filters.
       const query: Record<string, string> = {
         "players.user_id": sellerId,
         "players.role": "respondent",
+        // Default filter: get claims of any mediation type (covers most cases).
+        // The caller can override by passing options.type.
+        type: options?.type ?? "mediations",
       };
       if (options?.limit !== undefined) query.limit = String(options.limit);
       if (options?.offset !== undefined) query.offset = String(options.offset);
