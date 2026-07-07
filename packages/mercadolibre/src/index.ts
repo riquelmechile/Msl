@@ -3641,11 +3641,64 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       return assertCompleteMlcItem(payload);
     },
     getOrders: async (sellerId, options) => {
-      const query: Record<string, string> = { seller: sellerId, site: "MLC" };
-      if (options?.limit !== undefined) query.limit = String(options.limit);
-      if (options?.offset !== undefined) query.offset = String(options.offset);
-      const payload = await input.request(sellerId, "/orders/search", query);
-      return normalizeOrders({ sellerId, payload, now: input.now() });
+      const baseQuery: Record<string, string> = { seller: sellerId, site: "MLC" };
+      if (options?.limit !== undefined) baseQuery.limit = String(options.limit);
+      if (options?.offset !== undefined) baseQuery.offset = String(options.offset);
+
+      const path = "/orders/search";
+      const firstPayload = await input.request(sellerId, path, { ...baseQuery });
+      const firstRoot = asRecord(firstPayload);
+      const paging = asRecord(firstRoot?.paging);
+      const total = numberValue(paging?.total) ?? 0;
+      const pageLimit = numberValue(paging?.limit) ?? 50;
+
+      let allResults = asArray(firstRoot?.results ?? firstRoot?.orders);
+
+      if (total > 1000) {
+        // Use scan + scroll_id for more than 1000 orders
+        const scanQuery: Record<string, string> = { ...baseQuery, search_type: "scan" };
+        delete scanQuery.offset;
+        delete scanQuery.limit;
+        const scanPayload = await input.request(sellerId, path, scanQuery);
+        let scanRoot = asRecord(scanPayload);
+        let scrollId = stringValue(scanRoot?.scroll_id) ?? "";
+        const scanResults = asArray(scanRoot?.results ?? scanRoot?.orders);
+        allResults = allResults.concat(scanResults);
+
+        while (scrollId) {
+          await new Promise((r) => setTimeout(r, 500));
+          const nextQuery: Record<string, string> = {
+            ...baseQuery,
+            search_type: "scan",
+            scroll_id: scrollId,
+          };
+          const nextPayload = await input.request(sellerId, path, nextQuery);
+          const nextRoot = asRecord(nextPayload);
+          const nextResults = asArray(nextRoot?.results ?? nextRoot?.orders);
+          if (nextResults.length === 0) break;
+          allResults = allResults.concat(nextResults);
+          scrollId = stringValue(nextRoot?.scroll_id) ?? "";
+        }
+      } else if (total > allResults.length) {
+        let offset = (options?.offset ?? 0) + allResults.length;
+        while (offset < total) {
+          await new Promise((r) => setTimeout(r, 300));
+          const pageQuery = {
+            ...baseQuery,
+            offset: String(offset),
+            limit: String(pageLimit),
+          };
+          const pagePayload = await input.request(sellerId, path, pageQuery);
+          const pageRoot = asRecord(pagePayload);
+          const pageResults = asArray(pageRoot?.results ?? pageRoot?.orders);
+          if (pageResults.length === 0) break;
+          allResults = allResults.concat(pageResults);
+          offset += pageResults.length;
+        }
+      }
+
+      const mergedPayload = { ...firstRoot, results: allResults };
+      return normalizeOrders({ sellerId, payload: mergedPayload, now: input.now() });
     },
     getMessages: async (sellerId, options) => {
       // ML API: /questions/search is the seller question/message endpoint.
