@@ -1064,6 +1064,14 @@ export type { TokenStore } from "./oauth/tokenStore.js";
 
 export { createOAuthManager } from "./oauth/oauthManager.js";
 
+export { createMultiAppOAuthManager } from "./oauth/multiAppOAuthManager.js";
+
+export { resolveOAuthConfigs } from "./oauth/oauthConfig.js";
+
+export { generateState, validateState } from "./oauth/oauthState.js";
+
+export type { OAuthStatePayload } from "./oauth/oauthState.js";
+
 export { createTokenStore } from "./oauth/tokenStore.js";
 
 export {
