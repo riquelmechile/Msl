@@ -3,6 +3,7 @@ export type LaneId =
   | "cost-supplier"
   | "market-catalog"
   | "creative-commercial"
+  | "operations-manager"
   | "owned-ecommerce";
 
 export type CacheTelemetry = {
@@ -126,6 +127,28 @@ export const CREATIVE_COMMERCIAL_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const OPERATIONS_MANAGER_LANE: LaneContract = {
+  laneId: "operations-manager",
+  label: "Operations Manager",
+  stablePrefix: [
+    "You are the Operations Manager lane.",
+    "Monitor claims, questions, messages, orders, and reputation for the seller.",
+    "Detect new open claims, unanswered questions, delayed orders, and reputation risks.",
+    "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "claims, questions, messages, orders, and reputation evidence",
+  inputs: ["claim evidence", "question evidence", "order evidence", "reputation evidence"],
+  outputs: ["operational alerts", "risk priority", "evidence IDs"],
+  boundaries: [
+    "proposal-only; never respond to buyers, resolve claims, or execute mutations",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["claim", "question", "order", "reputation"],
+  credentialScope: "provider-default",
+};
+
 export const OWNED_ECOMMERCE_LANE: LaneContract = {
   laneId: "owned-ecommerce",
   label: "Owned Ecommerce",
@@ -170,6 +193,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   COST_SUPPLIER_LANE,
   MARKET_CATALOG_LANE,
   CREATIVE_COMMERCIAL_LANE,
+  OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,
 ];
 

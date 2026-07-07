@@ -2056,8 +2056,6 @@ async function runQualityChecks(
   return { alerts, checkedCount: batch.length };
 }
 
-void runQualityChecks;
-
 // ── Phase 8: Relist opportunities ──────────────────────────────────────
 
 /**
@@ -2287,8 +2285,6 @@ function runRelistChecks(config: BackgroundIngestionConfig): {
 
   return { alerts, opportunitiesFound };
 }
-
-void runRelistChecks;
 
 // ── Worker ─────────────────────────────────────────────────────────────
 

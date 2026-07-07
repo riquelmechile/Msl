@@ -80,6 +80,19 @@ export type { AutonomyEngine } from "./conversation/autonomyEngine.js";
 export { startBackgroundIngestion } from "./conversation/backgroundIngestion.js";
 export type { BackgroundIngestionConfig } from "./conversation/backgroundIngestion.js";
 
+// ── Daemon scheduler ───────────────────────────────────────────────────
+export { startDaemonScheduler } from "./workers/daemonScheduler.js";
+export type { DaemonSchedulerConfig } from "./workers/daemonScheduler.js";
+export type {
+  DaemonFinding,
+  DaemonResult,
+  DaemonHandler,
+} from "./workers/daemonTypes.js";
+export { marketCatalogDaemon } from "./workers/marketCatalogDaemon.js";
+export { operationsManagerDaemon } from "./workers/operationsManagerDaemon.js";
+export { costSupplierDaemon } from "./workers/costSupplierDaemon.js";
+export { creativeCommercialDaemon } from "./workers/creativeCommercialDaemon.js";
+
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";
 
