@@ -3584,7 +3584,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         // Use scan + scroll_id for more than 1000 items (ML API limit)
         const scanQuery = { ...baseQuery, search_type: "scan" };
         const scanPayload = await input.request(sellerId, path, scanQuery);
-        let scanRoot = asRecord(scanPayload);
+        const scanRoot = asRecord(scanPayload);
         let scrollId = stringValue(scanRoot?.scroll_id) ?? "";
         const scanResults = asArray(scanRoot?.results);
         allResults = allResults.concat(scanResults);
@@ -3660,7 +3660,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         delete scanQuery.offset;
         delete scanQuery.limit;
         const scanPayload = await input.request(sellerId, path, scanQuery);
-        let scanRoot = asRecord(scanPayload);
+        const scanRoot = asRecord(scanPayload);
         let scrollId = stringValue(scanRoot?.scroll_id) ?? "";
         const scanResults = asArray(scanRoot?.results ?? scanRoot?.orders);
         allResults = allResults.concat(scanResults);
@@ -3707,11 +3707,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       const query: Record<string, string> = { seller: sellerId, site: "MLC" };
       if (options?.limit !== undefined) query.limit = String(options.limit);
       if (options?.offset !== undefined) query.offset = String(options.offset);
-      const payload = await input.request(
-        sellerId,
-        "/questions/search",
-        query,
-      );
+      const payload = await input.request(sellerId, "/questions/search", query);
       return normalizeMessages({ sellerId, payload, now: input.now() });
     },
     getReputation: (sellerId) =>

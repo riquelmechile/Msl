@@ -3022,7 +3022,7 @@ describe("getShipmentStatus", () => {
       expect.objectContaining({
         method: "GET",
         path: "/post-purchase/v1/claims/search",
-        query: expect.objectContaining({ status: "open", limit: "5" }),
+        query: expect.objectContaining({ status: "open", limit: "5" }) as unknown,
         retryOnRateLimit: false,
       }),
     );

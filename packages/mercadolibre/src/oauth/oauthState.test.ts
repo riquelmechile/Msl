@@ -2,7 +2,6 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   generateState,
   validateState,
-  DEFAULT_STATE_TTL_MS,
   type OAuthStatePayload,
   generateNonce,
 } from "./oauthState.js";
@@ -49,9 +48,7 @@ describe("oauthState", () => {
     const state = generateState(p, SECRET);
 
     // TTL of 60 seconds — should be expired
-    expect(() => validateState(state, SECRET, 60_000)).toThrow(
-      /State token expired/,
-    );
+    expect(() => validateState(state, SECRET, 60_000)).toThrow(/State token expired/);
   });
 
   it("state within default TTL (10 min) validates fine", () => {
@@ -71,9 +68,7 @@ describe("oauthState", () => {
     const parts = state.split(".");
     const tamperedState = `${parts[0]}.tampered_signature`;
 
-    expect(() => validateState(tamperedState, SECRET)).toThrow(
-      /Invalid state/,
-    );
+    expect(() => validateState(tamperedState, SECRET)).toThrow(/Invalid state/);
   });
 
   it("tampered payload throws", () => {
@@ -85,9 +80,7 @@ describe("oauthState", () => {
     const tamperedPayload = parts[0]!.slice(0, -1) + "X";
     const tamperedState = `${tamperedPayload}.${parts[1]}`;
 
-    expect(() => validateState(tamperedState, SECRET)).toThrow(
-      /Invalid state/,
-    );
+    expect(() => validateState(tamperedState, SECRET)).toThrow(/Invalid state/);
   });
 
   it("malformed format (no dot) throws", () => {
@@ -97,15 +90,11 @@ describe("oauthState", () => {
   });
 
   it("malformed format (empty payload) throws", () => {
-    expect(() => validateState(".signature_only", SECRET)).toThrow(
-      /Malformed state token/,
-    );
+    expect(() => validateState(".signature_only", SECRET)).toThrow(/Malformed state token/);
   });
 
   it("malformed format (empty signature) throws", () => {
-    expect(() => validateState("payload_only.", SECRET)).toThrow(
-      /Malformed state token/,
-    );
+    expect(() => validateState("payload_only.", SECRET)).toThrow(/Malformed state token/);
   });
 
   it("malformed payload (not valid base64) does not throw HMAC error", () => {
@@ -130,9 +119,7 @@ describe("oauthState", () => {
 
     // TTL of 20 seconds — should be expired
     const state = generateState(p, SECRET);
-    expect(() => validateState(state, SECRET, 20_000)).toThrow(
-      /State token expired/,
-    );
+    expect(() => validateState(state, SECRET, 20_000)).toThrow(/State token expired/);
   });
 
   it("generateNonce produces different values", () => {

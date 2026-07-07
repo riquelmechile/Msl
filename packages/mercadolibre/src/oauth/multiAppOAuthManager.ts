@@ -1,8 +1,4 @@
-import {
-  createOAuthManager,
-  type OAuthManager,
-  type OAuthManagerConfig,
-} from "./oauthManager.js";
+import { createOAuthManager, type OAuthManager, type OAuthManagerConfig } from "./oauthManager.js";
 import type { OAuthTokens, StoredToken } from "../types.js";
 
 /**
@@ -30,8 +26,7 @@ export function createMultiAppOAuthManager(
     managers.set(sellerId, createOAuthManager(config));
   }
 
-  const passthrough =
-    managers.size === 1 ? (managers.values().next().value as OAuthManager) : null;
+  const passthrough = managers.size === 1 ? (managers.values().next().value as OAuthManager) : null;
 
   function resolve(sellerId: string): OAuthManager {
     if (passthrough) return passthrough;
@@ -47,10 +42,7 @@ export function createMultiAppOAuthManager(
     return resolve(sellerId).getAuthorizationUrl(sellerId, state);
   }
 
-  async function exchangeCodeForToken(
-    sellerId: string,
-    code: string,
-  ): Promise<OAuthTokens> {
+  async function exchangeCodeForToken(sellerId: string, code: string): Promise<OAuthTokens> {
     return resolve(sellerId).exchangeCodeForToken(sellerId, code);
   }
 

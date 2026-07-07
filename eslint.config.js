@@ -36,6 +36,17 @@ export default tseslint.config(
   js.configs.recommended,
   ...nextVitalsWithRootDir,
   {
+    files: ["**/*.cjs"],
+    languageOptions: {
+      globals: {
+        __dirname: "readonly",
+        module: "readonly",
+        process: "readonly",
+        require: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.ts"],
     extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {

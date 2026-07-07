@@ -70,7 +70,7 @@ while (offset < MAX_ORDERS) {
     const pct = total > 0 ? Math.round((totalOrders / total) * 100) : 0;
 
     console.log(
-      `  Page ${page}: ${orders.length} orders (${totalOrders}/${total} = ${pct}%, \$${Math.round(totalAmount).toLocaleString("es-CL")} CLP)`,
+      `  Page ${page}: ${orders.length} orders (${totalOrders}/${total} = ${pct}%, $${Math.round(totalAmount).toLocaleString("es-CL")} CLP)`,
     );
 
     if (orders.length < PAGE_SIZE) break;
@@ -88,13 +88,9 @@ while (offset < MAX_ORDERS) {
 // Save to Cortex
 const { createGraphEngine } = await import("@msl/memory");
 const cortexPath =
-  process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() ||
-  process.env.MSL_CORTEX_SQLITE_PATH?.trim();
+  process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() || process.env.MSL_CORTEX_SQLITE_PATH?.trim();
 if (cortexPath) {
-  const scopedPath = cortexPath.replace(
-    /\.sqlite$/,
-    `.telegram-${sellerId}.sqlite`,
-  );
+  const scopedPath = cortexPath.replace(/\.sqlite$/, `.telegram-${sellerId}.sqlite`);
   const engine = createGraphEngine(scopedPath);
   const label = `order_snapshot_batch_${sellerId}_${new Date().toISOString().slice(0, 10)}`;
   engine.getOrCreateNode(label, {
@@ -108,6 +104,6 @@ if (cortexPath) {
 }
 
 console.log(
-  `\n✅ Done: ${totalOrders} orders, \$${Math.round(totalAmount).toLocaleString("es-CL")} CLP total`,
+  `\n✅ Done: ${totalOrders} orders, $${Math.round(totalAmount).toLocaleString("es-CL")} CLP total`,
 );
 oauthManager.close();

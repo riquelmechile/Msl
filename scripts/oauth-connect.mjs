@@ -44,9 +44,7 @@ const sellerId =
     : process.env.MERCADOLIBRE_TARGET_SELLER_ID;
 
 if (!sellerId) {
-  console.error(
-    `❌ MERCADOLIBRE_${role.toUpperCase()}_SELLER_ID not set in .env.local`,
-  );
+  console.error(`❌ MERCADOLIBRE_${role.toUpperCase()}_SELLER_ID not set in .env.local`);
   process.exit(1);
 }
 

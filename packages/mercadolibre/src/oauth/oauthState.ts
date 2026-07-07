@@ -98,9 +98,7 @@ export function validateState(
   // Check expiry.
   const age = Date.now() - payload.createdAt;
   if (age > ttlMs) {
-    throw new Error(
-      `State token expired: age ${age}ms exceeds TTL ${ttlMs}ms`,
-    );
+    throw new Error(`State token expired: age ${age}ms exceeds TTL ${ttlMs}ms`);
   }
 
   return payload;

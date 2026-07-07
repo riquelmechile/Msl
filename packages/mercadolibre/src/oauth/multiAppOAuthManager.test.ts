@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { createMultiAppOAuthManager } from "./multiAppOAuthManager.js";
-import { createOAuthManager, type OAuthManager, type OAuthManagerConfig } from "./oauthManager.js";
+import type { OAuthManagerConfig } from "./oauthManager.js";
 
 function stubConfig(overrides: Partial<OAuthManagerConfig> = {}): OAuthManagerConfig {
   return {
@@ -166,7 +166,14 @@ describe("createMultiAppOAuthManager", () => {
   it("isStubMode() no-arg returns false when any manager is not stub", () => {
     const configs = stubConfigs([
       ["plasticov", stubConfig({ clientId: "stub" })],
-      ["maustian", stubConfig({ clientId: "APP-prod", clientSecret: "real", redirectUri: "https://real.example/callback" })],
+      [
+        "maustian",
+        stubConfig({
+          clientId: "APP-prod",
+          clientSecret: "real",
+          redirectUri: "https://real.example/callback",
+        }),
+      ],
     ]);
     const mgr = createMultiAppOAuthManager(configs);
 

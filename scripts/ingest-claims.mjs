@@ -20,10 +20,7 @@ function loadEnv(filePath) {
 }
 loadEnv(resolve(import.meta.dirname, "..", ".env.local"));
 
-const {
-  createMultiAppOAuthManager,
-  resolveOAuthConfigs,
-} = await import("@msl/mercadolibre");
+const { createMultiAppOAuthManager, resolveOAuthConfigs } = await import("@msl/mercadolibre");
 
 const { createGraphEngine } = await import("@msl/memory");
 
@@ -54,10 +51,9 @@ while (offset < 10000) {
       limit: String(PAGE_SIZE),
       offset: String(offset),
     });
-    const res = await fetch(
-      `https://api.mercadolibre.com/post-purchase/v1/claims/search?${qs}`,
-      { headers: { Authorization: `Bearer ${at}` } },
-    );
+    const res = await fetch(`https://api.mercadolibre.com/post-purchase/v1/claims/search?${qs}`, {
+      headers: { Authorization: `Bearer ${at}` },
+    });
     if (!res.ok) {
       const errBody = await res.text();
       console.error(`  ❌ HTTP ${res.status}: ${errBody.slice(0, 150)}`);
@@ -78,10 +74,10 @@ while (offset < 10000) {
     );
 
     // Save to Cortex
-    const cortexPath =
-      (process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() ||
-        process.env.MSL_CORTEX_SQLITE_PATH?.trim())
-        ?.replace(/\.sqlite$/, `.telegram-${sellerId}.sqlite`);
+    const cortexPath = (
+      process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() ||
+      process.env.MSL_CORTEX_SQLITE_PATH?.trim()
+    )?.replace(/\.sqlite$/, `.telegram-${sellerId}.sqlite`);
     if (cortexPath) {
       const engine = createGraphEngine(cortexPath);
       for (const claim of claims) {

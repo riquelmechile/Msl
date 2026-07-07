@@ -255,9 +255,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
 
   const systemPrompt = (() => {
     const base = buildSystemPrompt(sellerName);
-    const roleConfig = oauthManager
-      ? getMlAccountRoleConfig(env)
-      : undefined;
+    const roleConfig = oauthManager ? getMlAccountRoleConfig(env) : undefined;
     if (!roleConfig) return base;
 
     const sourceName = env.MERCADOLIBRE_SOURCE_SELLER_NAME?.trim() || "Plasticov";
@@ -316,7 +314,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     };
   else if (oauthManager)
     botConfig.cleanup = () => {
-      oauthManager!.close();
+      oauthManager.close();
     };
 
   const botHandle = createTelegramBot(botConfig);

@@ -7,17 +7,11 @@ function nonEmpty(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function html(
-  body: string,
-  status: number,
-): Response {
-  return new Response(
-    `<!DOCTYPE html><html><body>${body}</body></html>`,
-    {
-      status,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    },
-  );
+function html(body: string, status: number): Response {
+  return new Response(`<!DOCTYPE html><html><body>${body}</body></html>`, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -34,20 +28,14 @@ export async function GET(request: NextRequest) {
 
   const secret = nonEmpty(process.env.MSL_OAUTH_STATE_SECRET);
   if (!secret) {
-    return NextResponse.json(
-      { error: "MSL_OAUTH_STATE_SECRET not configured." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "MSL_OAUTH_STATE_SECRET not configured." }, { status: 500 });
   }
 
   let parsed;
   try {
     parsed = validateState(state, secret);
   } catch (err) {
-    return html(
-      err instanceof Error ? err.message : "Invalid state.",
-      400,
-    );
+    return html(err instanceof Error ? err.message : "Invalid state.", 400);
   }
 
   const { role, sellerId } = parsed;

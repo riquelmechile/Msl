@@ -45,22 +45,20 @@ const client = createOAuthMlcApiClient({
 });
 
 const BATCH_SIZE = 20;
-const ATTRS = "id,title,price,available_quantity,condition,seller_id,descriptions,pictures,attributes,health,catalog_product_id,listing_type_id,warranty,shipping,currency_id,permalink";
+const ATTRS =
+  "id,title,price,available_quantity,condition,seller_id,descriptions,pictures,attributes,health,catalog_product_id,listing_type_id,warranty,shipping,currency_id,permalink";
 
 // Get all listing IDs from the seller's items
 console.log(`📋 Fetching listing IDs for seller ${sellerId}...`);
 const listingsSnap = await client.getListings(sellerId);
-const allIds = listingsSnap.data
-  .map((l) => l.id)
-  .filter((id) => id && /^MLC\d+$/.test(id));
+const allIds = listingsSnap.data.map((l) => l.id).filter((id) => id && /^MLC\d+$/.test(id));
 
 console.log(`📦 ${allIds.length} items to fetch in batches of ${BATCH_SIZE}...`);
 
 // Batch fetch
-const cortexPath =
-  (process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() ||
-    process.env.MSL_CORTEX_SQLITE_PATH?.trim())
-    ?.replace(/\.sqlite$/, `.telegram-${sellerId}.sqlite`);
+const cortexPath = (
+  process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() || process.env.MSL_CORTEX_SQLITE_PATH?.trim()
+)?.replace(/\.sqlite$/, `.telegram-${sellerId}.sqlite`);
 
 const engine = cortexPath ? createGraphEngine(cortexPath) : undefined;
 

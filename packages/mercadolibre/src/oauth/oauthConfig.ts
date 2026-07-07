@@ -34,10 +34,7 @@ export function resolveOAuthConfigs(
     return perSeller ?? legacy;
   }
 
-  function tryAddConfig(
-    sellerId: string | undefined,
-    role: string,
-  ): void {
+  function tryAddConfig(sellerId: string | undefined, role: string): void {
     if (!sellerId) return;
 
     const clientId = resolveCredential(
