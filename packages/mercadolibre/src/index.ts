@@ -4057,7 +4057,12 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       return Promise.resolve(normalizeAnswer({ sellerId, questionId, text, now: input.now() }));
     },
     searchClaims: async (sellerId, options) => {
-      const query: Record<string, string> = {};
+      // ML API requires at least one filter. Default to seller's claims
+      // as respondent, plus any additional filters from options.
+      const query: Record<string, string> = {
+        "players.user_id": sellerId,
+        "players.role": "respondent",
+      };
       if (options?.limit !== undefined) query.limit = String(options.limit);
       if (options?.offset !== undefined) query.offset = String(options.offset);
       if (options?.status !== undefined) query.status = options.status;
@@ -4066,7 +4071,7 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         const payload = await input.request(
           sellerId,
           "/post-purchase/v1/claims/search",
-          Object.keys(query).length > 0 ? query : undefined,
+          query,
           undefined,
           { retryOnRateLimit: false },
         );
