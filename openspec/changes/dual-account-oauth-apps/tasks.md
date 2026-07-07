@@ -32,21 +32,21 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: API Routes (apps/web)
 
-- [ ] 2.1 `apps/web/app/api/meli/oauth.ts` — lazy singleton: `resolveOAuthConfigs` + `createMultiAppOAuthManager`, cached on first access.
-- [ ] 2.2 `apps/web/app/api/meli/connect/route.ts` — GET: read `role` (`source`|`target`), resolve sellerId, generate HMAC state, 302 redirect. 400 on unknown role.
-- [ ] 2.3 `apps/web/app/api/meli/callback/route.ts` — GET: read `code`+`state`, validate HMAC, extract sellerId, **validate role/sellerId match** (role from state must match seller's configured role), exchange code, 200 HTML with `user_id`+`nickname` (NO tokens). 400/500 on errors.
-- [ ] 2.4 `apps/web/app/callback/route.ts` — re-export callback handler for ngrok compat.
-- [ ] 2.5 `apps/web/app/api/meli/connect.test.ts` — correct redirect URL per role, 400 unknown role.
-- [ ] 2.6 `apps/web/app/api/meli/callback.test.ts` — valid flow returns user_id/nickname, no tokens in body, expired/tampered role-mismatch/missing-code → 400.
+- [x] 2.1 `apps/web/app/api/meli/oauth.ts` — lazy singleton: `resolveOAuthConfigs` + `createMultiAppOAuthManager`, cached on first access.
+- [x] 2.2 `apps/web/app/api/meli/connect/route.ts` — GET: read `role` (`source`|`target`), resolve sellerId, generate HMAC state, 302 redirect. 400 on unknown role.
+- [x] 2.3 `apps/web/app/api/meli/callback/route.ts` — GET: read `code`+`state`, validate HMAC, extract sellerId, **validate role/sellerId match** (role from state must match seller's configured role), exchange code, 200 HTML with `user_id`+`nickname` (NO tokens). 400/500 on errors.
+- [x] 2.4 `apps/web/app/callback/route.ts` — re-export callback handler for ngrok compat.
+- [x] 2.5 `apps/web/app/api/meli/connect.test.ts` — correct redirect URL per role, 400 unknown role.
+- [x] 2.6 `apps/web/app/api/meli/callback.test.ts` — valid flow returns user_id/nickname, no tokens in body, expired/tampered role-mismatch/missing-code → 400.
 
 ## Phase 3: Runtime Wiring
 
-- [ ] 3.1 `packages/mcp/src/runtimeDependencies.ts` — replace `createOAuthManager(...)` with `createMultiAppOAuthManager(resolveOAuthConfigs(env))`. Extend `OAUTH_ENV_KEYS` to check legacy OR per-seller vars. Return type unchanged.
-- [ ] 3.2 `.env.example` — add `MERCADOLIBRE_{SOURCE,TARGET}_CLIENT_ID/SECRET/REDIRECT_URI` + `MSL_OAUTH_STATE_SECRET` entries.
-- [ ] 3.3 Integration test: full stub-mode flow — connect→redirect→callback→token per seller, two rows coexist, single-app fallback works.
+- [x] 3.1 `packages/mcp/src/runtimeDependencies.ts` — replace `createOAuthManager(...)` with `createMultiAppOAuthManager(resolveOAuthConfigs(env))`. Extend `OAUTH_ENV_KEYS` to check legacy OR per-seller vars. Return type unchanged.
+- [x] 3.2 `.env.example` — add `MERCADOLIBRE_{SOURCE,TARGET}_CLIENT_ID/SECRET/REDIRECT_URI` + `MSL_OAUTH_STATE_SECRET` entries.
+- [x] 3.3 Integration test: full stub-mode flow — connect→redirect→callback→token per seller, two rows coexist, single-app fallback works.
 
 ## Phase 4: Quality Gates
 
 - [x] 4.1 TypeScript typecheck: `tsc -b --pretty false` (packages/mercadolibre) + `tsc --noEmit --pretty false` (apps/web).
 - [x] 4.2 All tests pass: `vitest run`.
-- [ ] 4.3 Lint + format check.
+- [x] 4.3 Lint + format check.

@@ -3419,7 +3419,7 @@ describe("MCP Server", () => {
       throw new Error("Expected runtime config construction to fail.");
     } catch (error) {
       expect(error).toBeInstanceOf(Error);
-      expect((error as Error).message).toContain("Missing");
+      expect((error as Error).message).toContain("Incomplete");
       expect((error as Error).message).not.toContain(secretValue);
       expect((error as Error).message).not.toContain("client-id-value");
     }

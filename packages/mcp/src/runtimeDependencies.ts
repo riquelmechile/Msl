@@ -8,9 +8,10 @@ import {
 import {
   createMercadoLibreApiFetchTransport,
   createMlClient,
-  createOAuthManager,
+  createMultiAppOAuthManager,
   createOAuthMlcApiClient,
   getMlAccountRoleConfig,
+  resolveOAuthConfigs,
   type MlAccountRoleConfig,
 } from "@msl/mercadolibre";
 import type {
@@ -37,6 +38,13 @@ const OAUTH_ENV_KEYS = [
   "MERCADOLIBRE_CLIENT_SECRET",
   "MERCADOLIBRE_REDIRECT_URI",
   "MSL_MERCADOLIBRE_OAUTH_DB_PATH",
+  // Per-seller (dual-account) env vars.
+  "MERCADOLIBRE_SOURCE_CLIENT_ID",
+  "MERCADOLIBRE_SOURCE_CLIENT_SECRET",
+  "MERCADOLIBRE_SOURCE_REDIRECT_URI",
+  "MERCADOLIBRE_TARGET_CLIENT_ID",
+  "MERCADOLIBRE_TARGET_CLIENT_SECRET",
+  "MERCADOLIBRE_TARGET_REDIRECT_URI",
 ] as const;
 
 function nonEmpty(value: string | undefined): string | undefined {
@@ -86,11 +94,12 @@ function assertOAuthConfigPresentInProduction(env: RuntimeEnv): void {
 }
 
 function assertCompleteOAuthConfig(env: RuntimeEnv): void {
-  const missing = missingKeys(env, OAUTH_ENV_KEYS);
+  const configs = resolveOAuthConfigs(env);
 
-  if (missing.length > 0) {
+  if (configs.size === 0) {
     throw new Error(
-      `Incomplete MCP MercadoLibre OAuth runtime config. Missing ${missing.join(", ")}.`,
+      "Incomplete MCP MercadoLibre OAuth runtime config. " +
+        "No per-seller or legacy OAuth credentials could be resolved from environment variables.",
     );
   }
 }
@@ -165,12 +174,8 @@ function createRuntimeReadClient(env: RuntimeEnv): {
     throw new Error("MSL_ENCRYPTION_KEY is required for MCP MercadoLibre OAuth token storage.");
   }
 
-  const oauthManager: OAuthManager = createOAuthManager({
-    clientId: nonEmpty(env.MERCADOLIBRE_CLIENT_ID)!,
-    clientSecret: nonEmpty(env.MERCADOLIBRE_CLIENT_SECRET)!,
-    redirectUri: nonEmpty(env.MERCADOLIBRE_REDIRECT_URI)!,
-    dbPath: nonEmpty(env.MSL_MERCADOLIBRE_OAUTH_DB_PATH)!,
-  });
+  const configs = resolveOAuthConfigs(env);
+  const oauthManager: OAuthManager = createMultiAppOAuthManager(configs);
 
   const now = () => new Date();
 

@@ -23,7 +23,7 @@ export type OAuthManager = {
   close(): void;
 };
 
-const ML_OAUTH_AUTH_URL = "https://auth.mercadolibre.com.ar/authorization";
+const ML_OAUTH_AUTH_URL = "https://auth.mercadolibre.cl/authorization";
 const ML_OAUTH_TOKEN_URL = "https://api.mercadolibre.com/oauth/token";
 
 function isStubCredentials(config: OAuthManagerConfig): boolean {
@@ -56,7 +56,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
 
   function getAuthorizationUrl(sellerId: string, state: string): string {
     if (stub) {
-      return `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${config.clientId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&state=${encodeURIComponent(state)}&mock_seller=${encodeURIComponent(sellerId)}`;
+      return `https://auth.mercadolibre.cl/authorization?response_type=code&client_id=${config.clientId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&state=${encodeURIComponent(state)}&mock_seller=${encodeURIComponent(sellerId)}`;
     }
 
     const params = new URLSearchParams({
