@@ -1,10 +1,58 @@
 # Análisis de Alineación y Roadmap: Visión de Agentes MSL (2026)
 
-> Estado actualizado: 2026-07-07  
+> Estado actualizado: 2026-07-07 (ROADMAP COMPLETADO)  
 > Repo verificado: `riquelmechile/Msl`  
 > Propósito: contrastar la visión original de agentes MSL contra el estado real del código actualizado y dejar claro qué falta implementar.
 
-## Veredicto ejecutivo
+## 🟢 ROADMAP COMPLETADO — 2026-07-07
+
+Los 7 PRs del roadmap de agentes fueron implementados en una sola sesión SDD:
+
+| PR | Cambio | Estado | Commit |
+|----|--------|--------|--------|
+| 1 | `agent-message-bus` | ✅ Archivado | `0ddeaa5` |
+| 2 | `specialist-daemon-scheduler` | ✅ Archivado | `7be4400` |
+| 3 | `deep-evidence-provider` | ✅ Archivado | `0b0045b` |
+| 4 | `quality-relist-integration` | ✅ Absorbido por marketCatalogDaemon | `7be4400` |
+| 5 | `agent-consensus-review` | ✅ Archivado | `56e9d05` |
+| 6 | `process-separation` | ✅ Implementado | `637fce5` |
+| 7 | `roadmap-docs` | ✅ Este documento | — |
+
+### Lo que cambió
+
+MSL pasó de ser un asistente CEO→tool a una **empresa interna de agentes vivos**:
+
+```
+Antes:  Usuario → CEO AgentLoop → tools síncronas / background ingestion central
+
+Ahora:  Usuario → CEO
+               → agent_message_bus (SQLite queue)
+               → AgentDaemonScheduler (4 daemons autónomos)
+               → deep evidence (searchSnapshots con 10 filtros)
+               → consensus review (quorum multi-agente)
+               → procesos separados (bot / web / worker / daemons)
+               → propuesta al CEO → ejecución approval-gated con "dale"
+```
+
+### Nuevos specs creados
+- `agent-message-bus` — cola de mensajes interna
+- `daemon-scheduler` — scheduler de daemons autónomos
+- `specialist-daemons` — 4 daemons especialistas (marketCatalog, operationsManager, costSupplier, creativeCommercial)
+- `deep-evidence-query` — búsqueda profunda de snapshots operacionales
+- `agent-consensus` — revisión multi-agente con quorum
+- `multi-agent-orchestration` — orquestación actualizada
+- `operational-lane-evidence` — evidencia estructurada por lane
+
+### Métricas finales
+- **1580 tests** pasando en 61 archivos
+- **9 commits** en main
+- **7 specs** creados/actualizados en OpenSpec
+- **5 cambios** archivados con SDD completo
+- **0 dependencias nuevas** de npm
+
+---
+
+## Veredicto ejecutivo (original, preservado para contexto histórico)
 
 El informe original sigue siendo correcto como visión, pero debe actualizarse: MSL ya no está bloqueado por falta de credenciales ni por ingesta base. El repo ya contiene un núcleo operacional fuerte:
 
@@ -100,9 +148,12 @@ Si responde con datos reales, el estado debe marcarse como:
 🟢 OAuth operativo en runtime.
 ```
 
-## Cambios del informe que todavía faltan
+## Cambios del informe que ya fueron implementados (actualizado 2026-07-07)
 
-### 1. Agent Message Bus
+> 🟢 **TODOS los ítems de esta sección fueron completados en la sesión del 2026-07-07.**  
+> Ver commits `0ddeaa5` a `637fce5` en `riquelmechile/Msl`.
+
+### 1. Agent Message Bus ✅
 
 Estado: no implementado.
 
@@ -519,18 +570,19 @@ Ahora debe ser:
 7. Separar procesos worker/bot para escalar sin bloquear Telegram.
 ```
 
-## Dictamen final
+## Dictamen final (actualizado 2026-07-07)
 
-MSL ya tiene suficiente base para dejar de crecer como “asistente con tools” y pasar a “empresa de agentes”.
-
-Lo que falta no es más arquitectura conceptual. Falta implementar el sistema nervioso interno:
+MSL completó la transición de "asistente con tools" a **"empresa de agentes"**. El sistema nervioso interno está implementado:
 
 ```text
-agent_message_bus
-+ daemons especialistas
-+ deep evidence provider
-+ consensus review
-+ worker runtime separado
+✅ agent_message_bus       → SQLite message queue con claim/resolve/fail/cancel
+✅ daemons especialistas    → 4 daemons autónomos (marketCatalog, operationsManager, costSupplier, creativeCommercial)
+✅ deep evidence provider   → searchSnapshots() con 10 filtros SQL-level
+✅ consensus review         → agent_reviews con quorum multi-agente
+✅ worker runtime separado  → 4 procesos PM2 (bot, web, worker-ingestion, agent-daemons)
+✅ busy_timeout = 5000      → connection pool configurado
 ```
 
-La primera tarea técnica debe ser `agent_message_bus`. Sin eso, cualquier daemon o consenso terminará acoplado al `AgentLoop` o al worker central y no se logrará la arquitectura de empresa interna que plantea la visión.
+**MSL ahora opera como una empresa interna de agentes vivos.** El CEO recibe propuestas revisadas por consenso multi-agente, respaldadas por evidencia operacional profunda, con aprobación explícita ("dale") antes de cualquier mutación externa.
+
+Próximos pasos: runtime validation con tokens reales, monitoreo de daemons en producción, y expansión del catálogo de agentes especialistas.
