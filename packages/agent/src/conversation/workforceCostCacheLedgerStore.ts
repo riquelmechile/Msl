@@ -8,6 +8,7 @@ export type WorkforceCostCacheLedgerEntry = {
   entryId: string;
   agentId: string;
   laneId?: LaneId;
+  departmentId?: string;
   provider: string;
   model: string;
   operation: string;
@@ -27,6 +28,7 @@ export type RecordWorkforceCostCacheLedgerEntryInput = {
   entryId: string;
   agentId: string;
   laneId?: LaneId;
+  departmentId?: string;
   provider: string;
   model: string;
   operation: string;
@@ -44,7 +46,19 @@ export type RecordWorkforceCostCacheLedgerEntryInput = {
 export type ListWorkforceCostCacheLedgerEntriesFilter = {
   agentId?: string;
   laneId?: LaneId;
+  from?: string;
+  to?: string;
   limit?: number;
+};
+
+export type WorkforceCostAggregate = {
+  byAgent: Map<
+    string,
+    { inputTokens: number; outputTokens: number; costMicros: number; entries: number }
+  >;
+  byDepartment: Map<string, { inputTokens: number; outputTokens: number; costMicros: number }>;
+  byPeriod: Array<{ day: string; inputTokens: number; outputTokens: number }>;
+  cacheEfficiency: number; // 0..1
 };
 
 export type WorkforceCostCacheLedgerStore = {
@@ -53,6 +67,7 @@ export type WorkforceCostCacheLedgerStore = {
     filter?: ListWorkforceCostCacheLedgerEntriesFilter,
   ): readonly WorkforceCostCacheLedgerEntry[];
   count(): number;
+  aggregateCosts(filter?: { days?: number }): WorkforceCostAggregate;
 };
 
 export type WorkforceCostCacheLedgerStoreOptions = {
@@ -63,7 +78,7 @@ export const LEDGER_LIMITS = Object.freeze({
   minListLimit: 1,
   defaultListLimit: 20,
   maxListLimit: 50,
-  defaultMaxEntries: 1_000,
+  defaultMaxEntries: 5_000,
   maxMetadataEntries: 12,
   maxMetadataKeyLength: 48,
   maxMetadataValueLength: 180,
@@ -93,12 +108,31 @@ CREATE TABLE IF NOT EXISTS workforce_cost_cache_ledger_entries (
   measured_at TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS workforce_cost_cache_ledger_rollups (
+  day TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  department_id TEXT,
+  model TEXT NOT NULL,
+  input_tokens_agg INTEGER NOT NULL DEFAULT 0,
+  output_tokens_agg INTEGER NOT NULL DEFAULT 0,
+  cache_hit_tokens_agg INTEGER NOT NULL DEFAULT 0,
+  cache_miss_tokens_agg INTEGER NOT NULL DEFAULT 0,
+  estimated_cost_micros_agg INTEGER NOT NULL DEFAULT 0,
+  entry_count INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(day, agent_id, model)
+);
+`;
+
+const MIGRATE_DEPARTMENT_ID_SQL = `
+ALTER TABLE workforce_cost_cache_ledger_entries ADD COLUMN department_id TEXT;
 `;
 
 type WorkforceCostCacheLedgerRow = {
   entry_id: string;
   agent_id: string;
   lane_id: string | null;
+  department_id: string | null;
   provider: string;
   model: string;
   operation: string;
@@ -114,11 +148,25 @@ type WorkforceCostCacheLedgerRow = {
   created_at: string;
 };
 
+type RollupRow = {
+  day: string;
+  agent_id: string;
+  department_id: string | null;
+  model: string;
+  input_tokens_agg: number;
+  output_tokens_agg: number;
+  cache_hit_tokens_agg: number;
+  cache_miss_tokens_agg: number;
+  estimated_cost_micros_agg: number;
+  entry_count: number;
+};
+
 const cacheStatuses = new Set<WorkforceCacheStatus>(["hit", "miss", "partial", "unknown"]);
 const entryIdPattern = new RegExp(`^[a-z][a-z0-9:_-]{2,${LEDGER_LIMITS.maxEntryIdLength - 1}}$`);
 const agentIdPattern = new RegExp(`^[a-z][a-z0-9:_-]{1,${LEDGER_LIMITS.maxAgentIdLength - 1}}$`);
 const slugPattern = new RegExp(`^[a-z][a-z0-9._:-]{0,${LEDGER_LIMITS.maxSlugLength - 1}}$`);
 const currencyPattern = /^[A-Z]{3}$/;
+const departmentIdPattern = new RegExp(`^[a-z][a-z0-9._:-]{0,${LEDGER_LIMITS.maxSlugLength - 1}}$`);
 const unsafeMetadataKeyPattern =
   /prompt|response|message|conversation|secret|token|password|credential|authorization|api[_-]?key/i;
 const unsafeMetadataValuePattern =
@@ -212,6 +260,23 @@ function sanitizeMetadata(value: Record<string, unknown> | undefined): Record<st
   return metadata;
 }
 
+function sanitizeDepartmentId(rawValue: unknown): string | undefined {
+  if (rawValue === undefined || rawValue === null) return undefined;
+  if (typeof rawValue !== "string") return undefined;
+  const trimmed = rawValue.trim().toLowerCase();
+  if (!departmentIdPattern.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+function extractDay(timestamp: string): string {
+  const parsed = Date.parse(timestamp);
+  if (Number.isNaN(parsed)) {
+    // Fallback: slice the first 10 characters as YYYY-MM-DD
+    return timestamp.slice(0, 10);
+  }
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
 function assertSafeInput(input: RecordWorkforceCostCacheLedgerEntryInput): {
   metadata: Record<string, string>;
   measuredAt: string;
@@ -274,10 +339,13 @@ function rowToEntry(row: WorkforceCostCacheLedgerRow): WorkforceCostCacheLedgerE
   const metadata = parseMetadata(row.metadata);
   if (!metadata) return undefined;
 
+  const departmentId = row.department_id ? sanitizeDepartmentId(row.department_id) : undefined;
+
   const entry: WorkforceCostCacheLedgerEntry = {
     entryId: row.entry_id,
     agentId: row.agent_id,
     ...(row.lane_id ? { laneId: row.lane_id as LaneId } : {}),
+    ...(departmentId ? { departmentId } : {}),
     provider: row.provider,
     model: row.model,
     operation: row.operation,
@@ -306,6 +374,14 @@ export function createWorkforceCostCacheLedgerStore(
   options: WorkforceCostCacheLedgerStoreOptions = {},
 ): WorkforceCostCacheLedgerStore {
   db.exec(SCHEMA_SQL);
+
+  // A.1: Safe migration — add department_id if it does not exist yet
+  try {
+    db.exec(MIGRATE_DEPARTMENT_ID_SQL);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   const requestedMaxEntries = options.maxEntries ?? LEDGER_LIMITS.defaultMaxEntries;
   const maxEntries = Number.isFinite(requestedMaxEntries)
     ? Math.max(1, Math.floor(requestedMaxEntries))
@@ -316,6 +392,7 @@ export function createWorkforceCostCacheLedgerStore(
       entry_id,
       agent_id,
       lane_id,
+      department_id,
       provider,
       model,
       operation,
@@ -332,6 +409,7 @@ export function createWorkforceCostCacheLedgerStore(
       @entryId,
       @agentId,
       @laneId,
+      @departmentId,
       @provider,
       @model,
       @operation,
@@ -353,6 +431,8 @@ export function createWorkforceCostCacheLedgerStore(
     SELECT * FROM workforce_cost_cache_ledger_entries
     WHERE (@agentId IS NULL OR agent_id = @agentId)
       AND (@laneId IS NULL OR lane_id = @laneId)
+      AND (@from IS NULL OR measured_at >= @from)
+      AND (@to IS NULL OR measured_at <= @to)
     ORDER BY measured_at DESC, created_at DESC, entry_id ASC
     LIMIT @limit
   `);
@@ -366,14 +446,40 @@ export function createWorkforceCostCacheLedgerStore(
     )
   `);
 
+  // A.3: Rollup upsert prepared statement
+  const upsertRollupStmt = db.prepare(`
+    INSERT INTO workforce_cost_cache_ledger_rollups
+      (day, agent_id, department_id, model, input_tokens_agg, output_tokens_agg,
+       cache_hit_tokens_agg, cache_miss_tokens_agg, estimated_cost_micros_agg, entry_count)
+    VALUES (@day, @agentId, @departmentId, @model, @inputTokens, @outputTokens,
+            @cacheHitTokens, @cacheMissTokens, @costMicros, 1)
+    ON CONFLICT(day, agent_id, model) DO UPDATE SET
+      input_tokens_agg = input_tokens_agg + @inputTokens,
+      output_tokens_agg = output_tokens_agg + @outputTokens,
+      cache_hit_tokens_agg = cache_hit_tokens_agg + @cacheHitTokens,
+      cache_miss_tokens_agg = cache_miss_tokens_agg + @cacheMissTokens,
+      estimated_cost_micros_agg = estimated_cost_micros_agg + @costMicros,
+      entry_count = entry_count + 1,
+      department_id = COALESCE(@departmentId, department_id)
+  `);
+
+  // A.6: Read rollups for aggregateCosts
+  const readRollupsStmt = db.prepare(`
+    SELECT * FROM workforce_cost_cache_ledger_rollups
+    WHERE (@fromDay IS NULL OR day >= @fromDay)
+    ORDER BY day DESC, agent_id ASC, model ASC
+  `);
+
   const insertEntry = (
     input: RecordWorkforceCostCacheLedgerEntryInput,
   ): WorkforceCostCacheLedgerEntry => {
     const { metadata, measuredAt } = assertSafeInput(input);
+    const departmentId = sanitizeDepartmentId(input.departmentId);
     insertStmt.run({
       entryId: input.entryId,
       agentId: input.agentId,
       laneId: input.laneId ?? null,
+      departmentId: departmentId ?? null,
       provider: input.provider,
       model: input.model,
       operation: input.operation,
@@ -390,6 +496,21 @@ export function createWorkforceCostCacheLedgerStore(
     const row = getStmt.get(input.entryId) as WorkforceCostCacheLedgerRow | undefined;
     const entry = row ? rowToEntry(row) : undefined;
     if (!entry) throw new Error("ledger entry could not be read safely after insert");
+
+    // A.3: Upsert rollup after raw insert
+    const day = extractDay(measuredAt);
+    upsertRollupStmt.run({
+      day,
+      agentId: input.agentId,
+      departmentId: departmentId ?? null,
+      model: input.model,
+      inputTokens: input.inputTokens ?? 0,
+      outputTokens: input.outputTokens ?? 0,
+      cacheHitTokens: input.promptCacheHitTokens ?? 0,
+      cacheMissTokens: input.promptCacheMissTokens ?? 0,
+      costMicros: input.estimatedCostMicros ?? 0,
+    });
+
     pruneStmt.run({ maxEntries });
     return entry;
   };
@@ -400,6 +521,8 @@ export function createWorkforceCostCacheLedgerStore(
     const rows = listStmt.all({
       agentId: filter.agentId ?? null,
       laneId: filter.laneId ?? null,
+      from: filter.from ?? null,
+      to: filter.to ?? null,
       limit: Math.max(
         LEDGER_LIMITS.minListLimit,
         Math.min(filter.limit ?? LEDGER_LIMITS.defaultListLimit, LEDGER_LIMITS.maxListLimit),
@@ -416,5 +539,82 @@ export function createWorkforceCostCacheLedgerStore(
     return row.count;
   };
 
-  return { insertEntry, listEntries, count };
+  const aggregateCosts = (filter: { days?: number } = {}): WorkforceCostAggregate => {
+    const days = filter.days ?? 7;
+    const today = new Date();
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - days + 1);
+    const fromDay = fromDate.toISOString().slice(0, 10);
+
+    const rows = readRollupsStmt.all({
+      fromDay,
+    }) as RollupRow[];
+
+    const byAgent = new Map<
+      string,
+      { inputTokens: number; outputTokens: number; costMicros: number; entries: number }
+    >();
+    const byDepartment = new Map<
+      string,
+      { inputTokens: number; outputTokens: number; costMicros: number }
+    >();
+    const byPeriodMap = new Map<string, { inputTokens: number; outputTokens: number }>();
+    let totalCacheHitTokens = 0;
+    let totalCacheMissTokens = 0;
+
+    for (const row of rows) {
+      // byAgent
+      const agentKey = row.agent_id;
+      const agentAcc = byAgent.get(agentKey) ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        costMicros: 0,
+        entries: 0,
+      };
+      agentAcc.inputTokens += row.input_tokens_agg;
+      agentAcc.outputTokens += row.output_tokens_agg;
+      agentAcc.costMicros += row.estimated_cost_micros_agg;
+      agentAcc.entries += row.entry_count;
+      byAgent.set(agentKey, agentAcc);
+
+      // byDepartment
+      const deptKey = row.department_id ?? "unassigned";
+      const deptAcc = byDepartment.get(deptKey) ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        costMicros: 0,
+      };
+      deptAcc.inputTokens += row.input_tokens_agg;
+      deptAcc.outputTokens += row.output_tokens_agg;
+      deptAcc.costMicros += row.estimated_cost_micros_agg;
+      byDepartment.set(deptKey, deptAcc);
+
+      // byPeriod
+      const dayKey = row.day;
+      const periodAcc = byPeriodMap.get(dayKey) ?? { inputTokens: 0, outputTokens: 0 };
+      periodAcc.inputTokens += row.input_tokens_agg;
+      periodAcc.outputTokens += row.output_tokens_agg;
+      byPeriodMap.set(dayKey, periodAcc);
+
+      // cache efficiency accumulators
+      totalCacheHitTokens += row.cache_hit_tokens_agg;
+      totalCacheMissTokens += row.cache_miss_tokens_agg;
+    }
+
+    // Build sorted byPeriod array
+    const byPeriod = Array.from(byPeriodMap.entries())
+      .map(([day, counts]) => ({
+        day,
+        inputTokens: counts.inputTokens,
+        outputTokens: counts.outputTokens,
+      }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+
+    const cacheTotal = totalCacheHitTokens + totalCacheMissTokens;
+    const cacheEfficiency = cacheTotal > 0 ? totalCacheHitTokens / cacheTotal : 0;
+
+    return { byAgent, byDepartment, byPeriod, cacheEfficiency };
+  };
+
+  return { insertEntry, listEntries, count, aggregateCosts };
 }

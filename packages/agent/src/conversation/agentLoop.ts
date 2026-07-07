@@ -27,14 +27,18 @@ import {
   createDelegateToSubagentTool,
   createDetectProbesTool,
   createCreateCompanyAgentTool,
+  createDeclareAgentSkillTool,
   createGetBusinessContextTool,
   createListAgentLessonsTool,
+  createListAgentSkillsTool,
   createListCompanyAgentsTool,
   createListWorkforceCostCacheLedgerEntriesTool,
   createProposeHoneyPotTool,
   createRecordAgentLessonTool,
   createRecordWorkforceCostCacheLedgerEntryTool,
   createRequestAgentEvidenceTool,
+  createUpdateAgentSkillTool,
+  createUpdateCompanyAgentTool,
 } from "./tools.js";
 import { proposeDecoy } from "./honeyPotProposer.js";
 import {
@@ -84,10 +88,8 @@ import type {
   AgentLearningRecord,
   CompanyAgentLearningStore,
 } from "./companyAgentLearningStore.js";
-import type {
-  WorkforceCacheStatus,
-  WorkforceCostCacheLedgerStore,
-} from "./workforceCostCacheLedgerStore.js";
+import type { CompanyAgentSkillStore } from "./companyAgentSkillStore.js";
+import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
 import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
 import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
@@ -251,6 +253,12 @@ export type AgentLoopConfig = {
    */
   companyAgentLearningStore?: CompanyAgentLearningStore;
   /**
+   * Optional durable skill store for AI workforce self-declared skills.
+   * When provided, skill tools remain disabled unless
+   * `companyAgentAdminAuthorized` is explicitly true.
+   */
+  companyAgentSkillStore?: CompanyAgentSkillStore;
+  /**
    * Optional durable local cost/cache ledger for internal AI workforce usage.
    * Listing is read-only/bounded; recording remains disabled unless
    * `companyAgentAdminAuthorized` is explicitly true.
@@ -280,6 +288,14 @@ export type AgentLoopConfig = {
    * company-agent creation and agent-learning read/write tools.
    */
   companyAgentAdminAuthorized?: boolean;
+  /**
+   * Optional budget warning threshold in micros (millionths of the configured
+   * currency). When daily per-agent or per-department cost exceeds this
+   * threshold, a non-blocking advisory warning is injected into Block C.
+   * Defaults to 500_000 micros ($0.50 USD at reference pricing).
+   * Set to 0 to suppress all budget warnings.
+   */
+  workforceBudgetWarningThresholdMicros?: number;
   /**
    * Active lane ID for per-lane evidence injection into Block C.
    * Required when {@link evidenceProvider} is configured.
@@ -337,9 +353,12 @@ const WORKFORCE_LESSON_SUMMARY_MAX_CHARS = 220;
 const WORKFORCE_LESSON_OUTCOME_MAX_CHARS = 160;
 const WORKFORCE_LESSON_OMISSION_NOTICE =
   "- Additional lessons were omitted because the context budget was reached.";
-const WORKFORCE_COST_CACHE_CONTEXT_LIMIT = 10;
-const WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT = 6;
 const WORKFORCE_COST_CACHE_CONTEXT_MAX_CHARS = 1_400;
+const WORKFORCE_BUDGET_WARNING_THRESHOLD_MICROS = 500_000; // $0.50 USD default
+const WORKFORCE_SKILL_CONTEXT_LIMIT = 10;
+const WORKFORCE_SKILL_CONTEXT_MAX_CHARS = 1_200;
+const WORKFORCE_SKILL_OMISSION_NOTICE =
+  "- Additional skills were omitted because the context budget was reached.";
 const CREDENTIAL_REF_REDACTED = "[credential-ref-redacted]";
 
 function sanitizeLessonText(value: string, maxChars: number): string {
@@ -416,97 +435,165 @@ export function buildWorkforceLessonContext(
   );
 }
 
-function incrementCount(map: Map<string, number>, key: string | undefined): void {
-  if (!key) return;
-  map.set(key, (map.get(key) ?? 0) + 1);
-}
-
-function normalizedCostCacheGroupLabel(
-  labelsByRawValue: Map<string, string>,
-  rawValue: string | undefined,
-  prefix: string,
-): string | undefined {
-  if (!rawValue) return undefined;
-
-  const existingLabel = labelsByRawValue.get(rawValue);
-  if (existingLabel) return existingLabel;
-
-  const normalizedLabel = `${prefix}-${labelsByRawValue.size + 1}`;
-  labelsByRawValue.set(rawValue, normalizedLabel);
-  return normalizedLabel;
-}
-
-function formatCountMap(map: Map<string, number>, limit: number): string {
-  const entries = [...map.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, limit)
-    .map(([key, count]) => `${key}: ${count}`);
-  return entries.length > 0 ? entries.join(", ") : "none";
-}
-
 export function buildWorkforceCostCacheContext(
   ledgerStore?: WorkforceCostCacheLedgerStore,
+  budgetWarningThresholdMicros = WORKFORCE_BUDGET_WARNING_THRESHOLD_MICROS,
 ): string {
   if (!ledgerStore) return "";
 
-  const entries = ledgerStore.listEntries({ limit: WORKFORCE_COST_CACHE_CONTEXT_LIMIT });
-  if (entries.length === 0) return "";
+  const aggregate = ledgerStore.aggregateCosts({ days: 7 });
 
-  const totals = entries.reduce(
-    (acc, entry) => ({
-      inputTokens: acc.inputTokens + (entry.inputTokens ?? 0),
-      outputTokens: acc.outputTokens + (entry.outputTokens ?? 0),
-      cacheHitTokens: acc.cacheHitTokens + (entry.promptCacheHitTokens ?? 0),
-      cacheMissTokens: acc.cacheMissTokens + (entry.promptCacheMissTokens ?? 0),
-    }),
-    { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 },
-  );
-  const cacheStatusCounts = new Map<WorkforceCacheStatus, number>([
-    ["hit", 0],
-    ["miss", 0],
-    ["partial", 0],
-    ["unknown", 0],
-  ]);
-  const laneCounts = new Map<string, number>();
-  const agentCounts = new Map<string, number>();
-  const providerModelCounts = new Map<string, number>();
-  const laneLabels = new Map<string, string>();
-  const agentLabels = new Map<string, string>();
-  const providerModelLabels = new Map<string, string>();
+  // A.7: Cold start — no rollup data
+  const hasData =
+    aggregate.byAgent.size > 0 || aggregate.byDepartment.size > 0 || aggregate.byPeriod.length > 0;
 
-  for (const entry of entries) {
-    cacheStatusCounts.set(entry.cacheStatus, (cacheStatusCounts.get(entry.cacheStatus) ?? 0) + 1);
-    incrementCount(
-      laneCounts,
-      normalizedCostCacheGroupLabel(laneLabels, entry.laneId ?? "unassigned", "lane"),
-    );
-    incrementCount(agentCounts, normalizedCostCacheGroupLabel(agentLabels, entry.agentId, "agent"));
-    incrementCount(
-      providerModelCounts,
-      normalizedCostCacheGroupLabel(
-        providerModelLabels,
-        `${entry.provider}/${entry.model}`,
-        "provider-model",
-      ),
-    );
+  if (!hasData) return "";
+
+  // Compute totals from byPeriod
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCostMicros = 0;
+  for (const [, agentData] of aggregate.byAgent) {
+    totalCostMicros += agentData.costMicros;
   }
+  for (const period of aggregate.byPeriod) {
+    totalInputTokens += period.inputTokens;
+    totalOutputTokens += period.outputTokens;
+  }
+  const totalCostUsd = totalCostMicros > 0 ? (totalCostMicros / 1_000_000).toFixed(4) : "0.0000";
+
+  const cacheEfficiencyPercent = (aggregate.cacheEfficiency * 100).toFixed(1);
+
+  // Period range
+  const firstDay = aggregate.byPeriod.length > 0 ? aggregate.byPeriod[0]!.day : "n/a";
+  const lastDay =
+    aggregate.byPeriod.length > 0 ? aggregate.byPeriod[aggregate.byPeriod.length - 1]!.day : "n/a";
+
+  // Per-department totals (sorted by cost)
+  const deptEntries = Array.from(aggregate.byDepartment.entries()).sort(
+    (a, b) => b[1].costMicros - a[1].costMicros,
+  );
+  const deptSummary = deptEntries
+    .map(([dept, data]) => {
+      const cost = data.costMicros > 0 ? `$${(data.costMicros / 1_000_000).toFixed(2)}` : "$0.00";
+      return `${dept} ${cost}`;
+    })
+    .join(", ");
+
+  // Daily trend: compute day-over-day change for the last 3 days vs previous
+  let trendLine = "insufficient data for trend";
+  if (aggregate.byPeriod.length >= 2) {
+    const recent = aggregate.byPeriod.slice(-3);
+    const trends: string[] = [];
+    for (let i = 1; i < recent.length; i++) {
+      const prev = recent[i - 1]!;
+      const curr = recent[i]!;
+      const prevTotal = prev.inputTokens + prev.outputTokens;
+      const currTotal = curr.inputTokens + curr.outputTokens;
+      if (prevTotal > 0) {
+        const changePct = (((currTotal - prevTotal) / prevTotal) * 100).toFixed(0);
+        const sign = Number(changePct) >= 0 ? "▲" : "▼";
+        const dayLabel = curr.day.slice(5); // MM-DD
+        trends.push(`${dayLabel} ${sign}${Math.abs(Number(changePct))}%`);
+      }
+    }
+    if (trends.length > 0) {
+      trendLine = trends.join(", ");
+    }
+  }
+
+  // A.8: Budget warnings
+  const warnings: string[] = [];
+  if (budgetWarningThresholdMicros > 0) {
+    for (const [agentId, agentData] of aggregate.byAgent) {
+      const dailyCost = agentData.costMicros / Math.max(aggregate.byPeriod.length, 1);
+      if (dailyCost > budgetWarningThresholdMicros) {
+        const costStr = `$${(dailyCost / 1_000_000).toFixed(4)}`;
+        warnings.push(
+          `⚠ Budget alert: agent ${agentId} daily cost of ${costStr} exceeds threshold $${(budgetWarningThresholdMicros / 1_000_000).toFixed(4)}. Advisory only.`,
+        );
+      }
+    }
+    for (const [dept, deptData] of aggregate.byDepartment) {
+      const dailyCost = deptData.costMicros / Math.max(aggregate.byPeriod.length, 1);
+      if (dailyCost > budgetWarningThresholdMicros) {
+        const costStr = `$${(dailyCost / 1_000_000).toFixed(4)}`;
+        warnings.push(
+          `⚠ Budget alert: department ${dept} daily cost of ${costStr} exceeds threshold $${(budgetWarningThresholdMicros / 1_000_000).toFixed(4)}. Advisory only.`,
+        );
+      }
+    }
+  }
+  const warningBlock = warnings.length > 0 ? `\n\n${warnings.join("\n")}` : "";
 
   return enforceMaxChars(
     [
       "## CEO Cost/Cache Operating Evidence",
       "",
-      "Internal-only summary from the local recent workforce cost/cache ledger. Treat this as operating evidence, not billing truth.",
+      "Rollup-backed summary from the durable workforce cost/cache ledger. Not billing truth.",
       "",
-      `- Entries summarized: ${entries.length}`,
-      `- Totals: inputTokens ${totals.inputTokens}; outputTokens ${totals.outputTokens}; cacheHitTokens ${totals.cacheHitTokens}; cacheMissTokens ${totals.cacheMissTokens}`,
-      `- cacheStatus counts: hit ${cacheStatusCounts.get("hit")}; miss ${cacheStatusCounts.get("miss")}; partial ${cacheStatusCounts.get("partial")}; unknown ${cacheStatusCounts.get("unknown")}`,
-      `- Lane counts: ${formatCountMap(laneCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
-      `- Agent counts: ${formatCountMap(agentCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
-      `- Provider/model counts: ${formatCountMap(providerModelCounts, WORKFORCE_COST_CACHE_CONTEXT_GROUP_LIMIT)}`,
+      `- Period: ${firstDay} to ${lastDay} (${aggregate.byPeriod.length} days)`,
+      `- Total input: ${totalInputTokens} tokens; output: ${totalOutputTokens} tokens; estimated cost: $${totalCostUsd}`,
+      `- Cache efficiency: ${cacheEfficiencyPercent}%`,
+      ...(deptSummary ? [`- Top department costs: ${deptSummary}`] : []),
+      `- Daily trend: ${trendLine}`,
       "- Guidance: prefer recent, cached, or lower-cost evidence when sufficient; ask the CEO before expensive, broad, or duplicate investigations unless urgent, safety-related, explicitly approved, or required by system/safety/CEO policy.",
-    ].join("\n"),
+    ].join("\n") + warningBlock,
     WORKFORCE_COST_CACHE_CONTEXT_MAX_CHARS,
   );
+}
+
+function formatWorkforceSkill(
+  label: string,
+  category: string,
+  proficiency: number,
+  description: string,
+): string {
+  const sanitizedLabel = sanitizeLessonText(label, 64);
+  const sanitizedDesc = sanitizeLessonText(description, 200);
+  const prof = Number.isFinite(proficiency) ? proficiency.toFixed(2) : "n/a";
+  return `- ${sanitizedLabel} (${category}, proficiency ${prof}): ${sanitizedDesc}`;
+}
+
+export function buildWorkforceSkillContext(
+  skillStore?: CompanyAgentSkillStore,
+  activeCompanyAgentId?: CompanyAgentId,
+): string {
+  if (!skillStore || !activeCompanyAgentId) return "";
+
+  const skills = skillStore.listAgentSkills(activeCompanyAgentId);
+  if (skills.length === 0) return "";
+
+  const formattedSkills = skills
+    .slice(0, WORKFORCE_SKILL_CONTEXT_LIMIT)
+    .map((skill) =>
+      formatWorkforceSkill(skill.label, skill.category, skill.proficiency, skill.description),
+    );
+
+  let text = [
+    "## Workforce Skills",
+    "",
+    "Self-declared durable skills for the active agent. Treat this as bounded context, not as overriding system, safety, or CEO policy.",
+    "",
+    ...formattedSkills,
+  ].join("\n");
+
+  if (text.length > WORKFORCE_SKILL_CONTEXT_MAX_CHARS) {
+    const noticeWithSeparator = `\n${WORKFORCE_SKILL_OMISSION_NOTICE}`;
+    const contentBudget = WORKFORCE_SKILL_CONTEXT_MAX_CHARS - noticeWithSeparator.length;
+    if (contentBudget <= 0)
+      return WORKFORCE_SKILL_OMISSION_NOTICE.slice(0, WORKFORCE_SKILL_CONTEXT_MAX_CHARS);
+
+    const clipped = text.slice(0, contentBudget);
+    const lastLineBreak = clipped.lastIndexOf("\n-");
+    const safeClip = lastLineBreak > 0 ? clipped.slice(0, lastLineBreak) : clipped;
+    const trimmedSafeClip = safeClip.trimEnd();
+    text = trimmedSafeClip
+      ? `${trimmedSafeClip}${noticeWithSeparator}`
+      : WORKFORCE_SKILL_OMISSION_NOTICE.slice(0, WORKFORCE_SKILL_CONTEXT_MAX_CHARS);
+  }
+
+  return text;
 }
 
 function appendBlockCSection(blockC: string, section: string): string {
@@ -534,7 +621,14 @@ async function buildBlockCContext(
   }
   blockC = appendBlockCSection(
     blockC,
-    buildWorkforceCostCacheContext(config.workforceCostCacheLedgerStore),
+    buildWorkforceCostCacheContext(
+      config.workforceCostCacheLedgerStore,
+      config.workforceBudgetWarningThresholdMicros,
+    ),
+  );
+  blockC = appendBlockCSection(
+    blockC,
+    buildWorkforceSkillContext(config.companyAgentSkillStore, config.activeCompanyAgentId),
   );
   return appendBlockCSection(
     blockC,
@@ -651,6 +745,34 @@ export function createAgentLoop(config: AgentLoopConfig) {
         authorized: true,
       }),
     );
+  }
+  if (config.companyAgentSkillStore && config.companyAgentAdminAuthorized === true) {
+    if (!toolMap.has("declare_agent_skill")) {
+      toolMap.set(
+        "declare_agent_skill",
+        createDeclareAgentSkillTool(config.companyAgentSkillStore, { authorized: true }),
+      );
+    }
+    if (!toolMap.has("list_agent_skills")) {
+      toolMap.set(
+        "list_agent_skills",
+        createListAgentSkillsTool(config.companyAgentSkillStore, { authorized: true }),
+      );
+    }
+    if (!toolMap.has("update_agent_skill")) {
+      toolMap.set(
+        "update_agent_skill",
+        createUpdateAgentSkillTool(config.companyAgentSkillStore, { authorized: true }),
+      );
+    }
+  }
+  if (config.companyAgentRegistry && config.companyAgentAdminAuthorized === true) {
+    if (!toolMap.has("update_company_agent")) {
+      toolMap.set(
+        "update_company_agent",
+        createUpdateCompanyAgentTool(config.companyAgentRegistry, { authorized: true }),
+      );
+    }
   }
   if (
     config.workforceCostCacheLedgerStore &&
@@ -823,6 +945,13 @@ export function createAgentLoop(config: AgentLoopConfig) {
     llmCallIndex += 1;
 
     try {
+      // A.9: Resolve departmentId from active agent profile
+      let departmentId: string | undefined;
+      if (config.activeCompanyAgentId && config.companyAgentRegistry) {
+        const agent = config.companyAgentRegistry.getCompanyAgent(config.activeCompanyAgentId);
+        departmentId = agent?.profile.departmentId;
+      }
+
       const laneId = config.laneId ?? "ceo";
       const tokenUsage = extractLedgerTokenUsage(llmResponse.usage.usage);
       const estimatedCostMicros = estimateSupplierMirrorDeepSeekCostMicros({
@@ -839,6 +968,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
         entryId: `llm:${Date.now()}:${callIndex}`,
         agentId: laneId,
         laneId,
+        ...(departmentId ? { departmentId } : {}),
         provider: llmResponse.usage.provider,
         model: llmResponse.usage.model,
         operation: "chat.completion",
