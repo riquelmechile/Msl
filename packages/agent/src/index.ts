@@ -167,6 +167,15 @@ export type {
   CreateCompanyAgentInput,
 } from "./conversation/companyAgentStore.js";
 export { createCompanyAgentLearningStore } from "./conversation/companyAgentLearningStore.js";
+
+export { createAgentConsensusStore } from "./conversation/agentConsensusStore.js";
+export type {
+  AgentConsensusStore,
+  AgentReview,
+  ConsensusResult,
+  ReviewVerdict,
+  SubmitReviewInput,
+} from "./conversation/agentConsensusStore.js";
 export type {
   AgentLearningRecord,
   AgentLessonScope,
