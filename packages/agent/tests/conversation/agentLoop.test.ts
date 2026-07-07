@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import {
   buildWorkforceCostCacheContext,
   buildWorkforceLessonContext,
+  buildWorkforceSkillContext,
   createAgentLoop,
   createDeepSeekClient,
   estimateTokens,
@@ -13,14 +14,19 @@ import {
 } from "../../src/conversation/agentLoop.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
+import { createCompanyAgentSkillStore } from "../../src/conversation/companyAgentSkillStore.js";
 import { createWorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
-import type { WorkforceCostCacheLedgerEntry } from "../../src/conversation/workforceCostCacheLedgerStore.js";
 import type { AgentLearningRecord } from "../../src/conversation/companyAgentLearningStore.js";
 import type { CompanyAgent, CompanyAgentRegistry } from "../../src/conversation/companyAgents.js";
 import { parseStrategy } from "../../src/conversation/strategyParser.js";
 import type { ConversationState, Strategy, StreamingChunk } from "../../src/conversation/types.js";
 import { createMetrics } from "../../src/conversation/observability.js";
 import type { ToolDefinition } from "../../src/conversation/tools.js";
+import {
+  createDeclareAgentSkillTool,
+  createListAgentSkillsTool,
+  createUpdateAgentSkillTool,
+} from "../../src/conversation/tools.js";
 import { createGraphEngine } from "@msl/memory";
 
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
@@ -157,28 +163,6 @@ async function withInMemoryWorkforceLedger<T>(
   } finally {
     db.close();
   }
-}
-
-function makeLedgerEntry(
-  overrides: Partial<WorkforceCostCacheLedgerEntry> = {},
-): WorkforceCostCacheLedgerEntry {
-  return {
-    entryId: "ledger:cost-cache-1",
-    agentId: "agent:pricing-analyst",
-    laneId: "cost-supplier",
-    provider: "deepseek",
-    model: "deepseek-v4-flash",
-    operation: "chat.completion",
-    inputTokens: 10,
-    outputTokens: 2,
-    promptCacheHitTokens: 8,
-    promptCacheMissTokens: 2,
-    cacheStatus: "partial",
-    metadata: {},
-    measuredAt: "2026-07-03T10:00:00Z",
-    createdAt: "2026-07-03T10:00:00Z",
-    ...overrides,
-  };
 }
 
 describe("createAgentLoop — mock client", () => {
@@ -644,12 +628,9 @@ describe("createAgentLoop — mock client", () => {
 
       const userMessage = lastUserContent(capturedMessages);
       expect(userMessage).toContain("## CEO Cost/Cache Operating Evidence");
-      expect(userMessage).toContain("operating evidence, not billing truth");
-      expect(userMessage).toContain("inputTokens 150; outputTokens 30");
-      expect(userMessage).toContain("cacheHitTokens 130; cacheMissTokens 20");
-      expect(userMessage).toContain("cacheStatus counts: hit 1; miss 0; partial 1; unknown 0");
-      expect(userMessage).toContain("lane-1: 1");
-      expect(userMessage).toContain("provider-model-1: 1");
+      expect(userMessage).toContain("Not billing truth");
+      expect(userMessage).toContain("Total input: 150 tokens; output: 30 tokens");
+      expect(userMessage).toContain("Cache efficiency:");
       expect(userMessage).toContain(
         "ask the CEO before expensive, broad, or duplicate investigations unless urgent",
       );
@@ -698,119 +679,133 @@ describe("createAgentLoop — mock client", () => {
     });
   });
 
-  it("summarizes cost/cache context without metadata, raw prompts, secrets, or raw entry IDs", () => {
+  it("does not expose raw entry IDs, metadata keys, or sensitive patterns in rollup-backed context", () => {
     const context = buildWorkforceCostCacheContext({
       insertEntry: vi.fn(),
       count: vi.fn(() => 1),
-      listEntries: vi.fn(() => [
-        {
-          entryId: "ledger:raw-entry-id-123",
-          agentId: "agent:pricing-analyst",
-          laneId: "cost-supplier",
-          provider: "deepseek",
-          model: "deepseek-v4-flash",
-          operation: "chat.completion",
-          inputTokens: 10,
-          outputTokens: 2,
-          promptCacheHitTokens: 8,
-          promptCacheMissTokens: 2,
-          cacheStatus: "partial",
-          metadata: {
-            prompt: "raw prompt must not appear",
-            response: "raw response must not appear",
-            message: "raw message must not appear",
-            secret: "sk-secret-value-must-not-appear",
-          },
-          measuredAt: "2026-07-03T10:00:00Z",
-          createdAt: "2026-07-03T10:00:00Z",
-        } as const,
-      ]),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent: new Map([
+          ["agent:x", { inputTokens: 10, outputTokens: 2, costMicros: 100, entries: 2 }],
+        ]),
+        byDepartment: new Map([
+          ["commercial", { inputTokens: 10, outputTokens: 2, costMicros: 100 }],
+        ]),
+        byPeriod: [{ day: "2026-07-03", inputTokens: 10, outputTokens: 2 }],
+        cacheEfficiency: 0.8,
+      })),
     });
 
     expect(context).toContain("## CEO Cost/Cache Operating Evidence");
     expect(context).not.toContain("ledger:raw-entry-id-123");
-    expect(context).not.toContain("raw prompt must not appear");
-    expect(context).not.toContain("raw response must not appear");
-    expect(context).not.toContain("raw message must not appear");
-    expect(context).not.toContain("sk-secret-value-must-not-appear");
     expect(context).not.toMatch(/metadata|prompt|response|message|secret|api[_ -]?key/i);
   });
 
-  it("normalizes cost/cache group labels instead of exposing raw agent, lane, provider, or model values", () => {
+  it("uses department labels from aggregateCosts in cost context", () => {
     const context = buildWorkforceCostCacheContext({
       insertEntry: vi.fn(),
       count: vi.fn(() => 1),
-      listEntries: vi.fn(() => [
-        makeLedgerEntry({
-          agentId: "ceo-secret-agent@example.com",
-          laneId: "seller-token-sk-sensitive-lane" as never,
-          provider: "provider-with-api-key",
-          model: "model-with-customer-name",
-        }),
-      ]),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent: new Map([
+          ["agent:ops-1", { inputTokens: 100, outputTokens: 50, costMicros: 80_000, entries: 5 }],
+        ]),
+        byDepartment: new Map([
+          ["operations", { inputTokens: 100, outputTokens: 50, costMicros: 80_000 }],
+          ["commercial", { inputTokens: 80, outputTokens: 30, costMicros: 50_000 }],
+        ]),
+        byPeriod: [
+          { day: "2026-07-01", inputTokens: 50, outputTokens: 25 },
+          { day: "2026-07-02", inputTokens: 130, outputTokens: 55 },
+        ],
+        cacheEfficiency: 0.75,
+      })),
     });
 
-    expect(context).toContain("Lane counts: lane-1: 1");
-    expect(context).toContain("Agent counts: agent-1: 1");
-    expect(context).toContain("Provider/model counts: provider-model-1: 1");
-    expect(context).not.toContain("ceo-secret-agent@example.com");
-    expect(context).not.toContain("seller-token-sk-sensitive-lane");
-    expect(context).not.toContain("provider-with-api-key");
-    expect(context).not.toContain("model-with-customer-name");
+    expect(context).toContain("operations $0.08");
+    expect(context).toContain("commercial $0.05");
+    // Department labels appear directly — no sensitive raw agent IDs
+    expect(context).not.toContain("agent:ops-1");
   });
 
-  it("requests at most 10 cost/cache entries for prompt summaries", () => {
-    const listEntries = vi.fn(() => [makeLedgerEntry()]);
+  it("calls aggregateCosts with days:7 for cost context", () => {
+    const aggregateCosts = vi.fn(() => ({
+      byAgent: new Map(),
+      byDepartment: new Map(),
+      byPeriod: [],
+      cacheEfficiency: 0,
+    }));
 
     buildWorkforceCostCacheContext({
       insertEntry: vi.fn(),
-      count: vi.fn(() => 1),
-      listEntries,
+      count: vi.fn(() => 0),
+      listEntries: vi.fn(() => []),
+      aggregateCosts,
     });
 
-    expect(listEntries).toHaveBeenCalledWith({ limit: 10 });
+    expect(aggregateCosts).toHaveBeenCalledWith({ days: 7 });
   });
 
-  it("limits cost/cache grouped prompt summaries to 6 labels per group", () => {
+  it("includes cache efficiency ratio and daily trend in context", () => {
     const context = buildWorkforceCostCacheContext({
       insertEntry: vi.fn(),
-      count: vi.fn(() => 8),
-      listEntries: vi.fn(() =>
-        Array.from({ length: 8 }, (_, index) =>
-          makeLedgerEntry({
-            entryId: `ledger:cost-cache-${index + 1}`,
-            agentId: `agent:${index + 1}`,
-            laneId: `lane-${index + 1}` as never,
-            provider: `provider-${index + 1}`,
-            model: `model-${index + 1}`,
-          }),
-        ),
-      ),
+      count: vi.fn(() => 1),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent: new Map(),
+        byDepartment: new Map(),
+        byPeriod: [
+          { day: "2026-07-01", inputTokens: 100, outputTokens: 50 },
+          { day: "2026-07-02", inputTokens: 150, outputTokens: 75 },
+        ],
+        cacheEfficiency: 0.92,
+      })),
     });
 
-    expect(context).toContain("lane-6: 1");
-    expect(context).not.toContain("lane-7: 1");
-    expect(context).toContain("agent-6: 1");
-    expect(context).not.toContain("agent-7: 1");
-    expect(context).toContain("provider-model-6: 1");
-    expect(context).not.toContain("provider-model-7: 1");
+    expect(context).toContain("Cache efficiency: 92.0%");
+    expect(context).toContain("Daily trend:");
+    expect(context).toContain("07-02 ▲");
   });
 
-  it("keeps cost/cache prompt summaries under 1,400 characters", () => {
+  it("keeps cost/cache prompt summaries under 1,400 characters even with many departments and long agent names", () => {
+    const byAgent = new Map<
+      string,
+      { inputTokens: number; outputTokens: number; costMicros: number; entries: number }
+    >();
+    const byDepartment = new Map<
+      string,
+      { inputTokens: number; outputTokens: number; costMicros: number }
+    >();
+    const byPeriod: Array<{ day: string; inputTokens: number; outputTokens: number }> = [];
+    for (let i = 0; i < 10; i++) {
+      byAgent.set(`agent:${i}:${"x".repeat(200)}`, {
+        inputTokens: 1000,
+        outputTokens: 500,
+        costMicros: 500_000,
+        entries: 20,
+      });
+      byDepartment.set(`dept-${i}-${"x".repeat(200)}`, {
+        inputTokens: 1000,
+        outputTokens: 500,
+        costMicros: 500_000,
+      });
+      byPeriod.push({
+        day: `2026-07-${String(i + 1).padStart(2, "0")}`,
+        inputTokens: 1000,
+        outputTokens: 500,
+      });
+    }
+
     const context = buildWorkforceCostCacheContext({
       insertEntry: vi.fn(),
       count: vi.fn(() => 10),
-      listEntries: vi.fn(() =>
-        Array.from({ length: 10 }, (_, index) =>
-          makeLedgerEntry({
-            entryId: `ledger:cost-cache-${index + 1}`,
-            agentId: `agent:${index + 1}:${"x".repeat(200)}`,
-            laneId: `lane-${index + 1}-${"x".repeat(200)}` as never,
-            provider: `provider-${index + 1}-${"x".repeat(200)}`,
-            model: `model-${index + 1}-${"x".repeat(200)}`,
-          }),
-        ),
-      ),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent,
+        byDepartment,
+        byPeriod,
+        cacheEfficiency: 0.5,
+      })),
     });
 
     expect(context.length).toBeLessThanOrEqual(1_400);
@@ -1091,6 +1086,392 @@ describe("createAgentLoop — mock client", () => {
 
     expect(capturedStreamUserMessage).toContain("## Workforce Lessons");
     expect(capturedStreamUserMessage).toBe(capturedChatUserMessage);
+  });
+
+  // ── Phase B.9: Workforce Skill Context ──
+
+  it("builds workforce skill context for an agent with declared skills", () => {
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+    skillStore.insertAgentSkill({
+      skillId: "skill:pricing-1",
+      agentId: "agent:pricing",
+      label: "Pricing Analysis",
+      category: "analysis",
+      description: "Analyze pricing data from supplier evidence.",
+      proficiency: 0.85,
+    });
+    skillStore.insertAgentSkill({
+      skillId: "skill:pricing-2",
+      agentId: "agent:pricing",
+      label: "Cost Estimation",
+      category: "technical",
+      description: "Estimate costs using historical data.",
+      proficiency: 0.6,
+    });
+
+    const context = buildWorkforceSkillContext(skillStore, "agent:pricing");
+
+    expect(context).toContain("## Workforce Skills");
+    expect(context).toContain("Pricing Analysis (analysis, proficiency 0.85):");
+    expect(context).toContain("Cost Estimation (technical, proficiency 0.60):");
+    expect(context).toContain("Self-declared durable skills for the active agent");
+
+    db.close();
+  });
+
+  it("returns empty string when no skills exist for the agent", () => {
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+
+    expect(buildWorkforceSkillContext(skillStore, "agent:unknown")).toBe("");
+
+    db.close();
+  });
+
+  it("returns empty string when skill store or active agent id is missing", () => {
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+
+    expect(buildWorkforceSkillContext(undefined, "agent:pricing")).toBe("");
+    expect(buildWorkforceSkillContext(skillStore, undefined)).toBe("");
+
+    db.close();
+  });
+
+  it("limits skill context to max 10 skills and 1,200 chars", () => {
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+
+    for (let i = 0; i < 15; i++) {
+      skillStore.insertAgentSkill({
+        skillId: `skill:over-${i}`,
+        agentId: "agent:over",
+        label: `Long Skill Label Number ${i} Extra Text`,
+        category: "technical",
+        description: `This is a longer description for testing overflow limits. `.repeat(3),
+        proficiency: 0.5,
+      });
+    }
+
+    const context = buildWorkforceSkillContext(skillStore, "agent:over");
+
+    expect(context).toContain("## Workforce Skills");
+    const skillLines = (context.match(/^- /gm) ?? []).length;
+    expect(skillLines).toBeLessThanOrEqual(10);
+    expect(context.length).toBeLessThanOrEqual(1_200);
+
+    db.close();
+  });
+
+  it("injects workforce skills into Block C between cost context and lessons", async () => {
+    let capturedMessages: Array<{ role: string; content: string }> = [];
+    const llmClient: LlmClient = {
+      chat(messages) {
+        capturedMessages = messages;
+        return Promise.resolve({ content: "Recibido." });
+      },
+      async *stream() {
+        await Promise.resolve();
+        yield { delta: "", done: true };
+      },
+    };
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+    skillStore.insertAgentSkill({
+      skillId: "skill:ctx-1",
+      agentId: "agent:ctx",
+      label: "Context Analysis",
+      category: "analysis",
+      description: "Cross-references operational, cost, and lesson context.",
+      proficiency: 0.9,
+    });
+    const learningStore = {
+      insertAgentLesson: vi.fn(),
+      listAgentLessons: vi.fn(() => [makeLesson()]),
+      count: vi.fn(() => 1),
+    };
+    const companyAgentRegistry = makeCompanyAgentRegistry(makeCompanyAgent({ id: "agent:ctx" }));
+    const agent = createAgentLoop({
+      systemPrompt,
+      llmClient,
+      companyAgentSkillStore: skillStore,
+      companyAgentLearningStore: learningStore,
+      activeCompanyAgentId: "agent:ctx",
+      companyAgentRegistry,
+    });
+
+    await agent.converse("Hola", makeState());
+
+    const userMessage = lastUserContent(capturedMessages);
+    expect(userMessage).toContain("## Workforce Skills");
+    expect(userMessage).toContain("Context Analysis (analysis, proficiency 0.90):");
+
+    // Check order: cost before skills before lessons
+    const costIndex = userMessage.indexOf("CEO Cost/Cache");
+    const skillsIndex = userMessage.indexOf("## Workforce Skills");
+    const lessonsIndex = userMessage.indexOf("## Workforce Lessons");
+
+    // Skills appear after cost (or both are absent) and before lessons
+    if (costIndex >= 0 && skillsIndex >= 0) {
+      expect(costIndex).toBeLessThan(skillsIndex);
+    }
+    if (skillsIndex >= 0 && lessonsIndex >= 0) {
+      expect(skillsIndex).toBeLessThan(lessonsIndex);
+    }
+
+    db.close();
+  });
+
+  it("omits skill section from Block C when no skills exist", async () => {
+    let capturedMessages: Array<{ role: string; content: string }> = [];
+    const llmClient: LlmClient = {
+      chat(messages) {
+        capturedMessages = messages;
+        return Promise.resolve({ content: "Recibido." });
+      },
+      async *stream() {
+        await Promise.resolve();
+        yield { delta: "", done: true };
+      },
+    };
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+    const companyAgentRegistry = makeCompanyAgentRegistry(
+      makeCompanyAgent({ id: "agent:no-skills" }),
+    );
+    const agent = createAgentLoop({
+      systemPrompt,
+      llmClient,
+      companyAgentSkillStore: skillStore,
+      activeCompanyAgentId: "agent:no-skills",
+      companyAgentRegistry,
+    });
+
+    await agent.converse("Hola", makeState());
+
+    const userMessage = lastUserContent(capturedMessages);
+    expect(userMessage).not.toContain("## Workforce Skills");
+
+    db.close();
+  });
+
+  it("skill tools are gated behind admin authorization", () => {
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+
+    // Test declare tool unauthorized
+    const declareUnauth = createDeclareAgentSkillTool(skillStore, { authorized: false });
+    const result1 = declareUnauth.execute({
+      agentId: "agent:x",
+      label: "Test Skill",
+      category: "technical",
+      description: "Test.",
+    });
+    expect(result1).toMatchObject({ status: "blocked", error: "unauthorized" });
+
+    // Test list tool unauthorized
+    const listUnauth = createListAgentSkillsTool(skillStore, { authorized: false });
+    const result2 = listUnauth.execute({ agentId: "agent:x" });
+    expect(result2).toMatchObject({ status: "blocked", error: "unauthorized" });
+
+    // Test update tool unauthorized
+    const updateUnauth = createUpdateAgentSkillTool(skillStore, { authorized: false });
+    const result3 = updateUnauth.execute({ skillId: "skill:x" });
+    expect(result3).toMatchObject({ status: "blocked", error: "unauthorized" });
+
+    // Test declare tool authorized succeeds (ceo is a static lane-backed agent)
+    const declareAuth = createDeclareAgentSkillTool(skillStore, { authorized: true });
+    expect(
+      declareAuth.execute({
+        agentId: "ceo",
+        label: "Strategic Planning",
+        category: "coordination",
+        description: "Plan company-level strategies.",
+      }),
+    ).toMatchObject({ status: "declared", noExternalMutationExecuted: true });
+
+    db.close();
+  });
+
+  it("emits budget warning when an agent exceeds the daily cost threshold", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 1),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent: new Map([
+          [
+            "agent:heavy-spender",
+            { inputTokens: 500_000, outputTokens: 250_000, costMicros: 1_500_000, entries: 10 },
+          ],
+        ]),
+        byDepartment: new Map(),
+        byPeriod: [{ day: "2026-07-03", inputTokens: 500_000, outputTokens: 250_000 }],
+        cacheEfficiency: 0.5,
+      })),
+    });
+
+    expect(context).toContain("⚠ Budget alert: agent agent:heavy-spender daily cost");
+    expect(context).toContain("Advisory only.");
+  });
+
+  it("emits budget warning when a department exceeds the daily cost threshold", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 1),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent: new Map(),
+        byDepartment: new Map([
+          ["operations", { inputTokens: 1_000_000, outputTokens: 500_000, costMicros: 2_000_000 }],
+        ]),
+        byPeriod: [
+          { day: "2026-07-01", inputTokens: 500_000, outputTokens: 250_000 },
+          { day: "2026-07-02", inputTokens: 500_000, outputTokens: 250_000 },
+        ],
+        cacheEfficiency: 0.5,
+      })),
+    });
+
+    expect(context).toContain("⚠ Budget alert: department operations daily cost");
+  });
+
+  it("does not emit budget warnings when costs are under threshold", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 1),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent: new Map([
+          [
+            "agent:light-user",
+            { inputTokens: 100, outputTokens: 50, costMicros: 250_000, entries: 5 },
+          ],
+        ]),
+        byDepartment: new Map([
+          ["commercial", { inputTokens: 100, outputTokens: 50, costMicros: 250_000 }],
+        ]),
+        byPeriod: [{ day: "2026-07-03", inputTokens: 100, outputTokens: 50 }],
+        cacheEfficiency: 0.9,
+      })),
+    });
+
+    expect(context).not.toContain("⚠ Budget alert");
+    expect(context).toContain("## CEO Cost/Cache Operating Evidence");
+  });
+
+  it("respects configurable budget warning threshold", () => {
+    // Set a very high threshold — this agent should NOT trigger a warning
+    const highThreshold = 10_000_000;
+    const context = buildWorkforceCostCacheContext(
+      {
+        insertEntry: vi.fn(),
+        count: vi.fn(() => 1),
+        listEntries: vi.fn(() => []),
+        aggregateCosts: vi.fn(() => ({
+          byAgent: new Map([
+            [
+              "agent:heavy-spender",
+              { inputTokens: 500_000, outputTokens: 250_000, costMicros: 1_500_000, entries: 10 },
+            ],
+          ]),
+          byDepartment: new Map(),
+          byPeriod: [{ day: "2026-07-03", inputTokens: 500_000, outputTokens: 250_000 }],
+          cacheEfficiency: 0.5,
+        })),
+      },
+      highThreshold,
+    );
+
+    expect(context).not.toContain("⚠ Budget alert");
+    expect(context).toContain("## CEO Cost/Cache Operating Evidence");
+  });
+
+  it("suppresses budget warnings when threshold is zero", () => {
+    const context = buildWorkforceCostCacheContext(
+      {
+        insertEntry: vi.fn(),
+        count: vi.fn(() => 1),
+        listEntries: vi.fn(() => []),
+        aggregateCosts: vi.fn(() => ({
+          byAgent: new Map([
+            [
+              "agent:heavy-spender",
+              { inputTokens: 500_000, outputTokens: 250_000, costMicros: 1_500_000, entries: 10 },
+            ],
+          ]),
+          byDepartment: new Map(),
+          byPeriod: [{ day: "2026-07-03", inputTokens: 500_000, outputTokens: 250_000 }],
+          cacheEfficiency: 0.5,
+        })),
+      },
+      0,
+    );
+
+    expect(context).not.toContain("⚠ Budget alert");
+  });
+
+  it("returns empty string on cold start (no rollup data)", () => {
+    const context = buildWorkforceCostCacheContext({
+      insertEntry: vi.fn(),
+      count: vi.fn(() => 0),
+      listEntries: vi.fn(() => []),
+      aggregateCosts: vi.fn(() => ({
+        byAgent: new Map(),
+        byDepartment: new Map(),
+        byPeriod: [],
+        cacheEfficiency: 0,
+      })),
+    });
+
+    expect(context).toBe("");
+  });
+
+  it("recordLlmUsage passes departmentId from active agent profile", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const registry: CompanyAgentRegistry = {
+        getCompanyAgent: vi.fn((agentId: string) =>
+          agentId === "agent:pricing-analyst" ? makeCompanyAgent() : undefined,
+        ),
+        listCompanyAgents: vi.fn(() => [makeCompanyAgent()]),
+      };
+      const agent = createAgentLoop({
+        systemPrompt,
+        llmClient: makeUsageClient({
+          prompt_tokens: 50,
+          completion_tokens: 10,
+        }),
+        workforceCostCacheLedgerStore,
+        companyAgentRegistry: registry,
+        activeCompanyAgentId: "agent:pricing-analyst",
+      });
+
+      await agent.converse("Hola", makeState());
+      const [entry] = workforceCostCacheLedgerStore.listEntries();
+
+      expect(entry).toBeDefined();
+      expect(entry?.departmentId).toBe("commercial");
+    });
+  });
+
+  it("recordLlmUsage omits departmentId when no active agent is configured", async () => {
+    await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
+      const agent = createAgentLoop({
+        systemPrompt,
+        llmClient: makeUsageClient({
+          prompt_tokens: 50,
+          completion_tokens: 10,
+        }),
+        workforceCostCacheLedgerStore,
+      });
+
+      await agent.converse("Hola", makeState());
+      const [entry] = workforceCostCacheLedgerStore.listEntries();
+
+      expect(entry).toBeDefined();
+      expect(entry?.departmentId).toBeUndefined();
+    });
   });
 });
 

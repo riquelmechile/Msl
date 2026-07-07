@@ -41,7 +41,7 @@ type CompanyAgentRow = {
   required_evidence_kinds: string;
   boundaries: string;
   source: "ceo-created";
-  status: "active" | "archived";
+  status: "active" | "suspended" | "archived";
 };
 
 export type CreateCompanyAgentInput = {
@@ -60,6 +60,15 @@ export type CreateCompanyAgentInput = {
 export type CompanyAgentStore = CompanyAgentRegistry & {
   insertCompanyAgent(input: CreateCompanyAgentInput): CompanyAgent;
   archiveCompanyAgent(agentId: string): void;
+  updateCompanyAgent(
+    agentId: string,
+    fields: Partial<{
+      label: string;
+      departmentId: CompanyDepartmentId;
+      stablePrefix: string;
+      status: CompanyAgent["status"];
+    }>,
+  ): CompanyAgent;
   count(): number;
 };
 
@@ -73,6 +82,12 @@ function parseStringArray(value: string): readonly string[] | undefined {
     return undefined;
   }
 }
+
+const VALID_COMPANY_AGENT_STATUSES = new Set<CompanyAgentRow["status"]>([
+  "active",
+  "suspended",
+  "archived",
+]);
 
 function rowToCompanyAgent(row: CompanyAgentRow): CompanyAgent | undefined {
   const inputs = parseStringArray(row.inputs);
@@ -151,6 +166,15 @@ export function createCompanyAgentStore(db: Database.Database): CompanyAgentStor
     SET status = 'archived', updated_at = datetime('now')
     WHERE id = ?
   `);
+  const updateStmt = db.prepare(`
+    UPDATE company_agents
+    SET label = COALESCE(@label, label),
+        department_id = COALESCE(@departmentId, department_id),
+        stable_prefix = COALESCE(@stablePrefix, stable_prefix),
+        status = COALESCE(@status, status),
+        updated_at = datetime('now')
+    WHERE id = @agentId
+  `);
   const countStmt = db.prepare(`SELECT COUNT(*) as count FROM company_agents`);
 
   const getCompanyAgent = (agentId: string): CompanyAgent | undefined => {
@@ -186,6 +210,36 @@ export function createCompanyAgentStore(db: Database.Database): CompanyAgentStor
     archiveStmt.run(agentId);
   };
 
+  const updateCompanyAgent = (
+    agentId: string,
+    fields: Partial<{
+      label: string;
+      departmentId: CompanyDepartmentId;
+      stablePrefix: string;
+      status: CompanyAgent["status"];
+    }>,
+  ): CompanyAgent => {
+    if (fields.status && !VALID_COMPANY_AGENT_STATUSES.has(fields.status)) {
+      throw new Error(
+        `Invalid status: "${fields.status}". Valid: ${[...VALID_COMPANY_AGENT_STATUSES].join(", ")}.`,
+      );
+    }
+
+    updateStmt.run({
+      agentId,
+      label: fields.label ?? null,
+      departmentId: fields.departmentId ?? null,
+      stablePrefix: fields.stablePrefix ?? null,
+      status: fields.status ?? null,
+    });
+
+    const updated = getCompanyAgent(agentId);
+    if (!updated) {
+      throw new Error(`Company agent "${agentId}" not found.`);
+    }
+    return updated;
+  };
+
   const count = (): number => {
     const row = countStmt.get() as { count: number };
     return row.count;
@@ -196,6 +250,7 @@ export function createCompanyAgentStore(db: Database.Database): CompanyAgentStor
     getCompanyAgent,
     listCompanyAgents,
     archiveCompanyAgent,
+    updateCompanyAgent,
     count,
   };
 }

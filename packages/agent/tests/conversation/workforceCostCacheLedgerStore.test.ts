@@ -259,4 +259,332 @@ describe("createWorkforceCostCacheLedgerStore", () => {
       db.close();
     }
   });
+
+  // ── Phase A: Rollup table and aggregateCosts ──────────────────────────
+
+  it("creates rollup table alongside entries table", () => {
+    const db = new Database(":memory:");
+    try {
+      const store = createWorkforceCostCacheLedgerStore(db);
+
+      const tableCheck = db
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='workforce_cost_cache_ledger_rollups'`,
+        )
+        .get() as { name: string } | undefined;
+
+      expect(tableCheck?.name).toBe("workforce_cost_cache_ledger_rollups");
+
+      // Insert an entry to trigger rollup upsert
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:rollup-001",
+        laneId: "ceo",
+        cacheStatus: "partial",
+        inputTokens: 50,
+        outputTokens: 25,
+        promptCacheHitTokens: 40,
+        promptCacheMissTokens: 10,
+        estimatedCostMicros: 250,
+        measuredAt: "2026-07-03T10:00:00.000Z",
+      });
+
+      const rollupRow = db
+        .prepare(
+          `SELECT * FROM workforce_cost_cache_ledger_rollups WHERE day = ? AND agent_id = ? AND model = ?`,
+        )
+        .get("2026-07-03", "agent:pricing", "deepseek-v4-flash") as
+        | Record<string, unknown>
+        | undefined;
+
+      expect(rollupRow).toBeDefined();
+      expect((rollupRow as Record<string, number>).input_tokens_agg).toBe(50);
+      expect((rollupRow as Record<string, number>).output_tokens_agg).toBe(25);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("upserts rollup row idempotently on multiple inserts for same day/agent/model", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      // Insert two entries for the same day, agent, and model
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:rollup-a",
+        cacheStatus: "hit",
+        inputTokens: 30,
+        outputTokens: 15,
+        estimatedCostMicros: 100,
+        measuredAt: "2026-07-03T10:00:00.000Z",
+      });
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:rollup-b",
+        cacheStatus: "miss",
+        inputTokens: 70,
+        outputTokens: 35,
+        estimatedCostMicros: 150,
+        measuredAt: "2026-07-03T10:01:00.000Z",
+      });
+
+      const rollupRow = db
+        .prepare(
+          `SELECT * FROM workforce_cost_cache_ledger_rollups WHERE day = ? AND agent_id = ? AND model = ?`,
+        )
+        .get("2026-07-03", "agent:pricing", "deepseek-v4-flash") as
+        | Record<string, number>
+        | undefined;
+
+      expect(rollupRow).toBeDefined();
+      expect(rollupRow!.input_tokens_agg).toBe(100);
+      expect(rollupRow!.output_tokens_agg).toBe(50);
+      expect(rollupRow!.estimated_cost_micros_agg).toBe(250);
+      expect(rollupRow!.entry_count).toBe(2);
+
+      // Verify aggregateCosts reflects both entries
+      const aggregate = store.aggregateCosts({ days: 7 });
+      expect(aggregate.byAgent.get("agent:pricing")?.inputTokens).toBe(100);
+      expect(aggregate.byAgent.get("agent:pricing")?.entries).toBe(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rollup table survives raw entry pruning at 5K limit", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db, { maxEntries: 2 });
+
+    try {
+      // Insert 3 entries on the same day — raw table will prune but rollups persist
+      for (let index = 0; index < 3; index += 1) {
+        store.insertEntry({
+          ...baseEntry,
+          entryId: `entry:prune-${index}`,
+          cacheStatus: "miss",
+          inputTokens: 10,
+          outputTokens: 5,
+          estimatedCostMicros: 50,
+          measuredAt: `2026-07-03T10:0${index}:00.000Z`,
+        });
+      }
+
+      // Raw table pruned — rollup must still exist with aggregated values
+      expect(store.count()).toBe(2);
+
+      const rollupRow = db
+        .prepare(
+          `SELECT * FROM workforce_cost_cache_ledger_rollups WHERE agent_id = ? AND model = ?`,
+        )
+        .all("agent:pricing", "deepseek-v4-flash") as Array<Record<string, number>> | undefined;
+
+      expect(rollupRow).toBeDefined();
+      // All 3 inserts from same day/agent/model → single rollup with entry_count=3
+      expect(rollupRow!.length).toBe(1);
+      expect(rollupRow![0]!.input_tokens_agg).toBe(30);
+      expect(rollupRow![0]!.entry_count).toBe(3);
+
+      const aggregate = store.aggregateCosts({ days: 7 });
+      expect(aggregate.byAgent.get("agent:pricing")?.entries).toBe(3);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("filters raw entries by from/to date range", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:date-1",
+        measuredAt: "2026-07-01T10:00:00.000Z",
+      });
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:date-2",
+        measuredAt: "2026-07-05T10:00:00.000Z",
+      });
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:date-3",
+        measuredAt: "2026-07-10T10:00:00.000Z",
+      });
+
+      const filtered = store.listEntries({
+        from: "2026-07-03T00:00:00.000Z",
+        to: "2026-07-07T00:00:00.000Z",
+      });
+
+      expect(filtered.map((e) => e.entryId)).toEqual(["entry:date-2"]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("returns all entries when from/to filter is omitted", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:no-filter-1",
+        measuredAt: "2026-07-01T10:00:00.000Z",
+      });
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:no-filter-2",
+        measuredAt: "2026-07-10T10:00:00.000Z",
+      });
+
+      const entries = store.listEntries();
+      expect(entries).toHaveLength(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("aggregateCosts returns empty/default values when no rollup data exists", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      const aggregate = store.aggregateCosts({ days: 7 });
+      expect(aggregate.byAgent.size).toBe(0);
+      expect(aggregate.byDepartment.size).toBe(0);
+      expect(aggregate.byPeriod).toEqual([]);
+      expect(aggregate.cacheEfficiency).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("aggregateCosts groups by department correctly", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:dept-ops-1",
+        agentId: "agent:ops-worker",
+        departmentId: "operations",
+        inputTokens: 100,
+        outputTokens: 50,
+        estimatedCostMicros: 300_000,
+        measuredAt: "2026-07-03T10:00:00.000Z",
+      });
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:dept-com-1",
+        agentId: "agent:com-worker",
+        departmentId: "commercial",
+        inputTokens: 200,
+        outputTokens: 100,
+        estimatedCostMicros: 500_000,
+        measuredAt: "2026-07-03T10:05:00.000Z",
+      });
+
+      const aggregate = store.aggregateCosts({ days: 7 });
+      expect(aggregate.byDepartment.get("operations")?.inputTokens).toBe(100);
+      expect(aggregate.byDepartment.get("commercial")?.inputTokens).toBe(200);
+      expect(aggregate.byDepartment.get("commercial")?.costMicros).toBe(500_000);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("aggregateCosts respects the days parameter to limit the time window", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      // Insert an entry 10 days ago
+      const tenDaysAgo = new Date();
+      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:old-1",
+        inputTokens: 999,
+        outputTokens: 999,
+        cacheStatus: "unknown",
+        measuredAt: tenDaysAgo.toISOString(),
+      });
+      // Insert an entry today
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:recent-1",
+        inputTokens: 50,
+        outputTokens: 25,
+        cacheStatus: "unknown",
+        measuredAt: new Date().toISOString(),
+      });
+
+      // With days=3, the old entry should be excluded
+      const aggregate3days = store.aggregateCosts({ days: 3 });
+      // The recent entry should be present
+      expect(aggregate3days.byAgent.get("agent:pricing")?.inputTokens).toBe(50);
+
+      // With days=30, both should be present
+      const aggregate30days = store.aggregateCosts({ days: 30 });
+      expect(aggregate30days.byAgent.get("agent:pricing")?.inputTokens).toBe(1049);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("computes cache efficiency ratio from aggregated rollup data", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:hit-1",
+        cacheStatus: "hit",
+        promptCacheHitTokens: 80,
+        promptCacheMissTokens: 0,
+        measuredAt: "2026-07-03T10:00:00.000Z",
+      });
+      store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:miss-1",
+        cacheStatus: "miss",
+        promptCacheHitTokens: 0,
+        promptCacheMissTokens: 20,
+        measuredAt: "2026-07-03T10:01:00.000Z",
+      });
+
+      const aggregate = store.aggregateCosts({ days: 7 });
+      expect(aggregate.cacheEfficiency).toBeCloseTo(0.8, 5); // 80 / (80 + 20)
+    } finally {
+      db.close();
+    }
+  });
+
+  it("stores department_id in raw entries and returns it via listEntries", () => {
+    const db = new Database(":memory:");
+    const store = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      const entry = store.insertEntry({
+        ...baseEntry,
+        entryId: "entry:dept-store",
+        departmentId: "commercial",
+        cacheStatus: "unknown",
+        measuredAt: "2026-07-03T10:00:00.000Z",
+      });
+
+      expect(entry.departmentId).toBe("commercial");
+
+      const [listed] = store.listEntries({ agentId: "agent:pricing" });
+      expect(listed?.departmentId).toBe("commercial");
+    } finally {
+      db.close();
+    }
+  });
 });

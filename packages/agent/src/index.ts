@@ -34,6 +34,9 @@ export type {
   OpenAiFunctionToolDefinition,
 } from "./conversation/agentLoop.js";
 export {
+  buildWorkforceCostCacheContext,
+  buildWorkforceLessonContext,
+  buildWorkforceSkillContext,
   createAgentLoop,
   createOpenAiToolDefinitions,
   hasRejectionPattern,
@@ -89,7 +92,9 @@ export {
   createPrepareActionTool,
   createDelegateToSubagentTool,
   createCreateCompanyAgentTool,
+  createDeclareAgentSkillTool,
   createListAgentLessonsTool,
+  createListAgentSkillsTool,
   createListCompanyAgentsTool,
   createListWorkforceCostCacheLedgerEntriesTool,
   createRecordAgentLessonTool,
@@ -98,6 +103,8 @@ export {
   createSimulateActorTool,
   createDetectProbesTool,
   createProposeHoneyPotTool,
+  createUpdateAgentSkillTool,
+  createUpdateCompanyAgentTool,
 } from "./conversation/tools.js";
 
 export type { LaneContract, LaneOutput, CacheTelemetry, LaneId } from "./conversation/lanes.js";
@@ -126,6 +133,7 @@ export type {
   AgentEvidenceRequest,
   AgentEvidenceResponse,
   AgentEvidenceResponseStatus,
+  AgentSkill,
   EvidenceKind,
 } from "./conversation/companyAgents.js";
 export {
@@ -148,6 +156,11 @@ export type {
   ListAgentLessonsFilter,
   RecordAgentLessonInput,
 } from "./conversation/companyAgentLearningStore.js";
+export { createCompanyAgentSkillStore } from "./conversation/companyAgentSkillStore.js";
+export type {
+  CompanyAgentSkillStore,
+  InsertAgentSkillInput,
+} from "./conversation/companyAgentSkillStore.js";
 export { createWorkforceCostCacheLedgerStore } from "./conversation/workforceCostCacheLedgerStore.js";
 export {
   buildSupplierMirrorDeepSeekPromptPlan,
