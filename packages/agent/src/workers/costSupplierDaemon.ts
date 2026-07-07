@@ -78,6 +78,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
     if (listingSnaps.length === 0) {
       const cortexListings = cortex.queryByMetadata({
         type: "listing_snapshot",
+        sellerId,
         limit: 2000,
       });
       for (const node of cortexListings) {
@@ -98,54 +99,63 @@ export const costSupplierDaemon: DaemonHandler = async ({
 
   // ── Retrieve cost data from Cortex ───────────────────────────
 
-  const costNodes = cortex.queryByMetadata({
-    type: "cost_snapshot",
-    limit: 2000,
-  });
   const costMap = new Map<string, number>();
-  for (const cn of costNodes) {
-    const cm = cn.metadata;
-    const itemId = metadataString(cm.itemId);
-    if (!itemId) continue;
-    const cost = Number(cm.cost ?? cm.unit_cost ?? cm.supplier_cost ?? 0);
-    if (cost > 0) {
-      costMap.set(itemId, cost);
+  for (const sellerId of sellerIds) {
+    const costNodes = cortex.queryByMetadata({
+      type: "cost_snapshot",
+      sellerId,
+      limit: 2000,
+    });
+    for (const cn of costNodes) {
+      const cm = cn.metadata;
+      const itemId = metadataString(cm.itemId);
+      if (!itemId) continue;
+      const cost = Number(cm.cost ?? cm.unit_cost ?? cm.supplier_cost ?? 0);
+      if (cost > 0) {
+        costMap.set(itemId, cost);
+      }
     }
   }
 
   // ── Retrieve pricing snapshot data from Cortex ───────────────
 
-  const pricingNodes = cortex.queryByMetadata({
-    type: "pricing_snapshot",
-    limit: 2000,
-  });
   const pricingMap = new Map<
     string,
     { commissionRate: number; shippingCost: number }
   >();
-  for (const pn of pricingNodes) {
-    const pm = pn.metadata;
-    const itemId = metadataString(pm.itemId);
-    if (!itemId) continue;
-    pricingMap.set(itemId, {
-      commissionRate: Number(pm.commission_rate ?? pm.commission ?? 0.15),
-      shippingCost: Number(pm.shipping_cost ?? pm.shipping ?? 5000),
+  for (const sellerId of sellerIds) {
+    const pricingNodes = cortex.queryByMetadata({
+      type: "pricing_snapshot",
+      sellerId,
+      limit: 2000,
     });
+    for (const pn of pricingNodes) {
+      const pm = pn.metadata;
+      const itemId = metadataString(pm.itemId);
+      if (!itemId) continue;
+      pricingMap.set(itemId, {
+        commissionRate: Number(pm.commission_rate ?? pm.commission ?? 0.15),
+        shippingCost: Number(pm.shipping_cost ?? pm.shipping ?? 5000),
+      });
+    }
   }
 
   // ── Retrieve visit data for restock detection ────────────────
 
-  const visitNodes = cortex.queryByMetadata({
-    type: "visit_snapshot",
-    limit: 5000,
-  });
   const visitsPerItem = new Map<string, number>();
-  for (const vn of visitNodes) {
-    const vm = vn.metadata;
-    const itemId = metadataString(vm.itemId);
-    if (!itemId) continue;
-    const totalVisits = Number(vm.totalVisits ?? vm.total_visits ?? 0);
-    visitsPerItem.set(itemId, (visitsPerItem.get(itemId) ?? 0) + totalVisits);
+  for (const sellerId of sellerIds) {
+    const visitNodes = cortex.queryByMetadata({
+      type: "visit_snapshot",
+      sellerId,
+      limit: 5000,
+    });
+    for (const vn of visitNodes) {
+      const vm = vn.metadata;
+      const itemId = metadataString(vm.itemId);
+      if (!itemId) continue;
+      const totalVisits = Number(vm.totalVisits ?? vm.total_visits ?? 0);
+      visitsPerItem.set(itemId, (visitsPerItem.get(itemId) ?? 0) + totalVisits);
+    }
   }
 
   // ── Active listings analysis (pre-filtered by searchSnapshots) ──
@@ -160,7 +170,8 @@ export const costSupplierDaemon: DaemonHandler = async ({
 
     // Calculate margin
     const commission = listing.price * commissionRate;
-    const totalCosts = commission + shippingCost;
+    const knownCost = costMap.get(listing.itemId) ?? 0;
+    const totalCosts = commission + shippingCost + knownCost;
     const margin = (listing.price - totalCosts) / listing.price;
 
     // Check margin thresholds
@@ -187,8 +198,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
     }
 
     // Check: selling below cost (when cost data available)
-    const knownCost = costMap.get(listing.itemId);
-    if (knownCost && listing.price < knownCost) {
+    if (knownCost > 0 && listing.price < knownCost) {
       findings.push({
         kind: "alert",
         severity: "critical",

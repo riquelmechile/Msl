@@ -198,6 +198,7 @@ describe("costSupplierDaemon", () => {
       seedCortexNode(engine, {
         type: "cost_snapshot",
         itemId: "MLC-030",
+        sellerId: SELLER_IDS[0],
         cost: 12000, // cost > price
       });
 
@@ -226,6 +227,7 @@ describe("costSupplierDaemon", () => {
       seedCortexNode(engine, {
         type: "cost_snapshot",
         itemId: "MLC-031",
+        sellerId: SELLER_IDS[0],
         cost: 8000,
       });
 
@@ -259,6 +261,7 @@ describe("costSupplierDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-040",
+        sellerId: SELLER_IDS[0],
         totalVisits: 25,
       });
 
@@ -288,6 +291,7 @@ describe("costSupplierDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-041",
+        sellerId: SELLER_IDS[0],
         totalVisits: 1,
       });
 

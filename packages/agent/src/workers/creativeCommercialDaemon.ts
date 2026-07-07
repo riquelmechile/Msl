@@ -74,6 +74,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
       const cortexListings = cortex.queryByMetadata({
         type: "listing_snapshot",
         status: "active",
+        sellerId,
         limit: 2000,
       });
       for (const node of cortexListings) {
@@ -94,31 +95,37 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
 
   // ── Retrieve visit data ──────────────────────────────────────
 
-  const visitNodes = cortex.queryByMetadata({
-    type: "visit_snapshot",
-    limit: 5000,
-  });
   const visitsPerItem = new Map<string, number>();
-  for (const vn of visitNodes) {
-    const vm = vn.metadata;
-    const itemId = metadataString(vm.itemId);
-    if (!itemId) continue;
-    const totalVisits = Number(vm.totalVisits ?? vm.total_visits ?? 0);
-    visitsPerItem.set(itemId, (visitsPerItem.get(itemId) ?? 0) + totalVisits);
+  for (const sellerId of sellerIds) {
+    const visitNodes = cortex.queryByMetadata({
+      type: "visit_snapshot",
+      sellerId,
+      limit: 5000,
+    });
+    for (const vn of visitNodes) {
+      const vm = vn.metadata;
+      const itemId = metadataString(vm.itemId);
+      if (!itemId) continue;
+      const totalVisits = Number(vm.totalVisits ?? vm.total_visits ?? 0);
+      visitsPerItem.set(itemId, (visitsPerItem.get(itemId) ?? 0) + totalVisits);
+    }
   }
 
   // ── Retrieve order data from Cortex ──────────────────────────
 
-  const orderNodes = cortex.queryByMetadata({
-    type: "order_snapshot",
-    limit: 5000,
-  });
   const ordersPerItem = new Map<string, number>();
-  for (const on_ of orderNodes) {
-    const om = on_.metadata;
-    const itemId = metadataString(om.itemId);
-    if (!itemId) continue;
-    ordersPerItem.set(itemId, (ordersPerItem.get(itemId) ?? 0) + 1);
+  for (const sellerId of sellerIds) {
+    const orderNodes = cortex.queryByMetadata({
+      type: "order_snapshot",
+      sellerId,
+      limit: 5000,
+    });
+    for (const on_ of orderNodes) {
+      const om = on_.metadata;
+      const itemId = metadataString(om.itemId);
+      if (!itemId) continue;
+      ordersPerItem.set(itemId, (ordersPerItem.get(itemId) ?? 0) + 1);
+    }
   }
 
   // ── Detection ────────────────────────────────────────────────

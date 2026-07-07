@@ -153,11 +153,13 @@ describe("agentConsensusStore", () => {
         "risk_warning",
       ] as const;
 
-      for (const verdict of verdicts) {
+      for (let i = 0; i < verdicts.length; i++) {
+        const verdict = verdicts[i]!;
         const review = store.submitReview(
           validReview({
             verdict,
             rationale: `Rationale for ${verdict}`,
+            reviewerAgentId: `agent-${i}`,
           }),
         );
         expect(review.verdict).toBe(verdict);

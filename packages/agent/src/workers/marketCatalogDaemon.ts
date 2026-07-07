@@ -79,6 +79,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
       // Fallback: query Cortex nodes directly
       const cortexNodes = cortex.queryByMetadata({
         type: "listing_snapshot",
+        sellerId,
         limit: 2000,
       });
 
@@ -118,18 +119,21 @@ export const marketCatalogDaemon: DaemonHandler = async ({
   );
 
   // Get visit data from Cortex
-  const visitNodes = cortex.queryByMetadata({
-    type: "visit_snapshot",
-    limit: 5000,
-  });
-
   const visitsPerItem = new Map<string, number>();
-  for (const vn of visitNodes) {
-    const vm = vn.metadata;
-    const itemId = metadataString(vm.itemId);
-    if (!itemId) continue;
-    const totalVisits = Number(vm.totalVisits ?? vm.total_visits ?? 0);
-    visitsPerItem.set(itemId, (visitsPerItem.get(itemId) ?? 0) + totalVisits);
+  for (const sellerId of sellerIds) {
+    const visitNodes = cortex.queryByMetadata({
+      type: "visit_snapshot",
+      sellerId,
+      limit: 5000,
+    });
+
+    for (const vn of visitNodes) {
+      const vm = vn.metadata;
+      const itemId = metadataString(vm.itemId);
+      if (!itemId) continue;
+      const totalVisits = Number(vm.totalVisits ?? vm.total_visits ?? 0);
+      visitsPerItem.set(itemId, (visitsPerItem.get(itemId) ?? 0) + totalVisits);
+    }
   }
 
   for (const listing of activeListings) {

@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS agent_reviews (
 
 CREATE INDEX IF NOT EXISTS idx_agent_reviews_proposal ON agent_reviews(proposal_id);
 CREATE INDEX IF NOT EXISTS idx_agent_reviews_reviewer ON agent_reviews(reviewer_agent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_reviews_unique ON agent_reviews(proposal_id, reviewer_agent_id);
 `;
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -151,6 +152,12 @@ export function createAgentConsensusStore(
     SELECT * FROM agent_reviews WHERE id = ?
   `);
 
+  const selectDuplicateReviewStmt = db.prepare(`
+    SELECT 1 FROM agent_reviews
+    WHERE proposal_id = ? AND reviewer_agent_id = ?
+    LIMIT 1
+  `);
+
   // ── API methods ─────────────────────────────────────────────
 
   const submitReview = (input: SubmitReviewInput): AgentReview => {
@@ -175,13 +182,28 @@ export function createAgentConsensusStore(
       throw new Error("Rationale is required and must not be empty.");
     }
 
-    const info = insertStmt.run({
-      proposalId: input.proposalId,
-      reviewerAgentId: input.reviewerAgentId,
-      verdict: input.verdict,
-      rationale: input.rationale,
-      confidence: input.confidence,
+    // Prevent duplicate reviews from the same reviewer for the same proposal
+    // (wrapped in a transaction to prevent TOCTOU race)
+    const submitReviewTx = db.transaction((txInput: SubmitReviewInput) => {
+      const existing = selectDuplicateReviewStmt.get(
+        txInput.proposalId,
+        txInput.reviewerAgentId,
+      );
+      if (existing) {
+        throw new Error(
+          `Agent "${txInput.reviewerAgentId}" has already submitted a review for proposal "${txInput.proposalId}".`,
+        );
+      }
+      return insertStmt.run({
+        proposalId: txInput.proposalId,
+        reviewerAgentId: txInput.reviewerAgentId,
+        verdict: txInput.verdict,
+        rationale: txInput.rationale,
+        confidence: txInput.confidence,
+      });
     });
+
+    const info = submitReviewTx(input);
 
     const row = selectByIdStmt.get(info.lastInsertRowid) as AgentReviewRow;
     return rowToAgentReview(row);

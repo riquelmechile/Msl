@@ -116,12 +116,14 @@ describe("creativeCommercialDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-001",
+        sellerId: SELLER_IDS[0],
         totalVisits: 100,
       });
 
       seedCortexNode(engine, {
         type: "order_snapshot",
         itemId: "MLC-001",
+        sellerId: SELLER_IDS[0],
         orderId: "ORD-001",
         status: "paid",
         created_at: new Date().toISOString(),
@@ -153,6 +155,7 @@ describe("creativeCommercialDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-002",
+        sellerId: SELLER_IDS[0],
         totalVisits: 100,
       });
 
@@ -160,6 +163,7 @@ describe("creativeCommercialDaemon", () => {
         seedCortexNode(engine, {
           type: "order_snapshot",
           itemId: "MLC-002",
+          sellerId: SELLER_IDS[0],
           orderId: `ORD-00${i}`,
           status: "paid",
           created_at: new Date().toISOString(),
@@ -191,6 +195,7 @@ describe("creativeCommercialDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-003",
+        sellerId: SELLER_IDS[0],
         totalVisits: 5, // below threshold
       });
 
@@ -232,6 +237,7 @@ describe("creativeCommercialDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-010",
+        sellerId: SELLER_IDS[0],
         totalVisits: 15,
       });
 
@@ -301,12 +307,14 @@ describe("creativeCommercialDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-012",
+        sellerId: SELLER_IDS[0],
         totalVisits: 40,
       });
 
       seedCortexNode(engine, {
         type: "order_snapshot",
         itemId: "MLC-012",
+        sellerId: SELLER_IDS[0],
         orderId: "ORD-050",
         status: "paid",
       });
@@ -339,12 +347,14 @@ describe("creativeCommercialDaemon", () => {
       seedCortexNode(engine, {
         type: "visit_snapshot",
         itemId: "MLC-020",
+        sellerId: SELLER_IDS[0],
         totalVisits: 80,
       });
 
       seedCortexNode(engine, {
         type: "order_snapshot",
         itemId: "MLC-020",
+        sellerId: SELLER_IDS[0],
         orderId: "ORD-099",
         status: "paid",
       });

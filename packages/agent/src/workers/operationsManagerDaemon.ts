@@ -66,9 +66,6 @@ export const operationsManagerDaemon: DaemonHandler = async ({
   const allClaims: ClaimEntry[] = [];
   const allQuestions: QuestionEntry[] = [];
   const allOrders: OrderEntry[] = [];
-  let reputationScore: number | null = null;
-  let reputationColor: string | null = null;
-
   for (const sellerId of sellerIds) {
     // ── 1. Claims ───────────────────────────────────────────
     const claimSnaps = await reader.searchSnapshots<{
@@ -142,21 +139,33 @@ export const operationsManagerDaemon: DaemonHandler = async ({
       color?: string;
     }>({ sellerId, kind: "reputation_snapshot", limit: 1 });
 
-    if (repSnaps.length > 0 && repSnaps[0]) {
-      reputationScore = Number(repSnaps[0].data.score ?? 0);
-      reputationColor = String(repSnaps[0].data.color ?? "");
-    } else {
-      // Fallback: Cortex query
-      const cortexRepNodes = cortex.queryByMetadata({
-        type: "reputation_snapshot",
-        sellerId,
-        limit: 1,
+    const rep =
+      repSnaps.length > 0 && repSnaps[0]
+        ? { score: Number(repSnaps[0].data.score ?? 0), color: String(repSnaps[0].data.color ?? "") }
+        : (() => {
+            // Fallback: Cortex query
+            const cortexRepNodes = cortex.queryByMetadata({
+              type: "reputation_snapshot",
+              sellerId,
+              limit: 1,
+            });
+            if (cortexRepNodes.length > 0 && cortexRepNodes[0]) {
+              const rm = cortexRepNodes[0].metadata;
+              return {
+                score: Number(rm.score ?? 0),
+                color: typeof rm.color === "string" ? rm.color : "",
+              };
+            }
+            return null;
+          })();
+
+    if (rep && rep.score < REPUTATION_SCORE_THRESHOLD) {
+      findings.push({
+        kind: "alert",
+        severity: "warning",
+        summary: `Seller ${sellerId} reputation score ${rep.score} below threshold ${REPUTATION_SCORE_THRESHOLD} (color: ${rep.color || "unknown"})`,
+        evidenceIds: [`reputation_snapshot`],
       });
-      if (cortexRepNodes.length > 0 && cortexRepNodes[0]) {
-        const rm = cortexRepNodes[0].metadata;
-        reputationScore = Number(rm.score ?? 0);
-        reputationColor = typeof rm.color === "string" ? rm.color : "";
-      }
     }
   }
 
@@ -237,16 +246,6 @@ export const operationsManagerDaemon: DaemonHandler = async ({
         ],
       });
     }
-  }
-
-  // D. Reputation below threshold → warning
-  if (reputationScore !== null && reputationScore < REPUTATION_SCORE_THRESHOLD) {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: `Seller reputation score ${reputationScore} below threshold ${REPUTATION_SCORE_THRESHOLD} (color: ${reputationColor ?? "unknown"})`,
-      evidenceIds: [`reputation_snapshot`],
-    });
   }
 
   // ── Enqueue CEO proposals ──────────────────────────────────

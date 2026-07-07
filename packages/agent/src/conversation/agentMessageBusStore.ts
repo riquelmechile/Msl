@@ -162,7 +162,7 @@ export function createAgentMessageBusStore(
   const resolveStmt = db.prepare(`
     UPDATE agent_message_bus
     SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now')
-    WHERE message_id = ?
+    WHERE message_id = ? AND status = 'processing'
   `);
 
   const failStmt = db.prepare(`

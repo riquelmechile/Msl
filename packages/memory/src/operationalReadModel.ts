@@ -212,6 +212,8 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
     WHERE seller_id = ? AND kind = ?
   `);
 
+  const statementCache = new Map<string, Database.Statement>();
+
   const listSnapshotsStmt = db.prepare(`
     SELECT * FROM operational_snapshots
     WHERE seller_id = ? AND kind = ?
@@ -396,7 +398,11 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
       filter: SearchSnapshotsFilter,
     ): Promise<SnapshotSearchResult<TData>[]> {
       const { sql, params } = buildSearchClauses(filter);
-      const stmt = db.prepare(sql);
+      let stmt = statementCache.get(sql);
+      if (!stmt) {
+        stmt = db.prepare(sql);
+        statementCache.set(sql, stmt);
+      }
       const rows = stmt.all(...params) as SnapshotRow[];
 
       const results: SnapshotSearchResult<TData>[] = [];
