@@ -35,7 +35,7 @@
           │                     │  ┌──────────┐  ┌──────────┐  ┌───────────┐
           │                     │  │@msl/tools│  │@msl/mcp  │  │@msl/      │
           │                     │  │Approval  │  │Stdio MCP │  │workers    │
-          │                     │  │queue     │  │31 tools  │  │Insights   │
+          │                     │  │queue     │  │40 tools  │  │Insights   │
           │                     │  │Audit     │  │          │  │Creative   │
           │                     │  └──────────┘  └──────────┘  │Sync jobs  │
           │                     │                              └───────────┘
@@ -62,7 +62,7 @@
 | OAuth tokens      | Tokens are encrypted with a key derived from `MSL_ENCRYPTION_KEY`; token save validates returned MercadoLibre `user_id`.                                                                                                               | Never commit raw seller tokens; configure Plasticov/Maustian account IDs and connect through OAuth.                                                                                 |
 | Dual-account sync | `sync_product` is configured as Plasticov → Maustian on MercadoLibre Chile (`MLC`) for one safety-bounded operation.                                                                                                                   | Do not model the accounts as factory/store roles; reverse or arbitrary seller IDs are rejected.                                                                                     |
 | Supplier Mirror   | Supplier evidence, target policies, local SQLite readiness records, and Jinpeng bootstrap dry-run are available for CEO review. Supplier Mirror target policies are independent from the Plasticov → Maustian `sync_product` boundary. | Do not enable live workers without explicit runtime gate, stored readiness, and CEO approval; dry-run must not store secrets, call external APIs, publish, pause, or update prices. |
-| MCP               | Stdio server exposes 31 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, and image orchestration.                                                     | Treat production business-operation execution as approval-gated and environment-backed.                                                                                             |
+| MCP               | Stdio server exposes 40 compatible tools across MercadoLibre reads, proposal preparation, approval/status, Cortex, claims, shipping, moderation, notices, image orchestration, workforce, and cost ledger.                             | Treat production business-operation execution as approval-gated and environment-backed.                                                                                             |
 
 ## Data flow: a conversation turn
 
@@ -115,22 +115,22 @@ User message (Spanish)
 
 ## Key design decisions
 
-| Decision                   | Choice                                     | Tradeoff                                                                                                                      |
-| -------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Hexagonal domain**       | `@msl/domain` has zero I/O dependencies    | Tests run instantly. Every adapter is swappable.                                                                              |
-| **SQLite Cortex**          | Recursive CTEs for spreading activation    | No graph DB dependency. Single file. ~400 lines.                                                                              |
-| **3-block cache**          | DeepSeek prefix-anchored cache             | ~98% cost reduction. Stable lane prefixes (CEO, Cost, Market, Creative) with refreshable context.                             |
-| **CEO lanes**              | `@msl/agent/lanes.ts` — 4 specialist lanes | CEO coordinates cache-resident specialists; `delegate_to_subagent` as OpenAI function tool.                                   |
-| **CEO-only Telegram**      | `@msl/bot` routes text to the CEO agent    | Workers/managers/departments stay internal. No `/agent` worker-selection UX or direct worker chat.                            |
-| **Workforce context**      | Active company-agent ID from env/config    | Selects internal lesson/delegation context only; admin authorization remains a separate allowlisted runtime gate.             |
-| **Cost/cache context**     | Ledger summaries injected in Block C       | Keeps dynamic operating evidence out of Block A so prefix-cache stability is preserved. Not billing truth.                    |
-| **Operational read model** | SQLite snapshots + checkpoints per seller  | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing). Local-first reads.          |
-| **Supplier Mirror**        | Local-first supplier evidence + policies   | Supplier/Jinpeng readiness uses local SQLite records, source adapters, and CEO-review proposals before any worker enablement. |
-| **Darwinian learning**     | Spreading-activation outcome propagation   | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes.             |
-| **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.                          |
-| **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                                    |
-| **MCP protocol**           | Stdio server with 31 compatible tools      | Compatible clients can exercise read, proposal, approval/status, Cortex, and MercadoLibre evidence surfaces.                  |
-| **No framework**           | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                                  |
+| Decision                   | Choice                                     | Tradeoff                                                                                                                             |
+| -------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Hexagonal domain**       | `@msl/domain` has zero I/O dependencies    | Tests run instantly. Every adapter is swappable.                                                                                     |
+| **SQLite Cortex**          | Recursive CTEs for spreading activation    | No graph DB dependency. Single file. ~400 lines.                                                                                     |
+| **3-block cache**          | DeepSeek prefix-anchored cache             | ~98% cost reduction. Stable lane prefixes (CEO, Cost, Market, Creative) with refreshable context.                                    |
+| **CEO lanes**              | `@msl/agent/lanes.ts` — 4 specialist lanes | CEO coordinates cache-resident specialists; `delegate_to_subagent` as OpenAI function tool.                                          |
+| **CEO-only Telegram**      | `@msl/bot` routes text to the CEO agent    | Workers/managers/departments stay internal. No `/agent` worker-selection UX or direct worker chat.                                   |
+| **Workforce context**      | Active company-agent ID from env/config    | Selects internal lesson/delegation context only; admin authorization remains a separate allowlisted runtime gate.                    |
+| **Cost/cache context**     | Ledger summaries injected in Block C       | Keeps dynamic operating evidence out of Block A so prefix-cache stability is preserved. Not billing truth.                           |
+| **Operational read model** | SQLite snapshots + checkpoints per seller  | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing). Local-first reads.                 |
+| **Supplier Mirror**        | Local-first supplier evidence + policies   | Supplier/Jinpeng readiness uses local SQLite records, source adapters, and CEO-review proposals before any worker enablement.        |
+| **Darwinian learning**     | Spreading-activation outcome propagation   | Approved proposals reinforce entire activated constellation; rejections penalize all edges. Learning generalizes.                    |
+| **Hybrid parser**          | Regex fast-path for strategy CRUD          | 80% of natural commands bypass LLM entirely. Zero API cost. Also detects Spanish rejection patterns.                                 |
+| **Calibrated distrust**    | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                                           |
+| **MCP protocol**           | Stdio server with 40 compatible tools      | Compatible clients can exercise read, proposal, approval/status, Cortex, MercadoLibre evidence, workforce, and cost ledger surfaces. |
+| **No framework**           | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                                         |
 
 ## Directory tree
 
@@ -224,8 +224,14 @@ Msl/
 │   │
 │   ├── mcp/                      # MCP (Model Context Protocol) server
 │   │   └── src/
-│   │       └── index.ts          # 31 tools: ML evidence, proposal/approval/status,
-│   │                             #   Cortex, claims, shipping, moderation, notices
+│   │       └── index.ts          # 40 tools: ML evidence, proposal/approval/status,
+│   │                             #   Cortex, claims, shipping, moderation, notices,
+│   │                             #   workforce, cost ledger
+│   │
+│   ├── ecommerce-medusa/          # Owned ecommerce runtime
+│   │   └── src/
+│   │       └── index.ts          # Medusa write boundary, preview adapter,
+│   │                             #   storefront projections, env-based config
 │   │
 │   └── bot/                      # Telegram bot runtime
 │       └── src/
@@ -297,7 +303,11 @@ Sync job stubs for critical business signals (orders, claims, cancellations, sto
 
 ### `@msl/mcp` — Model Context Protocol server
 
-Stdio-based MCP server exposing 31 compatible tools across agent simulation, Cortex consultation, strategy reads, MercadoLibre evidence, proposal preparation, approval/status, claims, shipping, moderation, notices, and image orchestration. Compatible with MCP clients that can launch the stdio server. Schema definitions use zod for input validation. Production business-operation execution remains approval-gated and environment-backed.
+Stdio-based MCP server exposing 40 compatible tools across agent simulation, Cortex consultation, strategy reads, MercadoLibre evidence, proposal preparation, approval/status, claims, shipping, moderation, notices, image orchestration, workforce, and cost ledger. Compatible with MCP clients that can launch the stdio server. Schema definitions use zod for input validation. Production business-operation execution remains approval-gated and environment-backed.
+
+### `@msl/ecommerce-medusa` — Owned ecommerce runtime
+
+Medusa-oriented storefront projection builder, preview adapter, and write boundary. The write boundary fails closed by default and only activates when `MEDUSA_RUNTIME_WRITE_ENABLED=true` plus backend URL and admin API token are configured. Exposes `buildMedusaStorefrontPreview()` for static preview generation, `collectMedusaPreviewBlockingChecks()` for readiness validation, and `createMedusaWriteBoundaryFromEnv()` for production-gated publish/checkout operations. Live Medusa deployment, checkout activation, and public publish remain gated behind explicit env credentials and CEO approval.
 
 ### `@msl/bot` — Telegram bot
 
