@@ -1,0 +1,70 @@
+# agent-message-bus Specification
+
+## Purpose
+
+Persistent, deduplicated, in-process message queue enabling agent-to-agent and agent-to-daemon asynchronous communication with priority-based claiming and a claim-resolve-fail-cancel lifecycle backed by SQLite.
+
+## Requirements
+
+### Requirement: Message Enqueue with Deduplication
+
+`enqueue(senderAgentId, receiverAgentId, messageType, payloadJson, opts)` MUST persist a message row. When `opts.dedupeKey` matches an existing row, the system MUST NOT create a duplicate.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| First enqueue | No row with dedupeKey "abc" | enqueue with dedupeKey "abc" | Row inserted, status pending |
+| Duplicate dedupe | Row with dedupeKey "abc" exists | enqueue with dedupeKey "abc" | No new row; existing returned |
+| No dedupeKey | dedupeKey omitted | enqueue twice | Two distinct rows inserted |
+
+### Requirement: Atomic Message Claiming
+
+`claimNext(receiverAgentId)` MUST atomically lock the next pending message in a transaction, returning it with `status = 'processing'` and `locked_at` set. Sorting MUST be by `priority ASC` (lower = higher priority), then `created_at ASC`.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Claim pending | Message pending for receiver | claimNext(receiverId) | Row returned, status=processing, locked_at set |
+| Priority order | Pending: priority 5, priority 1 | claimNext(receiverId) | Priority 1 returned first |
+| No pending | Zero pending for receiver | claimNext(receiverId) | null returned |
+| Stale lock | locked_at > timeout ago, status=processing | claimNext(receiverId) | Stale message reclaimed |
+| Concurrent claims | Two callers, same receiver | Both call claimNext() | Each gets different message |
+
+### Requirement: Message Lifecycle Transitions
+
+Messages MUST transition through states: `pending → processing → resolved|failed|cancelled`. A message locked longer than the claim timeout MUST become reclaimable. Operations: `resolve(messageId)`, `fail(messageId)`, `cancel(messageId)`.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Resolve | status=processing | resolve(messageId) | status=resolved, resolved_at set |
+| Cancel pending | status=pending | cancel(messageId) | status=cancelled |
+| Cancelled not claimable | status=cancelled | claimNext(receiverId) | Message not returned |
+| Expired lock reclaim | locked_at > timeout, processing | claimNext(receiverId) | Stale message returned for reclaim |
+
+### Requirement: Retry with Max Attempts Guard
+
+`fail(messageId)` MUST increment `attempts`. If `attempts < maxAttempts` (default 3), the message MUST re-enter `pending` for retry. At `attempts >= maxAttempts`, the message MUST transition to permanent `failed` and MUST NOT be claimable.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| First failure | attempts=0 | fail(messageId) | attempts=1, status=pending |
+| Max reached | attempts=2 | fail(messageId) | attempts=3, status=failed |
+| Failed not claimable | status=failed | claimNext(receiverId) | Message not returned |
+
+### Requirement: Error Safety
+
+The system MUST prevent double claims in concurrent scenarios. `resolve()`, `fail()`, and `cancel()` on a non-existent `messageId` MUST throw a clear error.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Missing resolve | No row with messageId | resolve("nonexistent") | Error thrown |
+| Missing cancel | No row with messageId | cancel("nonexistent") | Error thrown |
+| Double claim | One pending, two concurrent callers | Both call claimNext() | One succeeds; other gets null |
+
+### Requirement: Schema Integrity
+
+The migration MUST use `CREATE TABLE IF NOT EXISTS agent_message_bus` and MUST NOT break existing tables. The schema MUST include: `id` (INTEGER PK), `message_id` (TEXT UNIQUE), `sender_agent_id`, `receiver_agent_id`, `message_type`, `payload_json`, `status`, `priority`, `attempts`, `dedupe_key`, `locked_at`, `resolved_at`, `created_at`, `updated_at`.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Idempotent migration | Table already exists | Migration runs again | No error; existing data preserved |
+| All columns present | Migration completed | Inspect schema | All 13 columns from proposal exist |
+| No side effects | Existing `company_agents` table | Migration runs | `company_agents` unchanged |
