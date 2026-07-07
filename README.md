@@ -19,7 +19,14 @@
 
 ## What it does
 
-MSL is a proactive conversational AI agent for MercadoLibre Chile. It ingests your business data (listings, orders, ads, pricing, claims, reputation), builds durable operational evidence in a local SQLite read model, runs a neural graph memory (Cortex) for learning, coordinates 4 cache-resident CEO specialist lanes powered by DeepSeek, and proposes concrete profit-maximizing actions — all through natural Spanish conversation. Every action requires your explicit "dale" before execution.
+MSL is a proactive conversational AI agent for MercadoLibre Chile. It ingests your business data (listings, orders, ads, pricing, claims, reputation), builds durable operational evidence in a local SQLite read model, runs a neural graph memory (Cortex) for learning, coordinates 5 cache-resident CEO specialist lanes powered by DeepSeek, and proposes concrete profit-maximizing actions — all through natural Spanish conversation. Every action requires your explicit "dale" before execution.
+
+**Agent company infrastructure (2026-07-07):**
+- **Agent Message Bus** — SQLite-backed async message queue with claim/resolve/fail lifecycle
+- **4 Specialist Daemons** — marketCatalog, operationsManager, costSupplier, creativeCommercial (autonomous, 15-min cycles, never mutate)
+- **Deep Evidence** — `searchSnapshots()` with 10 SQL-level filters (status, price, dates, categories)
+- **Consensus Review** — Multi-agent quorum for high-risk proposals (approve/reject/needs_more_evidence/risk_warning)
+- **Process Separation** — 4 PM2 processes (bot, web, worker-ingestion, agent-daemons)
 
 **Business context:** Plasticov and Maustian are separate MercadoLibre Chile seller accounts used as parallel commercial channels. Each account can carry independent prices, listing types, titles, and exposure strategies for the same or similar products. Fulfillment is product-level: some products use owned stock and others are supplier-sourced/arbitrage.
 

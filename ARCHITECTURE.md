@@ -92,23 +92,27 @@ User message (Spanish)
 │  5. LLM CALL (DeepSeek or mock)                               │
 │     └─ Tool call loop: execute non-prepare_action tools       │
 │                                                               │
-│  6. PARSE RESPONSE                                            │
+│  6. CONSENSUS CHECK (if high-risk action)                     │
+│     └─ requiresConsensus(actionKind)? → buildConsensusContext │
+│     └─ Shows multi-agent verdicts before CEO sees proposal    │
+│                                                               │
+│  7. PARSE RESPONSE                                            │
 │     ├─ Extract AgentProposal from tool calls                  │
 │     ├─ Extract pending proposal on "dale" confirmation        │
 │     └─ Strategy guardrail check                               │
 │                                                               │
-│  7. AUTONOMY GATE                                             │
+│  8. AUTONOMY GATE                                             │
 │     └─ If level allows auto-approval → execute, record KPI    │
 │                                                               │
-│  8. SELF-VERIFY (calibrated distrust)                         │
+│  9. SELF-VERIFY (calibrated distrust)                         │
 │     └─ selfVerify(proposal) → 6 verification checks           │
 │                                                               │
-│  9. ESCRIBANO (memory scribe + Darwinian feedback)            │
+│ 10. ESCRIBANO (memory scribe + Darwinian feedback)            │
 │     └─ observeTurn() → constellation-wide outcome propagation │
 │     └─ approve: +0.10 all activated edges, reject: −0.15 all  │
 │     └─ Outcome node recorded even on empty constellation      │
 │                                                               │
-│ 10. RETURN ConverseResult                                      │
+│ 11. RETURN ConverseResult                                      │
 │     └─ { response, updatedState, proposal? }                  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -120,7 +124,12 @@ User message (Spanish)
 | **Hexagonal domain**       | `@msl/domain` has zero I/O dependencies    | Tests run instantly. Every adapter is swappable.                                                                                     |
 | **SQLite Cortex**          | Recursive CTEs for spreading activation    | No graph DB dependency. Single file. ~400 lines.                                                                                     |
 | **3-block cache**          | DeepSeek prefix-anchored cache             | ~98% cost reduction. Stable lane prefixes (CEO, Cost, Market, Creative) with refreshable context.                                    |
-| **CEO lanes**              | `@msl/agent/lanes.ts` — 4 specialist lanes | CEO coordinates cache-resident specialists; `delegate_to_subagent` as OpenAI function tool.                                          |
+| **CEO lanes**              | `@msl/agent/lanes.ts` — 5 specialist lanes | CEO coordinates cache-resident specialists including operations-manager; `delegate_to_subagent` as OpenAI function tool.            |
+| **Agent Message Bus**      | SQLite-backed async message queue          | Agents communicate via persistent messages with claim/resolve/fail lifecycle. Deduplication, retry, priority ordering.               |
+| **Specialist Daemons**     | 4 autonomous daemons on 15-min schedule    | marketCatalog, operationsManager, costSupplier, creativeCommercial. Investigate evidence, propose to CEO, never mutate.              |
+| **Deep Evidence**          | `searchSnapshots()` with 10 SQL filters    | Rich querying via `json_extract` on snapshots. Status, price, date, category filters. Parameterized SQL, zero injection risk.        |
+| **Consensus Review**       | Multi-agent review with quorum             | High-risk proposals require 2+ agent reviews before CEO sees them. Verdicts: approve/reject/needs_more_evidence/risk_warning.        |
+| **Process Separation**     | 4 PM2 processes (bot, web, worker, daemon) | Bot decoupled from ingestion. Daemons run independently. `busy_timeout = 5000` for SQLite concurrency.                               |
 | **CEO-only Telegram**      | `@msl/bot` routes text to the CEO agent    | Workers/managers/departments stay internal. No `/agent` worker-selection UX or direct worker chat.                                   |
 | **Workforce context**      | Active company-agent ID from env/config    | Selects internal lesson/delegation context only; admin authorization remains a separate allowlisted runtime gate.                    |
 | **Cost/cache context**     | Ledger summaries injected in Block C       | Keeps dynamic operating evidence out of Block A so prefix-cache stability is preserved. Not billing truth.                           |
