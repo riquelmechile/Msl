@@ -271,7 +271,7 @@ describe("operationsManagerDaemon", () => {
       pastDate.setDate(pastDate.getDate() - 5); // 5 days past
 
       seedOrmSnapshot(db, SELLER_IDS[0]!, "ORD-002", "order_snapshot", {
-        status: "shipped",
+        status: "delayed",
         order_id: "O101",
         estimated_delivery: pastDate.toISOString(),
       });
@@ -295,7 +295,7 @@ describe("operationsManagerDaemon", () => {
       futureDate.setDate(futureDate.getDate() + 10);
 
       seedOrmSnapshot(db, SELLER_IDS[0]!, "ORD-003", "order_snapshot", {
-        status: "shipped",
+        status: "delayed",
         order_id: "O102",
         estimated_delivery: futureDate.toISOString(),
       });

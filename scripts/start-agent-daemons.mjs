@@ -41,7 +41,7 @@ if (!cortexPath) {
 }
 
 // ── Imports ────────────────────────────────────────────────────
-const { createAgentMessageBusStore, startDaemonScheduler } =
+const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonScheduler } =
   await import("@msl/agent");
 const { createGraphEngine, createDatabase, createSqliteOperationalReadModel } =
   await import("@msl/memory");
@@ -50,6 +50,7 @@ const { getMlAccountRoleConfig } = await import("@msl/mercadolibre");
 // ── Bus DB (agent message bus uses its own SQLite tables) ──────
 const busDb = createDatabase(cortexPath);
 const bus = createAgentMessageBusStore(busDb);
+const consensusStore = createAgentConsensusStore(busDb);
 
 // ── Cortex + operational reader ────────────────────────────────
 const engine = createGraphEngine(cortexPath);
@@ -68,6 +69,7 @@ const handle = startDaemonScheduler({
   reader,
   cortex: engine,
   sellerIds,
+  consensusStore,
   intervalMs: 15 * 60 * 1000, // 15 minutes
 });
 

@@ -78,6 +78,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
     if (listingSnaps.length === 0) {
       const cortexListings = cortex.queryByMetadata({
         type: "listing_snapshot",
+        status: "active",
         sellerId,
         limit: 2000,
       });
@@ -265,7 +266,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
           capturedAt,
           noMutationExecuted: true,
         }),
-        dedupeKey: `cost-supplier-${kind}-${capturedAt.slice(0, 10)}`,
+        dedupeKey: `cost-supplier-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);
     };

@@ -335,7 +335,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
           capturedAt,
           noMutationExecuted: true,
         }),
-        dedupeKey: `market-catalog-${kind}-${capturedAt.slice(0, 10)}`,
+        dedupeKey: `market-catalog-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);
     };

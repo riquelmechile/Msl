@@ -46,6 +46,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
     status: string;
     price: number;
     capturedAt: string;
+    listingCreatedAt: string;
   }
   const activeListings: ListingEntry[] = [];
 
@@ -55,6 +56,9 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
       status?: string;
       price?: number;
       title?: string;
+      created_at?: string;
+      start_time?: string;
+      date_created?: string;
     }>({ sellerId, kind: "listing_snapshot", status: "active", limit: 1000 });
 
     for (const snap of listingSnaps) {
@@ -66,6 +70,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
         status: String(d.status ?? "unknown"),
         price: Number(d.price ?? 0),
         capturedAt: snap.capturedAt,
+        listingCreatedAt: String(d.created_at ?? d.start_time ?? d.date_created ?? snap.capturedAt),
       });
     }
 
@@ -88,6 +93,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
           status: "active",
           price: Number(m.price ?? 0),
           capturedAt: metadataString(m.capturedAt, capturedAt),
+          listingCreatedAt: metadataString(m.created_at ?? m.start_time ?? m.date_created ?? m.capturedAt, capturedAt),
         });
       }
     }
@@ -166,7 +172,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
     }
 
     // B. Stagnant stock — active > 30 days, zero orders
-    const listingDate = new Date(listing.capturedAt);
+    const listingDate = new Date(listing.listingCreatedAt);
     if (!isNaN(listingDate.getTime()) && listingDate < staleThreshold) {
       if (orders === 0) {
         const daysActive = Math.round(
@@ -223,7 +229,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
           capturedAt,
           noMutationExecuted: true,
         }),
-        dedupeKey: `creative-commercial-${kind}-${capturedAt.slice(0, 10)}`,
+        dedupeKey: `creative-commercial-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);
     };

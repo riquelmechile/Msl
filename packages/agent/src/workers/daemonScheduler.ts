@@ -1,4 +1,5 @@
 import type { AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
+import type { AgentConsensusStore } from "../conversation/agentConsensusStore.js";
 import type { OperationalReadModelReader, GraphEngine } from "@msl/memory";
 import type { LaneId } from "../conversation/lanes.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
@@ -17,6 +18,12 @@ export type DaemonSchedulerConfig = {
   sellerIds: string[];
   /** Interval in milliseconds between polling cycles. Default: 15 minutes. */
   intervalMs?: number;
+  /**
+   * Optional consensus store for auto-review on high-risk CEO proposals.
+   * When provided, CEO messages with a high-risk `action.kind` in their
+   * payload will automatically receive a `needs_more_evidence` review.
+   */
+  consensusStore?: AgentConsensusStore;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -84,6 +91,60 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
           config.bus.fail(claim.messageId, errorMessage);
           // Continue to next message — error isolation per daemon spec
         }
+      }
+    }
+
+    // ── CEO message consumption ────────────────────────────────────
+    // Daemons enqueue proposals addressed to "ceo" — consume them so
+    // the bus doesn't accumulate pending messages forever.
+    const ceoMessages = config.bus.claimNext("ceo", { limit: 10 });
+    for (const claim of ceoMessages) {
+      try {
+        let payload: Record<string, unknown> = {};
+        try {
+          payload = JSON.parse(claim.payloadJson);
+        } catch {
+          // non-JSON payloads are still consumed but skipped for review
+        }
+
+        const summary =
+          typeof payload.summary === "string"
+            ? payload.summary
+            : "(no summary)";
+        console.log(
+          `[daemon-scheduler] CEO proposal from ${claim.senderAgentId}: ${summary}`,
+        );
+
+        // Auto-submit consensus review for high-risk proposals
+        const consensusStore = config.consensusStore;
+        if (consensusStore) {
+          const action = payload.action as
+            | Record<string, unknown>
+            | undefined;
+          const actionKind =
+            typeof action?.kind === "string" ? action.kind : undefined;
+          if (actionKind && consensusStore.requiresConsensus(actionKind)) {
+            const proposalId =
+              (typeof action?.id === "string" ? action.id : undefined) ??
+              claim.messageId;
+            consensusStore.submitReview({
+              proposalId,
+              reviewerAgentId: "ceo-scheduler",
+              verdict: "needs_more_evidence",
+              rationale: summary,
+              confidence: 0.5,
+            });
+          }
+        }
+
+        config.bus.resolve(claim.messageId, { consumed: true });
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : String(err);
+        console.error(
+          `[daemon-scheduler] CEO consumption failed for message ${claim.messageId}: ${errorMessage}`,
+        );
+        config.bus.fail(claim.messageId, errorMessage);
       }
     }
   };

@@ -115,7 +115,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
       estimatedDelivery?: string;
       order_id?: string;
       orderId?: string;
-    }>({ sellerId, kind: "order_snapshot", limit: 500 });
+    }>({ sellerId, kind: "order_snapshot", status: "delayed", limit: 500 });
 
     for (const snap of orderSnaps) {
       const d = snap.data;
@@ -225,7 +225,6 @@ export const operationsManagerDaemon: DaemonHandler = async ({
           `seller:${order.sellerId}`,
         ],
       });
-      continue;
     }
 
     // Then check estimated_delivery date
@@ -285,7 +284,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
           capturedAt,
           noMutationExecuted: true,
         }),
-        dedupeKey: `operations-manager-${kind}-${capturedAt.slice(0, 10)}`,
+        dedupeKey: `operations-manager-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);
     };
