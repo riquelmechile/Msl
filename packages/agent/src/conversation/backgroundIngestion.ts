@@ -566,7 +566,7 @@ export async function processSellerListings(
   return { listings, alerts };
 }
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 50;
 
 // ── Claims processor ────────────────────────────────────────────────
 
