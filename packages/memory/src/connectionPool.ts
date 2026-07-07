@@ -34,6 +34,7 @@ export function getSharedDb(path = ":memory:"): Database.Database {
 
   const db = new Database(path);
   db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
   sharedDb = db;
   sharedPath = path;

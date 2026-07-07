@@ -13,7 +13,6 @@ import {
   createWorkforceCostCacheLedgerStore,
   EscribanoObserver,
   OperationalEvidenceProvider,
-  startBackgroundIngestion,
   type AgentLoopConfig,
   type ConversationState,
   type SessionStore,
@@ -360,39 +359,13 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
 
   const botHandle = createTelegramBot(botConfig);
 
-  // ── Background ingestion worker ──────────────────────────
-  let ingestionHandle: { stop: () => void } | undefined;
-
-  if (mlcClient && engine) {
-    const roleConfig = getMlAccountRoleConfig(env);
-    const deepseekApiKey = env.DEEPSEEK_API_KEY?.trim();
-    const sellerIds = [roleConfig.sourceSellerId, roleConfig.targetSellerId];
-    const sellerNames: Record<string, string> = {
-      [roleConfig.sourceSellerId]: env.MERCADOLIBRE_SOURCE_SELLER_NAME?.trim() || "Plasticov",
-      [roleConfig.targetSellerId]: env.MERCADOLIBRE_TARGET_SELLER_NAME?.trim() || "Maustian",
-    };
-
-    const baseConfig = {
-      mlcClient,
-      engine,
-      sendProactiveMessage: (chatId: number, text: string) =>
-        botHandle.sendProactiveMessage(chatId, text),
-      listActiveChats: () => botHandle.listActiveChats(),
-      sellerIds,
-      sellerNames,
-      intervalMs: 6 * 60 * 60 * 1000, // 6 hours
-      ...(operationalReadModel ? { operationalStore: operationalReadModel } : {}),
-    };
-
-    ingestionHandle = startBackgroundIngestion(
-      deepseekApiKey ? { ...baseConfig, deepseekApiKey } : baseConfig,
-    );
-  }
+  // NOTE: Background ingestion now runs as a standalone PM2 process
+  // (msl-worker-ingestion) via scripts/start-worker-ingestion.mjs.
+  // This keeps the bot process focused on the Telegram interface only.
 
   return {
     start: () => botHandle.start(),
     stop: async () => {
-      ingestionHandle?.stop();
       await botHandle.stop();
       oauthManager?.close(); // idempotent guard — cleanup also calls it via botConfig.cleanup
       console.log("🛑 Bot detenido");
