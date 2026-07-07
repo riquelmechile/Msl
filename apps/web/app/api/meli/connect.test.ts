@@ -19,26 +19,30 @@ import { getOAuthManager } from "./oauth";
 
 const STUB_SECRET = "test-state-secret-32bytes!";
 
+type ErrorResponse = { error: string };
+
 describe("GET /api/meli/connect", () => {
   beforeEach(() => {
     vi.stubEnv("MSL_OAUTH_STATE_SECRET", STUB_SECRET);
     vi.stubEnv("MERCADOLIBRE_SOURCE_SELLER_ID", "plasticov");
     vi.stubEnv("MERCADOLIBRE_TARGET_SELLER_ID", "maustian");
     mockGetAuthorizationUrl.mockReset();
-    vi.mocked(getOAuthManager).mockReturnValue(mockManager as unknown as ReturnType<typeof getOAuthManager>);
+    vi.mocked(getOAuthManager).mockReturnValue(
+      mockManager as unknown as ReturnType<typeof getOAuthManager>,
+    );
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it("returns 302 redirect for role=source with correct seller config", async () => {
+  it("returns 302 redirect for role=source with correct seller config", () => {
     mockGetAuthorizationUrl.mockReturnValue(
       "https://auth.mercadolibre.cl/authorization?response_type=code&client_id=TEST-plasticov&redirect_uri=https%3A%2F%2Fsrc.example%2Fcallback&state=mock-signed-state",
     );
 
     const req = new NextRequest("https://example.test/api/meli/connect?role=source");
-    const res = await GET(req);
+    const res = GET(req);
 
     expect(res.status).toBe(302);
     const location = res.headers.get("Location");
@@ -47,13 +51,13 @@ describe("GET /api/meli/connect", () => {
     expect(mockGetAuthorizationUrl).toHaveBeenCalledWith("plasticov", "mock-signed-state");
   });
 
-  it("returns 302 redirect for role=target with correct seller config", async () => {
+  it("returns 302 redirect for role=target with correct seller config", () => {
     mockGetAuthorizationUrl.mockReturnValue(
       "https://auth.mercadolibre.cl/authorization?response_type=code&client_id=TEST-maustian&redirect_uri=https%3A%2F%2Ftgt.example%2Fcallback&state=mock-signed-state",
     );
 
     const req = new NextRequest("https://example.test/api/meli/connect?role=target");
-    const res = await GET(req);
+    const res = GET(req);
 
     expect(res.status).toBe(302);
     const location = res.headers.get("Location");
@@ -63,16 +67,16 @@ describe("GET /api/meli/connect", () => {
 
   it("returns 400 for unknown role", async () => {
     const req = new NextRequest("https://example.test/api/meli/connect?role=admin");
-    const res = await GET(req);
+    const res = GET(req);
 
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = (await res.json()) as ErrorResponse;
     expect(body.error).toContain("Unknown role");
   });
 
-  it("returns 400 when no role param is provided", async () => {
+  it("returns 400 when no role param is provided", () => {
     const req = new NextRequest("https://example.test/api/meli/connect");
-    const res = await GET(req);
+    const res = GET(req);
 
     expect(res.status).toBe(400);
   });
@@ -81,10 +85,10 @@ describe("GET /api/meli/connect", () => {
     vi.stubEnv("MERCADOLIBRE_SOURCE_SELLER_ID", "");
 
     const req = new NextRequest("https://example.test/api/meli/connect?role=source");
-    const res = await GET(req);
+    const res = GET(req);
 
     expect(res.status).toBe(500);
-    const body = await res.json();
+    const body = (await res.json()) as ErrorResponse;
     expect(body.error).toContain("Seller ID not configured");
   });
 
@@ -92,10 +96,10 @@ describe("GET /api/meli/connect", () => {
     vi.stubEnv("MSL_OAUTH_STATE_SECRET", "");
 
     const req = new NextRequest("https://example.test/api/meli/connect?role=source");
-    const res = await GET(req);
+    const res = GET(req);
 
     expect(res.status).toBe(500);
-    const body = await res.json();
+    const body = (await res.json()) as ErrorResponse;
     expect(body.error).toContain("MSL_OAUTH_STATE_SECRET");
   });
 });

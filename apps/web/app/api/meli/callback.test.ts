@@ -10,7 +10,7 @@ vi.mock("../meli/oauth", () => ({
 }));
 
 // Mock validateState with a controllable implementation.
-const mockValidateState = vi.fn();
+const mockValidateState = vi.fn<(state: string, secret: string) => unknown>();
 vi.mock("@msl/mercadolibre", () => ({
   validateState: (state: string, secret: string) => mockValidateState(state, secret),
 }));
@@ -21,7 +21,12 @@ import { getOAuthManager } from "./oauth";
 const STUB_SECRET = "test-state-secret-32bytes!";
 
 function validPayload() {
-  return { role: "source" as const, sellerId: "plasticov", nonce: "test-nonce", createdAt: Date.now() };
+  return {
+    role: "source" as const,
+    sellerId: "plasticov",
+    nonce: "test-nonce",
+    createdAt: Date.now(),
+  };
 }
 
 function mockTokens() {
@@ -42,7 +47,9 @@ describe("GET /api/meli/callback", () => {
     vi.stubEnv("MERCADOLIBRE_TARGET_SELLER_ID", "maustian");
     mockValidateState.mockReset();
     mockExchangeCodeForToken.mockReset();
-    vi.mocked(getOAuthManager).mockReturnValue(mockManager as unknown as ReturnType<typeof getOAuthManager>);
+    vi.mocked(getOAuthManager).mockReturnValue(
+      mockManager as unknown as ReturnType<typeof getOAuthManager>,
+    );
   });
 
   afterEach(() => {
@@ -155,7 +162,9 @@ describe("GET /api/meli/callback", () => {
 
   it("returns 500 when token exchange fails", async () => {
     mockValidateState.mockReturnValue(validPayload());
-    mockExchangeCodeForToken.mockRejectedValue(new Error("OAuth code exchange failed: 401 Unauthorized"));
+    mockExchangeCodeForToken.mockRejectedValue(
+      new Error("OAuth code exchange failed: 401 Unauthorized"),
+    );
 
     const req = new NextRequest("https://example.test/api/meli/callback?code=bad-code&state=state");
     const res = await GET(req);

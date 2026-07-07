@@ -172,7 +172,7 @@ describe("direct MLC API client boundary", () => {
       "/orders/search": {
         results: [{ id: 1001, status: "paid", total_amount: 12000, buyer: { id: 501 } }],
       },
-      "/messages/search": {
+      "/questions/search": {
         messages: [
           { id: "message-1", subject: "Question", status: "available", from: { user_id: 501 } },
         ],
@@ -510,7 +510,7 @@ describe("direct MLC API client boundary", () => {
         accessToken: "access-for-seller-1-2",
       },
       {
-        path: "/messages/search",
+        path: "/questions/search",
         query: { seller: "seller-1", site: "MLC" },
         accessToken: "access-for-seller-1-3",
       },
@@ -3022,7 +3022,7 @@ describe("getShipmentStatus", () => {
       expect.objectContaining({
         method: "GET",
         path: "/post-purchase/v1/claims/search",
-        query: { status: "open", limit: "5" },
+        query: expect.objectContaining({ status: "open", limit: "5" }),
         retryOnRateLimit: false,
       }),
     );

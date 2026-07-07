@@ -7,14 +7,11 @@ function nonEmpty(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-export async function GET(request: NextRequest) {
+export function GET(request: NextRequest) {
   const role = request.nextUrl.searchParams.get("role");
 
   if (role !== "source" && role !== "target") {
-    return NextResponse.json(
-      { error: "Unknown role. Use 'source' or 'target'." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Unknown role. Use 'source' or 'target'." }, { status: 400 });
   }
 
   const sellerId = nonEmpty(
@@ -32,15 +29,12 @@ export async function GET(request: NextRequest) {
 
   const secret = nonEmpty(process.env.MSL_OAUTH_STATE_SECRET);
   if (!secret) {
-    return NextResponse.json(
-      { error: "MSL_OAUTH_STATE_SECRET not configured." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "MSL_OAUTH_STATE_SECRET not configured." }, { status: 500 });
   }
 
   const state = generateState(
     {
-      role: role as "source" | "target",
+      role,
       sellerId,
       nonce: crypto.randomUUID(),
       createdAt: Date.now(),
