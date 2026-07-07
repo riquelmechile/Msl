@@ -9,6 +9,13 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { z } from "zod";
+import Database from "better-sqlite3";
+import {
+  createCompanyAgentStore,
+  createCompanyAgentSkillStore,
+  createCompanyAgentLearningStore,
+  createWorkforceCostCacheLedgerStore,
+} from "@msl/agent";
 
 // ── Mock @modelcontextprotocol/sdk ──────────────────────────────────
 
@@ -3567,6 +3574,365 @@ describe("MCP Server", () => {
       );
     } finally {
       runtime.close();
+    }
+  });
+
+  // ── Workforce admin MCP tools ─────────────────────────────────────
+
+  it("registers workforce admin tools when workforceAdmin config is provided", () => {
+    const db = new Database(":memory:");
+    const agentStore = createCompanyAgentStore(db);
+    const skillStore = createCompanyAgentSkillStore(db);
+    const learningStore = createCompanyAgentLearningStore(db);
+    const ledgerStore = createWorkforceCostCacheLedgerStore(db);
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentRegistry: agentStore,
+          companyAgentSkillStore: skillStore,
+          companyAgentLearningStore: learningStore,
+          workforceCostCacheLedgerStore: ledgerStore,
+          companyAgentAdminAuthorized: true,
+        },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const calls = mockMcpServer.registerTool.mock.calls as any[][];
+      const toolNames = calls.map((c) => c[0] as string);
+
+      expect(toolNames).toContain("list_company_agents_mcp");
+      expect(toolNames).toContain("declare_skill_mcp");
+      expect(toolNames).toContain("list_agent_skills_mcp");
+      expect(toolNames).toContain("list_workforce_ledger_mcp");
+      expect(toolNames).toContain("list_agent_lessons_mcp");
+      expect(toolNames).toContain("update_company_agent_mcp");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("list_company_agents_mcp returns agents without requiring admin auth", () => {
+    const db = new Database(":memory:");
+    const agentStore = createCompanyAgentStore(db);
+    agentStore.insertCompanyAgent({
+      id: "agent:mcp-test",
+      label: "MCP Test Agent",
+      departmentId: "operations",
+      stablePrefix: "mcp-test",
+      refreshableContextProvider: "test-context",
+      inputs: ["data"],
+      outputs: ["evidence"],
+      requiredEvidenceKinds: ["test-ev"],
+      boundaries: [],
+    });
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentRegistry: agentStore,
+          companyAgentAdminAuthorized: false,
+        },
+      });
+
+      const cb = registeredTools.get("list_company_agents_mcp");
+      expect(cb).toBeDefined();
+
+      vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "true");
+      try {
+        const result = cb!({}) as { content: { text: string }[] };
+        const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        expect(parsed.agents).toBeInstanceOf(Array);
+        expect((parsed.agents as unknown[])[0]).toMatchObject({
+          id: "agent:mcp-test",
+          label: "MCP Test Agent",
+          departmentId: "operations",
+        });
+        expect(parsed.count).toBe(1);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("list_agent_skills_mcp returns skills without admin auth", () => {
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+    skillStore.insertAgentSkill({
+      skillId: "skill:mcp-1",
+      agentId: "agent:mcp",
+      label: "MCP Skill",
+      category: "technical",
+      description: "Test skill for MCP.",
+      proficiency: 0.8,
+    });
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentSkillStore: skillStore,
+          companyAgentAdminAuthorized: false,
+        },
+      });
+
+      const cb = registeredTools.get("list_agent_skills_mcp");
+      expect(cb).toBeDefined();
+
+      vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "true");
+      try {
+        const result = cb!({ agentId: "agent:mcp" }) as { content: { text: string }[] };
+        const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        expect(parsed.skills).toBeInstanceOf(Array);
+        expect((parsed.skills as unknown[])[0]).toMatchObject({
+          skillId: "skill:mcp-1",
+          agentId: "agent:mcp",
+          label: "MCP Skill",
+          category: "technical",
+          proficiency: 0.8,
+        });
+        expect(parsed.count).toBe(1);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("declare_skill_mcp is registered but blocked without admin auth", () => {
+    const db = new Database(":memory:");
+    const skillStore = createCompanyAgentSkillStore(db);
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentSkillStore: skillStore,
+          companyAgentAdminAuthorized: false,
+        },
+      });
+
+      // When admin is not authorized, declare_skill_mcp should NOT be registered
+      const cb = registeredTools.get("declare_skill_mcp");
+      expect(cb).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("declare_skill_mcp executes when admin auth is granted", () => {
+    const db = new Database(":memory:");
+    const agentStore = createCompanyAgentStore(db);
+    agentStore.insertCompanyAgent({
+      id: "agent:skill-target",
+      label: "Skill Target",
+      departmentId: "commercial",
+      stablePrefix: "skill-target",
+      refreshableContextProvider: "ctx",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["ev"],
+      boundaries: [],
+    });
+    const skillStore = createCompanyAgentSkillStore(db);
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentRegistry: agentStore,
+          companyAgentSkillStore: skillStore,
+          companyAgentAdminAuthorized: true,
+        },
+      });
+
+      const cb = registeredTools.get("declare_skill_mcp");
+      expect(cb).toBeDefined();
+
+      vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "true");
+      try {
+        const result = cb!({
+          agentId: "agent:skill-target",
+          label: "New Skill",
+          category: "analysis",
+          description: "A test skill.",
+          proficiency: 0.75,
+        }) as { content: { text: string }[] };
+        const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        expect(parsed.status).toBe("declared");
+        expect((parsed.skill as Record<string, unknown>).label).toBe("New Skill");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("list_workforce_ledger_mcp returns entries without admin auth", () => {
+    const db = new Database(":memory:");
+    const ledgerStore = createWorkforceCostCacheLedgerStore(db);
+    ledgerStore.insertEntry({
+      entryId: "entry:mcp-1",
+      agentId: "agent:test",
+      provider: "deepseek",
+      model: "v4-flash",
+      operation: "chat.completion",
+      cacheStatus: "hit",
+      inputTokens: 100,
+      outputTokens: 50,
+      estimatedCostMicros: 100,
+      currency: "USD",
+    });
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          workforceCostCacheLedgerStore: ledgerStore,
+          companyAgentAdminAuthorized: false,
+        },
+      });
+
+      const cb = registeredTools.get("list_workforce_ledger_mcp");
+      expect(cb).toBeDefined();
+
+      vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "true");
+      try {
+        const result = cb!({}) as { content: { text: string }[] };
+        const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        expect(parsed.entries).toBeInstanceOf(Array);
+        expect((parsed.entries as unknown[])[0]).toMatchObject({
+          entryId: "entry:mcp-1",
+          agentId: "agent:test",
+          provider: "deepseek",
+          model: "v4-flash",
+          cacheStatus: "hit",
+        });
+        expect(parsed.count).toBe(1);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("list_agent_lessons_mcp returns lessons without admin auth", () => {
+    const db = new Database(":memory:");
+    const learningStore = createCompanyAgentLearningStore(db);
+    learningStore.insertAgentLesson({
+      lessonId: "lesson:mcp-1",
+      targetAgentId: "agent:test",
+      departmentId: "commercial",
+      scope: "agent",
+      lessonType: "ceo-correction",
+      summary: "Test lesson for MCP.",
+      evidenceIds: ["ev-1"],
+      confidence: 0.9,
+      impact: 0.7,
+    });
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentLearningStore: learningStore,
+          companyAgentAdminAuthorized: false,
+        },
+      });
+
+      const cb = registeredTools.get("list_agent_lessons_mcp");
+      expect(cb).toBeDefined();
+
+      vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "true");
+      try {
+        const result = cb!({}) as { content: { text: string }[] };
+        const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        expect(parsed.lessons).toBeInstanceOf(Array);
+        expect((parsed.lessons as unknown[])[0]).toMatchObject({
+          lessonId: "lesson:mcp-1",
+          targetAgentId: "agent:test",
+          summary: "Test lesson for MCP.",
+        });
+        expect(parsed.count).toBe(1);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("update_company_agent_mcp blocks without admin auth", () => {
+    const db = new Database(":memory:");
+    const agentStore = createCompanyAgentStore(db);
+    agentStore.insertCompanyAgent({
+      id: "agent:update-test",
+      label: "Update Test",
+      departmentId: "operations",
+      stablePrefix: "update-test",
+      refreshableContextProvider: "ctx",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["ev"],
+      boundaries: [],
+    });
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentRegistry: agentStore,
+          companyAgentAdminAuthorized: false,
+        },
+      });
+
+      // When admin is not authorized, update_company_agent_mcp should NOT be registered
+      const cb = registeredTools.get("update_company_agent_mcp");
+      expect(cb).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("update_company_agent_mcp executes when admin auth is granted", () => {
+    const db = new Database(":memory:");
+    const agentStore = createCompanyAgentStore(db);
+    agentStore.insertCompanyAgent({
+      id: "agent:update-target",
+      label: "Original Label",
+      departmentId: "commercial",
+      stablePrefix: "original-prefix",
+      refreshableContextProvider: "ctx",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["ev"],
+      boundaries: [],
+    });
+
+    try {
+      createMcpServer({
+        workforceAdmin: {
+          companyAgentRegistry: agentStore,
+          companyAgentAdminAuthorized: true,
+        },
+      });
+
+      const cb = registeredTools.get("update_company_agent_mcp");
+      expect(cb).toBeDefined();
+
+      vi.stubEnv("MSL_ALLOW_UNAUTHENTICATED_LOCAL", "true");
+      try {
+        const result = cb!({
+          agentId: "agent:update-target",
+          status: "suspended",
+        }) as { content: { text: string }[] };
+        const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        expect(parsed.status).toBe("updated");
+        expect((parsed.agent as Record<string, unknown>).status).toBe("suspended");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    } finally {
+      db.close();
     }
   });
 });
