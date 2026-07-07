@@ -18,7 +18,9 @@ import {
   resolveTurnOutcome,
 } from "./conversation/agentLoop.js";
 import { createCompanyAgentStore } from "./conversation/companyAgentStore.js";
+import type { CompanyAgent } from "./conversation/companyAgents.js";
 import { createCompanyAgentLearningStore } from "./conversation/companyAgentLearningStore.js";
+import { createCompanyAgentSkillStore } from "./conversation/companyAgentSkillStore.js";
 import { createRequestAgentEvidenceTool } from "./conversation/tools.js";
 import {
   createGraphEngine,
@@ -383,6 +385,223 @@ describe("durable company agent registry", () => {
   });
 });
 
+describe("company agent lifecycle — update and suspended status", () => {
+  it("updates company agent status between active, suspended, and archived", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    const agent = store.insertCompanyAgent({
+      id: "agent:lifecycle-test",
+      label: "Lifecycle Agent",
+      departmentId: "operations",
+      stablePrefix: "lifecycle-agent",
+      refreshableContextProvider: "lifecycle-context",
+      inputs: ["ops data"],
+      outputs: ["evidence"],
+      requiredEvidenceKinds: ["ops-evidence"],
+      boundaries: ["Evidence only."],
+    });
+    expect(agent.status).toBe("active");
+
+    // Suspend
+    const suspended = store.updateCompanyAgent("agent:lifecycle-test", {
+      status: "suspended",
+    });
+    expect(suspended.status).toBe("suspended");
+
+    // Reactivate
+    const reactivated = store.updateCompanyAgent("agent:lifecycle-test", {
+      status: "active",
+    });
+    expect(reactivated.status).toBe("active");
+
+    // Archive via updateCompanyAgent
+    const archived = store.updateCompanyAgent("agent:lifecycle-test", {
+      status: "archived",
+    });
+    expect(archived.status).toBe("archived");
+
+    db.close();
+  });
+
+  it("updates company agent profile fields", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    store.insertCompanyAgent({
+      id: "agent:profile-update",
+      label: "Original Label",
+      departmentId: "operations",
+      stablePrefix: "original-prefix",
+      refreshableContextProvider: "original-context",
+      inputs: ["data"],
+      outputs: ["evidence"],
+      requiredEvidenceKinds: ["ev-1"],
+      boundaries: ["Boundary 1."],
+    });
+
+    const updated = store.updateCompanyAgent("agent:profile-update", {
+      label: "Updated Label",
+      departmentId: "commercial",
+      stablePrefix: "updated-prefix",
+    });
+
+    expect(updated.profile.label).toBe("Updated Label");
+    expect(updated.profile.departmentId).toBe("commercial");
+    expect(updated.profile.stablePrefix).toBe("updated-prefix");
+    expect(updated.status).toBe("active"); // unchanged
+
+    db.close();
+  });
+
+  it("rejects invalid status in updateCompanyAgent", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    store.insertCompanyAgent({
+      id: "agent:invalid-status",
+      label: "Invalid Status Agent",
+      departmentId: "operations",
+      stablePrefix: "invalid-status",
+      refreshableContextProvider: "context",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["ev"],
+      boundaries: [],
+    });
+
+    expect(() =>
+      store.updateCompanyAgent("agent:invalid-status", {
+        status: "bogus" as CompanyAgent["status"],
+      }),
+    ).toThrow(/Invalid status/);
+
+    db.close();
+  });
+
+  it("throws on updateCompanyAgent for non-existent agent", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    expect(() => store.updateCompanyAgent("agent:nonexistent", { label: "Ghost" })).toThrow(
+      /not found/,
+    );
+
+    db.close();
+  });
+
+  it("excludes suspended agents from listCompanyAgents", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    store.insertCompanyAgent({
+      id: "agent:active-1",
+      label: "Active Agent",
+      departmentId: "operations",
+      stablePrefix: "active-1",
+      refreshableContextProvider: "ctx",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["ev"],
+      boundaries: [],
+    });
+    store.insertCompanyAgent({
+      id: "agent:suspended-1",
+      label: "Suspended Agent",
+      departmentId: "commercial",
+      stablePrefix: "suspended-1",
+      refreshableContextProvider: "ctx",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["ev"],
+      boundaries: [],
+    });
+
+    store.updateCompanyAgent("agent:suspended-1", { status: "suspended" });
+
+    const agents = store.listCompanyAgents();
+    expect(agents.map((a) => a.id)).toEqual(["agent:active-1"]);
+    expect(agents.map((a) => a.id)).not.toContain("agent:suspended-1");
+
+    db.close();
+  });
+
+  it("blocks suspended agents from request_agent_evidence", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    store.insertCompanyAgent({
+      id: "agent:suspended-ev",
+      label: "Suspended Evidence Agent",
+      departmentId: "commercial",
+      stablePrefix: "suspended-ev",
+      refreshableContextProvider: "ctx",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["commercial-context"],
+      boundaries: [],
+    });
+    store.updateCompanyAgent("agent:suspended-ev", { status: "suspended" });
+
+    const tool = createRequestAgentEvidenceTool(store);
+    const response = tool.execute({
+      targetAgent: "agent:suspended-ev",
+      scope: "Review suspended work",
+      requestedEvidenceKinds: ["commercial-context"],
+    });
+
+    expect(response).toMatchObject({
+      status: "blocked",
+      missingInputs: ["active targetAgent"],
+      noMutationExecuted: true,
+    });
+
+    db.close();
+  });
+
+  it("reactivates suspended agent so it works again", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentStore(db);
+
+    store.insertCompanyAgent({
+      id: "agent:reactive",
+      label: "Reactive Agent",
+      departmentId: "commercial",
+      stablePrefix: "reactive-agent",
+      refreshableContextProvider: "ctx",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["commercial-context"],
+      boundaries: [],
+    });
+    store.updateCompanyAgent("agent:reactive", { status: "suspended" });
+
+    // Suspended → blocked from evidence
+    const tool = createRequestAgentEvidenceTool(store);
+    const blocked = tool.execute({
+      targetAgent: "agent:reactive",
+      scope: "Test",
+      requestedEvidenceKinds: ["commercial-context"],
+    }) as Record<string, unknown>;
+    expect(blocked.status).toBe("blocked");
+
+    // Reactivate
+    store.updateCompanyAgent("agent:reactive", { status: "active" });
+
+    const reactivated = tool.execute({
+      targetAgent: "agent:reactive",
+      scope: "Test",
+      requestedEvidenceKinds: ["commercial-context"],
+    });
+    expect(reactivated).toMatchObject({
+      status: "evidence-ready",
+      noMutationExecuted: true,
+    });
+
+    db.close();
+  });
+});
+
 describe("durable company agent learning store", () => {
   it("persists agent lessons across database reopen", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "msl-agent-lessons-"));
@@ -471,6 +690,219 @@ describe("durable company agent learning store", () => {
     );
 
     expect(store.listAgentLessons().map((lesson) => lesson.lessonId)).toEqual(["lesson:valid"]);
+
+    db.close();
+  });
+});
+
+describe("durable company agent skill store", () => {
+  it("roundtrips agent skills with CRUD operations", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentSkillStore(db);
+
+    const skill = store.insertAgentSkill({
+      skillId: "skill:ops-1",
+      agentId: "agent:ops",
+      label: "SQL Analysis",
+      category: "technical",
+      description: "Analyze operational SQL data for insights.",
+      proficiency: 0.8,
+    });
+
+    expect(skill.skillId).toBe("skill:ops-1");
+    expect(skill.agentId).toBe("agent:ops");
+    expect(skill.label).toBe("SQL Analysis");
+    expect(skill.category).toBe("technical");
+    expect(skill.description).toBe("Analyze operational SQL data for insights.");
+    expect(skill.proficiency).toBe(0.8);
+    expect(skill.declaredAt).toBeDefined();
+    expect(skill.updatedAt).toBeDefined();
+
+    // List by agent
+    const skills = store.listAgentSkills("agent:ops");
+    expect(skills).toHaveLength(1);
+    expect(skills[0]?.skillId).toBe("skill:ops-1");
+
+    // Update proficiency
+    const updated = store.updateAgentSkill("skill:ops-1", { proficiency: 0.95 });
+    expect(updated.proficiency).toBe(0.95);
+    // SQLite datetime('now') has second granularity — may equal original if same second
+    expect(new Date(updated.updatedAt).getTime()).toBeGreaterThanOrEqual(
+      new Date(skill.declaredAt).getTime(),
+    );
+
+    // Count
+    expect(store.count()).toBe(1);
+
+    db.close();
+  });
+
+  it("persists agent skills across database reopen", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "msl-agent-skills-"));
+    const dbPath = join(tempDir, "agent-skills.sqlite");
+    let db: Database.Database | undefined;
+    let reopenedDb: Database.Database | undefined;
+
+    try {
+      db = new Database(dbPath);
+      const store = createCompanyAgentSkillStore(db);
+      store.insertAgentSkill({
+        skillId: "skill:pricing-1",
+        agentId: "agent:pricing",
+        label: "Competitive Pricing",
+        category: "analysis",
+        description: "Analyze competitor pricing patterns.",
+        proficiency: 0.7,
+      });
+      db.close();
+      db = undefined;
+
+      reopenedDb = new Database(dbPath);
+      const reopenedStore = createCompanyAgentSkillStore(reopenedDb);
+
+      const skills = reopenedStore.listAgentSkills("agent:pricing");
+      expect(skills).toEqual([
+        expect.objectContaining({
+          skillId: "skill:pricing-1",
+          agentId: "agent:pricing",
+          label: "Competitive Pricing",
+          category: "analysis",
+          proficiency: 0.7,
+        }),
+      ]);
+      reopenedDb.close();
+      reopenedDb = undefined;
+    } finally {
+      reopenedDb?.close();
+      db?.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects duplicate skill label per agent via UNIQUE constraint", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentSkillStore(db);
+
+    store.insertAgentSkill({
+      skillId: "skill:cat-1",
+      agentId: "agent:catalog",
+      label: "Catalog Analysis",
+      category: "analysis",
+      description: "Analyze catalog data.",
+      proficiency: 0.6,
+    });
+
+    expect(() =>
+      store.insertAgentSkill({
+        skillId: "skill:cat-2",
+        agentId: "agent:catalog",
+        label: "Catalog Analysis",
+        category: "analysis",
+        description: "Different description.",
+        proficiency: 0.7,
+      }),
+    ).toThrow();
+
+    db.close();
+  });
+
+  it("throws on update of non-existent skill", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentSkillStore(db);
+
+    expect(() => store.updateAgentSkill("skill:nonexistent", { proficiency: 0.5 })).toThrow();
+
+    db.close();
+  });
+
+  it("clamps proficiency validation to 0..1 via rowToAgentSkill", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentSkillStore(db);
+
+    // Valid proficiency
+    store.insertAgentSkill({
+      skillId: "skill:valid",
+      agentId: "agent:x",
+      label: "Valid Skill",
+      category: "domain",
+      description: "Valid.",
+      proficiency: 0.5,
+    });
+    expect(store.listAgentSkills("agent:x")).toHaveLength(1);
+
+    // Create a row with invalid proficiency directly via SQL to test rowToAgentSkill
+    db.prepare(
+      `
+      INSERT INTO agent_skills (
+        skill_id, agent_id, label, category, description, proficiency
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run("skill:bad", "agent:x", "Bad Skill", "domain", "Bad.", -1);
+
+    // The poisoned row should be filtered out by rowToAgentSkill
+    const skills = store.listAgentSkills("agent:x");
+    expect(skills).toHaveLength(1);
+    expect(skills[0]?.skillId).toBe("skill:valid");
+
+    db.close();
+  });
+
+  it("does not mix skills between different agents", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentSkillStore(db);
+
+    store.insertAgentSkill({
+      skillId: "skill:ceo-1",
+      agentId: "ceo",
+      label: "Strategy Formation",
+      category: "coordination",
+      description: "Form CEO-level strategies.",
+      proficiency: 0.9,
+    });
+    store.insertAgentSkill({
+      skillId: "skill:ops-1",
+      agentId: "agent:ops",
+      label: "Cost Tracking",
+      category: "technical",
+      description: "Track operational costs.",
+      proficiency: 0.7,
+    });
+
+    const ceoSkills = store.listAgentSkills("ceo");
+    const opsSkills = store.listAgentSkills("agent:ops");
+
+    expect(ceoSkills.map((s) => s.skillId)).toEqual(["skill:ceo-1"]);
+    expect(opsSkills.map((s) => s.skillId)).toEqual(["skill:ops-1"]);
+    expect(store.count()).toBe(2);
+
+    db.close();
+  });
+
+  it("rejects invalid category via rowToAgentSkill", () => {
+    const db = new Database(":memory:");
+    const store = createCompanyAgentSkillStore(db);
+
+    store.insertAgentSkill({
+      skillId: "skill:valid",
+      agentId: "agent:a",
+      label: "Valid",
+      category: "technical",
+      description: "Valid.",
+      proficiency: 0.5,
+    });
+
+    // Insert a row with invalid category directly
+    db.prepare(
+      `
+      INSERT INTO agent_skills (
+        skill_id, agent_id, label, category, description, proficiency
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run("skill:bad-cat", "agent:a", "Bad Category", "invalid", "Bad.", 0.5);
+
+    const skills = store.listAgentSkills("agent:a");
+    expect(skills).toHaveLength(1);
+    expect(skills[0]?.skillId).toBe("skill:valid");
 
     db.close();
   });

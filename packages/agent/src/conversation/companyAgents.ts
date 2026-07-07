@@ -24,7 +24,7 @@ export type CompanyAgent = {
   id: CompanyAgentId;
   profile: CompanyAgentProfile;
   source: "lane-contract" | "ceo-created";
-  status: "active" | "archived";
+  status: "active" | "suspended" | "archived";
   durableReady: true;
 };
 
@@ -46,6 +46,17 @@ export type CompanyAgentWritableRegistry = CompanyAgentRegistry & {
     requiredEvidenceKinds: readonly EvidenceKind[];
     boundaries: readonly string[];
   }): CompanyAgent;
+};
+
+export type AgentSkill = {
+  skillId: string;
+  agentId: CompanyAgentId;
+  label: string;
+  category: string;
+  description: string;
+  proficiency: number; // 0..1
+  declaredAt: string;
+  updatedAt: string;
 };
 
 export type AgentEvidenceRequest = {
