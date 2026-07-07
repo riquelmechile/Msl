@@ -57,6 +57,33 @@ export type OperationalReadModelReader = {
     kind: string,
     options?: { limit?: number; status?: string; categoryId?: string },
   ): Promise<Array<{ itemId: string; data: TData; capturedAt: string; freshness: string }>>;
+  searchSnapshots<TData>(
+    filter: SearchSnapshotsFilter,
+  ): Promise<SnapshotSearchResult<TData>[]>;
+};
+
+// ── searchSnapshots types ───────────────────────────────────────────
+
+export type SearchSnapshotsFilter = {
+  sellerId: string;
+  kind: string | string[];
+  status?: string;
+  categoryId?: string;
+  itemId?: string;
+  priceMin?: number;
+  priceMax?: number;
+  capturedAfter?: string;
+  capturedBefore?: string;
+  freshness?: "fresh" | "allow-stale-with-warning";
+  limit?: number;
+};
+
+export type SnapshotSearchResult<TData> = {
+  itemId: string;
+  data: TData;
+  capturedAt: string;
+  freshness: string;
+  evidenceId: string;
 };
 
 export type OperationalReadModelWriter = {
@@ -142,6 +169,9 @@ export function migrateOperationalStore(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_snapshots_kind ON operational_snapshots(kind);
+
+    CREATE INDEX IF NOT EXISTS idx_snapshots_kind_captured
+      ON operational_snapshots(kind, captured_at DESC);
   `);
 }
 
@@ -197,6 +227,77 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
     if (filter === "allow-stale-with-warning") return true;
     // "fresh" filter
     return row.freshness === "fresh" && row.completeness === "complete" && row.confidence !== "low";
+  }
+
+  function buildSearchClauses(filter: SearchSnapshotsFilter): {
+    sql: string;
+    params: unknown[];
+  } {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    // sellerId — required
+    conditions.push("seller_id = ?");
+    params.push(filter.sellerId);
+
+    // kind — string | string[]; normalize to array for IN clause
+    const kinds = Array.isArray(filter.kind) ? filter.kind : [filter.kind];
+    if (kinds.length === 1) {
+      conditions.push("kind = ?");
+      params.push(kinds[0]!);
+    } else {
+      const placeholders = kinds.map(() => "?").join(", ");
+      conditions.push(`kind IN (${placeholders})`);
+      params.push(...kinds);
+    }
+
+    // itemId — optional exact match on table column
+    if (filter.itemId !== undefined) {
+      conditions.push("item_id = ?");
+      params.push(filter.itemId);
+    }
+
+    // capturedAfter / capturedBefore — date range on table column
+    if (filter.capturedAfter !== undefined) {
+      conditions.push("captured_at >= ?");
+      params.push(filter.capturedAfter);
+    }
+    if (filter.capturedBefore !== undefined) {
+      conditions.push("captured_at <= ?");
+      params.push(filter.capturedBefore);
+    }
+
+    // status — json_extract on data_json
+    if (filter.status !== undefined) {
+      conditions.push("json_extract(data_json, '$.status') = ?");
+      params.push(filter.status);
+    }
+
+    // categoryId — json_extract on data_json
+    if (filter.categoryId !== undefined) {
+      conditions.push("json_extract(data_json, '$.category_id') = ?");
+      params.push(filter.categoryId);
+    }
+
+    // priceMin — json_extract numeric comparison
+    if (filter.priceMin !== undefined) {
+      conditions.push("json_extract(data_json, '$.price') >= ?");
+      params.push(filter.priceMin);
+    }
+
+    // priceMax — json_extract numeric comparison
+    if (filter.priceMax !== undefined) {
+      conditions.push("json_extract(data_json, '$.price') <= ?");
+      params.push(filter.priceMax);
+    }
+
+    const limit = filter.limit ?? 100;
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const sql = `SELECT * FROM operational_snapshots ${where} ORDER BY captured_at DESC LIMIT ?`;
+    params.push(limit);
+
+    return { sql, params };
   }
 
   /* eslint-disable @typescript-eslint/require-await */
@@ -289,6 +390,39 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
           };
         })
         .filter((r): r is NonNullable<typeof r> => r !== null);
+    },
+
+    async searchSnapshots<TData>(
+      filter: SearchSnapshotsFilter,
+    ): Promise<SnapshotSearchResult<TData>[]> {
+      const { sql, params } = buildSearchClauses(filter);
+      const stmt = db.prepare(sql);
+      const rows = stmt.all(...params) as SnapshotRow[];
+
+      const results: SnapshotSearchResult<TData>[] = [];
+      for (const row of rows) {
+        // Post-query freshness filter
+        if (!matchesFreshnessFilter(row, filter.freshness)) {
+          continue;
+        }
+
+        let data: TData;
+        try {
+          data = JSON.parse(row.data_json) as TData;
+        } catch {
+          continue;
+        }
+
+        results.push({
+          itemId: row.item_id,
+          data,
+          capturedAt: row.captured_at,
+          freshness: row.freshness,
+          evidenceId: row.evidence_id,
+        });
+      }
+
+      return results;
     },
 
     async upsertSnapshot<TData>(snapshot: OperationalReadModelSnapshot<TData>): Promise<void> {

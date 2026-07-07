@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { OperationalReadModelReader, OperationalEvidenceQuery } from "@msl/memory";
+import type { OperationalReadModelReader, OperationalEvidenceQuery, SearchSnapshotsFilter, SnapshotSearchResult } from "@msl/memory";
 import type { OperationalEvidence } from "@msl/domain";
 import { OperationalEvidenceProvider } from "../../src/conversation/operationalEvidenceProvider.js";
 
@@ -32,6 +32,9 @@ function mockReader(
       return null;
     },
     async listSnapshots() {
+      return [];
+    },
+    async searchSnapshots() {
       return [];
     },
   };
@@ -320,5 +323,157 @@ describe("OperationalEvidenceProvider", () => {
     // Each line should have its own ID
     expect(lines.some((l) => l.includes("evt-1"))).toBe(true);
     expect(lines.some((l) => l.includes("evt-2"))).toBe(true);
+  });
+});
+
+// ── getStructuredEvidenceForLane tests ────────────────────────────
+
+function makeSearchResult<TData>(
+  kind: string,
+  itemId: string,
+  data: TData,
+  overrides: Partial<SnapshotSearchResult<TData>> = {},
+): SnapshotSearchResult<TData> {
+  return {
+    itemId,
+    data,
+    capturedAt: "2026-07-02T10:00:00Z",
+    freshness: "fresh",
+    evidenceId: `orm:${kind}:seller-1:${itemId}:2026-07-02T10:00:00.000Z`,
+    ...overrides,
+  };
+}
+
+describe("getStructuredEvidenceForLane", () => {
+  it("returns grouped evidence for cost-supplier lane", async () => {
+    const listingData = { title: "Widget", status: "active", price: 1000 };
+    const orderData = { status: "paid", total: 5000 };
+
+    const reader: OperationalReadModelReader = {
+      findEvidence: () => Promise.resolve(null),
+      readSnapshot: () => Promise.resolve(null),
+      listSnapshots: () => Promise.resolve([]),
+      async searchSnapshots<TData>(filter: SearchSnapshotsFilter) {
+        await Promise.resolve(); // mock
+        const kind = Array.isArray(filter.kind) ? filter.kind[0] : filter.kind;
+        if (kind === "listing") {
+          return [makeSearchResult("listing", "MLC-1", listingData as TData)];
+        }
+        if (kind === "order") {
+          return [makeSearchResult("order", "ORD-1", orderData as TData)];
+        }
+        return [];
+      },
+    };
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getStructuredEvidenceForLane("cost-supplier", "seller-1");
+
+    expect(result).toHaveProperty("listing");
+    expect(result).toHaveProperty("order");
+    expect(result["listing"]).toHaveLength(1);
+    expect(result["listing"]![0]!.data).toEqual(listingData);
+    expect(result["order"]![0]!.data).toEqual(orderData);
+  });
+
+  it("returns empty record for unknown lane", async () => {
+    const reader: OperationalReadModelReader = {
+      findEvidence: () => Promise.resolve(null),
+      readSnapshot: () => Promise.resolve(null),
+      listSnapshots: () => Promise.resolve([]),
+      searchSnapshots: () => Promise.resolve([]),
+    };
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getStructuredEvidenceForLane("nonexistent" as never, "seller-1");
+
+    expect(result).toEqual({});
+  });
+
+  it("omits signal kinds that return no results", async () => {
+    const reader: OperationalReadModelReader = {
+      findEvidence: () => Promise.resolve(null),
+      readSnapshot: () => Promise.resolve(null),
+      listSnapshots: () => Promise.resolve([]),
+      async searchSnapshots<TData>(filter: SearchSnapshotsFilter) {
+        await Promise.resolve(); // mock
+        const kind = Array.isArray(filter.kind) ? filter.kind[0] : filter.kind;
+        if (kind === "listing") {
+          return [makeSearchResult("listing", "MLC-1", { title: "X" } as TData)];
+        }
+        return [];
+      },
+    };
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getStructuredEvidenceForLane("cost-supplier", "seller-1");
+
+    // cost-supplier maps cost→[listing,order], supplier→[listing], margin→[pricing]
+    // Only listing returns data
+    expect(result).toHaveProperty("listing");
+    expect(result).not.toHaveProperty("order");
+    expect(result).not.toHaveProperty("pricing");
+  });
+
+  it("includes evidence metadata in results", async () => {
+    const reader: OperationalReadModelReader = {
+      findEvidence: () => Promise.resolve(null),
+      readSnapshot: () => Promise.resolve(null),
+      listSnapshots: () => Promise.resolve([]),
+      async searchSnapshots<TData>() {
+        await Promise.resolve(); // mock
+        return [makeSearchResult("listing", "MLC-X", { status: "active" } as TData, {
+          capturedAt: "2026-07-05T12:00:00Z",
+          freshness: "fresh",
+          evidenceId: "ev-abc",
+        })];
+      },
+    };
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getStructuredEvidenceForLane("cost-supplier", "seller-1");
+
+    const entry = result["listing"]![0]!;
+    expect(entry.capturedAt).toBe("2026-07-05T12:00:00Z");
+    expect(entry.freshness).toBe("fresh");
+    expect(entry.evidenceId).toBe("ev-abc");
+  });
+
+  it("returns empty record when signalKinds list is empty (ceo lane)", async () => {
+    const reader: OperationalReadModelReader = {
+      findEvidence: () => Promise.resolve(null),
+      readSnapshot: () => Promise.resolve(null),
+      listSnapshots: () => Promise.resolve([]),
+      searchSnapshots: () => Promise.resolve([]),
+    };
+
+    const provider = new OperationalEvidenceProvider(reader);
+    // ceo lane has requiredEvidenceKinds: ["specialist-output", "approval-scope"]
+    // which are NOT in KIND_SIGNAL_MAP → empty
+    const result = await provider.getStructuredEvidenceForLane("ceo", "seller-1");
+    expect(result).toEqual({});
+  });
+
+  it("handles lane with multiple signal kinds of the same type", async () => {
+    // cost-supplier: cost→[listing,order], supplier→[listing] — listing deduped
+    const reader: OperationalReadModelReader = {
+      findEvidence: () => Promise.resolve(null),
+      readSnapshot: () => Promise.resolve(null),
+      listSnapshots: () => Promise.resolve([]),
+      async searchSnapshots<TData>(filter: SearchSnapshotsFilter) {
+        await Promise.resolve(); // mock
+        const kind = Array.isArray(filter.kind) ? filter.kind[0] : filter.kind;
+        if (kind === "listing") {
+          return [makeSearchResult("listing", "MLC-1", { title: "A" } as TData)];
+        }
+        return [];
+      },
+    };
+
+    const provider = new OperationalEvidenceProvider(reader);
+    const result = await provider.getStructuredEvidenceForLane("cost-supplier", "seller-1");
+
+    // listing called once (deduped), returns 1 result
+    expect(result["listing"]).toHaveLength(1);
   });
 });

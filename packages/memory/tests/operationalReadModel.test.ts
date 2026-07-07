@@ -161,6 +161,21 @@ describe("migrateOperationalStore", () => {
 
     db.close();
   });
+
+  it("creates the idx_snapshots_kind_captured composite index", () => {
+    const db = new Database(":memory:");
+    migrateOperationalStore(db);
+
+    const indexes = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'operational_snapshots'",
+      )
+      .all() as { name: string }[];
+    const names = indexes.map((i) => i.name);
+    expect(names).toContain("idx_snapshots_kind_captured");
+
+    db.close();
+  });
 });
 
 describe("createSqliteOperationalReadModel", () => {
@@ -512,5 +527,325 @@ describe("createSqliteOperationalReadModel", () => {
     expect(data.status).toBe("active");
     expect(data.price).toBe(1000);
     expect(data.currencyId).toBe("CLP");
+  });
+});
+
+// ── searchSnapshots integration tests ──────────────────────────
+
+/**
+ * Helper: directly INSERT a row with specific data_json so we can
+ * test json_extract filters (status, categoryId, price, etc.).
+ */
+function seedSnapshot(
+  db: Database.Database,
+  overrides: {
+    sellerId?: string;
+    itemId?: string;
+    kind?: string;
+    capturedAt?: string;
+    freshness?: string;
+    completeness?: string;
+    confidence?: string;
+    evidenceId?: string;
+    dataJson?: Record<string, unknown>;
+  } = {},
+): void {
+  const sellerId = overrides.sellerId ?? "plasticov";
+  const itemId = overrides.itemId ?? "MLC-TEST";
+  const kind = overrides.kind ?? "listing";
+  const capturedAt = overrides.capturedAt ?? "2026-07-01T12:00:00Z";
+  const freshness = overrides.freshness ?? "fresh";
+  const completeness = overrides.completeness ?? "complete";
+  const confidence = overrides.confidence ?? "high";
+  const evidenceId =
+    overrides.evidenceId ?? `orm:${kind}:${sellerId}:${itemId}:${capturedAt}`;
+  const dataJson = overrides.dataJson ?? { status: "active", price: 1000 };
+
+  db.prepare(
+    `INSERT OR REPLACE INTO operational_snapshots
+       (seller_id, item_id, kind, data_json, source, captured_at,
+        freshness, completeness, confidence, evidence_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    sellerId,
+    itemId,
+    kind,
+    JSON.stringify(dataJson),
+    "mercadolibre-api",
+    capturedAt,
+    freshness,
+    completeness,
+    confidence,
+    evidenceId,
+  );
+}
+
+describe("searchSnapshots", () => {
+  let db: Database.Database;
+  let store: OperationalReadModel;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    store = createSqliteOperationalReadModel(db);
+  });
+
+  it("returns results filtered by sellerId", async () => {
+    seedSnapshot(db, { sellerId: "plasticov", itemId: "A" });
+    seedSnapshot(db, { sellerId: "maustian", itemId: "B" });
+
+    const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("A");
+  });
+
+  it("filters by single kind string", async () => {
+    seedSnapshot(db, { kind: "listing", itemId: "L1" });
+    seedSnapshot(db, { kind: "order", itemId: "O1" });
+
+    const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("L1");
+  });
+
+  it("filters by multiple kinds via array", async () => {
+    seedSnapshot(db, { kind: "listing", itemId: "L1" });
+    seedSnapshot(db, { kind: "order", itemId: "O1" });
+    seedSnapshot(db, { kind: "claim", itemId: "C1" });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: ["listing", "order"],
+    });
+    expect(results).toHaveLength(2);
+    const itemIds = results.map((r) => r.itemId).sort();
+    expect(itemIds).toEqual(["L1", "O1"]);
+  });
+
+  it("filters by status via json_extract", async () => {
+    seedSnapshot(db, { itemId: "A", dataJson: { status: "active", price: 100 } });
+    seedSnapshot(db, { itemId: "B", dataJson: { status: "paused", price: 200 } });
+    seedSnapshot(db, { itemId: "C", dataJson: { status: "active", price: 300 } });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      status: "active",
+    });
+    expect(results).toHaveLength(2);
+    const itemIds = results.map((r) => r.itemId).sort();
+    expect(itemIds).toEqual(["A", "C"]);
+  });
+
+  it("filters by categoryId via json_extract", async () => {
+    seedSnapshot(db, { itemId: "A", dataJson: { category_id: "MLC1234", status: "active" } });
+    seedSnapshot(db, { itemId: "B", dataJson: { category_id: "MLC5678", status: "active" } });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      categoryId: "MLC1234",
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("A");
+  });
+
+  it("filters by price range (priceMin and priceMax)", async () => {
+    seedSnapshot(db, { itemId: "A", dataJson: { price: 500, status: "active" } });
+    seedSnapshot(db, { itemId: "B", dataJson: { price: 1500, status: "active" } });
+    seedSnapshot(db, { itemId: "C", dataJson: { price: 3000, status: "active" } });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      priceMin: 1000,
+      priceMax: 2500,
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("B");
+  });
+
+  it("filters by capturedAfter date range", async () => {
+    seedSnapshot(db, { itemId: "OLD", capturedAt: "2026-06-01T00:00:00Z" });
+    seedSnapshot(db, { itemId: "NEW", capturedAt: "2026-07-05T00:00:00Z" });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      capturedAfter: "2026-07-01T00:00:00Z",
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("NEW");
+  });
+
+  it("filters by capturedBefore date range", async () => {
+    seedSnapshot(db, { itemId: "OLD", capturedAt: "2026-06-01T00:00:00Z" });
+    seedSnapshot(db, { itemId: "NEW", capturedAt: "2026-07-05T00:00:00Z" });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      capturedBefore: "2026-07-01T00:00:00Z",
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("OLD");
+  });
+
+  it("filters by itemId", async () => {
+    seedSnapshot(db, { itemId: "MLC-100" });
+    seedSnapshot(db, { itemId: "MLC-200" });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      itemId: "MLC-100",
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("MLC-100");
+  });
+
+  it("applies freshness='fresh' post-query filter", async () => {
+    seedSnapshot(db, { itemId: "GOOD", freshness: "fresh", completeness: "complete", confidence: "high" });
+    seedSnapshot(db, { itemId: "STALE", freshness: "stale", completeness: "complete", confidence: "high" });
+    seedSnapshot(db, { itemId: "PARTIAL", freshness: "fresh", completeness: "partial", confidence: "high" });
+    seedSnapshot(db, { itemId: "LOWCONF", freshness: "fresh", completeness: "complete", confidence: "low" });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      freshness: "fresh",
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("GOOD");
+  });
+
+  it("applies freshness='allow-stale-with-warning' — includes all", async () => {
+    seedSnapshot(db, { itemId: "GOOD", freshness: "fresh", completeness: "complete", confidence: "high" });
+    seedSnapshot(db, { itemId: "STALE", freshness: "stale", completeness: "complete", confidence: "high" });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      freshness: "allow-stale-with-warning",
+    });
+    expect(results).toHaveLength(2);
+  });
+
+  it("composes multiple filters (AND semantics)", async () => {
+    seedSnapshot(db, { itemId: "A", kind: "listing", capturedAt: "2026-07-05T00:00:00Z", dataJson: { status: "active", price: 2000 } });
+    seedSnapshot(db, { itemId: "B", kind: "listing", capturedAt: "2026-07-01T00:00:00Z", dataJson: { status: "active", price: 2000 } });
+    seedSnapshot(db, { itemId: "C", kind: "listing", capturedAt: "2026-07-05T00:00:00Z", dataJson: { status: "paused", price: 2000 } });
+    seedSnapshot(db, { itemId: "D", kind: "listing", capturedAt: "2026-07-05T00:00:00Z", dataJson: { status: "active", price: 500 } });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      status: "active",
+      priceMin: 1000,
+      capturedAfter: "2026-07-03T00:00:00Z",
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("A");
+  });
+
+  it("defaults limit to 100", async () => {
+    for (let i = 1; i <= 150; i++) {
+      seedSnapshot(db, { itemId: `ITEM-${i}`, capturedAt: `2026-07-${String(i).padStart(2, "0")}T00:00:00Z` });
+    }
+
+    const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
+    expect(results).toHaveLength(100);
+  });
+
+  it("respects explicit limit", async () => {
+    for (let i = 1; i <= 50; i++) {
+      seedSnapshot(db, { itemId: `ITEM-${i}`, capturedAt: `2026-07-${String(i).padStart(2, "0")}T00:00:00Z` });
+    }
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "listing",
+      limit: 10,
+    });
+    expect(results).toHaveLength(10);
+  });
+
+  it("returns empty array when no snapshots match", async () => {
+    seedSnapshot(db, { itemId: "A", kind: "listing" });
+
+    const results = await store.searchSnapshots({
+      sellerId: "plasticov",
+      kind: "order", // different kind
+    });
+    expect(results).toEqual([]);
+  });
+
+  it("orders results by captured_at DESC", async () => {
+    seedSnapshot(db, { itemId: "MIDDLE", capturedAt: "2026-07-02T00:00:00Z" });
+    seedSnapshot(db, { itemId: "OLDEST", capturedAt: "2026-07-01T00:00:00Z" });
+    seedSnapshot(db, { itemId: "NEWEST", capturedAt: "2026-07-03T00:00:00Z" });
+
+    const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
+    expect(results).toHaveLength(3);
+    expect(results[0]!.itemId).toBe("NEWEST");
+    expect(results[1]!.itemId).toBe("MIDDLE");
+    expect(results[2]!.itemId).toBe("OLDEST");
+  });
+
+  it("includes evidenceId in results", async () => {
+    seedSnapshot(db, { itemId: "A", evidenceId: "ev-abc-123" });
+
+    const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.evidenceId).toBe("ev-abc-123");
+  });
+
+  it("returns full data payload", async () => {
+    seedSnapshot(db, { itemId: "A", dataJson: { status: "active", price: 999, title: "Widget" } });
+
+    const results = await store.searchSnapshots<{ status: string; price: number; title: string }>({
+      sellerId: "plasticov",
+      kind: "listing",
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.data.status).toBe("active");
+    expect(results[0]!.data.price).toBe(999);
+    expect(results[0]!.data.title).toBe("Widget");
+  });
+
+  it("skips malformed JSON rows instead of throwing", async () => {
+    // Insert a valid row + a corrupt row
+    seedSnapshot(db, { itemId: "GOOD", dataJson: { status: "active" } });
+    db.prepare(
+      `INSERT INTO operational_snapshots
+         (seller_id, item_id, kind, data_json, source, captured_at,
+          freshness, completeness, confidence, evidence_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "plasticov",
+      "BAD",
+      "listing",
+      "{not-valid-json",
+      "mercadolibre-api",
+      "2026-07-01T12:00:00Z",
+      "fresh",
+      "complete",
+      "high",
+      "ev-bad",
+    );
+
+    const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
+    expect(results).toHaveLength(1);
+    expect(results[0]!.itemId).toBe("GOOD");
+  });
+
+  it("filters seller correctly when no status filter is provided", async () => {
+    seedSnapshot(db, { sellerId: "seller-a", itemId: "A1" });
+    seedSnapshot(db, { sellerId: "seller-b", itemId: "B1" });
+    seedSnapshot(db, { sellerId: "seller-a", itemId: "A2" });
+
+    const results = await store.searchSnapshots({ sellerId: "seller-a", kind: "listing" });
+    expect(results).toHaveLength(2);
+    const ids = results.map((r) => r.itemId).sort();
+    expect(ids).toEqual(["A1", "A2"]);
   });
 });

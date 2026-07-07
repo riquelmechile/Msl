@@ -56,12 +56,12 @@ export const marketCatalogDaemon: DaemonHandler = async ({
 
   for (const sellerId of sellerIds) {
     // Read from operational read model when available, fallback to Cortex
-    const ormSnapshots = await reader.listSnapshots<{
+    const ormSnapshots = await reader.searchSnapshots<{
       status?: string;
       price?: number;
       title?: string;
       category_id?: string;
-    }>(sellerId, "listing_snapshot", { limit: 1000 });
+    }>({ sellerId, kind: "listing_snapshot", limit: 1000 });
 
     if (ormSnapshots.length > 0) {
       for (const snap of ormSnapshots) {

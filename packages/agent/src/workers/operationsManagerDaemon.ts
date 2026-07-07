@@ -71,12 +71,12 @@ export const operationsManagerDaemon: DaemonHandler = async ({
 
   for (const sellerId of sellerIds) {
     // ── 1. Claims ───────────────────────────────────────────
-    const claimSnaps = await reader.listSnapshots<{
+    const claimSnaps = await reader.searchSnapshots<{
       status?: string;
       reason?: string;
       claim_id?: string;
       claimId?: string;
-    }>(sellerId, "claim_snapshot", { limit: 500 });
+    }>({ sellerId, kind: "claim_snapshot", status: "open", limit: 500 });
 
     for (const snap of claimSnaps) {
       const d = snap.data;
@@ -90,14 +90,14 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     }
 
     // ── 2. Questions ────────────────────────────────────────
-    const questionSnaps = await reader.listSnapshots<{
+    const questionSnaps = await reader.searchSnapshots<{
       status?: string;
       text?: string;
       question_id?: string;
       questionId?: string;
       created_at?: string;
       createdAt?: string;
-    }>(sellerId, "question_snapshot", { limit: 500 });
+    }>({ sellerId, kind: "question_snapshot", status: "unanswered", limit: 500 });
 
     for (const snap of questionSnaps) {
       const d = snap.data;
@@ -112,13 +112,13 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     }
 
     // ── 3. Orders ───────────────────────────────────────────
-    const orderSnaps = await reader.listSnapshots<{
+    const orderSnaps = await reader.searchSnapshots<{
       status?: string;
       estimated_delivery?: string;
       estimatedDelivery?: string;
       order_id?: string;
       orderId?: string;
-    }>(sellerId, "order_snapshot", { limit: 500 });
+    }>({ sellerId, kind: "order_snapshot", limit: 500 });
 
     for (const snap of orderSnaps) {
       const d = snap.data;
@@ -136,11 +136,11 @@ export const operationsManagerDaemon: DaemonHandler = async ({
 
     // ── 4. Reputation ───────────────────────────────────────
     // Try ORM first, then Cortex fallback
-    const repSnaps = await reader.listSnapshots<{
+    const repSnaps = await reader.searchSnapshots<{
       level?: string;
       score?: number;
       color?: string;
-    }>(sellerId, "reputation_snapshot", { limit: 1 });
+    }>({ sellerId, kind: "reputation_snapshot", limit: 1 });
 
     if (repSnaps.length > 0 && repSnaps[0]) {
       reputationScore = Number(repSnaps[0].data.score ?? 0);
@@ -162,27 +162,24 @@ export const operationsManagerDaemon: DaemonHandler = async ({
 
   // ── Detection ──────────────────────────────────────────────
 
-  // A. Open claims → critical
+  // A. Open claims → critical (pre-filtered by searchSnapshots)
   for (const claim of allClaims) {
-    if (claim.status === "open") {
-      findings.push({
-        kind: "alert",
-        severity: "critical",
-        summary: `Open post-purchase claim: #${claim.claimId} (${claim.reason || "no reason"})`,
-        evidenceIds: [
-          `claim_snapshot:${claim.itemId}`,
-          `seller:${claim.sellerId}`,
-        ],
-      });
-    }
+    findings.push({
+      kind: "alert",
+      severity: "critical",
+      summary: `Open post-purchase claim: #${claim.claimId} (${claim.reason || "no reason"})`,
+      evidenceIds: [
+        `claim_snapshot:${claim.itemId}`,
+        `seller:${claim.sellerId}`,
+      ],
+    });
   }
 
-  // B. Unanswered questions > 24h → warning
+  // B. Unanswered questions > 24h → warning (pre-filtered by searchSnapshots)
   const deadline = new Date(now);
   deadline.setHours(deadline.getHours() - UNANSWERED_QUESTION_HOURS);
 
   for (const q of allQuestions) {
-    if (q.status !== "unanswered") continue;
     const created = new Date(q.createdAt);
     if (isNaN(created.getTime())) continue;
     if (created < deadline) {

@@ -53,14 +53,14 @@ export const costSupplierDaemon: DaemonHandler = async ({
   const allListings: ListingEntry[] = [];
 
   for (const sellerId of sellerIds) {
-    const listingSnaps = await reader.listSnapshots<{
+    const listingSnaps = await reader.searchSnapshots<{
       status?: string;
       price?: number;
       title?: string;
       stock?: number;
       available_quantity?: number;
       sold_quantity?: number;
-    }>(sellerId, "listing_snapshot", { limit: 1000 });
+    }>({ sellerId, kind: "listing_snapshot", status: "active", limit: 1000 });
 
     for (const snap of listingSnaps) {
       const d = snap.data;
@@ -148,11 +148,9 @@ export const costSupplierDaemon: DaemonHandler = async ({
     visitsPerItem.set(itemId, (visitsPerItem.get(itemId) ?? 0) + totalVisits);
   }
 
-  // ── Active listings analysis ─────────────────────────────────
+  // ── Active listings analysis (pre-filtered by searchSnapshots) ──
 
-  const activeListings = allListings.filter((l) => l.status === "active");
-
-  for (const listing of activeListings) {
+  for (const listing of allListings) {
     if (listing.price <= 0) continue;
 
     // Get pricing defaults + Cortex overrides

@@ -58,6 +58,9 @@ function mockReader(
     async listSnapshots() {
       return [];
     },
+    async searchSnapshots() {
+      return [];
+    },
   };
   /* eslint-enable @typescript-eslint/require-await */
 }

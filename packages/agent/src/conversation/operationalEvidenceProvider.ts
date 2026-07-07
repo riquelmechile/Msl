@@ -1,4 +1,4 @@
-import type { OperationalReadModelReader } from "@msl/memory";
+import type { OperationalReadModelReader, SnapshotSearchResult } from "@msl/memory";
 import type { BusinessSignalKind, OperationalEvidenceCompleteness, SellerId } from "@msl/domain";
 import type { LaneId } from "./lanes.js";
 import { getLaneContract } from "./lanes.js";
@@ -135,5 +135,63 @@ export class OperationalEvidenceProvider {
     }
 
     return lines.join("\n");
+  }
+
+  /**
+   * Returns structured operational evidence grouped by signal kind.
+   *
+   * Resolves the lane contract, collects all {@link BusinessSignalKind}s,
+   * queries `searchSnapshots` multi-kind for each seller, and returns
+   * the full snapshot data payloads grouped by kind key.
+   *
+   * @param laneId   - The specialisation lane.
+   * @param sellerId - The seller to query evidence for.
+   * @returns Object mapping signal kind strings to arrays of
+   *          {@link SnapshotSearchResult} entries. Returns an
+   *          empty record when the lane is unknown or no evidence exists.
+   */
+  async getStructuredEvidenceForLane<TData = unknown>(
+    laneId: LaneId,
+    sellerId: SellerId,
+  ): Promise<Record<string, SnapshotSearchResult<TData>[]>> {
+    let contract;
+    try {
+      contract = getLaneContract(laneId);
+    } catch {
+      return {};
+    }
+
+    // Collect BusinessSignalKind[] for every required evidence kind.
+    const signalKinds: BusinessSignalKind[] = [];
+    for (const ek of contract.requiredEvidenceKinds) {
+      const mapped = KIND_SIGNAL_MAP.get(ek);
+      if (mapped) {
+        for (const sk of mapped) {
+          if (!signalKinds.includes(sk)) {
+            signalKinds.push(sk);
+          }
+        }
+      }
+    }
+
+    if (signalKinds.length === 0) {
+      return {};
+    }
+
+    // Query each signal kind separately to preserve kind grouping.
+    const grouped: Record<string, SnapshotSearchResult<TData>[]> = {};
+    for (const sk of signalKinds) {
+      const results = await this._reader.searchSnapshots<TData>({
+        sellerId,
+        kind: sk,
+        freshness: "fresh",
+      });
+
+      if (results.length > 0) {
+        grouped[sk] = results;
+      }
+    }
+
+    return grouped;
   }
 }

@@ -38,7 +38,9 @@ export type {
   OperationalReadModelReader,
   OperationalReadModelSnapshot,
   OperationalReadModelWriter,
+  SearchSnapshotsFilter,
   SnapshotRow,
+  SnapshotSearchResult,
 } from "./operationalReadModel.js";
 export {
   createSqliteOperationalReadModel,

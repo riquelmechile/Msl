@@ -51,11 +51,11 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
 
   for (const sellerId of sellerIds) {
     // Try ORM first
-    const listingSnaps = await reader.listSnapshots<{
+    const listingSnaps = await reader.searchSnapshots<{
       status?: string;
       price?: number;
       title?: string;
-    }>(sellerId, "listing_snapshot", { limit: 1000, status: "active" });
+    }>({ sellerId, kind: "listing_snapshot", status: "active", limit: 1000 });
 
     for (const snap of listingSnaps) {
       const d = snap.data;
