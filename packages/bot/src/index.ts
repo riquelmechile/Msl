@@ -20,9 +20,13 @@ import {
 } from "@msl/agent";
 import { createDatabase, createGraphEngine, createSqliteOperationalReadModel } from "@msl/memory";
 import {
-  createMlcApiClient,
   createMercadoLibreApiFetchTransport,
-  type OAuthTokenState,
+  createMlClient,
+  createMultiAppOAuthManager,
+  createOAuthMlcApiClient,
+  getMlAccountRoleConfig,
+  resolveOAuthConfigs,
+  type OAuthManager,
 } from "@msl/mercadolibre";
 
 export type BotConfig = {
@@ -81,9 +85,22 @@ export type TelegramBotEnv = Partial<
     | "MSL_CHAT_SELLER_NAME"
     | "MERCADOLIBRE_SOURCE_SELLER_ID"
     | "MERCADOLIBRE_TARGET_SELLER_ID"
+    | "MERCADOLIBRE_SOURCE_SELLER_NAME"
+    | "MERCADOLIBRE_TARGET_SELLER_NAME"
     | "MERCADOLIBRE_ACCESS_TOKEN"
     | "MERCADOLIBRE_REFRESH_TOKEN"
     | "MERCADOLIBRE_SELLER_ID"
+    | "MSL_MERCADOLIBRE_OAUTH_DB_PATH"
+    | "MERCADOLIBRE_CLIENT_ID"
+    | "MERCADOLIBRE_CLIENT_SECRET"
+    | "MERCADOLIBRE_REDIRECT_URI"
+    | "MERCADOLIBRE_SOURCE_CLIENT_ID"
+    | "MERCADOLIBRE_SOURCE_CLIENT_SECRET"
+    | "MERCADOLIBRE_SOURCE_REDIRECT_URI"
+    | "MERCADOLIBRE_TARGET_CLIENT_ID"
+    | "MERCADOLIBRE_TARGET_CLIENT_SECRET"
+    | "MERCADOLIBRE_TARGET_REDIRECT_URI"
+    | "MSL_ENCRYPTION_KEY"
     | "MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID"
     | "MSL_COMPANY_AGENT_ADMIN_ENABLED"
     | "MSL_TELEGRAM_ADMIN_CHAT_IDS"
@@ -200,32 +217,62 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     ? new OperationalEvidenceProvider(operationalReadModel)
     : undefined;
 
-  // ── MLC listing-fees client ───────────────────────────────
-  const mlcAccessToken = env.MERCADOLIBRE_ACCESS_TOKEN?.trim();
-  const mlcRefreshToken = env.MERCADOLIBRE_REFRESH_TOKEN?.trim();
-  const mlcSellerId = env.MERCADOLIBRE_SELLER_ID?.trim();
+  // ── Multi-seller OAuth clients (reads + writes) ──────
+  // Uses the same MultiAppOAuthManager pattern as the MCP
+  // runtime to serve Plasticov and Maustian from SQLite tokens.
+  const oauthDbPath = env.MSL_MERCADOLIBRE_OAUTH_DB_PATH?.trim();
+  const hasLegacyToken = !!env.MERCADOLIBRE_ACCESS_TOKEN?.trim();
 
-  let mlcClient: ReturnType<typeof createMlcApiClient> | undefined;
-  if (mlcAccessToken && mlcSellerId) {
-    const tokenState: OAuthTokenState = {
-      sellerId: mlcSellerId,
-      site: "MLC",
-      accessToken: mlcAccessToken,
-      ...(mlcRefreshToken !== undefined && { refreshToken: mlcRefreshToken }),
-      scopes: ["read", "write"],
-      status: "connected",
-      connectedAt: new Date(),
-      expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000), // 180 days
-    };
-    mlcClient = createMlcApiClient({
-      tokenState,
-      transport: createMercadoLibreApiFetchTransport(),
-      now: new Date(),
-    });
+  let oauthManager: OAuthManager | undefined;
+  let mlcClient: ReturnType<typeof createOAuthMlcApiClient> | undefined;
+  let mlClient: ReturnType<typeof createMlClient> | undefined;
+
+  // Migration warning: legacy token present but OAuth not configured
+  if (hasLegacyToken && !oauthDbPath) {
+    console.warn(
+      "⚠️  Legacy MERCADOLIBRE_ACCESS_TOKEN is set but MSL_MERCADOLIBRE_OAUTH_DB_PATH is not.\n" +
+        "   The bot now uses multi-seller OAuth. Configure MSL_MERCADOLIBRE_OAUTH_DB_PATH,\n" +
+        "   MERCADOLIBRE_CLIENT_ID, MERCADOLIBRE_CLIENT_SECRET, MERCADOLIBRE_REDIRECT_URI,\n" +
+        "   and MSL_ENCRYPTION_KEY to enable multi-seller OAuth.",
+    );
   }
 
+  if (oauthDbPath) {
+    const roleConfig = getMlAccountRoleConfig(env);
+    const configs = resolveOAuthConfigs(env);
+    if (configs.size > 0) {
+      oauthManager = createMultiAppOAuthManager(configs);
+      const now = () => new Date();
+      mlcClient = createOAuthMlcApiClient({
+        oauthManager,
+        transport: createMercadoLibreApiFetchTransport(),
+        now,
+        allowedSellerIds: [roleConfig.sourceSellerId, roleConfig.targetSellerId],
+      });
+      mlClient = createMlClient({ oauthManager, now: new Date() });
+    }
+  }
+
+  const systemPrompt = (() => {
+    const base = buildSystemPrompt(sellerName);
+    const roleConfig = oauthManager
+      ? getMlAccountRoleConfig(env)
+      : undefined;
+    if (!roleConfig) return base;
+
+    const sourceName = env.MERCADOLIBRE_SOURCE_SELLER_NAME?.trim() || "Plasticov";
+    const targetName = env.MERCADOLIBRE_TARGET_SELLER_NAME?.trim() || "Maustian";
+
+    return (
+      base +
+      `\n\n## Multi-seller context — NUNCA inventes un sellerId. Usá solo estos:\n` +
+      `- ${sourceName}: sellerId = "${roleConfig.sourceSellerId}"\n` +
+      `- ${targetName}: sellerId = "${roleConfig.targetSellerId}"`
+    );
+  })();
+
   const agentConfig: BotConfig["agentConfig"] = {
-    systemPrompt: buildSystemPrompt(sellerName),
+    systemPrompt,
     mockClient: !env.DEEPSEEK_API_KEY?.trim(),
   };
   // Compatibility env from PR #71: this selects internal CEO workforce context
@@ -241,6 +288,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   if (engine) agentConfig.engine = engine;
   if (escribano) agentConfig.escribano = escribano;
   if (mlcClient) agentConfig.mlcClient = mlcClient;
+  if (mlClient) agentConfig.mlClient = mlClient;
   if (operationalReadModel) agentConfig.operationalReader = operationalReadModel;
   if (evidenceProvider) {
     agentConfig.evidenceProvider = evidenceProvider;
@@ -264,6 +312,11 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     botConfig.cleanup = () => {
       db.close();
       operationalDb?.close();
+      oauthManager?.close();
+    };
+  else if (oauthManager)
+    botConfig.cleanup = () => {
+      oauthManager!.close();
     };
 
   const botHandle = createTelegramBot(botConfig);
@@ -271,23 +324,14 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   // ── Background ingestion worker ──────────────────────────
   let ingestionHandle: { stop: () => void } | undefined;
 
-  if (mlcClient && engine && mlcSellerId) {
-    // Build multi-seller config: include source + target when both are configured.
-    const sourceSellerId = env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
-    const targetSellerId = env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+  if (mlcClient && engine) {
+    const roleConfig = getMlAccountRoleConfig(env);
     const deepseekApiKey = env.DEEPSEEK_API_KEY?.trim();
-
-    const allSellerIds: string[] = [mlcSellerId];
-    const sellerNames: Record<string, string> = { [mlcSellerId]: sellerName };
-
-    if (sourceSellerId && sourceSellerId !== mlcSellerId) {
-      allSellerIds.push(sourceSellerId);
-      sellerNames[sourceSellerId] = "Plasticov";
-    }
-    if (targetSellerId && targetSellerId !== mlcSellerId) {
-      allSellerIds.push(targetSellerId);
-      sellerNames[targetSellerId] = "Maustian";
-    }
+    const sellerIds = [roleConfig.sourceSellerId, roleConfig.targetSellerId];
+    const sellerNames: Record<string, string> = {
+      [roleConfig.sourceSellerId]: env.MERCADOLIBRE_SOURCE_SELLER_NAME?.trim() || "Plasticov",
+      [roleConfig.targetSellerId]: env.MERCADOLIBRE_TARGET_SELLER_NAME?.trim() || "Maustian",
+    };
 
     const baseConfig = {
       mlcClient,
@@ -295,7 +339,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
       sendProactiveMessage: (chatId: number, text: string) =>
         botHandle.sendProactiveMessage(chatId, text),
       listActiveChats: () => botHandle.listActiveChats(),
-      sellerIds: allSellerIds,
+      sellerIds,
       sellerNames,
       intervalMs: 6 * 60 * 60 * 1000, // 6 hours
       ...(operationalReadModel ? { operationalStore: operationalReadModel } : {}),
@@ -311,6 +355,8 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     stop: async () => {
       ingestionHandle?.stop();
       await botHandle.stop();
+      oauthManager?.close(); // idempotent guard — cleanup also calls it via botConfig.cleanup
+      console.log("🛑 Bot detenido");
     },
     sendProactiveMessage: (chatId, text) => botHandle.sendProactiveMessage(chatId, text),
     listActiveChats: () => botHandle.listActiveChats(),

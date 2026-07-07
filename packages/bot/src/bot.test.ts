@@ -630,4 +630,47 @@ describe("createTelegramBot (grammY)", () => {
       "BOT_TOKEN is required to start the Telegram bot.",
     );
   });
+
+  it("warns when legacy MERCADOLIBRE_ACCESS_TOKEN is set without OAuth DB path", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MERCADOLIBRE_ACCESS_TOKEN: "APP_USR-12345-old-token",
+      MSL_MERCADOLIBRE_OAUTH_DB_PATH: "",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Legacy MERCADOLIBRE_ACCESS_TOKEN is set but MSL_MERCADOLIBRE_OAUTH_DB_PATH is not",
+      ),
+    );
+
+    spy.mockRestore();
+  });
+
+  it("creates demo/mock bot when OAuth is not configured", () => {
+    vi.clearAllMocks();
+    const bot = createTelegramBotFromEnv({
+      BOT_TOKEN: "test-token-123",
+      MSL_MERCADOLIBRE_OAUTH_DB_PATH: "",
+      DEEPSEEK_API_KEY: "",
+    });
+
+    expect(bot).toBeDefined();
+    expect(Bot).toHaveBeenCalledWith("test-token-123", undefined);
+
+    // Verifies no OAuth client was created (mockClient stays true)
+    const createAgentLoopMock = mocks.mockCreateAgentLoop as unknown as {
+      mock: { calls: Array<[unknown]> };
+    };
+    const agentConfig = createAgentLoopMock.mock.calls[0]?.[0] as {
+      mockClient?: boolean;
+    };
+    expect(agentConfig.mockClient).toBe(true);
+
+    // Verifies the system prompt falls back to base (no multi-seller block)
+    expect(mocks.mockBuildSystemPrompt).toHaveBeenCalledWith("Plasticov");
+  });
 });
