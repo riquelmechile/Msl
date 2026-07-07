@@ -3,15 +3,76 @@
 This is the minimal production path for running the Telegram bot and Next.js web app on one
 Vultr São Paulo VPS without committing secrets.
 
+## Current state
+
+Only the domain has been purchased. There is no VPS host yet, so there is no production PM2 process
+to restart and no server IP for final DNS records.
+
+What can be done before buying the VPS:
+
+- Keep the Telegram bot running from local/Termux for temporary testing. Long polling does not require
+  the domain.
+- Keep `plasticov.cl` parked at the registrar or Cloudflare.
+- Prepare DNS records, environment variable names, and deployment steps without adding secret values to
+  Git or chat.
+
+What must wait until the VPS exists:
+
+- The final `A` record target, because it needs the VPS IPv4 address.
+- PM2 process startup/restart.
+- Nginx reverse proxy validation.
+- TLS certificate issuance for the origin server.
+
 ## Quick path
 
-1. Provision Ubuntu 22.04 or 24.04 on Vultr São Paulo.
-2. Copy or run the bootstrap script to install system packages, Node.js 22, PM2, Nginx, and
+1. Put `plasticov.cl` under Cloudflare DNS or confirm where DNS will be managed.
+2. Provision Ubuntu 22.04 or 24.04 on Vultr São Paulo.
+3. Create a non-root deploy user and copy/run the bootstrap script to install system packages,
+   Node.js 22, PM2, Nginx, and
    runtime directories.
-3. Clone the repo, create `.env.local` on the VPS only, and copy SQLite databases securely.
-4. Run `npm ci`, `npm run build`, `npm run pm2:start`, `pm2 save`, and `pm2 startup`.
-5. Point Cloudflare DNS for `plasticov.cl` to the VPS and place a reverse proxy in front of
+4. Clone the repo, create `.env.local` on the VPS only, and copy SQLite databases securely.
+5. Run `npm ci`, `npm run build`, `npm run pm2:start`, `pm2 save`, and `pm2 startup`.
+6. Point Cloudflare DNS for `plasticov.cl` to the VPS and place a reverse proxy in front of
    `127.0.0.1:3000`.
+
+## Domain and DNS plan
+
+Use the domain as the public entry point for the web app and OAuth callback. The Telegram bot can stay
+on long polling behind PM2 and does not need a webhook or DNS record.
+
+| Record         | Type    | Target before VPS       | Target after VPS exists  | Proxy          | Purpose                                    |
+| -------------- | ------- | ----------------------- | ------------------------ | -------------- | ------------------------------------------ |
+| `plasticov.cl` | `A`     | Parked/no final target  | Vultr public IPv4        | DNS-only first | Public web app and OAuth origin.           |
+| `www`          | `CNAME` | `plasticov.cl` if ready | `plasticov.cl`           | DNS-only first | Optional browser-friendly alias.           |
+| `api`          | `CNAME` | Do not create yet       | Optional: `plasticov.cl` | DNS-only first | Reserve only if API split is needed later. |
+
+Start with Cloudflare proxy disabled while Nginx and TLS are being validated. After HTTPS works from
+the VPS origin, enable the proxy and use a TLS mode that validates the origin certificate.
+
+### Domain-only checklist
+
+- [ ] Confirm the domain registrar points nameservers to Cloudflare, or keep DNS at the registrar until
+      the VPS is purchased.
+- [ ] Do not point the root domain to a random or temporary IP.
+- [ ] Keep the Telegram bot on local/Termux if temporary testing is needed; domain DNS is not required
+      for long polling.
+- [ ] Decide the production hostname for MercadoLibre OAuth redirect URLs, for example
+      `https://plasticov.cl/api/meli/callback` if that route is the deployed callback.
+- [ ] Do not paste BotFather tokens, MercadoLibre credentials, OAuth tokens, or `.env.local` contents
+      into DNS notes, docs, issues, or chat.
+
+### First hour after buying the VPS
+
+1. Create the VPS in São Paulo with Ubuntu 22.04 or 24.04.
+2. Record the VPS IPv4 address in a private deployment note, not in Git unless intentionally documenting
+   a public server address.
+3. SSH in, create or use the non-root deploy user, and run `scripts/vps-bootstrap.sh`.
+4. Clone the repository into `$MSL_APP_DIR`.
+5. Create `.env.local` on the VPS only.
+6. Copy SQLite databases into `$MSL_DATA_DIR` only after stopping local writers.
+7. Run the build and PM2 start commands from this guide.
+8. Add the Cloudflare `A` record to the VPS IPv4 with proxy disabled.
+9. Configure Nginx, issue TLS, verify `https://plasticov.cl`, then enable Cloudflare proxy.
 
 ## Bootstrap a fresh VPS
 
