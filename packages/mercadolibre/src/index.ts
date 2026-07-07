@@ -3567,17 +3567,70 @@ async function readMlcSnapshot<TSnapshot>(input: {
 function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): MlcApiClient {
   return {
     getListings: async (sellerId, options) => {
-      const query: Record<string, string> = { site: "MLC" };
-      if (options?.status) query.status = options.status;
-      if (options?.listingTypeId) query.listing_type_id = options.listingTypeId;
-      const payload = await input.request(sellerId, `/users/${sellerId}/items/search`, query);
+      const baseQuery: Record<string, string> = { site: "MLC" };
+      if (options?.status) baseQuery.status = options.status;
+      if (options?.listingTypeId) baseQuery.listing_type_id = options.listingTypeId;
+
+      const path = `/users/${sellerId}/items/search`;
+      const firstPayload = await input.request(sellerId, path, { ...baseQuery });
+      const firstRoot = asRecord(firstPayload);
+      const paging = asRecord(firstRoot?.paging);
+      const total = numberValue(paging?.total) ?? 0;
+      const pageLimit = numberValue(paging?.limit) ?? 50;
+
+      let allResults = asArray(firstRoot?.results ?? firstRoot?.items);
+
+      if (total > 1000) {
+        // Use scan + scroll_id for more than 1000 items (ML API limit)
+        const scanQuery = { ...baseQuery, search_type: "scan" };
+        const scanPayload = await input.request(sellerId, path, scanQuery);
+        let scanRoot = asRecord(scanPayload);
+        let scrollId = stringValue(scanRoot?.scroll_id) ?? "";
+        const scanResults = asArray(scanRoot?.results);
+        allResults = allResults.concat(scanResults);
+
+        while (scrollId) {
+          // Respect rate limits — small delay between pages
+          await new Promise((r) => setTimeout(r, 500));
+          const nextQuery: Record<string, string> = {
+            ...baseQuery,
+            search_type: "scan",
+            scroll_id: scrollId,
+          };
+          const nextPayload = await input.request(sellerId, path, nextQuery);
+          const nextRoot = asRecord(nextPayload);
+          const nextResults = asArray(nextRoot?.results ?? nextRoot?.items);
+          if (nextResults.length === 0) break;
+          allResults = allResults.concat(nextResults);
+          scrollId = stringValue(nextRoot?.scroll_id) ?? "";
+        }
+      } else if (total > allResults.length) {
+        // Regular offset pagination for ≤1000 items
+        let offset = allResults.length;
+        while (offset < total) {
+          await new Promise((r) => setTimeout(r, 300));
+          const pageQuery = {
+            ...baseQuery,
+            offset: String(offset),
+            limit: String(pageLimit),
+          };
+          const pagePayload = await input.request(sellerId, path, pageQuery);
+          const pageRoot = asRecord(pagePayload);
+          const pageResults = asArray(pageRoot?.results ?? pageRoot?.items);
+          if (pageResults.length === 0) break;
+          allResults = allResults.concat(pageResults);
+          offset += pageResults.length;
+        }
+      }
+
+      const mergedPayload = { ...firstRoot, results: allResults };
       const filters: { status?: "active" | "paused" | "closed"; listingTypeId?: string } = {};
       pushOptional(filters, "status", options?.status);
       pushOptional(filters, "listingTypeId", options?.listingTypeId);
       const hasFilters = filters.status !== undefined || filters.listingTypeId !== undefined;
       return normalizeListings({
         sellerId,
-        payload,
+        payload: mergedPayload,
         now: input.now(),
         ...(hasFilters ? { filters } : {}),
       });
