@@ -10,11 +10,16 @@ import type {
   StorefrontCandidate,
   StorefrontProjection,
 } from "@msl/domain";
-import { guardrailsForCandidateEvidence, summarizeProjectionReadiness } from "@msl/domain";
+import {
+  DEFAULT_DEEPSEEK_MODEL,
+  guardrailsForCandidateEvidence,
+  resolveDeepSeekCredentialRef,
+  summarizeProjectionReadiness,
+} from "@msl/domain";
 import type { OwnedEcommerceStore } from "@msl/memory";
 
 export const OWNED_ECOMMERCE_DEEPSEEK_PROVIDER = "deepseek";
-export const OWNED_ECOMMERCE_DEEPSEEK_V4_FLASH = "deepseek-v4-flash";
+export const OWNED_ECOMMERCE_DEEPSEEK_V4_FLASH = DEFAULT_DEEPSEEK_MODEL;
 export const OWNED_ECOMMERCE_DEEPSEEK_V4_PRO = "deepseek-v4-pro";
 export const OWNED_ECOMMERCE_DEEPSEEK_CANDIDATE_LIMIT = 25;
 export const OWNED_ECOMMERCE_PROJECTION_CATALOG_LIMIT = 50;
@@ -467,7 +472,10 @@ export async function runOwnedEcommerceProjectionWorker(
     provider: OWNED_ECOMMERCE_DEEPSEEK_PROVIDER,
     model,
     laneId: options.laneId ?? "owned-ecommerce",
-    credentialRef: redactCredentialRef(options.credentialRef ?? "env:DEEPSEEK_API_KEY"),
+    credentialRef: redactCredentialRef(
+      options.credentialRef ??
+        resolveDeepSeekCredentialRef({ laneId: options.laneId ?? "owned-ecommerce" }),
+    ),
     projectionId,
     promptCacheHitTokens: sanitizeLedgerNumber(usage.promptCacheHitTokens),
     promptCacheMissTokens: sanitizeLedgerNumber(usage.promptCacheMissTokens),

@@ -4,8 +4,10 @@ import {
   canExecutePreparedAction,
   canExecuteOwnedEcommerceAction,
   canMakeHighConfidenceClaimFromEvidence,
+  buildDeepSeekChatCompletionRequest,
   createPreparedAction,
   confidenceForOperationalEvidence,
+  DEFAULT_DEEPSEEK_MODEL,
   evaluateFreshness,
   evaluateSpecializationReadiness,
   guardrailsForCandidateEvidence,
@@ -14,6 +16,9 @@ import {
   isReadSnapshotReliable,
   requiresApproval,
   riskLevelForAction,
+  resolveDeepSeekCredentialRef,
+  resolveDeepSeekRuntimeConfig,
+  resolveDeepSeekUserId,
   summarizeProjectionReadiness,
   type ApprovalRecord,
   type CandidateProvenance,
@@ -32,6 +37,60 @@ import {
 
 const future = new Date("2030-01-01T00:00:00.000Z");
 const now = new Date("2026-06-25T12:00:00.000Z");
+
+describe("DeepSeek runtime routing", () => {
+  it("uses one shared key with default v4 flash model and optional runtime overrides", () => {
+    expect(resolveDeepSeekRuntimeConfig({})).toEqual({
+      baseURL: "https://api.deepseek.com",
+      model: DEFAULT_DEEPSEEK_MODEL,
+    });
+
+    expect(
+      resolveDeepSeekRuntimeConfig({
+        DEEPSEEK_API_KEY: "synthetic-key",
+        DEEPSEEK_BASE_URL: "https://deepseek.example.test",
+        DEEPSEEK_MODEL: "deepseek-v4-pro",
+      }),
+    ).toEqual({
+      apiKey: "synthetic-key",
+      credentialRef: "env:DEEPSEEK_API_KEY",
+      baseURL: "https://deepseek.example.test",
+      model: "deepseek-v4-pro",
+    });
+  });
+
+  it("builds stable lane and seller user_id values without per-agent API keys", () => {
+    expect(
+      resolveDeepSeekUserId({
+        laneId: "Owned Ecommerce",
+        sellerId: "Plasticov MLC",
+        agentId: "SEO/GEO Worker",
+      }),
+    ).toBe("msl-lane-owned-ecommerce-seller-plasticov-mlc-agent-seo-geo-worker");
+
+    expect(
+      resolveDeepSeekCredentialRef({
+        laneId: "Owned Ecommerce",
+        sellerId: "Plasticov MLC",
+        agentId: "SEO/GEO Worker",
+      }),
+    ).toBe("env:DEEPSEEK_API_KEY:lane:owned-ecommerce:seller:plasticov-mlc:agent:seo-geo-worker");
+  });
+
+  it("passes DeepSeek user_id through OpenAI SDK extra_body", () => {
+    expect(
+      buildDeepSeekChatCompletionRequest({
+        model: DEFAULT_DEEPSEEK_MODEL,
+        messages: [{ role: "user", content: "hello" }],
+        stream: false,
+        userId: "msl-lane-ceo-seller-123",
+      }),
+    ).toMatchObject({
+      model: DEFAULT_DEEPSEEK_MODEL,
+      extra_body: { user_id: "msl-lane-ceo-seller-123" },
+    });
+  });
+});
 
 function preparedAction(kind: WriteActionKind): PreparedAction {
   const target = kind.startsWith("owned-ecommerce-")

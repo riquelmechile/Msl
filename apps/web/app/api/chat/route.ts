@@ -360,6 +360,8 @@ export async function POST(req: NextRequest) {
   const loop = createAgentLoop({
     systemPrompt: buildSystemPrompt(sellerName),
     mockClient: !useRealDeepSeek,
+    sellerId,
+    laneId: "ceo",
     tools: [createSimulateActorTool()],
     store,
     autonomyEngine,

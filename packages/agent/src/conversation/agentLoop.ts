@@ -1,4 +1,10 @@
 import OpenAI from "openai";
+import {
+  buildDeepSeekChatCompletionRequest,
+  resolveDeepSeekRuntimeConfig,
+  resolveDeepSeekUserId,
+  type DeepSeekRuntimeConfig,
+} from "@msl/domain";
 import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
@@ -168,6 +174,10 @@ export type AgentLoopConfig = {
   llmClient?: LlmClient;
   /** The model name to use (default: "deepseek-v4-flash"). */
   model?: string;
+  /** Seller identity used for stable DeepSeek cache/scheduling routing. */
+  sellerId?: string;
+  /** Explicit DeepSeek user_id override for OpenAI SDK extra_body. */
+  deepSeekUserId?: string;
   /**
    * Active CEO strategies to inject into the system prompt and validate
    * against proposals. Pass empty array or omit for no strategies.
@@ -675,8 +685,15 @@ export function extractPromptCacheTelemetry(input: {
  * falls back to the noop client.
  */
 export function createAgentLoop(config: AgentLoopConfig) {
-  const model = config.model ?? "deepseek-v4-flash";
-  const openai = config.mockClient ? null : createDeepSeekClient();
+  const deepSeekRuntime = resolveDeepSeekRuntimeConfig();
+  const model = config.model ?? deepSeekRuntime.model;
+  const deepSeekRouting = {
+    laneId: config.laneId ?? "ceo",
+    ...(config.sellerId ? { sellerId: config.sellerId } : {}),
+    ...(config.activeCompanyAgentId ? { agentId: config.activeCompanyAgentId } : {}),
+  };
+  const deepSeekUserId = config.deepSeekUserId ?? resolveDeepSeekUserId(deepSeekRouting);
+  const openai = config.mockClient ? null : createDeepSeekClient(deepSeekRuntime);
   const tools = config.tools ?? [];
   const toolMap = new Map(tools.map((t) => [t.name, t]));
 
@@ -932,7 +949,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
   const client: LlmClient =
     config.llmClient ??
     (openai && !config.mockClient
-      ? createRealClient(openai, model, toolMap)
+      ? createRealClient(openai, model, toolMap, deepSeekUserId)
       : config.mockClient
         ? createMockClient(toolMap)
         : createNoopClient());
@@ -974,7 +991,12 @@ export function createAgentLoop(config: AgentLoopConfig) {
         operation: "chat.completion",
         ...tokenUsage,
         ...(estimatedCostMicros === undefined ? {} : { estimatedCostMicros, currency: "USD" }),
-        metadata: { source: "agent_loop", callIndex },
+        metadata: {
+          source: "agent_loop",
+          callIndex,
+          deepSeekUserId,
+          deepSeekRoutingRef: deepSeekUserId,
+        },
       });
     } catch {
       // Telemetry must never break the seller conversation.
@@ -1631,10 +1653,11 @@ function handleStrategyCommand(
  * Returns `null` when `DEEPSEEK_API_KEY` is not set, allowing callers
  * to fall back to mock or noop clients (useful for CI and local testing).
  */
-export function createDeepSeekClient(): OpenAI | null {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" });
+export function createDeepSeekClient(
+  runtime: DeepSeekRuntimeConfig = resolveDeepSeekRuntimeConfig(),
+): OpenAI | null {
+  if (!runtime.apiKey) return null;
+  return new OpenAI({ apiKey: runtime.apiKey, baseURL: runtime.baseURL });
 }
 
 /**
@@ -1647,18 +1670,21 @@ function createRealClient(
   openai: OpenAI,
   model: string,
   toolMap: Map<string, ToolDefinition>,
+  userId?: string,
 ): LlmClient {
   const openAiTools = createOpenAiToolDefinitions(toolMap.values());
 
   return {
     async chat(messages) {
-      const completion = await openai.chat.completions.create({
+      const request = buildDeepSeekChatCompletionRequest({
         model,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-        messages: messages as any,
+        messages,
         ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: false,
+        ...(userId ? { userId } : {}),
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+      const completion = await openai.chat.completions.create(request as any);
 
       const choice = completion.choices[0];
       const toolCalls = choice?.message?.tool_calls?.map((tc) => {
@@ -1690,16 +1716,20 @@ function createRealClient(
     },
 
     async *stream(messages) {
-      const stream = await openai.chat.completions.create({
+      const request = buildDeepSeekChatCompletionRequest({
         model,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-        messages: messages as any,
+        messages,
         ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: true,
+        ...(userId ? { userId } : {}),
       });
+      const stream = (await openai.chat.completions.create(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        request as any,
+      )) as unknown as AsyncIterable<{ choices?: Array<{ delta?: { content?: string | null } }> }>;
 
       for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content;
+        const delta = chunk.choices?.[0]?.delta?.content;
         if (delta) {
           yield { delta, done: false };
         }

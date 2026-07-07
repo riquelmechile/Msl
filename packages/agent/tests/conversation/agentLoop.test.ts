@@ -1,5 +1,7 @@
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import Database from "better-sqlite3";
+import { createServer } from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import {
   buildWorkforceCostCacheContext,
@@ -148,6 +150,42 @@ function makeUsageClient(
       yield { delta: "", done: true };
     },
   };
+}
+
+function readRequestBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => resolve(body));
+    request.on("error", reject);
+  });
+}
+
+async function withOpenAiCompatibleServer<T>(
+  handler: (request: IncomingMessage, response: ServerResponse) => void | Promise<void>,
+  callback: (baseURL: string) => Promise<T>,
+): Promise<T> {
+  const server: Server = createServer((request, response) => {
+    void Promise.resolve(handler(request, response)).catch((error: unknown) => {
+      response.statusCode = 500;
+      response.end(error instanceof Error ? error.message : String(error));
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("test server did not bind a port");
+
+  try {
+    return await callback(`http://127.0.0.1:${address.port}/v1`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
 }
 
 async function withInMemoryWorkforceLedger<T>(
@@ -520,6 +558,10 @@ describe("createAgentLoop — mock client", () => {
         cacheStatus: "partial",
       });
       expect(entries[0]?.metadata.source).toBe("agent_loop");
+      expect(entries[0]?.metadata.deepSeekRoutingRef).toBe(
+        "msl-lane-market-catalog-seller-global",
+      );
+      expect(entries[0]?.metadata).not.toHaveProperty("credentialRef");
     });
   });
 
@@ -1611,6 +1653,101 @@ describe("createDeepSeekClient — environment detection", () => {
     // The client object should have a chat.completions.create method.
     expect(client).toHaveProperty("chat");
     expect(client!.chat).toHaveProperty("completions");
+  });
+});
+
+describe("createAgentLoop — DeepSeek runtime routing", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("passes lane and seller user_id to OpenAI SDK chat completions", async () => {
+    const requestBodies: Array<Record<string, unknown>> = [];
+
+    await withOpenAiCompatibleServer(
+      async (request, response) => {
+        requestBodies.push(JSON.parse(await readRequestBody(request)) as Record<string, unknown>);
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({
+            id: "chatcmpl-test",
+            object: "chat.completion",
+            created: 0,
+            model: "deepseek-v4-flash",
+            choices: [{ index: 0, message: { role: "assistant", content: "Recibido." } }],
+          }),
+        );
+      },
+      async (baseURL) => {
+        process.env.DEEPSEEK_API_KEY = "sk-test-key-12345";
+        process.env.DEEPSEEK_BASE_URL = baseURL;
+
+        const agent = createAgentLoop({
+          systemPrompt,
+          laneId: "market-catalog",
+          sellerId: "Plasticov MLC",
+        });
+
+        await expect(agent.converse("Hola", makeState())).resolves.toMatchObject({
+          response: "Recibido.",
+        });
+      },
+    );
+
+    expect(requestBodies[0]).toMatchObject({
+      stream: false,
+      extra_body: { user_id: "msl-lane-market-catalog-seller-plasticov-mlc" },
+    });
+  });
+
+  it("passes lane and seller user_id to OpenAI SDK streaming completions", async () => {
+    const requestBodies: Array<Record<string, unknown>> = [];
+
+    await withOpenAiCompatibleServer(
+      async (request, response) => {
+        requestBodies.push(JSON.parse(await readRequestBody(request)) as Record<string, unknown>);
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+        });
+        response.write(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: "Re" } }] })}\n\n`,
+        );
+        response.write(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: "cibido" } }] })}\n\n`,
+        );
+        response.end("data: [DONE]\n\n");
+      },
+      async (baseURL) => {
+        process.env.DEEPSEEK_API_KEY = "sk-test-key-12345";
+        process.env.DEEPSEEK_BASE_URL = baseURL;
+
+        const agent = createAgentLoop({
+          systemPrompt,
+          laneId: "cost-supplier",
+          sellerId: "Maustian MLC",
+        });
+        const chunks: StreamingChunk[] = [];
+
+        for await (const chunk of agent.converseStream("Hola", makeState())) {
+          chunks.push(chunk);
+        }
+
+        expect(chunks.map((chunk) => chunk.delta).join("")).toBe("Recibido");
+      },
+    );
+
+    expect(requestBodies[0]).toMatchObject({
+      stream: true,
+      extra_body: { user_id: "msl-lane-cost-supplier-seller-maustian-mlc" },
+    });
   });
 });
 

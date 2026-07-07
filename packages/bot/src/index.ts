@@ -312,6 +312,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   const agentConfig: BotConfig["agentConfig"] = {
     systemPrompt,
     mockClient: !env.DEEPSEEK_API_KEY?.trim(),
+    sellerId,
   };
   // Compatibility env from PR #71: this selects internal CEO workforce context
   // for lessons/delegation. It is not a Telegram user-facing worker switch.

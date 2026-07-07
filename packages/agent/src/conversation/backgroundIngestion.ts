@@ -1,4 +1,9 @@
 import OpenAI from "openai";
+import {
+  buildDeepSeekChatCompletionRequest,
+  resolveDeepSeekRuntimeConfig,
+  resolveDeepSeekUserId,
+} from "@msl/domain";
 import type { GraphEngine, OperationalReadModelWriter } from "@msl/memory";
 import type {
   MlcApiClient,
@@ -1653,6 +1658,7 @@ export type DailyBusinessContext = {
 export async function generateDailyInsights(
   context: DailyBusinessContext,
   openai: OpenAI,
+  userId = resolveDeepSeekUserId({ laneId: "ceo", agentId: "background-ingestion" }),
 ): Promise<string> {
   const prompt = `Sos un analista de negocio experto en MercadoLibre. Analizá estos datos del negocio
 Plasticov/Maustian y generá 3-5 insights accionables en español. Cada insight debe:
@@ -1678,11 +1684,14 @@ Respondé en este formato exacto, máximo 5 insights:
 🎯 [Insight 5 - oportunidad con acción concreta]`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "deepseek-chat",
+    const request = buildDeepSeekChatCompletionRequest({
+      model: resolveDeepSeekRuntimeConfig().model,
       messages: [{ role: "user", content: prompt }],
       stream: false,
+      ...(userId ? { userId } : {}),
     });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+    const completion = await openai.chat.completions.create(request as any);
 
     return completion.choices[0]?.message?.content?.trim() ?? "";
   } catch (err) {
@@ -1692,6 +1701,14 @@ Respondé en este formato exacto, máximo 5 insights:
     );
     return "";
   }
+}
+
+export function resolveDailyInsightsDeepSeekUserId(sellerIds: ReadonlyArray<string>): string {
+  return resolveDeepSeekUserId({
+    laneId: "market-catalog",
+    sellerId: sellerIds.join("-"),
+    agentId: "background-ingestion",
+  });
 }
 
 /**
@@ -2287,10 +2304,14 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
   const sellerNames = config.sellerNames ?? {};
 
   // ── DeepSeek client (optional) ──────────────────────────────
-  const openai = config.deepseekApiKey
+  const deepSeekRuntime = resolveDeepSeekRuntimeConfig({
+    ...process.env,
+    DEEPSEEK_API_KEY: config.deepseekApiKey,
+  });
+  const openai = deepSeekRuntime.apiKey
     ? new OpenAI({
-        baseURL: "https://api.deepseek.com",
-        apiKey: config.deepseekApiKey,
+        baseURL: deepSeekRuntime.baseURL,
+        apiKey: deepSeekRuntime.apiKey,
       })
     : undefined;
 
@@ -2437,7 +2458,8 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
     if (openai) {
       try {
         const dailyContext = buildDailyContext(config.engine, sellerNames, alerts);
-        const insights = await generateDailyInsights(dailyContext, openai);
+        const insightsUserId = resolveDailyInsightsDeepSeekUserId(config.sellerIds);
+        const insights = await generateDailyInsights(dailyContext, openai, insightsUserId);
 
         if (insights) {
           const chatIds = await config.listActiveChats();

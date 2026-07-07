@@ -5,6 +5,7 @@ import {
   processSellerListings,
   processSellerPricing,
   processSellerProductAds,
+  resolveDailyInsightsDeepSeekUserId,
   selectRotatedPricingListings,
   paginateAll,
   KIND_FRESHNESS_TTL,
@@ -77,6 +78,14 @@ function mockMlcApiClient(listings: MlcListingSummary[]): MlcApiClient {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────
+
+describe("DeepSeek daily insights routing", () => {
+  it("uses the market-catalog lane and available sellers for background insight user_id", () => {
+    expect(resolveDailyInsightsDeepSeekUserId(["plasticov", "maustian"])).toBe(
+      "msl-lane-market-catalog-seller-plasticov-maustian-agent-background-ingestion",
+    );
+  });
+});
 
 describe("processSellerListings dual-write", () => {
   let db: Database.Database;
