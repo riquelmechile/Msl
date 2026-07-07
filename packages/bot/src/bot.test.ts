@@ -193,11 +193,132 @@ describe("createTelegramBot (grammY)", () => {
     expect(message).toMatch(/dale/i);
     expect(message).toMatch(/investigación|preparación/i);
     expect(message).toMatch(/no publico|no modifico Mercado Libre|no cobro/i);
+    expect(message).toMatch(/lenguaje natural|no necesitás comandos|escribime lo que necesitás/i);
+  });
+
+  it("encourages natural conversation from /start instead of command-driven usage", async () => {
+    createTelegramBot(config);
+    const handler = mocks.mockCommand.mock.calls.find(([command]) => command === "start")?.[1] as
+      | ((ctx: {
+          from?: { first_name?: string };
+          reply: (message: string, options?: unknown) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await handler!({ from: { first_name: "Sebastián" }, reply });
+
+    const message = reply.mock.calls[0]?.[0] as string;
+    expect(message).toMatch(/lenguaje natural/i);
+    expect(message).toMatch(/\/help queda como atajo/i);
   });
 
   it("registers text message handler", () => {
     createTelegramBot(config);
     expect(mocks.mockOn).toHaveBeenCalledWith("message:text", expect.any(Function));
+  });
+
+  it("splits long agent responses into Telegram-safe chunks in order", async () => {
+    const longResponse = "a".repeat(4100);
+    mocks.mockConverse.mockResolvedValueOnce({
+      response: longResponse,
+      updatedState: {
+        messages: [{ role: "assistant", content: longResponse, timestamp: new Date() }],
+        contextWindowLimit: 20,
+        sessionMetadata: {
+          sellerId: "seller-test",
+          startedAt: new Date(),
+          lastActivityAt: new Date(),
+        },
+      },
+    });
+    createTelegramBot(config);
+    const handler = mocks.mockOn.mock.calls.find(([event]) => event === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await handler!({
+      message: { text: "analizá todo" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply,
+    });
+
+    const chunks = reply.mock.calls.map(([message]) => message as string);
+    expect(chunks).toHaveLength(2);
+    expect(chunks.every((chunk) => chunk.length <= 3900)).toBe(true);
+    expect(chunks.join("")).toBe(longResponse);
+  });
+
+  it("replies with a friendly fallback when agent conversation handling fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.mockConverse.mockRejectedValueOnce(new Error("DeepSeek timeout"));
+    createTelegramBot(config);
+    const handler = mocks.mockOn.mock.calls.find(([event]) => event === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await handler!({
+      message: { text: "¿qué pasó con ventas?" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith(expect.stringMatching(/perdón|problema|momento/i));
+    spy.mockRestore();
+  });
+
+  it("replies with a friendly fallback when the agent returns an empty response", async () => {
+    mocks.mockConverse.mockResolvedValueOnce({
+      response: "   ",
+      updatedState: {
+        messages: [],
+        contextWindowLimit: 20,
+        sessionMetadata: {
+          sellerId: "seller-test",
+          startedAt: new Date(),
+          lastActivityAt: new Date(),
+        },
+      },
+    });
+    createTelegramBot(config);
+    const handler = mocks.mockOn.mock.calls.find(([event]) => event === "message:text")?.[1] as
+      | ((ctx: {
+          message: { text: string };
+          chat: { id: number };
+          from: { id: number };
+          replyWithChatAction: (action: string) => Promise<void>;
+          reply: (message: string) => Promise<void>;
+        }) => Promise<void>)
+      | undefined;
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await handler!({
+      message: { text: "seguimos" },
+      chat: { id: 123 },
+      from: { id: 456 },
+      replyWithChatAction: vi.fn().mockResolvedValue(undefined),
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith(expect.stringMatching(/perdón|problema|momento/i));
   });
 
   it("registers commands in Telegram UI", () => {
@@ -226,6 +347,8 @@ describe("createTelegramBot (grammY)", () => {
     expect(registeredCommands).toEqual(["start", "help"]);
     expect(uiCommands).toEqual(["start", "help"]);
     expect([...registeredCommands, ...uiCommands]).not.toContain("agent");
+    expect([...registeredCommands, ...uiCommands]).not.toContain("seller");
+    expect([...registeredCommands, ...uiCommands]).not.toContain("settings");
   });
 
   it("start calls bot.start", async () => {

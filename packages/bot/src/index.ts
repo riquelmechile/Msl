@@ -110,6 +110,46 @@ export type TelegramBotEnv = Partial<
 
 const DEFAULT_SYSTEM_PROMPT = "Eres un asistente para vendedores de Mercado Libre.";
 const DEFAULT_CONTEXT_WINDOW_LIMIT = 20;
+const TELEGRAM_SAFE_TEXT_CHUNK_LENGTH = 3900;
+const CONVERSATION_FALLBACK_RESPONSE =
+  "Perdón, tuve un problema procesando eso. Escribime de nuevo en un momento y lo reviso.";
+
+type TelegramReplyContext = {
+  reply(message: string): Promise<unknown>;
+};
+
+function splitTelegramText(text: string, maxLength = TELEGRAM_SAFE_TEXT_CHUNK_LENGTH): string[] {
+  const normalizedText = text.trim();
+  if (normalizedText.length === 0) return [CONVERSATION_FALLBACK_RESPONSE];
+  if (normalizedText.length <= maxLength) return [normalizedText];
+
+  const chunks: string[] = [];
+  let remaining = normalizedText;
+
+  while (remaining.length > maxLength) {
+    const slice = remaining.slice(0, maxLength);
+    const paragraphBreak = slice.lastIndexOf("\n\n");
+    const lineBreak = slice.lastIndexOf("\n");
+    const wordBreak = slice.lastIndexOf(" ");
+    const minimumUsefulBreak = Math.floor(maxLength * 0.6);
+    const splitAt = [paragraphBreak, lineBreak, wordBreak].find(
+      (candidate) => candidate >= minimumUsefulBreak,
+    );
+    const chunkEnd = splitAt && splitAt > 0 ? splitAt : maxLength;
+
+    chunks.push(remaining.slice(0, chunkEnd).trimEnd());
+    remaining = remaining.slice(chunkEnd).trimStart();
+  }
+
+  if (remaining.length > 0) chunks.push(remaining);
+  return chunks;
+}
+
+async function replyWithTelegramSafeText(ctx: TelegramReplyContext, text: string): Promise<void> {
+  for (const chunk of splitTelegramText(text)) {
+    await ctx.reply(chunk);
+  }
+}
 
 function createInitialState(
   sellerId: string,
@@ -400,7 +440,7 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
     await ctx.reply(
       `¡Hola ${name}! Soy el asistente de MSL para Mercado Libre Chile 🇨🇱.\n\n` +
         `Puedo ayudarte con estrategias, precios, stock, análisis de catálogo y más.\n` +
-        `Escribime lo que necesites o usá /help para ver qué puedo hacer.`,
+        `Escribime en lenguaje natural lo que necesitás. /help queda como atajo por si querés una guía rápida.`,
     );
   });
 
@@ -413,10 +453,10 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
         `• Competidores y tendencias\n` +
         `• Historial de ventas\n\n` +
         `Cuando digas "dale", en esta fase solo apruebo investigación o preparación acotada: no publico, no modifico Mercado Libre, no cobro pagos y no mando mensajes a clientes.\n\n` +
-        `Simplemente escribime lo que necesitás, por ejemplo:\n` +
+        `No necesitás comandos para trabajar conmigo: escribime lo que necesitás, por ejemplo:\n` +
         `_"¿qué margen tengo en zapatillas?"_\n` +
         `_"analizá mi stock actual"_\n\n` +
-        `Usá /start para volver al inicio.`,
+        `/start y /help son solo atajos globales de Telegram.`,
       { parse_mode: "Markdown" },
     );
   });
@@ -451,15 +491,20 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
     // Typing indicator
     await ctx.replyWithChatAction("typing");
 
-    const loadedState = config.sessionStore?.load(sessionId);
-    const state =
-      loadedState && stateBelongsToSeller(loadedState, sellerId)
-        ? loadedState
-        : createInitialState(sellerId, config.contextWindowLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT);
-    const result = await requestAgent.converse(text, state);
-    config.sessionStore?.save(sessionId, result.updatedState);
+    try {
+      const loadedState = config.sessionStore?.load(sessionId);
+      const state =
+        loadedState && stateBelongsToSeller(loadedState, sellerId)
+          ? loadedState
+          : createInitialState(sellerId, config.contextWindowLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT);
+      const result = await requestAgent.converse(text, state);
+      config.sessionStore?.save(sessionId, result.updatedState);
 
-    await ctx.reply(result.response);
+      await replyWithTelegramSafeText(ctx, result.response);
+    } catch (error) {
+      console.error("Telegram conversation handling failed:", error);
+      await ctx.reply(CONVERSATION_FALLBACK_RESPONSE);
+    }
   });
 
   // ── Error handler ───────────────────────────────────────
