@@ -10,11 +10,14 @@ Four investigation-only daemon workers that read operational evidence, detect ac
 
 Every daemon MUST export `investigate(claim: AgentMessage): Promise<DaemonResult>`. `DaemonResult` MUST have `{ findings: DaemonFinding[]; proposalEnqueued: boolean }`. Each finding MUST include `{ kind: string; severity: "info"|"warning"|"critical"; summary: string; evidenceIds: string[] }`.
 
+Daemons SHOULD use `searchSnapshots()` instead of `listSnapshots()` + manual filtering for status, price, and date conditions. Using `searchSnapshots()` SHALL produce identical findings: same detections, same severity levels, same `evidenceIds` references.
+
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
 | Findings returned | Daemon detects signals | investigate() completes | DaemonResult with findings array |
 | No findings | No signals detected | investigate() completes | Empty findings, proposalEnqueued: false |
 | Error during investigation | Evidence read fails | investigate() throws | Error propagated to scheduler for message fail |
+| Migration preserves identical findings | Daemon refactored to use searchSnapshots() | investigate() completes | Same findings, same severities, same evidenceIds as before |
 
 ### Requirement: No Mutation Boundary
 
@@ -27,7 +30,7 @@ ALL daemons MUST set `noMutationExecuted: true`. Daemon functions SHALL NOT call
 
 ### Requirement: marketCatalogDaemon
 
-`marketCatalogDaemon` MUST read listing snapshots and pricing evidence. It SHALL detect at minimum: active listings with visit counts below a configurable threshold, listings priced above similar-category competition, and paused listings with sales history eligible for relist. It SHALL absorb the detection logic currently in `runQualityChecks()` and `runRelistChecks()`.
+`marketCatalogDaemon` MUST read listing snapshots and pricing evidence using `searchSnapshots()` with composable status and price filters instead of client-side iteration. It SHALL detect at minimum: active listings with visit counts below a configurable threshold, listings priced above similar-category competition, and paused listings with sales history eligible for relist.
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
@@ -37,7 +40,7 @@ ALL daemons MUST set `noMutationExecuted: true`. Daemon functions SHALL NOT call
 
 ### Requirement: operationsManagerDaemon
 
-`operationsManagerDaemon` MUST read claims, questions, messages, and order snapshots. It SHALL detect: new open claims without response, unanswered buyer questions older than a deadline, and orders in "delayed" shipping status beyond SLA.
+`operationsManagerDaemon` MUST read claims, questions, messages, and order snapshots using `searchSnapshots()` with status and date-range filters. It SHALL detect: new open claims without response, unanswered buyer questions older than a deadline, and orders in "delayed" shipping status beyond SLA.
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
@@ -47,7 +50,7 @@ ALL daemons MUST set `noMutationExecuted: true`. Daemon functions SHALL NOT call
 
 ### Requirement: costSupplierDaemon
 
-`costSupplierDaemon` MUST read listing snapshots, supplier evidence, and cost data. It SHALL detect: products where current price yields margin below target threshold, and items where stock is below restock watermark with positive visit trends.
+`costSupplierDaemon` MUST read listing snapshots, supplier evidence, and cost data using `searchSnapshots()` with status and price-range filters. It SHALL detect: products where current price yields margin below target threshold, and items where stock is below restock watermark with positive visit trends.
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
@@ -56,7 +59,7 @@ ALL daemons MUST set `noMutationExecuted: true`. Daemon functions SHALL NOT call
 
 ### Requirement: creativeCommercialDaemon
 
-`creativeCommercialDaemon` MUST read visit snapshots, order snapshots, and listing evidence. It SHALL detect: listings with high visits and low conversion (orders/visits ratio below threshold), and active listings stagnant without sales over a configurable window.
+`creativeCommercialDaemon` MUST read visit snapshots, order snapshots, and listing evidence using `searchSnapshots()` with date-range filters. It SHALL detect: listings with high visits and low conversion (orders/visits ratio below threshold), and active listings stagnant without sales over a configurable window.
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
