@@ -88,7 +88,8 @@ import type { MetricsCollector } from "./observability.js";
 import type { CacheTelemetry, LaneId, LaneOutput } from "./lanes.js";
 import type { OperationalReadModelReader } from "@msl/memory";
 import type { OperationalEvidenceProvider } from "./operationalEvidenceProvider.js";
-import { injectCortexContext } from "./cacheBlocks.js";
+import { buildDailyAggregates, injectCortexContext } from "./cacheBlocks.js";
+import { OperationalDailyDataSource } from "./operationalDataSource.js";
 import type { CompanyAgentId, CompanyAgentRegistry } from "./companyAgents.js";
 import type {
   AgentLearningRecord,
@@ -1086,6 +1087,30 @@ Las siguientes son estrategias definidas por el dueño. DEBÉS seguirlas en cada
 ${strategyLines.join("\n")}`;
   }
 
+  // ── Block B: daily aggregates with 24h TTL ──────────────────────
+  // Cached to avoid re-reading the operational DB every turn.
+  // Same data → same tokens → DeepSeek prefix cache hit.
+  let _blockB: string | null = null;
+  let _blockBFetchedAt = 0;
+  const DAILY_TTL_MS = 24 * 60 * 60 * 1000;
+
+  async function refreshBlockB(): Promise<string> {
+    const now = Date.now();
+    if (_blockB !== null && now - _blockBFetchedAt < DAILY_TTL_MS) return _blockB;
+    try {
+      if (config.operationalReader && config.sellerId) {
+        const ds = await OperationalDailyDataSource.create(config.operationalReader, config.sellerId);
+        _blockB = buildDailyAggregates(ds);
+      } else {
+        _blockB = buildDailyAggregates();
+      }
+    } catch {
+      _blockB = buildDailyAggregates();
+    }
+    _blockBFetchedAt = now;
+    return _blockB;
+  }
+
   return {
     /**
      * Process a single user message through the agent conversation loop
@@ -1137,9 +1162,11 @@ ${strategyLines.join("\n")}`;
       }
 
       // --- Build messages array with autonomy + strategy-aware system prompt ---
-      const systemPrompt = degradationMsg
+      const blockB = await refreshBlockB();
+      const sysPrompt = degradationMsg
         ? `${getSystemPrompt()}\n\n${degradationMsg}`
         : getSystemPrompt();
+      const systemPrompt = `${sysPrompt}\n\n${blockB}`;
 
       // --- Build Block C: Cortex context + per-lane operational evidence ---
       const blockC = await buildBlockCContext(config, state, userMessage);
@@ -1392,9 +1419,11 @@ ${strategyLines.join("\n")}`;
       }
 
       // --- Build messages array with autonomy + strategy-aware system prompt ---
-      const systemPrompt = degradationMsg
+      const blockB = await refreshBlockB();
+      const sysPrompt = degradationMsg
         ? `${getSystemPrompt()}\n\n${degradationMsg}`
         : getSystemPrompt();
+      const systemPrompt = `${sysPrompt}\n\n${blockB}`;
 
       // --- Build Block C: Cortex context + per-lane operational evidence ---
       const blockC = await buildBlockCContext(config, state, userMessage);
