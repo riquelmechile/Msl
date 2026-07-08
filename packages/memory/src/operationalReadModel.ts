@@ -179,6 +179,42 @@ export function migrateOperationalStore(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_snapshots_seller_item
       ON operational_snapshots(seller_id, item_id);
   `);
+
+  // Version 2: generated columns for frequently filtered JSON fields.
+  // Avoids full table scans from json_extract() in WHERE clauses.
+  // SQLite 3.31+ (Node 22+ bundles SQLite 3.43+) supports VIRTUAL generated columns.
+  addGeneratedColumnsIfMissing(db);
+}
+
+/**
+ * Adds generated columns for frequently filtered JSON fields.
+ * Runs after the base migration so the table is guaranteed to exist.
+ * Uses a try/catch approach since ALTER TABLE ADD COLUMN generates
+ * a SQLITE_ERROR when the column already exists (prior migration).
+ */
+function addGeneratedColumnsIfMissing(db: Database.Database): void {
+  const columns: Array<{ name: string; type: string; expr: string }> = [
+    { name: "data_status", type: "TEXT", expr: "json_extract(data_json, '$.status')" },
+    { name: "data_category_id", type: "TEXT", expr: "json_extract(data_json, '$.category_id')" },
+    { name: "data_price", type: "REAL", expr: "json_extract(data_json, '$.price')" },
+  ];
+
+  for (const col of columns) {
+    try {
+      db.exec(
+        `ALTER TABLE operational_snapshots ADD COLUMN ${col.name} ${col.type} GENERATED ALWAYS AS (${col.expr}) VIRTUAL`,
+      );
+    } catch {
+      // Column already exists from a prior migration — ignore.
+    }
+  }
+
+  // Create indexes on the generated columns (IF NOT EXISTS makes these idempotent).
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_snapshots_data_status ON operational_snapshots(data_status);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_data_category ON operational_snapshots(data_category_id);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_data_price ON operational_snapshots(data_price);
+  `);
 }
 
 // ── Factory ───────────────────────────────────────────────────────────
@@ -275,27 +311,27 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
       params.push(filter.capturedBefore);
     }
 
-    // status — json_extract on data_json
+    // status — generated column (data_status) avoids json_extract full table scan
     if (filter.status !== undefined) {
-      conditions.push("json_extract(data_json, '$.status') = ?");
+      conditions.push("data_status = ?");
       params.push(filter.status);
     }
 
-    // categoryId — json_extract on data_json
+    // categoryId — generated column (data_category_id)
     if (filter.categoryId !== undefined) {
-      conditions.push("json_extract(data_json, '$.category_id') = ?");
+      conditions.push("data_category_id = ?");
       params.push(filter.categoryId);
     }
 
-    // priceMin — json_extract numeric comparison
+    // priceMin — generated column (data_price) numeric comparison
     if (filter.priceMin !== undefined) {
-      conditions.push("json_extract(data_json, '$.price') >= ?");
+      conditions.push("data_price >= ?");
       params.push(filter.priceMin);
     }
 
-    // priceMax — json_extract numeric comparison
+    // priceMax — generated column (data_price) numeric comparison
     if (filter.priceMax !== undefined) {
-      conditions.push("json_extract(data_json, '$.price') <= ?");
+      conditions.push("data_price <= ?");
       params.push(filter.priceMax);
     }
 

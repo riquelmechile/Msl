@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { getDeepSeekClient } from "./deepseekClient.js";
 import {
   buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
@@ -1894,7 +1895,7 @@ Respondé en este formato exacto, máximo 5 insights:
       model: resolveDeepSeekRuntimeConfig().model,
       messages: [{ role: "user", content: prompt }],
       stream: false,
-      ...(userId ? { userId } : {}),
+      ...(userId ? { userId, user: userId } : {}),
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
     const completion = await openai.chat.completions.create(request as any);
@@ -2543,10 +2544,7 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
     DEEPSEEK_API_KEY: config.deepseekApiKey,
   });
   const openai = deepSeekRuntime.apiKey
-    ? new OpenAI({
-        baseURL: deepSeekRuntime.baseURL,
-        apiKey: deepSeekRuntime.apiKey,
-      })
+    ? getDeepSeekClient(deepSeekRuntime.apiKey, deepSeekRuntime.baseURL)
     : undefined;
 
   const run = async () => {

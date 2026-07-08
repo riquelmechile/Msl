@@ -44,6 +44,7 @@ export {
   resolveTurnOutcome,
 } from "./conversation/agentLoop.js";
 export { buildSystemPrompt } from "./conversation/systemPrompt.js";
+export { getDeepSeekClient, resetDeepSeekClient } from "./conversation/deepseekClient.js";
 
 // ── Observability (metrics + structured logging) ──────────────────
 export {

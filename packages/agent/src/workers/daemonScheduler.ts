@@ -58,6 +58,32 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "unanswered-questions": unansweredQuestionsWatcher,
 };
 
+// ── Cycle-level cache ───────────────────────────────────────────────
+
+/**
+ * Creates a reader wrapper that caches searchSnapshots results for the
+ * duration of one daemon cycle. Each call with the same filter key returns
+ * the cached result, avoiding redundant data reads across daemon handlers.
+ */
+function createCachingReader(reader: OperationalReadModelReader): OperationalReadModelReader {
+  const cache = new Map<string, unknown>();
+
+  return {
+    ...reader,
+    searchSnapshots: async <T>(
+      filter: Parameters<OperationalReadModelReader["searchSnapshots"]>[0],
+    ) => {
+      const key = JSON.stringify(filter);
+      if (cache.has(key)) return cache.get(key) as Awaited<
+        ReturnType<OperationalReadModelReader["searchSnapshots"]>
+      >;
+      const result = await reader.searchSnapshots<T>(filter);
+      cache.set(key, result);
+      return result;
+    },
+  };
+}
+
 // ── Scheduler ───────────────────────────────────────────────────────
 
 /**
@@ -80,6 +106,9 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
                 agent.status === "active"
     );
 
+    // ── Wrap reader with per-cycle cache to avoid redundant data reads ──
+    const cachedReader = createCachingReader(config.reader);
+
     // ── Run all active daemons in parallel with error isolation ──
     await Promise.all(
       activeAgents.map(async (agent) => {
@@ -93,7 +122,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
           try {
             const result = await handler({
               claim,
-              reader: config.reader,
+              reader: cachedReader,
               cortex: config.cortex,
               bus: config.bus,
               sellerIds: config.sellerIds,

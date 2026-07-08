@@ -180,7 +180,7 @@ describe("assembleMessages", () => {
 
     expect(messages).toHaveLength(2);
     const userMsg = messages[1]!;
-    expect(userMsg.content).toBe("Consulta");
+    expect(userMsg.content).toContain("Consulta");
     expect(userMsg.content).not.toContain("Contexto de memoria");
   });
 
@@ -196,9 +196,9 @@ describe("assembleMessages", () => {
 
     // Expected: system (blockA+B), user "Hola", assistant "Respuesta", user "Siguiente"
     expect(messages).toHaveLength(4);
-    expect(messages[1]!.content).toBe("Hola");
+    expect(messages[1]!.content).toContain("Hola");
     expect(messages[2]!.content).toBe("Respuesta");
-    expect(messages[3]!.content).toBe("Siguiente");
+    expect(messages[3]!.content).toContain("Siguiente");
   });
 
   it("handles empty history array", () => {

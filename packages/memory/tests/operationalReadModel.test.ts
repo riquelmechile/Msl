@@ -487,23 +487,29 @@ describe("createSqliteOperationalReadModel", () => {
     expect(evidence!.entityId).toBe("MLC222");
   });
 
-  it("readSnapshot returns null for malformed JSON in data_json", async () => {
-    // Bypass the store API to inject bad data
+  it("generated columns reject malformed JSON in data_json", async () => {
+    // With generated columns that depend on valid JSON, neither INSERT
+    // nor UPDATE can store malformed JSON in data_json.
     const db2 = new Database(":memory:");
     const store2 = createSqliteOperationalReadModel(db2);
 
-    // Write a snapshot normally, then corrupt data_json directly
+    // Write a snapshot normally.
     await store2.upsertSnapshot(makeListingSnapshot({ itemId: "MLC999" }));
-    db2
-      .prepare("UPDATE operational_snapshots SET data_json = ? WHERE item_id = ?")
-      .run("{not valid", "MLC999");
 
+    // Attempting to corrupt data_json with invalid JSON should throw.
+    expect(() => {
+      db2
+        .prepare("UPDATE operational_snapshots SET data_json = ? WHERE item_id = ?")
+        .run("{not valid", "MLC999");
+    }).toThrow();
+
+    // The original row is unaffected.
     const result = await store2.readSnapshot({
       sellerId: "plasticov",
       snapshotKind: "listing",
       entityId: "MLC999",
     });
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
 
     db2.close();
   });
@@ -812,27 +818,32 @@ describe("searchSnapshots", () => {
     expect(results[0]!.data.title).toBe("Widget");
   });
 
-  it("skips malformed JSON rows instead of throwing", async () => {
-    // Insert a valid row + a corrupt row
+  it("rejects malformed JSON at insert time due to generated columns", async () => {
     seedSnapshot(db, { itemId: "GOOD", dataJson: { status: "active" } });
-    db.prepare(
-      `INSERT INTO operational_snapshots
-         (seller_id, item_id, kind, data_json, source, captured_at,
-          freshness, completeness, confidence, evidence_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      "plasticov",
-      "BAD",
-      "listing",
-      "{not-valid-json",
-      "mercadolibre-api",
-      "2026-07-01T12:00:00Z",
-      "fresh",
-      "complete",
-      "high",
-      "ev-bad",
-    );
 
+    // With generated columns (data_status, etc.) that depend on valid JSON,
+    // inserting malformed JSON now fails at INSERT time instead of at query time.
+    expect(() => {
+      db.prepare(
+        `INSERT INTO operational_snapshots
+           (seller_id, item_id, kind, data_json, source, captured_at,
+            freshness, completeness, confidence, evidence_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        "plasticov",
+        "BAD",
+        "listing",
+        "{not-valid-json",
+        "mercadolibre-api",
+        "2026-07-01T12:00:00Z",
+        "fresh",
+        "complete",
+        "high",
+        "ev-bad",
+      );
+    }).toThrow();
+
+    // The valid row is still queryable.
     const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
     expect(results).toHaveLength(1);
     expect(results[0]!.itemId).toBe("GOOD");

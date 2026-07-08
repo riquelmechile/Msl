@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import OpenAI from "openai";
+import { getDeepSeekClient } from "../conversation/deepseekClient.js";
 import {
   buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
@@ -81,10 +82,7 @@ export function createCeoDeepSeekClient(
   const resolved = runtime ?? resolveDeepSeekRuntimeConfig();
   if (!resolved.apiKey) return null;
 
-  const openai = new OpenAI({
-    apiKey: resolved.apiKey,
-    baseURL: resolved.baseURL,
-  });
+  const openai = getDeepSeekClient(resolved.apiKey, resolved.baseURL);
 
   return new CeoDeepSeekClientImpl(openai, resolved.model);
 }
@@ -143,7 +141,7 @@ ${JSON.stringify(findings, null, 2)}`;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       response_format: { type: "json_object" as any },
       stream: false as const,
-      ...(userId ? { userId } : {}),
+      ...(userId ? { userId, user: userId } : {}),
     });
 
     const controller = new AbortController();

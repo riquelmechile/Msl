@@ -2219,8 +2219,8 @@ describe("buildMessages — blockC injection", () => {
 
     const userMsg = messages[messages.length - 1]!;
     expect(userMsg.role).toBe("user");
-    expect(userMsg.content).toBe(userMessage);
-    // No extra injected text.
+    expect(userMsg.content).toContain(userMessage);
+    // Date label injected, but no blockC text.
     expect(userMsg.content).not.toContain("Contexto Cortex");
   });
 
@@ -2230,7 +2230,7 @@ describe("buildMessages — blockC injection", () => {
     const messages = buildMessages(systemPrompt, state, userMessage, "");
 
     const userMsg = messages[messages.length - 1]!;
-    expect(userMsg.content).toBe(userMessage);
+    expect(userMsg.content).toContain(userMessage);
   });
 
   it("includes conversation history before the latest user message", () => {

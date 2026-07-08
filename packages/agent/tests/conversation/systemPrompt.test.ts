@@ -30,8 +30,9 @@ describe("buildSystemPrompt", () => {
   const sellerName = "Juan";
   const prompt = buildSystemPrompt(sellerName);
 
-  it("includes the seller name passed as argument", () => {
-    expect(prompt).toContain(sellerName);
+  it("uses a non-identifying seller reference for prefix cache stability", () => {
+    expect(prompt).toContain("el vendedor");
+    expect(prompt).not.toContain(sellerName);
   });
 
   it("contains Plasticov/Maustian business identity", () => {

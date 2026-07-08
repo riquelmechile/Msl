@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { getDeepSeekClient as getSharedDeepSeekClient } from "./deepseekClient.js";
 import {
   buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
@@ -1005,7 +1006,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
   const client: LlmClient =
     config.llmClient ??
     (openai && !config.mockClient
-      ? createRealClient(openai, model, toolMap, deepSeekUserId)
+      ? createRealClient(openai, model, toolMap, deepSeekUserId, config.sellerId)
       : config.mockClient
         ? createMockClient(toolMap)
         : createNoopClient());
@@ -1232,59 +1233,68 @@ ${strategyLines.join("\n")}`;
       let llmResponse = await client.chat(llmMessages);
       recordLlmUsage(llmResponse);
 
-      // --- Tool call loop: execute non-prepare_action tools ---
+      // --- Tool call loop: execute non-prepare_action tools in parallel batches ---
       while (
         llmResponse.toolCalls &&
         llmResponse.toolCalls.some((tc) => tc.name !== "prepare_action")
       ) {
-        for (const tc of llmResponse.toolCalls) {
-          if (tc.name === "prepare_action") continue;
-          const tool = toolMap.get(tc.name);
-          if (tool) {
+        // Execute ALL tool calls in parallel, then make ONE follow-up LLM call
+        const toolResults = await Promise.all(
+          llmResponse.toolCalls.map(async (tc) => {
+            if (tc.name === "prepare_action") return null;
+
+            const tool = toolMap.get(tc.name);
+            if (!tool) return null;
+
+            // ── Sync safety gate: require active CEO strategies ──
+            if (
+              (tc.name === "sync_product" || tc.name === "sync_all") &&
+              getActiveStrategies().length === 0
+            ) {
+              return {
+                content: JSON.stringify({
+                  error:
+                    "No hay estrategias de CEO activas. " +
+                    "Definí al menos una estrategia (margen, filtro de categoría, stock o regla de precio) " +
+                    "antes de sincronizar productos. Ej: 'cambiá margen mínimo a 50%'.",
+                }),
+              };
+            }
+
+            if (tc.name === "sync_product" || tc.name === "sync_all") {
+              metrics?.record("sync.product", 1, { tool: tc.name });
+            }
+            metrics?.record("tool.call", 1, { name: tc.name });
+
             try {
-              // ── Sync safety gate: require active CEO strategies ──
-              if (
-                (tc.name === "sync_product" || tc.name === "sync_all") &&
-                getActiveStrategies().length === 0
-              ) {
-                llmMessages.push({
-                  role: "tool",
-                  content: JSON.stringify({
-                    error:
-                      "No hay estrategias de CEO activas. " +
-                      "Definí al menos una estrategia (margen, filtro de categoría, stock o regla de precio) " +
-                      "antes de sincronizar productos. Ej: 'cambiá margen mínimo a 50%'.",
-                  }),
-                });
-                continue;
-              }
-
-              if (tc.name === "sync_product" || tc.name === "sync_all") {
-                metrics?.record("sync.product", 1, { tool: tc.name });
-              }
-              metrics?.record("tool.call", 1, { name: tc.name });
-
               const result = await tool.execute(tc.arguments);
               recordReturnedToolIssue(metrics, tc.name, result);
-              llmMessages.push({
-                role: "tool",
-                content: JSON.stringify(result),
-              });
               // Escribano: persist ML business data into Cortex graph memory
               if (config.escribano) {
                 void config.escribano.observeToolResult(tc.name, result);
               }
+              return { content: JSON.stringify(result) };
             } catch {
               metrics?.record("tool.call", 1, { name: tc.name, status: "error" });
-              llmMessages.push({
-                role: "tool",
+              return {
                 content: JSON.stringify({
                   error: `Tool execution failed for ${tc.name}`,
                 }),
-              });
+              };
             }
-          }
+          }),
+        );
+
+        // Append ALL results once
+        for (const result of toolResults) {
+          if (!result) continue;
+          llmMessages.push({
+            role: "tool",
+            content: result.content,
+          });
         }
+
+        // ONE follow-up call instead of N
         llmResponse = await client.chat(llmMessages);
         recordLlmUsage(llmResponse);
       }
@@ -1758,7 +1768,7 @@ export function createDeepSeekClient(
   runtime: DeepSeekRuntimeConfig = resolveDeepSeekRuntimeConfig(),
 ): OpenAI | null {
   if (!runtime.apiKey) return null;
-  return new OpenAI({ apiKey: runtime.apiKey, baseURL: runtime.baseURL });
+  return getSharedDeepSeekClient(runtime.apiKey, runtime.baseURL);
 }
 
 /**
@@ -1772,6 +1782,7 @@ function createRealClient(
   model: string,
   toolMap: Map<string, ToolDefinition>,
   userId?: string,
+  sellerId?: string,
 ): LlmClient {
   const openAiTools = createOpenAiToolDefinitions(toolMap.values());
 
@@ -1783,6 +1794,7 @@ function createRealClient(
         ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: false,
         ...(userId ? { userId } : {}),
+        ...(sellerId ? { user: sellerId } : {}),
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
       const completion = await openai.chat.completions.create(request as any);
@@ -1823,6 +1835,7 @@ function createRealClient(
         ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: true,
         ...(userId ? { userId } : {}),
+        ...(sellerId ? { user: sellerId } : {}),
       });
       const stream = (await openai.chat.completions.create(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
@@ -2345,8 +2358,11 @@ export function buildMessages(
     }
   }
 
-  // Current user message with optional Block C injected.
-  const userContent = blockC ? `${userMessage}\n\n${blockC}` : userMessage;
+  // Current user message with date label + optional Block C injected.
+  const dateLabel = `\n[Fecha: ${new Date().toLocaleDateString("es-CL", { year: "numeric", month: "long", day: "numeric" })}]`;
+  const userContent = blockC 
+    ? `${userMessage}${dateLabel}\n\n${blockC}` 
+    : `${userMessage}${dateLabel}`;
   const userMsg = { role: "user" as const, content: userContent };
 
   const allMessages = [...systemMsg, ...historyMsgs, userMsg];

@@ -99,7 +99,6 @@ export function buildDailyAggregates(
   let result = `## Contexto diario — Plasticov / Maustian (24h, refrescado automáticamente)
 
 ### Métricas del día
-- Fecha: ${todaySpanish()}
 - Plasticov y Maustian operan como canales comerciales paralelos, no como fábrica/tienda.
 - La estrategia de precio, título, tipo de publicación y exposición puede diferir por cuenta.
 - Ventas del día: $340.500 CLP (12 órdenes)
@@ -261,8 +260,11 @@ export function assembleMessages(
     }
   }
 
-  // Latest user message with Block C injected.
-  const userContent = blockC ? `${userMessage}\n\n${blockC}` : userMessage;
+  // Latest user message with date label + optional Block C injected.
+  const dateLabel = `\n[Fecha: ${new Date().toLocaleDateString("es-CL", { year: "numeric", month: "long", day: "numeric" })}]`;
+  const userContent = blockC 
+    ? `${userMessage}${dateLabel}\n\n${blockC}` 
+    : `${userMessage}${dateLabel}`;
   messages.push({ role: "user", content: userContent });
 
   return messages;
@@ -288,13 +290,4 @@ export function assembleLaneMessages(
   return assembleMessages(blocks.stablePrefix, "", blocks.refreshableContext, history, userMessage);
 }
 
-/**
- * Returns today's date in Spanish format.
- */
-function todaySpanish(): string {
-  return new Date().toLocaleDateString("es-CL", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
+
