@@ -34,20 +34,20 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Daemon Core Implementation
 
-- [ ] 2.1 Data fetching: `searchSnapshots("product-ads-insights")` across sellers + Cortex cost_snapshot, visit_snapshot, listing_snapshot reads
-- [ ] 2.2 Profitability check: `price - cost < 0` via cost_snapshot → critical; skip if cost unknown (scenarios 1-2, 12)
-- [ ] 2.3 Visit decline check: WoW 30%+ for 2+ consecutive weeks → warning; skip single-week dip (scenarios 3-4)
-- [ ] 2.4 Monopoly check: listing_snapshot only on owned sellerIds → info; suppress if external seller exists (scenarios 5-6)
-- [ ] 2.5 Per-product ROAS: `revenue / investment < 1.0` → warning; skip if investment=0 (scenarios 7-8)
-- [ ] 2.6 Opportunity check: campaign ROAS > 3.0 + profitable product not in ads[] → info (scenario 9-10)
-- [ ] 2.7 Grouped CEO proposal enqueue per severity tier with hourly dedupe + `noMutationExecuted: true`
+- [x] 2.1 Data fetching: `searchSnapshots("product-ads-insights")` across sellers + Cortex cost_snapshot, visit_snapshot, listing_snapshot reads
+- [x] 2.2 Profitability check: `price - cost < 0` via cost_snapshot → critical; skip if cost unknown (scenarios 1-2, 12)
+- [x] 2.3 Visit decline check: WoW 30%+ for 2+ consecutive weeks → warning; skip single-week dip (scenarios 3-4)
+- [x] 2.4 Monopoly check: listing_snapshot only on owned sellerIds → info; suppress if external seller exists (scenarios 5-6)
+- [x] 2.5 Per-product ROAS: `revenue / investment < 1.0` → warning; skip if investment=0 (scenarios 7-8)
+- [x] 2.6 Opportunity check: campaign ROAS > 3.0 + profitable product not in ads[] → info (scenario 9-10)
+- [x] 2.7 Grouped CEO proposal enqueue per severity tier with hourly dedupe + `noMutationExecuted: true`
 
 ## Phase 3: Tests
 
 - [x] 3.1 Empty state: no data → `{findings: [], proposalEnqueued: false}` (scenario 11)
-- [ ] 3.2 Profitability critical finding + cost unknown skip (scenarios 1-2)
-- [ ] 3.3 Visit decline (2 consecutive weeks) + single-week dip excluded (scenarios 3-4)
-- [ ] 3.4 Cross-account monopoly detection + external seller exclusion (scenarios 5-6)
-- [ ] 3.5 ROAS < 1.0 finding + zero investment skip (scenarios 7-8)
-- [ ] 3.6 Opportunity gap detection + unprofitable excluded from opportunity (scenarios 9-10)
-- [ ] 3.7 Proposal enqueue: correct sender/receiver, dedupeKey format, noMutationExecuted (scenarios 13-16)
+- [x] 3.2 Profitability critical finding + cost unknown skip (scenarios 1-2)
+- [x] 3.3 Visit decline (2 consecutive weeks) + single-week dip excluded (scenarios 3-4)
+- [x] 3.4 Cross-account monopoly detection + external seller exclusion (scenarios 5-6)
+- [x] 3.5 ROAS < 1.0 finding + zero investment skip (scenarios 7-8)
+- [x] 3.6 Opportunity gap detection + unprofitable excluded from opportunity (scenarios 9-10)
+- [x] 3.7 Proposal enqueue: correct sender/receiver, dedupeKey format, noMutationExecuted (scenarios 13-16)
