@@ -35,43 +35,43 @@ Chain strategy: feature-branch-chain
 
 - [x] 1.1 `PolicyEngine`: validate request, check constraints, pre-flight rules
 - [x] 1.2 `CostLedger`: daily/job spend tracking, `canAfford()`, UTC midnight reset (pure TS, no SQLite yet)
-- [ ] 1.3 `CreativeJobQueue`: local SQLite job state (PR2)
-- [ ] 1.4 `MlDiagnosticAdapter`: call POST /moderations/pictures/diagnostic (PR2)
+- [ ] 1.3 `CreativeJobQueue`: local SQLite job state (PR3)
+- [x] 1.4 `MlDiagnosticAdapter`: call POST /moderations/pictures/diagnostic (PR3)
 - [x] 1.5 Unit tests: policy rules, cost accounting (17 tests passing)
 
 ## Phase 2: MiniMax Provider
 
-- [ ] 2.1 `MiniMaxClient`: HTTP client, auth, retry (3x), rate limit (3 concurrent, 2s cooldown)
-- [ ] 2.2 `MiniMaxImageProvider`: POST /v1/image_generation, model image-01, sync
-- [ ] 2.3 `MiniMaxVideoProvider`: POST /v1/video_generation, async polling, file download
-- [ ] 2.4 `CreativeAssetStore`: local persistence under `.msl/creative-studio/assets/`
-- [ ] 2.5 Mock tests: image/video providers with mocked HTTP layer
+- [x] 2.1 `MiniMaxClient`: HTTP client, auth, retry (3x), rate limit (3 concurrent, 2s cooldown)
+- [x] 2.2 `MiniMaxImageProvider`: POST /v1/image_generation, model image-01, sync
+- [x] 2.3 `MiniMaxVideoProvider`: POST /v1/video_generation, async polling (daemon), file download
+- [x] 2.4 `CreativeAssetStore`: local persistence under `.msl/creative-studio/assets/`
+- [x] 2.5 Mock tests: image/video providers with mocked HTTP layer
 
 ## Phase 3: Agent Registration
 
-- [ ] 3.1 Register `"creative-studio"` in lanes.ts: LaneId, CREATIVE_STUDIO_LANE, LANE_CONTRACTS
-- [ ] 3.2 Register in companyAgents.ts: laneDepartments entry
-- [ ] 3.3 Create `creativeStudioDaemon.ts`: investigate(), env gate, claim→validate→generate→respond
-- [ ] 3.4 Register in daemonScheduler.ts daemonHandlerMap
-- [ ] 3.5 Integration: daemon processes mock request from in-memory bus
+- [x] 3.1 Register `"creative-studio"` in lanes.ts: LaneId, CREATIVE_STUDIO_LANE, LANE_CONTRACTS
+- [x] 3.2 Register in companyAgents.ts: laneDepartments entry
+- [x] 3.3 Create `creativeStudioDaemon.ts`: env gate, claim→validate→generate→respond
+- [x] 3.4 Register in daemonScheduler.ts daemonHandlerMap
+- [x] 3.5 Integration: daemon processes mock request from in-memory bus
 
 ## Phase 4: ML Integration
 
-- [ ] 4.1 Wire MlDiagnosticAdapter: pre-diagnosis after image gen for mercadolibre channel
-- [ ] 4.2 Add mlDiagnostic to CreativeExecutionResult.outputs[]
-- [ ] 4.3 Handle diag failures: flag asset, non-blocking
-- [ ] 4.4 Tests: mocked ML API (pass + fail)
+- [x] 4.1 Wire MlDiagnosticAdapter: pre-diagnosis after image gen for mercadolibre channel
+- [x] 4.2 Add mlDiagnostic to CreativeExecutionResult.outputs[]
+- [x] 4.3 Handle diag failures: flag asset, non-blocking
+- [x] 4.4 Tests: mocked ML API (pass + fail)
 
 ## Phase 5: Daemon Integration
 
-- [ ] 5.1 Modify creativeAssetsDaemon: enqueue CreativeAssetRequest on low images/moderation (env-gated)
-- [ ] 5.2 Modify creativeCommercialDaemon: enqueue social-pack on opportunity (env-gated)
-- [ ] 5.3 Preserve CEO proposal flow; delegation additive
-- [ ] 5.4 Integration tests: capture bus messages, verify receiverAgentId
+- [x] 5.1 Modify creativeAssetsDaemon: enqueue CreativeAssetRequest on low images/moderation (env-gated)
+- [x] 5.2 Modify creativeCommercialDaemon: enqueue social-pack on opportunity (env-gated)
+- [x] 5.3 Preserve CEO proposal flow; delegation additive
+- [x] 5.4 Integration tests: capture bus messages, verify receiverAgentId
 
 ## Phase 6: Cortex + Audit
 
-- [ ] 6.1 CortexBridge: record job outcomes for learning
-- [ ] 6.2 Audit logging per asset (provider, model, cost, hashes)
-- [ ] 6.3 query_creative_task and approve_creative_asset tools
-- [ ] 6.4 End-to-end: detect→request→generate→diagnose→propose (all mocked)
+- [x] 6.1 CortexBridge: record job outcomes for learning
+- [x] 6.2 Audit logging per asset (provider, model, cost, hashes)
+- [x] 6.3 query_creative_task and approve_creative_asset tools
+- [x] 6.4 End-to-end: detect→request→generate→diagnose→propose (all mocked)
