@@ -412,6 +412,7 @@ describe("company agent registry and request_agent_evidence", () => {
       "ceo",
       "cost-supplier",
       "market-catalog",
+      "creative-assets",
       "creative-commercial",
       "operations-manager",
       "owned-ecommerce",
