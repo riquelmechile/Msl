@@ -249,8 +249,7 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     const transaction = db.transaction(() => {
       for (let i = 0; i < limit; i++) {
         const candidate = selectPendingForClaimStmt.get(receiverAgentId, { staleThreshold }) as
-          | { id: number; message_id: string }
-          | undefined;
+          { id: number; message_id: string } | undefined;
         if (!candidate) break;
 
         updateClaimStmt.run(candidate.id);

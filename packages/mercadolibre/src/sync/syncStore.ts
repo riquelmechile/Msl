@@ -151,8 +151,7 @@ export function createSyncStore(dbPath = ":memory:"): SyncStore {
       targetSellerId: string,
     ): SyncState | undefined {
       const row = selectStmt.get(sourceItemId, sourceSellerId, targetSellerId) as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       return rowToSyncState(row);
     },
 

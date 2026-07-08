@@ -888,8 +888,7 @@ export async function processSellerCreativeAssets(
           const score = Number(meta.score ?? 0);
 
           const buckets = (meta.buckets ?? meta.variables) as
-            | Array<Record<string, unknown>>
-            | undefined;
+            Array<Record<string, unknown>> | undefined;
 
           if (Array.isArray(buckets)) {
             for (const bucket of buckets) {

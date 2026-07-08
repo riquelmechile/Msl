@@ -40,9 +40,7 @@ export const SUPPLIER_MIRROR_DEEPSEEK_PROVIDER = "deepseek";
 export type SupplierMirrorDeepSeekModel = typeof DEEPSEEK_V4_FLASH | typeof DEEPSEEK_V4_PRO;
 
 export type SupplierMirrorDeepSeekOperation =
-  | "supplier-extraction"
-  | "supplier-classification"
-  | "policy-conflict";
+  "supplier-extraction" | "supplier-classification" | "policy-conflict";
 
 // ── Backward Compat Wrapper ──────────────────────────────────────────
 

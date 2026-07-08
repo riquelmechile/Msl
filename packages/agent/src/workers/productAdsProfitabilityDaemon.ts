@@ -20,11 +20,7 @@ const RECOMMENDATION_WINDOW_DAYS = 7;
 // ── Recommendation signal tiers ──────────────────────────────────────
 
 type SignalTier =
-  | "margin-consuming"
-  | "scale-candidate"
-  | "budget-waste"
-  | "underinvested"
-  | "unit-economics";
+  "margin-consuming" | "scale-candidate" | "budget-waste" | "underinvested" | "unit-economics";
 
 // ── Daemon handler ───────────────────────────────────────────────────
 

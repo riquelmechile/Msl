@@ -373,8 +373,7 @@ describe("operationsManagerDaemon", () => {
 
       const msgId = result.messageIds[0]!;
       const row = db.prepare("SELECT * FROM agent_message_bus WHERE message_id = ?").get(msgId) as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
 
       expect(row).toBeDefined();
       expect(row!.sender_agent_id).toBe("operations-manager");

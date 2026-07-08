@@ -124,8 +124,7 @@ function summarizeOrderHistory(nodes: MetadataNode[]): Record<string, unknown> {
     totalAmount += Number(node.metadata.totalAmount ?? 0);
 
     const catBreakdown = node.metadata.categoryBreakdown as
-      | Array<{ categoryId: string; orderCount: number; totalAmount: number }>
-      | undefined;
+      Array<{ categoryId: string; orderCount: number; totalAmount: number }> | undefined;
     if (catBreakdown) {
       for (const cat of catBreakdown) {
         const existing = byCategory[cat.categoryId];

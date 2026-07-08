@@ -185,8 +185,7 @@ type ReadSyncProductStatusAvailableResponse = {
 };
 
 type ReadSyncProductStatusResponse =
-  | ReadSyncProductStatusAvailableResponse
-  | ReadSyncProductStatusUnavailableResponse;
+  ReadSyncProductStatusAvailableResponse | ReadSyncProductStatusUnavailableResponse;
 
 type ApproveSyncProductProposalUnavailableResponse = {
   status: "unavailable";
@@ -201,8 +200,7 @@ type ApproveSyncProductProposalApprovedResponse = {
 };
 
 type ApproveSyncProductProposalResponse =
-  | ApproveSyncProductProposalApprovedResponse
-  | ApproveSyncProductProposalUnavailableResponse;
+  ApproveSyncProductProposalApprovedResponse | ApproveSyncProductProposalUnavailableResponse;
 
 type ExecuteSyncProductResultResponse = {
   status: "executed";

@@ -95,8 +95,7 @@ describe("migrate", () => {
 
     // The version 1 row should exist
     const row = db.prepare("SELECT version FROM schema_version WHERE version = 1").get() as
-      | { version: number }
-      | undefined;
+      { version: number } | undefined;
     expect(row).toBeDefined();
     expect(row!.version).toBe(1);
 

@@ -348,8 +348,7 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
       const row =
         query.entityId !== undefined
           ? (findEvidenceByEntityStmt.get(query.sellerId, query.snapshotKind, query.entityId) as
-              | SnapshotRow
-              | undefined)
+              SnapshotRow | undefined)
           : (findEvidenceStmt.get(query.sellerId, query.snapshotKind) as SnapshotRow | undefined);
 
       if (!row) return null;
@@ -367,8 +366,7 @@ export function createSqliteOperationalReadModel(db: Database.Database): Operati
       const row =
         query.entityId !== undefined
           ? (findEvidenceByEntityStmt.get(query.sellerId, query.snapshotKind, query.entityId) as
-              | SnapshotRow
-              | undefined)
+              SnapshotRow | undefined)
           : (findEvidenceStmt.get(query.sellerId, query.snapshotKind) as SnapshotRow | undefined);
 
       if (!row) return null;

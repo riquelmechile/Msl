@@ -72,12 +72,7 @@ export type OwnedEcommerceExecutionResult =
     };
 
 export type CandidateSourceKind =
-  | "plasticov"
-  | "maustian"
-  | "supplier-mirror"
-  | "future-supplier"
-  | "read-model"
-  | "cortex";
+  "plasticov" | "maustian" | "supplier-mirror" | "future-supplier" | "read-model" | "cortex";
 
 export type CandidateProvenance = {
   source: CandidateSourceKind;
@@ -101,10 +96,7 @@ export type CandidateEvidenceState = {
 };
 
 export type StockAuthority =
-  | "stock-authoritative"
-  | "supplier-reported"
-  | "read-model-estimate"
-  | "unknown";
+  "stock-authoritative" | "supplier-reported" | "read-model-estimate" | "unknown";
 
 export type StorefrontCandidate = {
   id: OwnedEcommerceCandidateId;

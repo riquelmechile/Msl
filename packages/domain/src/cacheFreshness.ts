@@ -22,9 +22,7 @@ export type FreshnessStatus = "fresh" | "stale";
 export type OperationalEvidenceCompleteness = "complete" | "partial" | "missing";
 
 export type OperationalEvidenceSource =
-  | "operational-read-model"
-  | "cortex"
-  | CacheFreshness["source"];
+  "operational-read-model" | "cortex" | CacheFreshness["source"];
 
 export type CacheFreshness = {
   source: "local-cache" | "mercadolibre-api" | "seller-input";

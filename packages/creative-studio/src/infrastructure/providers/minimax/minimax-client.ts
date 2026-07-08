@@ -82,8 +82,7 @@ export class MinimaxClient {
       }
 
       const maybeBaseResp = (data as Record<string, unknown>)["base_resp"] as
-        | MinimaxApiError
-        | undefined;
+        MinimaxApiError | undefined;
 
       // Check HTTP-level errors first
       if (response.status === 401) {

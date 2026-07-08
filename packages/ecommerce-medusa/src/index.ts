@@ -41,10 +41,7 @@ export type MedusaWriteBoundaryDecision =
   | {
       allowed: false;
       reason:
-        | "approval-required"
-        | "readiness-blocked"
-        | "publishing-disabled"
-        | "credentials-missing";
+        "approval-required" | "readiness-blocked" | "publishing-disabled" | "credentials-missing";
     };
 
 export type MedusaWriteBoundaryRejectionReason = Extract<

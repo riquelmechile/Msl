@@ -110,8 +110,7 @@ export class DeepSeekReasoningGateway {
       // 7. Build cost telemetry
       const usage = completion.usage;
       const rawPromptDetails = usage?.prompt_tokens_details as
-        | { cached_tokens?: number }
-        | undefined;
+        { cached_tokens?: number } | undefined;
       const cacheHitTokens = rawPromptDetails?.cached_tokens ?? 0;
       const cacheMissTokens = usage?.prompt_tokens ?? 0;
       const outputTokens = usage?.completion_tokens ?? 0;

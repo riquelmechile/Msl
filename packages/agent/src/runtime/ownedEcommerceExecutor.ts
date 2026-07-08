@@ -16,10 +16,7 @@ type RuntimeWriteBoundaryDecision =
   | {
       allowed: false;
       reason:
-        | "approval-required"
-        | "readiness-blocked"
-        | "publishing-disabled"
-        | "credentials-missing";
+        "approval-required" | "readiness-blocked" | "publishing-disabled" | "credentials-missing";
     };
 
 type RuntimeWriteBoundaryInput = {
