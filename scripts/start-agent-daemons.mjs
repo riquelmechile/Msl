@@ -63,6 +63,30 @@ const reader = createSqliteOperationalReadModel(readerDb);
 const roleConfig = getMlAccountRoleConfig(env);
 const sellerIds = [roleConfig.sourceSellerId, roleConfig.targetSellerId];
 
+// ── Supplier Mirror ──────────────────────────────────────────
+const { getSupplierMirrorRuntimeFromEnv } = await import("@msl/memory");
+const { startSupplierMirrorScheduler } = await import("@msl/workers");
+const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(
+  env,
+);
+let supplierMirrorStore = undefined;
+if (supplierMirrorRuntime) {
+  supplierMirrorStore = supplierMirrorRuntime.store;
+  console.log("[agent-daemons] Supplier Mirror store connected");
+}
+
+// Start supplier mirror worker if explicitly enabled
+const workerEnabled = env.MSL_SUPPLIER_MIRROR_WORKER_ENABLED?.trim() === "true";
+let supplierMirrorHandle = undefined;
+if (supplierMirrorRuntime && workerEnabled) {
+  console.log("[agent-daemons] Supplier Mirror worker enabled — starting scheduler");
+  supplierMirrorHandle = startSupplierMirrorScheduler({
+    store: supplierMirrorRuntime.store,
+    adapters: new Map(),
+    intervalMs: 10 * 60 * 1000, // 10 minutes
+  });
+}
+
 // ── CEO handler Telegram context ────────────────────────────────
 const botToken = env.BOT_TOKEN?.trim();
 const adminChatIds = env.MSL_TELEGRAM_ADMIN_CHAT_IDS?.trim()
@@ -150,6 +174,7 @@ const handle = startDaemonScheduler({
   sellerIds,
   consensusStore,
   ceoContext,
+  supplierMirrorStore,
   intervalMs: 15 * 60 * 1000, // 15 minutes
 });
 
@@ -183,9 +208,11 @@ process.on("SIGINT", () => {
   clearInterval(dlqInterval);
   console.log("\n[agent-daemons] Stopping daemon scheduler...");
   handle.stop();
+  supplierMirrorHandle?.stop();
   busDb.close();
   readerDb.close();
   approvalRepo?.close?.();
+  supplierMirrorRuntime?.close();
   process.exit(0);
 });
 
@@ -194,8 +221,10 @@ process.on("SIGTERM", () => {
   clearInterval(dlqInterval);
   console.log("\n[agent-daemons] Stopping daemon scheduler...");
   handle.stop();
+  supplierMirrorHandle?.stop();
   busDb.close();
   readerDb.close();
   approvalRepo?.close?.();
+  supplierMirrorRuntime?.close();
   process.exit(0);
 });

@@ -14,6 +14,7 @@ import {
   type AutonomyEngine,
   type ParsedRule,
 } from "@msl/agent";
+import { getSupplierMirrorRuntimeFromEnv } from "@msl/memory";
 import { validateAuth } from "./auth";
 
 // ── API Key Auth ─────────────────────────────────────────────────────
@@ -357,6 +358,10 @@ export async function POST(req: NextRequest) {
   const durableSessionKey = durable ? createDurableSessionKey(sellerId, sessionId) : sessionId;
   const useRealDeepSeek = Boolean(durable && process.env.DEEPSEEK_API_KEY);
 
+  const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(
+    process.env as Record<string, string | undefined>,
+  );
+
   const loop = createAgentLoop({
     systemPrompt: buildSystemPrompt(sellerName),
     mockClient: !useRealDeepSeek,
@@ -365,6 +370,7 @@ export async function POST(req: NextRequest) {
     tools: [createSimulateActorTool()],
     store,
     autonomyEngine,
+    ...(supplierMirrorRuntime ? { supplierMirrorStore: supplierMirrorRuntime.store } : {}),
   });
 
   const state =

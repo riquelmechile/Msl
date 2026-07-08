@@ -137,6 +137,7 @@ vi.mock("@msl/memory", () => ({
   createDatabase: vi.fn(),
   createGraphEngine: mocks.mockCreateGraphEngine,
   createSqliteOperationalReadModel: vi.fn(),
+  getSupplierMirrorRuntimeFromEnv: vi.fn(() => null),
 }));
 
 import { createTelegramBot, createTelegramBotFromEnv } from "./index.js";

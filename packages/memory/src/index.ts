@@ -1,5 +1,11 @@
 import type { BusinessSignalKind, CacheFreshness, ReadSnapshot, SellerId } from "@msl/domain";
 
+// Re-export Supplier Mirror runtime singleton.
+export {
+  getSupplierMirrorRuntimeFromEnv,
+  resetSupplierMirrorRuntime,
+} from "./supplierMirrorRuntime.js";
+
 // Re-export Cortex graph engine for agent conversation context.
 export {
   createGraphEngine,

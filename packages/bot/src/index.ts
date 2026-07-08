@@ -18,7 +18,7 @@ import {
   type ConversationState,
   type SessionStore,
 } from "@msl/agent";
-import { createDatabase, createGraphEngine, createSqliteOperationalReadModel } from "@msl/memory";
+import { createDatabase, createGraphEngine, createSqliteOperationalReadModel, getSupplierMirrorRuntimeFromEnv } from "@msl/memory";
 import {
   createMercadoLibreApiFetchTransport,
   createMlClient,
@@ -105,6 +105,7 @@ export type TelegramBotEnv = Partial<
     | "MSL_COMPANY_AGENT_ADMIN_ENABLED"
     | "MSL_TELEGRAM_ADMIN_CHAT_IDS"
     | "MSL_TELEGRAM_ADMIN_USER_IDS"
+    | "MSL_SUPPLIER_MIRROR_DB_PATH"
   >
 >;
 
@@ -258,6 +259,14 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     ? new OperationalEvidenceProvider(operationalReadModel)
     : undefined;
 
+  // ── Supplier Mirror ─────────────────────────────────────────────
+  const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(
+    env as Record<string, string | undefined>,
+  );
+  if (supplierMirrorRuntime) {
+    console.log("[bot] Supplier Mirror store connected");
+  }
+
   // ── Multi-seller OAuth clients (reads + writes) ──────
   // Uses the same MultiAppOAuthManager pattern as the MCP
   // runtime to serve Plasticov and Maustian from SQLite tokens.
@@ -335,6 +344,9 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     agentConfig.evidenceProvider = evidenceProvider;
     agentConfig.laneId = "ceo";
   }
+  if (supplierMirrorRuntime) {
+    agentConfig.supplierMirrorStore = supplierMirrorRuntime.store;
+  }
 
   const botConfig: BotConfig = {
     token,
@@ -354,10 +366,16 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
       db.close();
       operationalDb?.close();
       oauthManager?.close();
+      supplierMirrorRuntime?.close();
     };
   else if (oauthManager)
     botConfig.cleanup = () => {
       oauthManager.close();
+      supplierMirrorRuntime?.close();
+    };
+  else if (supplierMirrorRuntime)
+    botConfig.cleanup = () => {
+      supplierMirrorRuntime.close();
     };
 
   const botHandle = createTelegramBot(botConfig);
