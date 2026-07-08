@@ -12,25 +12,36 @@ This specification covers the production integration foundation. The current MCP
 
 ### Requirement: Multi-Account OAuth
 
-The system MUST store and manage OAuth tokens for the configured Plasticov and Maustian MercadoLibre seller accounts independently on the `MLC` site. `MLC` is the MercadoLibre Chile site code, not an account identity. Each account SHALL have its own encrypted token record with refresh cycle. OAuth token storage MUST validate the returned MercadoLibre `user_id` against a configured allowed seller account before saving.
+The system MUST store and manage OAuth tokens for the configured Plasticov and Maustian MercadoLibre seller accounts independently on the `MLC` site. `MLC` is the MercadoLibre Chile site code, not an account identity. Each account SHALL have its own encrypted token record with refresh cycle, using per-seller OAuth application credentials for token exchange and refresh. OAuth token storage MUST validate the returned MercadoLibre `user_id` against a configured allowed seller account before saving.
 
 #### Scenario: Two accounts connected
 
-- GIVEN Plasticov and Maustian OAuth tokens are stored
+- GIVEN Plasticov and Maustian OAuth tokens are stored via separate OAuth applications
 - WHEN API requests target each account by sellerId
-- THEN the correct token MUST be resolved without cross-account leakage
+- THEN the correct token and app credentials MUST be resolved without cross-account leakage
 
 #### Scenario: Token refresh on expiry
 
 - GIVEN Maustian access token expires
 - WHEN next API call requires Maustian access
-- THEN the system MUST use the stored refresh token to obtain a new access token BEFORE the call proceeds
+- THEN the system MUST use Maustian's app credentials and stored refresh token to obtain a new access token BEFORE the call proceeds
 
 #### Scenario: Refresh token also expired
 
 - GIVEN both access and refresh tokens are expired
 - WHEN an API call targets that seller
 - THEN the system MUST return `ReconnectRequired` and SHALL NOT attempt the API call
+
+### Requirement: Telegram Bot Runtime Integration
+
+The Telegram bot runtime MUST create its ML API clients through the multi-seller OAuth infrastructure (`createOAuthMlcApiClient`, `createMlClient`) instead of `createMlcApiClient({tokenState})`. The bot MUST wire `mlClient` into agent tool registration so write tools (publish, update, sync) are available from chat.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Bot reads via OAuth MLC client | OAuth tokens valid for both sellers | Bot queries MercadoLibre | `mlcClient.getItem()` uses per-seller token resolution |
+| Bot registers write tools | `mlClient` created via `createMlClient` | Agent loop initializes | Publish, update, and sync tools available in chat |
+| Write respects seller context | User says "publicá en Maustian" | Write tool called | `sellerId` resolved to Maustian; API call uses correct token |
+| Legacy static token bypassed | OAuth env vars configured | Bot starts | `createMlcApiClient({tokenState})` NOT called; zero legacy token usage |
 
 ### Requirement: Encrypted Token Storage
 

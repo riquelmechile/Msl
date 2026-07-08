@@ -8,11 +8,11 @@ Define account connection behavior for MercadoLibre Chile using official APIs, O
 
 ### Requirement: OAuth Account Connection
 
-The system MUST connect seller accounts through MercadoLibre OAuth with only the scopes needed for the enabled capabilities.
+The system MUST connect seller accounts through MercadoLibre OAuth using per-seller application credentials. Each seller (Plasticov, Maustian) SHALL use its own `{clientId, clientSecret, redirectUri}`. The system MUST only request scopes needed for enabled capabilities.
 
 #### Scenario: Seller connects account
 
-- GIVEN the seller starts account connection
+- GIVEN the seller starts account connection with per-seller OAuth credentials
 - WHEN OAuth authorization succeeds
 - THEN the system MUST store access state and identify the account as `MLC`
 
@@ -21,6 +21,16 @@ The system MUST connect seller accounts through MercadoLibre OAuth with only the
 - GIVEN OAuth authorization fails or access is revoked
 - WHEN protected data is requested
 - THEN the system MUST block access and ask the seller to reconnect
+
+### Requirement: Bot Multi-App OAuth Routing
+
+The Telegram bot MUST resolve per-seller OAuth configurations via `resolveOAuthConfigs(env)` and create a `MultiAppOAuthManager` via `createMultiAppOAuthManager(configs)`, replicating the MCP pattern. The bot MUST pass both `MERCADOLIBRE_SOURCE_SELLER_ID` and `MERCADOLIBRE_TARGET_SELLER_ID` so both Plasticov and Maustian accounts are usable from chat.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Bot resolves per-seller configs | SOURCE/TARGET_CLIENT_ID env vars set | `resolveOAuthConfigs(env)` called | Plasticov→App A, Maustian→App B configs returned |
+| Bot creates multi-app manager | Both configs resolved | `createMultiAppOAuthManager` called | OAuth manager routes per sellerId to correct app credentials |
+| Ingestion uses same manager | Bot background ingestion starts | MercadoLibre API calls made | Same `oauthManager` used for both sellers' data ingestion |
 
 ### Requirement: Direct API and Official MCP Boundary
 
