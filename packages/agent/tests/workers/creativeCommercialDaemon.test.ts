@@ -384,4 +384,48 @@ describe("creativeCommercialDaemon", () => {
       expect(payload.noMutationExecuted).toBe(true);
     });
   });
+
+  // ── Cortex fallback (ORM parity) ──────────────────────────────
+
+  describe("Cortex fallback when ORM is empty", () => {
+    it("detects stagnant stock from Cortex listing_snapshot nodes using listingCreatedAt", async () => {
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 50);
+
+      // Do NOT seed any ORM listing_snapshot data — force Cortex fallback
+      seedCortexNode(engine, {
+        type: "listing_snapshot",
+        itemId: "MLC-CRX-STG",
+        sellerId: SELLER_IDS[0],
+        status: "active",
+        price: 12000,
+        title: "Cortex stagnant product",
+        date_created: oldDate.toISOString(),
+        capturedAt: new Date().toISOString(), // recent — should NOT be used for stagnant check
+      });
+
+      // Low visits via Cortex (always reads from Cortex)
+      seedCortexNode(engine, {
+        type: "visit_snapshot",
+        itemId: "MLC-CRX-STG",
+        totalVisits: 3,
+      });
+
+      const result = await creativeCommercialDaemon({
+        claim: claimFixture(),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+      });
+
+      const stagnantFindings = result.findings.filter(
+        (f) => f.summary.includes("stagnant"),
+      );
+      expect(stagnantFindings.length).toBeGreaterThanOrEqual(1);
+      expect(stagnantFindings[0]!.summary).toContain("MLC-CRX-STG");
+      // Should show ~50 days active, not 0 days (capturedAt was set to now)
+      expect(stagnantFindings[0]!.summary).toMatch(/4[0-9] days|5[0-9] days/);
+    });
+  });
 });

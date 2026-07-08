@@ -345,4 +345,61 @@ describe("costSupplierDaemon", () => {
       expect(payload.noMutationExecuted).toBe(true);
     });
   });
+
+  // ── Cortex fallback (ORM parity) ──────────────────────────────
+
+  describe("Cortex fallback when ORM is empty", () => {
+    it("detects margin issues from Cortex listing_snapshot nodes (fallback path)", async () => {
+      // Do NOT seed any ORM listing_snapshot data — force Cortex fallback
+      seedCortexNode(engine, {
+        type: "listing_snapshot",
+        itemId: "MLC-CRX-001",
+        sellerId: SELLER_IDS[0],
+        status: "active",
+        price: 6000, // margin = (6000-900-5000)/6000 = 1.7% → critical
+        title: "Cortex fallback product",
+      });
+
+      const result = await costSupplierDaemon({
+        claim: claimFixture(),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+      });
+
+      const marginFindings = result.findings.filter(
+        (f) => f.severity === "critical" && f.summary.includes("margin"),
+      );
+      expect(marginFindings.length).toBeGreaterThanOrEqual(1);
+      expect(marginFindings[0]!.summary).toContain("MLC-CRX-001");
+    });
+
+    it("skips paused/closed listings in Cortex fallback (status: active filter)", async () => {
+      // Seed a paused listing in Cortex — should be ignored
+      seedCortexNode(engine, {
+        type: "listing_snapshot",
+        itemId: "MLC-CRX-002",
+        sellerId: SELLER_IDS[0],
+        status: "paused",
+        price: 6000,
+        title: "Paused Cortex product",
+      });
+
+      const result = await costSupplierDaemon({
+        claim: claimFixture(),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+      });
+
+      // No findings should be produced for the paused listing
+      const findings = result.findings.filter(
+        (f) => f.summary.includes("MLC-CRX-002"),
+      );
+      expect(findings).toEqual([]);
+      expect(result.proposalEnqueued).toBe(false);
+    });
+  });
 });
