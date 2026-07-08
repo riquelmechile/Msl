@@ -48,10 +48,11 @@ A daemon crash MUST NOT bring down the scheduler. The scheduler SHALL catch daem
 
 ### Requirement: Agent-to-Daemon Handler Map
 
-The scheduler MUST maintain a static mapping from `LaneId` to daemon handler functions. Only lanes `cost-supplier`, `market-catalog`, `creative-commercial`, and `operations-manager` SHALL have handlers. Unknown lanes MUST be skipped.
+The scheduler MUST maintain a static mapping from `LaneId` to daemon handler functions. Only lanes `cost-supplier`, `market-catalog`, `creative-commercial`, `operations-manager`, and `product-ads-monitor` SHALL have handlers. Unknown lanes MUST be skipped.
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
 | Known lane | Agent with laneId "market-catalog" | Scheduler routes | Dispatched to marketCatalogDaemon |
+| Product Ads Monitor lane | Agent with laneId "product-ads-monitor" | Scheduler routes | Dispatched to productAdsMonitorDaemon |
 | CEO lane | Agent with laneId "ceo" | Scheduler routes | Skipped — no daemon handler |
 | Unknown lane | Agent with unmapped laneId | Scheduler routes | Skipped — no error |

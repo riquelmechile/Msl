@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Four investigation-only daemon workers that read operational evidence, detect actionable business signals, and enqueue CEO proposals via the agent message bus — `noMutationExecuted: true` at all times.
+Five investigation-only daemon workers that read operational evidence, detect actionable business signals, and enqueue CEO proposals via the agent message bus — `noMutationExecuted: true` at all times.
 
 ## Requirements
 
@@ -65,3 +65,18 @@ ALL daemons MUST set `noMutationExecuted: true`. Daemon functions SHALL NOT call
 |----------|-------|------|------|
 | High-visits low-conversion | Visits > threshold, orders/visits < threshold | Daemon investigates | Finding with severity "warning" |
 | Stagnant stock | Active listing, last order > window ago | Daemon investigates | Finding with severity "info" |
+
+### Requirement: productAdsMonitorDaemon
+
+`productAdsMonitorDaemon` MUST read `product-ads-insights` snapshots using `searchSnapshots()` and cross-reference Cortex `cost_snapshot` and `visit_snapshot` nodes and ORM `listing_snapshot` data. It SHALL detect at minimum: advertised unprofitable products (price - cost < 0, `critical`), declining visits with active ad (30%+ WoW over 2 weeks, `warning`), cross-account monopoly across Plasticov + Maustian (`info`), per-product ROAS below 1.0 (`warning`), and profitable products missing ads in high-ROAS campaigns (`opportunity`). It MUST enqueue CEO proposals with hourly dedupe keys and `noMutationExecuted: true`. Missing data SHALL cause individual signal checks to skip without error.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Unprofitable advertised product | Ad runs, price - cost < 0 via cost_snapshot | Daemon investigates | Finding with severity "critical", kind "alert" |
+| Declining visits with active ad | WoW visits ↓ 30%+ for 2+ weeks, ad is active | Daemon investigates | Finding with severity "warning" |
+| Cross-account monopoly | Product only on Plasticov + Maustian listing_snapshot | Daemon investigates | Finding with severity "info" |
+| Low per-product ROAS | Ad ROAS < 1.0 within campaign metrics | Daemon investigates | Finding with severity "warning" |
+| Profitable product with no ad | price - cost > 0, campaign ROAS > 3.0, product not in ads[] | Daemon investigates | Finding with severity "info", kind "opportunity" |
+| No signals | All checks pass or data missing | Daemon investigates | Empty findings, proposalEnqueued: false |
+| Cost data missing | Ad active, no cost_snapshot for item | Daemon investigates | Profitability signal skipped; no false-critical |
+| Empty snapshots | No product-ads-insights data | Daemon investigates | Empty findings, no error |
