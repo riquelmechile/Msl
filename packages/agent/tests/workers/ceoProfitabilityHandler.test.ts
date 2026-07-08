@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
@@ -10,6 +10,17 @@ import type {
 } from "../../src/conversation/agentMessageBusStore.js";
 import { ceoProfitabilityHandler } from "../../src/workers/ceoProfitabilityHandler.js";
 import type { DaemonResult, CeoHandlerContext } from "../../src/workers/daemonTypes.js";
+import type { CeoDeepSeekClient } from "../../src/workers/ceoDeepSeekClient.js";
+
+// Use vi.hoisted to create the mock function before the vi.mock factory runs
+const { mockCreateCeoDeepSeekClient } = vi.hoisted(() => ({
+  mockCreateCeoDeepSeekClient: vi.fn(),
+}));
+
+vi.mock("../../src/workers/ceoDeepSeekClient.js", () => ({
+  createCeoDeepSeekClient: mockCreateCeoDeepSeekClient,
+  // CeoDeepSeekClient type is just for TS, not a runtime export needed from the mock
+}));
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -85,6 +96,9 @@ describe("ceoProfitabilityHandler", () => {
     db = new Database(":memory:");
     db.pragma("journal_mode = WAL");
     bus = createAgentMessageBusStore(db);
+    // By default, no DeepSeek client — tests use the static SIGNAL_TO_ACTION fallback
+    mockCreateCeoDeepSeekClient.mockReturnValue(null);
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -568,6 +582,171 @@ describe("ceoProfitabilityHandler", () => {
 
       // Both findings should still be returned (error is isolated per finding)
       expect(result.findings.length).toBe(2);
+    });
+  });
+
+  // ── Task 4.2: DeepSeek delegation and fallback ─────────────────────
+
+  describe("DeepSeek delegation", () => {
+    it("delegates to CeoDeepSeekClient when available and uses LLM recommendation", async () => {
+      const mockReason = vi.fn().mockResolvedValue(
+        new Map([["product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming", "pause-campaign"]]),
+      );
+      mockCreateCeoDeepSeekClient.mockReturnValue({ reason: mockReason } satisfies CeoDeepSeekClient);
+
+      const preparedActions: Array<Record<string, unknown>> = [];
+      const ceoCtx = makeCeoContext({
+        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        workforceCostCacheLedgerStore: {
+          insertEntry: vi.fn(),
+          listEntries: vi.fn().mockReturnValue([]),
+          count: vi.fn().mockReturnValue(0),
+          aggregateCosts: vi.fn().mockReturnValue({ byAgent: new Map(), byDepartment: new Map(), byPeriod: [], cacheEfficiency: 0 }),
+        },
+      });
+
+      const result = await ceoProfitabilityHandler({
+        claim: claimFixture({ payloadJson: makeProposalPayload() }),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        bus,
+        sellerIds: SELLER_IDS,
+        ceoContext: ceoCtx,
+      });
+
+      expect(mockReason).toHaveBeenCalledTimes(1);
+      expect(result.proposalEnqueued).toBe(true);
+      // Should produce a finding with the LLM-recommended proposalType
+      expect(result.findings.length).toBe(1);
+      expect(preparedActions.length).toBe(1);
+      expect(preparedActions[0]!.proposalType).toBe("pause-campaign");
+    });
+
+    it("falls back to static map when createCeoDeepSeekClient returns null", async () => {
+      mockCreateCeoDeepSeekClient.mockReturnValue(null);
+
+      const preparedActions: Array<Record<string, unknown>> = [];
+      const ceoCtx = makeCeoContext({
+        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+      });
+
+      const result = await ceoProfitabilityHandler({
+        claim: claimFixture({ payloadJson: makeProposalPayload() }),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        bus,
+        sellerIds: SELLER_IDS,
+        ceoContext: ceoCtx,
+      });
+
+      // Fallback to static map → pause-campaign for margin-consuming
+      expect(result.proposalEnqueued).toBe(true);
+      expect(preparedActions.length).toBe(1);
+      expect(preparedActions[0]!.proposalType).toBe("pause-campaign");
+    });
+
+    it("falls back to static map when client.reason throws", async () => {
+      mockCreateCeoDeepSeekClient.mockReturnValue({
+        reason: vi.fn().mockRejectedValue(new Error("API unreachable")),
+      } satisfies Partial<CeoDeepSeekClient> as CeoDeepSeekClient);
+
+      const preparedActions: Array<Record<string, unknown>> = [];
+      const ceoCtx = makeCeoContext({
+        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        workforceCostCacheLedgerStore: {
+          insertEntry: vi.fn(),
+          listEntries: vi.fn().mockReturnValue([]),
+          count: vi.fn().mockReturnValue(0),
+          aggregateCosts: vi.fn().mockReturnValue({ byAgent: new Map(), byDepartment: new Map(), byPeriod: [], cacheEfficiency: 0 }),
+        },
+      });
+
+      const result = await ceoProfitabilityHandler({
+        claim: claimFixture({ payloadJson: makeProposalPayload() }),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        bus,
+        sellerIds: SELLER_IDS,
+        ceoContext: ceoCtx,
+      });
+
+      // Should fall back to static map and still produce the finding
+      expect(result.proposalEnqueued).toBe(true);
+      expect(result.findings.length).toBe(1);
+      expect(preparedActions.length).toBe(1);
+      expect(preparedActions[0]!.proposalType).toBe("pause-campaign");
+    });
+
+    it("skips LLM reasoning when workforceCostCacheLedgerStore is missing", async () => {
+      const mockReason = vi.fn();
+      mockCreateCeoDeepSeekClient.mockReturnValue({ reason: mockReason } satisfies CeoDeepSeekClient);
+
+      // No ledger in context → should skip LLM and use fallback
+      const preparedActions: Array<Record<string, unknown>> = [];
+      const ceoCtx = makeCeoContext({
+        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        // Note: no workforceCostCacheLedgerStore
+      });
+
+      const result = await ceoProfitabilityHandler({
+        claim: claimFixture({ payloadJson: makeProposalPayload() }),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        bus,
+        sellerIds: SELLER_IDS,
+        ceoContext: ceoCtx,
+      });
+
+      // reason() should NOT have been called (ledger required)
+      expect(mockReason).not.toHaveBeenCalled();
+      // Fallback to static map
+      expect(result.proposalEnqueued).toBe(true);
+      expect(preparedActions.length).toBe(1);
+      expect(preparedActions[0]!.proposalType).toBe("pause-campaign");
+    });
+
+    it("produces info-report for unit-economics finding via LLM path", async () => {
+      const identity = "product-ads-cfo:seller-plasticov:camp-1:MLC-U1:unit-economics";
+      const mockReason = vi.fn().mockResolvedValue(
+        new Map([[identity, "review-campaign-structure"]]),
+      );
+      mockCreateCeoDeepSeekClient.mockReturnValue({ reason: mockReason } satisfies CeoDeepSeekClient);
+
+      const preparedActions: Array<Record<string, unknown>> = [];
+      const ceoCtx = makeCeoContext({
+        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        workforceCostCacheLedgerStore: {
+          insertEntry: vi.fn(),
+          listEntries: vi.fn().mockReturnValue([]),
+          count: vi.fn().mockReturnValue(0),
+          aggregateCosts: vi.fn().mockReturnValue({ byAgent: new Map(), byDepartment: new Map(), byPeriod: [], cacheEfficiency: 0 }),
+        },
+      });
+
+      const payload = makeProposalPayload({
+        findings: [{
+          kind: "info",
+          severity: "info",
+          summary: "Unit economics info finding",
+          evidenceIds: ["listing_snapshot:MLC-U1"],
+          actionability: "seller-impacting",
+          recommendationIdentity: identity,
+        }],
+      });
+
+      const result = await ceoProfitabilityHandler({
+        claim: claimFixture({ payloadJson: payload }),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        bus,
+        sellerIds: SELLER_IDS,
+        ceoContext: ceoCtx,
+      });
+
+      expect(mockReason).toHaveBeenCalledTimes(1);
+      expect(result.proposalEnqueued).toBe(true);
+      // Info-only → no seller approval action prepared
+      expect(preparedActions.length).toBe(0);
     });
   });
 });

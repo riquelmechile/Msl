@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { OperationalReadModelReader } from "@msl/memory";
+import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -51,6 +52,12 @@ export type CeoHandlerContext = {
     observedAt: string;
     expiresAt: string;
   }) => Promise<void>;
+  /**
+   * Optional workforce cost ledger for recording DeepSeek API call costs.
+   * When absent, LLM reasoning costs are not recorded but the handler still
+   * processes findings via the fallback or LLM path.
+   */
+  workforceCostCacheLedgerStore?: WorkforceCostCacheLedgerStore;
 };
 
 export type DaemonHandler = (input: {

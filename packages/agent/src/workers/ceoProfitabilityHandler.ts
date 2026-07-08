@@ -1,6 +1,8 @@
 import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DaemonHandler, DaemonFinding, CeoHandlerContext } from "./daemonTypes.js";
+import type { CeoDeepSeekClient } from "./ceoDeepSeekClient.js";
+import { createCeoDeepSeekClient } from "./ceoDeepSeekClient.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -57,6 +59,8 @@ async function ensureTopic(
     return undefined;
   }
 }
+
+const INFO_ONLY_SIGNALS = new Set(["unit-economics", "underinvested"]);
 
 // ── Signal mapping ────────────────────────────────────────────────────
 
@@ -178,6 +182,7 @@ function buildActionPayload(
  */
 export const ceoProfitabilityHandler: DaemonHandler = async ({
   claim,
+  cortex,
   bus,
   sellerIds,
   ceoContext,
@@ -211,6 +216,33 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
     sellerNameMap[sid] = getSellerName(sid, sellerNames);
   }
 
+  // ── Try DeepSeek reasoning for LLM-recommended actions ──────────
+  const client: CeoDeepSeekClient | null = createCeoDeepSeekClient();
+  let llmRecommendations: Map<string, string> | null = null;
+  if (client) {
+    try {
+      const ledger = ceoCtx.workforceCostCacheLedgerStore;
+      if (ledger) {
+        llmRecommendations = await client.reason(
+          parsedFindings,
+          cortex,
+          ledger,
+        );
+      } else {
+        // Ledger not available — skip LLM reasoning (cost tracking required)
+        console.warn(
+          "[ceo-profitability-handler] workforceCostCacheLedgerStore not available, skipping DeepSeek reasoning",
+        );
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[ceo-profitability-handler] DeepSeek reasoning failed, using fallback: ${errorMessage}`,
+      );
+      // Fallback to static map handled per-finding below
+    }
+  }
+
   // ── Process each finding ────────────────────────────────────────
   const now = new Date();
   const sevenDaysAgo = new Date(now);
@@ -225,7 +257,21 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
       if (recent.length > 0) continue; // Suppress within 7-day window
 
       // ── Map signal to action ─────────────────────────────────────
-      const action = SIGNAL_TO_ACTION[finding.signal] ?? SIGNAL_TO_ACTION["unit-economics"];
+      let action: { proposalType: string; severity: string; requiresApproval: boolean };
+
+      const llmProposalType = llmRecommendations?.get(finding.recommendationIdentity);
+      if (llmProposalType) {
+        // LLM provided a recommendation
+        const isInfoOnly = INFO_ONLY_SIGNALS.has(finding.signal);
+        action = {
+          proposalType: llmProposalType,
+          severity: finding.severity,
+          requiresApproval: !isInfoOnly,
+        };
+      } else {
+        // Fallback to static map
+        action = SIGNAL_TO_ACTION[finding.signal] ?? SIGNAL_TO_ACTION["unit-economics"];
+      }
 
       // ── Add finding to results ────────────────────────────────────
       findings.push({
