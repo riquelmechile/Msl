@@ -93,6 +93,7 @@ export { marketCatalogDaemon } from "./workers/marketCatalogDaemon.js";
 export { operationsManagerDaemon } from "./workers/operationsManagerDaemon.js";
 export { costSupplierDaemon } from "./workers/costSupplierDaemon.js";
 export { creativeCommercialDaemon } from "./workers/creativeCommercialDaemon.js";
+export { productAdsMonitorDaemon } from "./workers/productAdsMonitorDaemon.js";
 
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";

@@ -4,7 +4,8 @@ export type LaneId =
   | "market-catalog"
   | "creative-commercial"
   | "operations-manager"
-  | "owned-ecommerce";
+  | "owned-ecommerce"
+  | "product-ads-monitor";
 
 export type CacheTelemetry = {
   provider: string;
@@ -188,6 +189,28 @@ export const OWNED_ECOMMERCE_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const PRODUCT_ADS_MONITOR_LANE: LaneContract = {
+  laneId: "product-ads-monitor",
+  label: "Product Ads Monitor",
+  stablePrefix: [
+    "You are the Product Ads Monitor lane.",
+    "Monitor Product Ads campaign performance, profitability, visit trends, and cross-account coverage.",
+    "Detect unprofitable ads, declining visits, monopoly risks, low ROAS, and opportunity gaps.",
+    "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "product-ads insights, cost snapshots, visit trends, and listing snapshots",
+  inputs: ["product-ads-insights", "cost-snapshot", "visit-snapshot", "listing-snapshot"],
+  outputs: ["ad performance alerts", "risk priority", "opportunity gaps", "evidence IDs"],
+  boundaries: [
+    "proposal-only; never execute mutations",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product-ads-insights", "cost-snapshot", "visit-snapshot", "listing-snapshot"],
+  credentialScope: "provider-default",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
@@ -195,6 +218,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   CREATIVE_COMMERCIAL_LANE,
   OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,
+  PRODUCT_ADS_MONITOR_LANE,
 ];
 
 export function getLaneContract(laneId: LaneId): LaneContract {

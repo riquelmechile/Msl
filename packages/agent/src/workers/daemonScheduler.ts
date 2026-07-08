@@ -8,6 +8,7 @@ import { marketCatalogDaemon } from "./marketCatalogDaemon.js";
 import { operationsManagerDaemon } from "./operationsManagerDaemon.js";
 import { costSupplierDaemon } from "./costSupplierDaemon.js";
 import { creativeCommercialDaemon } from "./creativeCommercialDaemon.js";
+import { productAdsMonitorDaemon } from "./productAdsMonitorDaemon.js";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "operations-manager": operationsManagerDaemon,
   "cost-supplier": costSupplierDaemon,
   "creative-commercial": creativeCommercialDaemon,
+  "product-ads-monitor": productAdsMonitorDaemon,
 };
 
 // ── Scheduler ───────────────────────────────────────────────────────
