@@ -1,5 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { SupplierMirrorStore } from "@msl/memory";
+import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 
 // ── Signal kind constants ───────────────────────────────────────────
 
@@ -58,6 +59,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
   bus,
   sellerIds: _sellerIds,
   supplierMirrorStore,
+  advisor,
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
@@ -65,6 +67,14 @@ export const supplierManagerDaemon: DaemonHandler = async ({
   const capturedAt = now.toISOString();
   const hourKey = capturedAt.slice(0, 13);
   const prevHourKey = getPreviousHourKey(capturedAt);
+
+  // Store the latest aiEnrichment from a stock-gap advisor call
+  let aiEnrichment: {
+    findings: Array<{ kind: string; severity: string; summary: string; detail: string; evidenceIds: string[] }>;
+    summary: string;
+    modelUsed: string;
+    enrichedAt: string;
+  } | undefined;
 
   // ── Graceful degrade ─────────────────────────────────────────
   if (!supplierMirrorStore) {
@@ -174,6 +184,32 @@ export const supplierManagerDaemon: DaemonHandler = async ({
               const existing =
                 await supplierMirrorStore.getLedgerByIdempotencyKey(key);
               if (!existing) {
+                // ── [NEW] AI enrichment (stock-gap only, best-effort) ──
+                if (advisor) {
+                  try {
+                    const analysis = await advisor.analyze({
+                      supplierId: supplier.id,
+                      supplierName: supplier.name,
+                      question: `Stock discrepancy detected: ${item.title} (${item.supplierItemId}). In stock on: ${inStock.map(([s]) => s).join(", ")}. Out of stock on: ${outOfStock.map(([s]) => s).join(", ")}. Analyze the situation and provide actionable findings.`,
+                    });
+                    aiEnrichment = {
+                      findings: analysis.findings.map(f => ({
+                        kind: f.kind,
+                        severity: f.severity,
+                        summary: f.summary,
+                        detail: f.detail,
+                        evidenceIds: f.evidenceIds,
+                      })),
+                      summary: analysis.summary,
+                      modelUsed: analysis.modelUsed,
+                      enrichedAt: capturedAt,
+                    };
+                  } catch (err) {
+                    console.warn(`[supplier-manager] Advisor enrichment failed for ${supplier.id}/${item.supplierItemId}:`, err);
+                    // Fall through — enrichment is best-effort; rule-only proposal still enqueued
+                  }
+                }
+
                 findings.push({
                   kind: "alert",
                   severity: "critical",
@@ -354,6 +390,8 @@ export const supplierManagerDaemon: DaemonHandler = async ({
           recommendedAction,
           capturedAt,
           noMutationExecuted: true,
+          // Only stock-gap (critical) proposals carry AI enrichment
+          ...(kind === "critical" && aiEnrichment ? { aiEnrichment } : {}),
         }),
         dedupeKey: buildDedupeKey(kind, capturedAt),
       });

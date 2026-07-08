@@ -842,4 +842,155 @@ describe("supplierManagerDaemon", () => {
       expect(result.proposalEnqueued).toBe(true);
     });
   });
+
+  // ── 4.1 Advisor enrichment ─────────────────────────────────────
+
+  describe("advisor enrichment (task 4)", () => {
+    it("advisor present → stock-gap proposal includes aiEnrichment", async () => {
+      seedListingNode(engine, "MLC-A-001", { sellerId: "seller-a", stock: 12 });
+      seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
+
+      const mockAdvisor = {
+        analyze: async () => ({
+          findings: [{
+            kind: "stock-alert" as const,
+            severity: "critical" as const,
+            summary: "Critical stock imbalance detected",
+            detail: "Stock on seller-a but not on seller-b",
+            evidenceIds: ["supplier-item:ITM-1"],
+          }],
+          summary: "AI analysis: stock imbalance requires attention",
+          modelUsed: "deepseek-chat",
+          costMicros: 100,
+          cacheHitTokens: 0,
+          cacheMissTokens: 500,
+          outputTokens: 200,
+        }),
+      };
+
+      const store = mockStore({
+        listSupplierItemSnapshots: async () => [defaultItem()],
+        listTargetMappings: async () => [
+          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+        ],
+        getLedgerByIdempotencyKey: async () => null,
+        appendLedger: async (r) => r,
+      });
+
+      const result = await supplierManagerDaemon({
+        claim: claimFixture(),
+        reader: undefined as never,
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+        supplierMirrorStore: store,
+        advisor: mockAdvisor as any,
+      });
+
+      expect(result.findings.length).toBe(1);
+      expect(result.proposalEnqueued).toBe(true);
+
+      // Read the enqueued CEO proposal and verify aiEnrichment
+      const ceoMessages = busDb
+        .prepare(
+          "SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo' AND message_type = 'proposal'",
+        )
+        .all() as Array<Record<string, unknown>>;
+
+      expect(ceoMessages.length).toBeGreaterThan(0);
+      const payload = JSON.parse(ceoMessages[0]!.payload_json as string);
+      expect(payload.aiEnrichment).toBeDefined();
+      expect(payload.aiEnrichment.findings).toHaveLength(1);
+      expect(payload.aiEnrichment.findings[0].kind).toBe("stock-alert");
+      expect(payload.aiEnrichment.summary).toBe("AI analysis: stock imbalance requires attention");
+      expect(payload.aiEnrichment.modelUsed).toBe("deepseek-chat");
+      expect(payload.aiEnrichment.enrichedAt).toBeDefined();
+    });
+
+    it("advisor failure → rule-only proposal without aiEnrichment", async () => {
+      seedListingNode(engine, "MLC-A-001", { sellerId: "seller-a", stock: 12 });
+      seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
+
+      const failingAdvisor = {
+        analyze: async () => {
+          throw new Error("DeepSeek API timeout");
+        },
+      };
+
+      const store = mockStore({
+        listSupplierItemSnapshots: async () => [defaultItem()],
+        listTargetMappings: async () => [
+          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+        ],
+        getLedgerByIdempotencyKey: async () => null,
+        appendLedger: async (r) => r,
+      });
+
+      const result = await supplierManagerDaemon({
+        claim: claimFixture(),
+        reader: undefined as never,
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+        supplierMirrorStore: store,
+        advisor: failingAdvisor as any,
+      });
+
+      // Finding still present (rule-only fallback)
+      expect(result.findings.length).toBe(1);
+      expect(result.findings[0]!.severity).toBe("critical");
+      expect(result.proposalEnqueued).toBe(true);
+
+      // Payload must NOT have aiEnrichment
+      const ceoMessages = busDb
+        .prepare(
+          "SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo' AND message_type = 'proposal'",
+        )
+        .all() as Array<Record<string, unknown>>;
+
+      expect(ceoMessages.length).toBeGreaterThan(0);
+      const payload = JSON.parse(ceoMessages[0]!.payload_json as string);
+      expect(payload.aiEnrichment).toBeUndefined();
+    });
+
+    it("advisor absent → rule-only proposal, no enrichment", async () => {
+      seedListingNode(engine, "MLC-A-001", { sellerId: "seller-a", stock: 12 });
+      seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
+
+      const store = mockStore({
+        listSupplierItemSnapshots: async () => [defaultItem()],
+        listTargetMappings: async () => [
+          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+        ],
+        getLedgerByIdempotencyKey: async () => null,
+        appendLedger: async (r) => r,
+      });
+
+      const result = await supplierManagerDaemon({
+        claim: claimFixture(),
+        reader: undefined as never,
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+        supplierMirrorStore: store,
+        // No advisor — should operate as before
+      });
+
+      expect(result.findings.length).toBe(1);
+      expect(result.proposalEnqueued).toBe(true);
+
+      const ceoMessages = busDb
+        .prepare(
+          "SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo' AND message_type = 'proposal'",
+        )
+        .all() as Array<Record<string, unknown>>;
+
+      expect(ceoMessages.length).toBeGreaterThan(0);
+      const payload = JSON.parse(ceoMessages[0]!.payload_json as string);
+      expect(payload.aiEnrichment).toBeUndefined();
+    });
+  });
 });
