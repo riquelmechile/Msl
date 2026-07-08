@@ -120,10 +120,10 @@ export function coercePromotionType(raw: unknown): string | undefined {
   return typeof raw === "string" && raw.length > 0 ? raw : undefined;
 }
 
-export function metadataString(value: unknown): string {
+export function metadataString(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return "";
+  return fallback;
 }
 
 export function isMlcListingSummary(value: unknown): value is MlcListingSummary {
