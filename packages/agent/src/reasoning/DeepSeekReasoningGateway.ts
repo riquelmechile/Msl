@@ -38,11 +38,7 @@ export class DeepSeekReasoningGateway {
   private ledger?: WorkforceCostCacheLedgerStore;
   private autonomy?: AutonomyEngine;
 
-  constructor(
-    client: OpenAI,
-    ledger?: WorkforceCostCacheLedgerStore,
-    autonomy?: AutonomyEngine,
-  ) {
+  constructor(client: OpenAI, ledger?: WorkforceCostCacheLedgerStore, autonomy?: AutonomyEngine) {
     this.client = client;
     this.ledger = ledger;
     this.autonomy = autonomy;

@@ -57,9 +57,7 @@ export type OperationalReadModelReader = {
     kind: string,
     options?: { limit?: number; status?: string; categoryId?: string },
   ): Promise<Array<{ itemId: string; data: TData; capturedAt: string; freshness: string }>>;
-  searchSnapshots<TData>(
-    filter: SearchSnapshotsFilter,
-  ): Promise<SnapshotSearchResult<TData>[]>;
+  searchSnapshots<TData>(filter: SearchSnapshotsFilter): Promise<SnapshotSearchResult<TData>[]>;
 };
 
 // ── searchSnapshots types ───────────────────────────────────────────

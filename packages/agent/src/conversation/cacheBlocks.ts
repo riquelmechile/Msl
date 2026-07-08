@@ -262,8 +262,8 @@ export function assembleMessages(
 
   // Latest user message with date label + optional Block C injected.
   const dateLabel = `\n[Fecha: ${new Date().toLocaleDateString("es-CL", { year: "numeric", month: "long", day: "numeric" })}]`;
-  const userContent = blockC 
-    ? `${userMessage}${dateLabel}\n\n${blockC}` 
+  const userContent = blockC
+    ? `${userMessage}${dateLabel}\n\n${blockC}`
     : `${userMessage}${dateLabel}`;
   messages.push({ role: "user", content: userContent });
 
@@ -289,5 +289,3 @@ export function assembleLaneMessages(
   const blocks = buildLanePromptBlocks(lane, refreshableContext);
   return assembleMessages(blocks.stablePrefix, "", blocks.refreshableContext, history, userMessage);
 }
-
-

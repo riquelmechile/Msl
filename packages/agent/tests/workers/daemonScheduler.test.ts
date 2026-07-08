@@ -143,7 +143,8 @@ describe("daemonScheduler", () => {
               summary: "Margin-consuming ad: item MLC-SCHED-001",
               evidenceIds: ["listing_snapshot:MLC-SCHED-001"],
               actionability: "seller-impacting",
-              recommendationIdentity: "product-ads-cfo:seller-1:camp-1:MLC-SCHED-001:margin-consuming",
+              recommendationIdentity:
+                "product-ads-cfo:seller-1:camp-1:MLC-SCHED-001:margin-consuming",
             },
           ],
           capturedAt: now,

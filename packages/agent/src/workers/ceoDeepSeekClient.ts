@@ -124,9 +124,7 @@ class CeoDeepSeekClientImpl implements CeoDeepSeekClient {
       }
     }
     const cortexContext =
-      contextBlocks.length > 0
-        ? contextBlocks.join("\n")
-        : "no historical data available";
+      contextBlocks.length > 0 ? contextBlocks.join("\n") : "no historical data available";
 
     // 2. Build ReasoningCall and delegate to gateway
     const result = await this.gateway.reason(
@@ -162,9 +160,7 @@ class CeoDeepSeekClientImpl implements CeoDeepSeekClient {
     const recommendations = new Map<string, string>();
     for (const [identity, rec] of Object.entries(parsed)) {
       if (!rec.proposalType || !VALID_PROPOSAL_TYPES.has(rec.proposalType)) {
-        throw new Error(
-          `Invalid proposalType "${rec.proposalType}" for finding ${identity}`,
-        );
+        throw new Error(`Invalid proposalType "${rec.proposalType}" for finding ${identity}`);
       }
       recommendations.set(identity, rec.proposalType);
     }

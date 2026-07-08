@@ -104,8 +104,7 @@ function mockStore(
     resolveTargetPolicy:
       (overrides.resolveTargetPolicy as SupplierMirrorStore["resolveTargetPolicy"]) ?? nullResult,
     appendLedger:
-      (overrides.appendLedger as SupplierMirrorStore["appendLedger"]) ??
-      (async (r) => r),
+      (overrides.appendLedger as SupplierMirrorStore["appendLedger"]) ?? (async (r) => r),
     getLedgerByIdempotencyKey:
       (overrides.getLedgerByIdempotencyKey as SupplierMirrorStore["getLedgerByIdempotencyKey"]) ??
       nullResult,
@@ -113,8 +112,7 @@ function mockStore(
       (overrides.recordNotificationEvent as SupplierMirrorStore["recordNotificationEvent"]) ??
       (async (e) => e),
     getNotificationEvent:
-      (overrides.getNotificationEvent as SupplierMirrorStore["getNotificationEvent"]) ??
-      nullResult,
+      (overrides.getNotificationEvent as SupplierMirrorStore["getNotificationEvent"]) ?? nullResult,
     listNotificationEvents:
       (overrides.listNotificationEvents as SupplierMirrorStore["listNotificationEvents"]) ??
       emptyList,
@@ -245,9 +243,7 @@ describe("supplierManagerDaemon", () => {
         supplierMirrorStore: store,
       });
 
-      const stockGaps = result.findings.filter(
-        (f) => f.severity === "critical",
-      );
+      const stockGaps = result.findings.filter((f) => f.severity === "critical");
       expect(stockGaps.length).toBe(0);
     });
 
@@ -270,9 +266,7 @@ describe("supplierManagerDaemon", () => {
         supplierMirrorStore: store,
       });
 
-      const stockGaps = result.findings.filter(
-        (f) => f.severity === "critical",
-      );
+      const stockGaps = result.findings.filter((f) => f.severity === "critical");
       expect(stockGaps.length).toBe(0);
     });
   });
@@ -382,9 +376,7 @@ describe("supplierManagerDaemon", () => {
     it("single observation → no finding", async () => {
       // No prior ledger record → first time seeing this item
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-          defaultItem({ price: 1000 }),
-        ],
+        listSupplierItemSnapshots: async () => [defaultItem({ price: 1000 })],
         listTargetMappings: async () => [],
         getLedgerByIdempotencyKey: async () => null, // no prior at all
         appendLedger: async (r) => r,
@@ -407,9 +399,7 @@ describe("supplierManagerDaemon", () => {
 
     it("item has no price → skipped", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-          defaultItem({ price: undefined }),
-        ],
+        listSupplierItemSnapshots: async () => [defaultItem({ price: undefined })],
         listTargetMappings: async () => [],
       });
 
@@ -422,9 +412,7 @@ describe("supplierManagerDaemon", () => {
         supplierMirrorStore: store,
       });
 
-      const priceFindings = result.findings.filter(
-        (f) => f.summary.includes("Price"),
-      );
+      const priceFindings = result.findings.filter((f) => f.summary.includes("Price"));
       expect(priceFindings.length).toBe(0);
     });
   });
@@ -434,9 +422,7 @@ describe("supplierManagerDaemon", () => {
   describe("unfilled mirror detection (task 3.3)", () => {
     it("no mlItemId + no mappings → warning finding", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-          defaultItem({ mlItemId: undefined }),
-        ],
+        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: undefined })],
         listTargetMappings: async () => [],
         getLedgerByIdempotencyKey: async () => null,
         appendLedger: async (r) => r,
@@ -451,9 +437,7 @@ describe("supplierManagerDaemon", () => {
         supplierMirrorStore: store,
       });
 
-      const unfilled = result.findings.filter(
-        (f) => f.summary.includes("Unfilled mirror"),
-      );
+      const unfilled = result.findings.filter((f) => f.summary.includes("Unfilled mirror"));
       expect(unfilled.length).toBe(1);
       expect(unfilled[0]!.severity).toBe("warning");
       expect(unfilled[0]!.summary).toContain("ITM-1");
@@ -461,9 +445,7 @@ describe("supplierManagerDaemon", () => {
 
     it("mlItemId set → no unfilled finding", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-          defaultItem({ mlItemId: "MLC-EXISTING-001" }),
-        ],
+        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: "MLC-EXISTING-001" })],
         listTargetMappings: async () => [],
       });
 
@@ -476,20 +458,14 @@ describe("supplierManagerDaemon", () => {
         supplierMirrorStore: store,
       });
 
-      const unfilled = result.findings.filter(
-        (f) => f.summary.includes("Unfilled mirror"),
-      );
+      const unfilled = result.findings.filter((f) => f.summary.includes("Unfilled mirror"));
       expect(unfilled.length).toBe(0);
     });
 
     it("has mappings → no unfilled finding even without mlItemId", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-          defaultItem({ mlItemId: undefined }),
-        ],
-        listTargetMappings: async () => [
-          defaultMapping(),
-        ],
+        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: undefined })],
+        listTargetMappings: async () => [defaultMapping()],
       });
 
       const result = await supplierManagerDaemon({
@@ -501,9 +477,7 @@ describe("supplierManagerDaemon", () => {
         supplierMirrorStore: store,
       });
 
-      const unfilled = result.findings.filter(
-        (f) => f.summary.includes("Unfilled mirror"),
-      );
+      const unfilled = result.findings.filter((f) => f.summary.includes("Unfilled mirror"));
       expect(unfilled.length).toBe(0);
     });
   });
@@ -615,9 +589,7 @@ describe("supplierManagerDaemon", () => {
       });
 
       // Stock gap finding should be skipped due to existing ledger key
-      const stockGaps = result.findings.filter(
-        (f) => f.severity === "critical",
-      );
+      const stockGaps = result.findings.filter((f) => f.severity === "critical");
       expect(stockGaps.length).toBe(0);
     });
 
@@ -625,9 +597,7 @@ describe("supplierManagerDaemon", () => {
       let appended = false;
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-          defaultItem({ mlItemId: undefined }),
-        ],
+        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: undefined })],
         listTargetMappings: async () => [],
         getLedgerByIdempotencyKey: async () => null,
         appendLedger: async (r) => {
@@ -677,9 +647,7 @@ describe("supplierManagerDaemon", () => {
       });
 
       // seller-b has no Cortex data → only one seller in the map → no detection
-      const stockGaps = result.findings.filter(
-        (f) => f.severity === "critical",
-      );
+      const stockGaps = result.findings.filter((f) => f.severity === "critical");
       expect(stockGaps.length).toBe(0);
 
       // The daemon should not crash
@@ -706,9 +674,7 @@ describe("supplierManagerDaemon", () => {
         supplierMirrorStore: store,
       });
 
-      const stockGaps = result.findings.filter(
-        (f) => f.severity === "critical",
-      );
+      const stockGaps = result.findings.filter((f) => f.severity === "critical");
       expect(stockGaps.length).toBe(0);
     });
   });
@@ -852,13 +818,15 @@ describe("supplierManagerDaemon", () => {
 
       const mockAdvisor = {
         analyze: async () => ({
-          findings: [{
-            kind: "stock-alert" as const,
-            severity: "critical" as const,
-            summary: "Critical stock imbalance detected",
-            detail: "Stock on seller-a but not on seller-b",
-            evidenceIds: ["supplier-item:ITM-1"],
-          }],
+          findings: [
+            {
+              kind: "stock-alert" as const,
+              severity: "critical" as const,
+              summary: "Critical stock imbalance detected",
+              detail: "Stock on seller-a but not on seller-b",
+              evidenceIds: ["supplier-item:ITM-1"],
+            },
+          ],
           summary: "AI analysis: stock imbalance requires attention",
           modelUsed: "deepseek-chat",
           costMicros: 100,

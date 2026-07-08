@@ -107,12 +107,7 @@ function seedProductAdsInsights(
   });
 }
 
-function seedCostNode(
-  engine: GraphEngine,
-  itemId: string,
-  cost: number,
-  sellerId?: string,
-): void {
+function seedCostNode(engine: GraphEngine, itemId: string, cost: number, sellerId?: string): void {
   engine.getOrCreateNode(
     `cost_snapshot_${itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     {
@@ -392,9 +387,7 @@ describe("productAdsMonitorDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const visitFindings = result.findings.filter(
-        (f) => f.summary.includes("Declining visits"),
-      );
+      const visitFindings = result.findings.filter((f) => f.summary.includes("Declining visits"));
       expect(visitFindings).toEqual([]);
     });
   });
@@ -527,9 +520,7 @@ describe("productAdsMonitorDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const roasFindings = result.findings.filter(
-        (f) => f.summary.includes("Low ROAS"),
-      );
+      const roasFindings = result.findings.filter((f) => f.summary.includes("Low ROAS"));
       expect(roasFindings).toEqual([]);
     });
   });
@@ -604,9 +595,7 @@ describe("productAdsMonitorDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const oppFindings = result.findings.filter(
-        (f) => f.kind === "opportunity",
-      );
+      const oppFindings = result.findings.filter((f) => f.kind === "opportunity");
       expect(oppFindings.length).toBeGreaterThanOrEqual(1);
       expect(oppFindings[0]!.summary).toContain("MLC-OPP-OPPORTUNITY");
       expect(oppFindings[0]!.summary).toContain("High ROAS Campaign");
@@ -679,13 +668,9 @@ describe("productAdsMonitorDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const oppFindings = result.findings.filter(
-        (f) => f.kind === "opportunity",
-      );
+      const oppFindings = result.findings.filter((f) => f.kind === "opportunity");
       // The unprofitable product MLC-OPP-UNPROFITABLE should NOT appear
-      const found = oppFindings.some((f) =>
-        f.summary.includes("MLC-OPP-UNPROFITABLE"),
-      );
+      const found = oppFindings.some((f) => f.summary.includes("MLC-OPP-UNPROFITABLE"));
       expect(found).toBe(false);
     });
   });

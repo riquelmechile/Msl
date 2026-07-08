@@ -253,15 +253,11 @@ describe("agentMessageBusStore", () => {
     });
 
     it("throws when resolving a non-existent messageId", () => {
-      expect(() => store.resolve("nonexistent", {})).toThrow(
-        /"nonexistent" not found/,
-      );
+      expect(() => store.resolve("nonexistent", {})).toThrow(/"nonexistent" not found/);
     });
 
     it("throws when cancelling a non-existent messageId", () => {
-      expect(() => store.cancel("nonexistent")).toThrow(
-        /"nonexistent" not found/,
-      );
+      expect(() => store.cancel("nonexistent")).toThrow(/"nonexistent" not found/);
     });
   });
 
@@ -277,9 +273,7 @@ describe("agentMessageBusStore", () => {
       store.fail(claimed!.messageId, "something went wrong");
 
       const row = db
-        .prepare(
-          "SELECT status, attempts, locked_at FROM agent_message_bus WHERE message_id = ?",
-        )
+        .prepare("SELECT status, attempts, locked_at FROM agent_message_bus WHERE message_id = ?")
         .get(claimed!.messageId) as {
         status: string;
         attempts: number;
@@ -295,16 +289,14 @@ describe("agentMessageBusStore", () => {
       const [claimed] = store.claimNext("w");
 
       // Manually set attempts to 2 so next fail hits max
-      db.prepare(
-        "UPDATE agent_message_bus SET attempts = 2 WHERE message_id = ?",
-      ).run(claimed!.messageId);
+      db.prepare("UPDATE agent_message_bus SET attempts = 2 WHERE message_id = ?").run(
+        claimed!.messageId,
+      );
 
       store.fail(claimed!.messageId, "fatal error");
 
       const row = db
-        .prepare(
-          "SELECT status, attempts FROM agent_message_bus WHERE message_id = ?",
-        )
+        .prepare("SELECT status, attempts FROM agent_message_bus WHERE message_id = ?")
         .get(claimed!.messageId) as { status: string; attempts: number };
       expect(row.attempts).toBe(3);
       expect(row.status).toBe("failed");
@@ -324,9 +316,7 @@ describe("agentMessageBusStore", () => {
     });
 
     it("throws when failing a non-existent messageId", () => {
-      expect(() => store.fail("nonexistent", "error")).toThrow(
-        /"nonexistent" not found/,
-      );
+      expect(() => store.fail("nonexistent", "error")).toThrow(/"nonexistent" not found/);
     });
   });
 
@@ -358,9 +348,7 @@ describe("agentMessageBusStore", () => {
       createAgentMessageBusStore(db2);
 
       // Pre-existing table must be untouched
-      const preRow = db2
-        .prepare("SELECT name FROM pre_existing")
-        .get() as { name: string };
+      const preRow = db2.prepare("SELECT name FROM pre_existing").get() as { name: string };
       expect(preRow.name).toBe("test-row");
 
       // Verify column count and names

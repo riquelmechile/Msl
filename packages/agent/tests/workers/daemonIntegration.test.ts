@@ -3,9 +3,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
 import type { GraphEngine } from "@msl/memory";
-import {
-  createAgentMessageBusStore,
-} from "../../src/conversation/agentMessageBusStore.js";
+import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { startDaemonScheduler } from "../../src/workers/daemonScheduler.js";
 
@@ -36,10 +34,7 @@ function seedOrmSnapshot(
   );
 }
 
-function seedCortexNode(
-  engine: GraphEngine,
-  metadata: Record<string, unknown>,
-): number {
+function seedCortexNode(engine: GraphEngine, metadata: Record<string, unknown>): number {
   const node = engine.getOrCreateNode(
     `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     metadata,

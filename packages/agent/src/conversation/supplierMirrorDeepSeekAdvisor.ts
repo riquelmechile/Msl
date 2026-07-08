@@ -11,7 +11,12 @@ export type SupplierMirrorAnalysisInput = {
 };
 
 export type SupplierMirrorAnalysisFinding = {
-  kind: "stock-alert" | "price-opportunity" | "mapping-suggestion" | "policy-recommendation" | "general-insight";
+  kind:
+    | "stock-alert"
+    | "price-opportunity"
+    | "mapping-suggestion"
+    | "policy-recommendation"
+    | "general-insight";
   severity: "info" | "warning" | "critical";
   summary: string;
   detail: string;
@@ -72,7 +77,8 @@ export class SupplierMirrorDeepSeekAdvisor {
     ]);
 
     // Get latest stock observations for each item
-    const stockObservations: Array<{ itemId: string; quantity: number | null; status: string }> = [];
+    const stockObservations: Array<{ itemId: string; quantity: number | null; status: string }> =
+      [];
     for (const item of items.slice(0, 50)) {
       try {
         const obs = await this.store.listStockObservations(supplierId, item.supplierItemId);
@@ -84,25 +90,37 @@ export class SupplierMirrorDeepSeekAdvisor {
             status: latest.status,
           });
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
 
     // ── Build prompt blocks ──────────────────────────────
-    const itemsSummary = items.slice(0, 50).map(i =>
-      `- ${i.supplierItemId}: ${i.title} | SKU: ${i.sku ?? "N/A"} | Precio: ${i.price ?? "N/A"} ${i.currency ?? ""} | Confianza: ${i.confidence}`
-    ).join("\n");
+    const itemsSummary = items
+      .slice(0, 50)
+      .map(
+        (i) =>
+          `- ${i.supplierItemId}: ${i.title} | SKU: ${i.sku ?? "N/A"} | Precio: ${i.price ?? "N/A"} ${i.currency ?? ""} | Confianza: ${i.confidence}`,
+      )
+      .join("\n");
 
-    const stockSummary = stockObservations.map(s =>
-      `- ${s.itemId}: stock=${s.quantity ?? "?"} | status=${s.status}`
-    ).join("\n");
+    const stockSummary = stockObservations
+      .map((s) => `- ${s.itemId}: stock=${s.quantity ?? "?"} | status=${s.status}`)
+      .join("\n");
 
-    const mappingSummary = mappings.slice(0, 30).map(m =>
-      `- ${m.supplierItemId} → ${m.targetSellerId}/${m.targetItemId} (state: ${m.state})`
-    ).join("\n");
+    const mappingSummary = mappings
+      .slice(0, 30)
+      .map(
+        (m) => `- ${m.supplierItemId} → ${m.targetSellerId}/${m.targetItemId} (state: ${m.state})`,
+      )
+      .join("\n");
 
-    const policySummary = policies.map(p =>
-      `- scope: ${p.scopeType}/${p.scopeId} | targets: ${p.targetSellerIds.join(",")} | lowStock: ${p.lowStockThreshold} | autoPause: ${p.autoPauseAllowed}`
-    ).join("\n");
+    const policySummary = policies
+      .map(
+        (p) =>
+          `- scope: ${p.scopeType}/${p.scopeId} | targets: ${p.targetSellerIds.join(",")} | lowStock: ${p.lowStockThreshold} | autoPause: ${p.autoPauseAllowed}`,
+      )
+      .join("\n");
 
     // Spanish system prompt preserved from pre-gateway implementation
     const stablePrefix = [
@@ -128,9 +146,14 @@ export class SupplierMirrorDeepSeekAdvisor {
       `\n### Políticas:`,
       policySummary || "(sin políticas)",
       `\n### Notificaciones recientes (${notifications.length}):`,
-      notifications.slice(0, 5).map(n => `- [${n.type}] ${n.reason}`).join("\n") || "(sin notificaciones)",
+      notifications
+        .slice(0, 5)
+        .map((n) => `- [${n.type}] ${n.reason}`)
+        .join("\n") || "(sin notificaciones)",
       `\n### Fallback lessons aprendidas (${fallbackPolicies.length}):`,
-      fallbackPolicies.map(f => `- ${f.policyType}: ${f.decision.summary ?? "ver detalle"}`).join("\n") || "(sin lecciones)",
+      fallbackPolicies
+        .map((f) => `- ${f.policyType}: ${f.decision.summary ?? "ver detalle"}`)
+        .join("\n") || "(sin lecciones)",
       `\n\nAnalizá los datos y devolvé hallazgos en este formato JSON:`,
       `{ "findings": [{ "kind": "stock-alert|price-opportunity|mapping-suggestion|policy-recommendation|general-insight", "severity": "info|warning|critical", "summary": "una línea", "detail": "explicación", "evidenceIds": ["id1"] }], "summary": "resumen general en 2-3 oraciones" }`,
     ].join("\n");
@@ -151,7 +174,10 @@ export class SupplierMirrorDeepSeekAdvisor {
     let parsed: { findings?: SupplierMirrorAnalysisFinding[]; summary?: string } = {};
     try {
       const content = result.rawResponse ?? "{}";
-      parsed = JSON.parse(content) as { findings?: SupplierMirrorAnalysisFinding[]; summary?: string };
+      parsed = JSON.parse(content) as {
+        findings?: SupplierMirrorAnalysisFinding[];
+        summary?: string;
+      };
     } catch {
       parsed = { findings: [], summary: "DeepSeek response could not be parsed." };
     }

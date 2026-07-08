@@ -159,10 +159,7 @@ export async function loadProductAdsContext(
 /**
  * Flatten product-ads-insights into AdFlat array (for direct snapshot use).
  */
-export function flattenProductAds(
-  snapshots: MlcProductAdsInsights[],
-  sellerId: string,
-): AdFlat[] {
+export function flattenProductAds(snapshots: MlcProductAdsInsights[], sellerId: string): AdFlat[] {
   const ads: AdFlat[] = [];
   for (const snap of snapshots) {
     if (snap.ads) {
@@ -225,8 +222,7 @@ export function enrichWithEconomics(
     if (price !== undefined && costPerUnit !== undefined) {
       grossContribution = (price - costPerUnit) * (unitsFromAds ?? 0);
       netContribution = grossContribution - adSpend;
-      contributionMarginPct =
-        revenue > 0 ? netContribution / revenue : undefined;
+      contributionMarginPct = revenue > 0 ? netContribution / revenue : undefined;
       breakEvenCpa = price - costPerUnit;
       if (cvr != null && cvr > 0) {
         breakEvenCpc = breakEvenCpa * cvr;

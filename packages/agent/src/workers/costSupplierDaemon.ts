@@ -1,10 +1,14 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
-import type { CostSupplierDeepSeekAdvisor, CostSupplierActionableFinding, CostSupplierEnrichmentFinding } from "../conversation/costSupplierDeepSeekAdvisor.js";
+import type {
+  CostSupplierDeepSeekAdvisor,
+  CostSupplierActionableFinding,
+  CostSupplierEnrichmentFinding,
+} from "../conversation/costSupplierDeepSeekAdvisor.js";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 
-const MARGIN_WARNING_THRESHOLD = 0.30; // 30% margin
-const MARGIN_CRITICAL_THRESHOLD = 0.10; // 10% margin → critical
+const MARGIN_WARNING_THRESHOLD = 0.3; // 30% margin
+const MARGIN_CRITICAL_THRESHOLD = 0.1; // 10% margin → critical
 const RESTOCK_VISIT_RISING_FACTOR = 2; // visits must be at least 2× stock to signal restock
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -51,7 +55,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
     status: string;
     price: number;
     stock: number;
-  }
+  };
   const allListings: ListingEntry[] = [];
 
   for (const sellerId of sellerIds) {
@@ -122,10 +126,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
 
   // ── Retrieve pricing snapshot data from Cortex ───────────────
 
-  const pricingMap = new Map<
-    string,
-    { commissionRate: number; shippingCost: number }
-  >();
+  const pricingMap = new Map<string, { commissionRate: number; shippingCost: number }>();
   for (const sellerId of sellerIds) {
     const pricingNodes = cortex.queryByMetadata({
       type: "pricing_snapshot",
@@ -183,20 +184,14 @@ export const costSupplierDaemon: DaemonHandler = async ({
         kind: "alert",
         severity: "critical",
         summary: `Critically low margin (${(margin * 100).toFixed(1)}%): ${listing.title} (${listing.itemId}) — price $${listing.price}, costs ~$${totalCosts.toFixed(0)}`,
-        evidenceIds: [
-          `listing_snapshot:${listing.itemId}`,
-          `pricing_snapshot:${listing.itemId}`,
-        ],
+        evidenceIds: [`listing_snapshot:${listing.itemId}`, `pricing_snapshot:${listing.itemId}`],
       });
     } else if (margin < MARGIN_WARNING_THRESHOLD) {
       findings.push({
         kind: "alert",
         severity: "warning",
         summary: `Low margin (${(margin * 100).toFixed(1)}%): ${listing.title} (${listing.itemId}) — price $${listing.price}, costs ~$${totalCosts.toFixed(0)}`,
-        evidenceIds: [
-          `listing_snapshot:${listing.itemId}`,
-          `pricing_snapshot:${listing.itemId}`,
-        ],
+        evidenceIds: [`listing_snapshot:${listing.itemId}`, `pricing_snapshot:${listing.itemId}`],
       });
     }
 
@@ -206,10 +201,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
         kind: "alert",
         severity: "critical",
         summary: `Selling below cost: ${listing.title} (${listing.itemId}) — price $${listing.price} vs cost $${knownCost}`,
-        evidenceIds: [
-          `listing_snapshot:${listing.itemId}`,
-          `cost_snapshot:${listing.itemId}`,
-        ],
+        evidenceIds: [`listing_snapshot:${listing.itemId}`, `cost_snapshot:${listing.itemId}`],
       });
     }
 
@@ -221,10 +213,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
           kind: "opportunity",
           severity: "info",
           summary: `Restock opportunity: ${listing.title} (${listing.itemId}) — out of stock, ${visits} visits`,
-          evidenceIds: [
-            `listing_snapshot:${listing.itemId}`,
-            `visit_snapshot:${listing.itemId}`,
-          ],
+          evidenceIds: [`listing_snapshot:${listing.itemId}`, `visit_snapshot:${listing.itemId}`],
         });
       }
     }
@@ -232,25 +221,34 @@ export const costSupplierDaemon: DaemonHandler = async ({
 
   // ── AI Enrichment (critical + warning only) ───────────────────
 
-  let aiEnrichment: {
-    findings: CostSupplierEnrichmentFinding[];
-    summary: string;
-    modelUsed: string;
-    enrichedAt: string;
-  } | undefined;
+  let aiEnrichment:
+    | {
+        findings: CostSupplierEnrichmentFinding[];
+        summary: string;
+        modelUsed: string;
+        enrichedAt: string;
+      }
+    | undefined;
 
   const actionableFindings: CostSupplierActionableFinding[] = [];
   if (costSupplierAdvisor) {
     for (const f of findings) {
       if (f.severity === "info") continue;
-      const itemId = f.evidenceIds.find((id) => id.startsWith("listing_snapshot:"))?.replace("listing_snapshot:", "") ?? "";
+      const itemId =
+        f.evidenceIds
+          .find((id) => id.startsWith("listing_snapshot:"))
+          ?.replace("listing_snapshot:", "") ?? "";
       actionableFindings.push({
         itemId,
-        signalKind: f.summary.includes("Critically low margin") ? "critical-margin"
-          : f.summary.includes("Selling below cost") ? "below-cost"
-          : f.summary.includes("Low margin") ? "low-margin"
-          : "restock-opportunity",
-        severity: f.severity === "critical" ? "critical" : f.severity === "warning" ? "warning" : "info",
+        signalKind: f.summary.includes("Critically low margin")
+          ? "critical-margin"
+          : f.summary.includes("Selling below cost")
+            ? "below-cost"
+            : f.summary.includes("Low margin")
+              ? "low-margin"
+              : "restock-opportunity",
+        severity:
+          f.severity === "critical" ? "critical" : f.severity === "warning" ? "warning" : "info",
         price: 0,
         cost: 0,
         margin: 0,
@@ -262,9 +260,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
     try {
       // Re-extract price/cost/margin from findings text for advisor context
       const enrichedActionables = actionableFindings.map((af) => {
-        const finding = findings.find((f) =>
-          f.evidenceIds.some((eid) => eid.includes(af.itemId)),
-        );
+        const finding = findings.find((f) => f.evidenceIds.some((eid) => eid.includes(af.itemId)));
         if (!finding) return af;
 
         // Parse margin and price from summary strings like "Critically low margin (5.0%): Title (MLC123) — price $15000, costs ~$14250"
@@ -303,9 +299,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[cost-supplier] Advisor enrichment failed, using rule-only: ${errorMessage}`,
-      );
+      console.error(`[cost-supplier] Advisor enrichment failed, using rule-only: ${errorMessage}`);
     }
   }
 
@@ -317,10 +311,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
     const warnings = findings.filter((f) => f.severity === "warning");
     const infos = findings.filter((f) => f.severity === "info");
 
-    const enqueueGroup = (
-      group: DaemonFinding[],
-      kind: string,
-    ) => {
+    const enqueueGroup = (group: DaemonFinding[], kind: string) => {
       if (group.length === 0) return;
       const summary = `Cost/Supplier ${kind}s: ${group.length} finding(s)`;
       const recommendedAction =

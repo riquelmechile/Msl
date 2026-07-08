@@ -10,12 +10,35 @@ const FORUM_TOPICS_FILE = resolve(process.cwd(), "msl-forum-topics.json");
 const STALE_WINDOW_HOURS = 24;
 const DEDUPE_WINDOW_DAYS = 7;
 const MISSING_DATA_DEDUPE_WINDOW_HOURS = 24;
-const SIGNAL_TO_ACTION: Record<string, { proposalType: string; severity: string; requiresApproval: boolean }> = {
-  "margin-consuming": { proposalType: "pause-campaign", severity: "critical", requiresApproval: true },
-  "scale-candidate": { proposalType: "adjust-campaign-budget", severity: "opportunity", requiresApproval: true },
-  "budget-waste": { proposalType: "review-campaign-structure", severity: "warning", requiresApproval: true },
-  "underinvested": { proposalType: "adjust-campaign-budget", severity: "info", requiresApproval: true },
-  "unit-economics": { proposalType: "review-campaign-structure", severity: "info", requiresApproval: false },
+const SIGNAL_TO_ACTION: Record<
+  string,
+  { proposalType: string; severity: string; requiresApproval: boolean }
+> = {
+  "margin-consuming": {
+    proposalType: "pause-campaign",
+    severity: "critical",
+    requiresApproval: true,
+  },
+  "scale-candidate": {
+    proposalType: "adjust-campaign-budget",
+    severity: "opportunity",
+    requiresApproval: true,
+  },
+  "budget-waste": {
+    proposalType: "review-campaign-structure",
+    severity: "warning",
+    requiresApproval: true,
+  },
+  underinvested: {
+    proposalType: "adjust-campaign-budget",
+    severity: "info",
+    requiresApproval: true,
+  },
+  "unit-economics": {
+    proposalType: "review-campaign-structure",
+    severity: "info",
+    requiresApproval: false,
+  },
 };
 
 // ── Forum topic persistence ──────────────────────────────────────────
@@ -235,11 +258,7 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
     try {
       const ledger = ceoCtx.workforceCostCacheLedgerStore;
       if (ledger) {
-        llmRecommendations = await client.reason(
-          parsedFindings,
-          cortex,
-          ledger,
-        );
+        llmRecommendations = await client.reason(parsedFindings, cortex, ledger);
       } else {
         // Ledger not available — skip LLM reasoning (cost tracking required)
         console.warn(
@@ -265,14 +284,24 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
     try {
       // ── Data-gap findings (missing cost data) ─────────────────────
       if (finding.signal === "missing-cost-data") {
-        const windowStart24h = new Date(Date.now() - MISSING_DATA_DEDUPE_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-        const recentDataGap = bus.lookupRecentByDedupePrefix(finding.recommendationIdentity, windowStart24h);
+        const windowStart24h = new Date(
+          Date.now() - MISSING_DATA_DEDUPE_WINDOW_HOURS * 60 * 60 * 1000,
+        ).toISOString();
+        const recentDataGap = bus.lookupRecentByDedupePrefix(
+          finding.recommendationIdentity,
+          windowStart24h,
+        );
         if (recentDataGap.length > 0) continue; // Suppress within 24h window
 
         // Send Telegram notification for data-gap
         if (ceoCtx.sendProactiveMessage && primaryAdminChatId) {
           const sellerName = sellerNameMap[finding.sellerId] ?? finding.sellerId;
-          const threadId = await ensureTopic(finding.sellerId, sellerName, primaryAdminChatId, ceoCtx);
+          const threadId = await ensureTopic(
+            finding.sellerId,
+            sellerName,
+            primaryAdminChatId,
+            ceoCtx,
+          );
           const notificationText = [
             `<b>📊 Missing Cost Data — ${sellerName}</b>`,
             ``,
@@ -314,7 +343,12 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
 
       // ── Add finding to results ────────────────────────────────────
       findings.push({
-        kind: action.severity === "critical" ? "alert" : action.severity === "warning" ? "alert" : "info",
+        kind:
+          action.severity === "critical"
+            ? "alert"
+            : action.severity === "warning"
+              ? "alert"
+              : "info",
         severity: action.severity as "info" | "warning" | "critical",
         summary: `[${finding.signal}] ${finding.summary}`,
         evidenceIds: finding.evidenceIds,
@@ -331,7 +365,12 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
         const sellerName = sellerNameMap[finding.sellerId] ?? finding.sellerId;
 
         // Ensure forum topic exists
-        const threadId = await ensureTopic(finding.sellerId, sellerName, primaryAdminChatId, ceoCtx);
+        const threadId = await ensureTopic(
+          finding.sellerId,
+          sellerName,
+          primaryAdminChatId,
+          ceoCtx,
+        );
 
         // Build notification text
         const actionLabel = action.requiresApproval

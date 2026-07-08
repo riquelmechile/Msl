@@ -210,9 +210,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const lowImage = result.findings.filter(
-        (f) => f.summary.includes("Low image count"),
-      );
+      const lowImage = result.findings.filter((f) => f.summary.includes("Low image count"));
       expect(lowImage.length).toBeGreaterThanOrEqual(1);
       expect(lowImage[0]!.severity).toBe("warning");
       expect(lowImage[0]!.summary).toContain("MLC-LOW-IMG-001");
@@ -232,9 +230,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const lowImage = result.findings.filter(
-        (f) => f.summary.includes("Low image count"),
-      );
+      const lowImage = result.findings.filter((f) => f.summary.includes("Low image count"));
       expect(lowImage.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -252,9 +248,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const lowImage = result.findings.filter(
-        (f) => f.summary.includes("Low image count"),
-      );
+      const lowImage = result.findings.filter((f) => f.summary.includes("Low image count"));
       expect(lowImage).toEqual([]);
     });
   });
@@ -278,9 +272,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const blocked = result.findings.filter(
-        (f) => f.summary.includes("Moderation blocked"),
-      );
+      const blocked = result.findings.filter((f) => f.summary.includes("Moderation blocked"));
       expect(blocked.length).toBeGreaterThanOrEqual(1);
       expect(blocked[0]!.severity).toBe("warning");
       expect(blocked[0]!.summary).toContain("MLC-BLOCKED-001");
@@ -300,9 +292,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const blocked = result.findings.filter(
-        (f) => f.summary.includes("Moderation blocked"),
-      );
+      const blocked = result.findings.filter((f) => f.summary.includes("Moderation blocked"));
       expect(blocked).toEqual([]);
     });
   });
@@ -325,9 +315,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const poorPictures = result.findings.filter(
-        (f) => f.summary.includes("Poor PICTURES score"),
-      );
+      const poorPictures = result.findings.filter((f) => f.summary.includes("Poor PICTURES score"));
       expect(poorPictures.length).toBeGreaterThanOrEqual(1);
       expect(poorPictures[0]!.severity).toBe("warning");
       expect(poorPictures[0]!.summary).toContain("MLC-PICT-001");
@@ -348,9 +336,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const poorPictures = result.findings.filter(
-        (f) => f.summary.includes("Poor PICTURES score"),
-      );
+      const poorPictures = result.findings.filter((f) => f.summary.includes("Poor PICTURES score"));
       expect(poorPictures).toEqual([]);
     });
 
@@ -368,9 +354,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const poorPictures = result.findings.filter(
-        (f) => f.summary.includes("Poor PICTURES score"),
-      );
+      const poorPictures = result.findings.filter((f) => f.summary.includes("Poor PICTURES score"));
       expect(poorPictures).toEqual([]);
     });
   });
@@ -402,8 +386,8 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const highTraffic = result.findings.filter(
-        (f) => f.summary.includes("High-traffic poor creative"),
+      const highTraffic = result.findings.filter((f) =>
+        f.summary.includes("High-traffic poor creative"),
       );
       expect(highTraffic.length).toBeGreaterThanOrEqual(1);
       expect(highTraffic[0]!.severity).toBe("warning");
@@ -433,8 +417,8 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const highTraffic = result.findings.filter(
-        (f) => f.summary.includes("High-traffic poor creative"),
+      const highTraffic = result.findings.filter((f) =>
+        f.summary.includes("High-traffic poor creative"),
       );
       expect(highTraffic).toEqual([]);
     });
@@ -461,8 +445,8 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const highTraffic = result.findings.filter(
-        (f) => f.summary.includes("High-traffic poor creative"),
+      const highTraffic = result.findings.filter((f) =>
+        f.summary.includes("High-traffic poor creative"),
       );
       expect(highTraffic).toEqual([]);
     });
@@ -496,9 +480,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const moderated = result.findings.filter(
-        (f) => f.summary.includes("Moderated-in-campaign"),
-      );
+      const moderated = result.findings.filter((f) => f.summary.includes("Moderated-in-campaign"));
       expect(moderated.length).toBeGreaterThanOrEqual(1);
       expect(moderated[0]!.severity).toBe("critical");
       expect(moderated[0]!.summary).toContain("MLC-MOD-CAMP-001");
@@ -519,15 +501,11 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const moderated = result.findings.filter(
-        (f) => f.summary.includes("Moderated-in-campaign"),
-      );
+      const moderated = result.findings.filter((f) => f.summary.includes("Moderated-in-campaign"));
       expect(moderated).toEqual([]);
 
       // But R2 "moderation blocked" warning SHOULD fire
-      const blocked = result.findings.filter(
-        (f) => f.summary.includes("Moderation blocked"),
-      );
+      const blocked = result.findings.filter((f) => f.summary.includes("Moderation blocked"));
       expect(blocked.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -556,9 +534,7 @@ describe("creativeAssetsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const moderated = result.findings.filter(
-        (f) => f.summary.includes("Moderated-in-campaign"),
-      );
+      const moderated = result.findings.filter((f) => f.summary.includes("Moderated-in-campaign"));
       expect(moderated).toEqual([]);
     });
   });
@@ -845,14 +821,12 @@ describe("creativeAssetsDaemon", () => {
       });
 
       // Signal 1 (low image count) should still fire despite no visit data
-      const lowImage = result.findings.filter(
-        (f) => f.summary.includes("Low image count"),
-      );
+      const lowImage = result.findings.filter((f) => f.summary.includes("Low image count"));
       expect(lowImage.length).toBeGreaterThanOrEqual(1);
 
       // Signal 4 should be silently skipped (no visit baseline)
-      const highTraffic = result.findings.filter(
-        (f) => f.summary.includes("High-traffic poor creative"),
+      const highTraffic = result.findings.filter((f) =>
+        f.summary.includes("High-traffic poor creative"),
       );
       expect(highTraffic).toEqual([]);
     });
@@ -875,15 +849,11 @@ describe("creativeAssetsDaemon", () => {
       });
 
       // Signal 2 (moderation blocked) should still fire
-      const blocked = result.findings.filter(
-        (f) => f.summary.includes("Moderation blocked"),
-      );
+      const blocked = result.findings.filter((f) => f.summary.includes("Moderation blocked"));
       expect(blocked.length).toBeGreaterThanOrEqual(1);
 
       // Signal 5 should be silently skipped (no ads data)
-      const moderated = result.findings.filter(
-        (f) => f.summary.includes("Moderated-in-campaign"),
-      );
+      const moderated = result.findings.filter((f) => f.summary.includes("Moderated-in-campaign"));
       expect(moderated).toEqual([]);
     });
   });

@@ -379,7 +379,13 @@ describe("createDelegateToSubagentTool", () => {
     const properties = schema?.function.parameters.properties as Record<string, unknown>;
     expect(properties.laneId).toMatchObject({
       type: "string",
-      enum: ["cost-supplier", "market-catalog", "creative-commercial", "operations-manager", "owned-ecommerce"],
+      enum: [
+        "cost-supplier",
+        "market-catalog",
+        "creative-commercial",
+        "operations-manager",
+        "owned-ecommerce",
+      ],
     });
   });
 

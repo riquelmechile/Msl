@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { OperationalReadModelReader, OperationalEvidenceQuery, SearchSnapshotsFilter, SnapshotSearchResult } from "@msl/memory";
+import type {
+  OperationalReadModelReader,
+  OperationalEvidenceQuery,
+  SearchSnapshotsFilter,
+  SnapshotSearchResult,
+} from "@msl/memory";
 import type { OperationalEvidence } from "@msl/domain";
 import { OperationalEvidenceProvider } from "../../src/conversation/operationalEvidenceProvider.js";
 
@@ -422,11 +427,13 @@ describe("getStructuredEvidenceForLane", () => {
       listSnapshots: () => Promise.resolve([]),
       async searchSnapshots<TData>() {
         await Promise.resolve(); // mock
-        return [makeSearchResult("listing", "MLC-X", { status: "active" } as TData, {
-          capturedAt: "2026-07-05T12:00:00Z",
-          freshness: "fresh",
-          evidenceId: "ev-abc",
-        })];
+        return [
+          makeSearchResult("listing", "MLC-X", { status: "active" } as TData, {
+            capturedAt: "2026-07-05T12:00:00Z",
+            freshness: "fresh",
+            evidenceId: "ev-abc",
+          }),
+        ];
       },
     };
 

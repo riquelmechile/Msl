@@ -34,9 +34,7 @@ const env = process.env;
 // ── Validate required env ──────────────────────────────────────
 const cortexPath = env.MSL_CORTEX_SQLITE_PATH?.trim();
 if (!cortexPath) {
-  console.error(
-    "Cannot start daemon scheduler: MSL_CORTEX_SQLITE_PATH is not set.",
-  );
+  console.error("Cannot start daemon scheduler: MSL_CORTEX_SQLITE_PATH is not set.");
   process.exit(1);
 }
 
@@ -66,9 +64,7 @@ const sellerIds = [roleConfig.sourceSellerId, roleConfig.targetSellerId];
 // ── Supplier Mirror ──────────────────────────────────────────
 const { getSupplierMirrorRuntimeFromEnv } = await import("@msl/memory");
 const { startSupplierMirrorScheduler } = await import("@msl/workers");
-const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(
-  env,
-);
+const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(env);
 let supplierMirrorStore = undefined;
 if (supplierMirrorRuntime) {
   supplierMirrorStore = supplierMirrorRuntime.store;
@@ -90,7 +86,9 @@ if (supplierMirrorRuntime && workerEnabled) {
 // ── CEO handler Telegram context ────────────────────────────────
 const botToken = env.BOT_TOKEN?.trim();
 const adminChatIds = env.MSL_TELEGRAM_ADMIN_CHAT_IDS?.trim()
-  ? env.MSL_TELEGRAM_ADMIN_CHAT_IDS.split(",").map((id) => id.trim()).filter(Boolean)
+  ? env.MSL_TELEGRAM_ADMIN_CHAT_IDS.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
   : [];
 
 const sellerNames = {};
@@ -183,24 +181,32 @@ const { runSystemHealthCheck } = await import("@msl/agent");
 const { runDlqMonitor } = await import("@msl/agent");
 
 // Health check every 30 minutes
-const healthInterval = setInterval(() => {
-  const health = runSystemHealthCheck(bus, engine);
-  if (!health.ok && ceoContext?.adminChatIds && ceoContext.sendProactiveMessage) {
-    const alertMsg = health.checks
-      .filter(c => c.status !== "ok")
-      .map(c => `• [${c.status.toUpperCase()}] ${c.name}: ${c.detail}`)
-      .join("\n");
-    for (const chatId of ceoContext.adminChatIds) {
-      ceoContext.sendProactiveMessage(Number(chatId), `🏥 <b>System Health Alert</b>\n${alertMsg}`).catch(() => {});
+const healthInterval = setInterval(
+  () => {
+    const health = runSystemHealthCheck(bus, engine);
+    if (!health.ok && ceoContext?.adminChatIds && ceoContext.sendProactiveMessage) {
+      const alertMsg = health.checks
+        .filter((c) => c.status !== "ok")
+        .map((c) => `• [${c.status.toUpperCase()}] ${c.name}: ${c.detail}`)
+        .join("\n");
+      for (const chatId of ceoContext.adminChatIds) {
+        ceoContext
+          .sendProactiveMessage(Number(chatId), `🏥 <b>System Health Alert</b>\n${alertMsg}`)
+          .catch(() => {});
+      }
     }
-  }
-  console.log("[agent-daemons] Health check:", health.ok ? "OK" : "ISSUES FOUND");
-}, 30 * 60 * 1000);
+    console.log("[agent-daemons] Health check:", health.ok ? "OK" : "ISSUES FOUND");
+  },
+  30 * 60 * 1000,
+);
 
 // DLQ monitor every 15 minutes
-const dlqInterval = setInterval(() => {
-  runDlqMonitor(bus, ceoContext?.adminChatIds ?? [], ceoContext?.sendProactiveMessage);
-}, 15 * 60 * 1000);
+const dlqInterval = setInterval(
+  () => {
+    runDlqMonitor(bus, ceoContext?.adminChatIds ?? [], ceoContext?.sendProactiveMessage);
+  },
+  15 * 60 * 1000,
+);
 
 // ── Graceful shutdown ──────────────────────────────────────────
 process.on("SIGINT", () => {

@@ -46,7 +46,8 @@ export class MinimaxImageProvider implements CreativeProvider {
 
   constructor(client: MinimaxClient, modelName?: string) {
     this.client = client;
-    const resolved = IMAGE_MODELS[modelName ?? DEFAULT_IMAGE_MODEL] ?? IMAGE_MODELS[DEFAULT_IMAGE_MODEL];
+    const resolved =
+      IMAGE_MODELS[modelName ?? DEFAULT_IMAGE_MODEL] ?? IMAGE_MODELS[DEFAULT_IMAGE_MODEL];
     if (!resolved) throw new Error(`Unknown image model: ${modelName ?? DEFAULT_IMAGE_MODEL}`);
     this.modelConfig = resolved;
   }

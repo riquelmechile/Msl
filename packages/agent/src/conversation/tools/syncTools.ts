@@ -1,4 +1,10 @@
-import type { MlClient, MlUserSnapshot, ProductSyncEngine, SyncResult, SyncReport } from "@msl/mercadolibre";
+import type {
+  MlClient,
+  MlUserSnapshot,
+  ProductSyncEngine,
+  SyncResult,
+  SyncReport,
+} from "@msl/mercadolibre";
 import type { GraphEngine } from "@msl/memory";
 
 import type { ToolDefinition } from "../tools.js";

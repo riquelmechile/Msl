@@ -745,19 +745,30 @@ export function createSupplierMirrorTools(
       // Query supplier profile node
       if (queryType === "all" || queryType === "items" || queryType === "patterns") {
         const profileLabel = `supplier_${supplierId}`;
-        const profileNodes = engine.queryByMetadata({ type: "supplier_profile", labelPrefix: `supplier_${supplierId}` });
+        const profileNodes = engine.queryByMetadata({
+          type: "supplier_profile",
+          labelPrefix: `supplier_${supplierId}`,
+        });
         results.profileNodes = profileNodes;
       }
 
       // Query supplier items
       if (queryType === "all" || queryType === "items" || queryType === "patterns") {
-        const itemNodes = engine.queryByMetadata({ type: "supplier_item", labelPrefix: `supplier_item_${supplierId}`, limit: 20 });
+        const itemNodes = engine.queryByMetadata({
+          type: "supplier_item",
+          labelPrefix: `supplier_item_${supplierId}`,
+          limit: 20,
+        });
         results.itemNodes = itemNodes;
       }
 
       // Query supplier mappings
       if (queryType === "all" || queryType === "mappings" || queryType === "patterns") {
-        const mappingNodes = engine.queryByMetadata({ type: "supplier_mapping", labelPrefix: `supplier_mapping_${supplierId}`, limit: 20 });
+        const mappingNodes = engine.queryByMetadata({
+          type: "supplier_mapping",
+          labelPrefix: `supplier_mapping_${supplierId}`,
+          limit: 20,
+        });
         results.mappingNodes = mappingNodes;
       }
 

@@ -563,8 +563,7 @@ function seedSnapshot(
   const freshness = overrides.freshness ?? "fresh";
   const completeness = overrides.completeness ?? "complete";
   const confidence = overrides.confidence ?? "high";
-  const evidenceId =
-    overrides.evidenceId ?? `orm:${kind}:${sellerId}:${itemId}:${capturedAt}`;
+  const evidenceId = overrides.evidenceId ?? `orm:${kind}:${sellerId}:${itemId}:${capturedAt}`;
   const dataJson = overrides.dataJson ?? { status: "active", price: 1000 };
 
   db.prepare(
@@ -710,10 +709,30 @@ describe("searchSnapshots", () => {
   });
 
   it("applies freshness='fresh' post-query filter", async () => {
-    seedSnapshot(db, { itemId: "GOOD", freshness: "fresh", completeness: "complete", confidence: "high" });
-    seedSnapshot(db, { itemId: "STALE", freshness: "stale", completeness: "complete", confidence: "high" });
-    seedSnapshot(db, { itemId: "PARTIAL", freshness: "fresh", completeness: "partial", confidence: "high" });
-    seedSnapshot(db, { itemId: "LOWCONF", freshness: "fresh", completeness: "complete", confidence: "low" });
+    seedSnapshot(db, {
+      itemId: "GOOD",
+      freshness: "fresh",
+      completeness: "complete",
+      confidence: "high",
+    });
+    seedSnapshot(db, {
+      itemId: "STALE",
+      freshness: "stale",
+      completeness: "complete",
+      confidence: "high",
+    });
+    seedSnapshot(db, {
+      itemId: "PARTIAL",
+      freshness: "fresh",
+      completeness: "partial",
+      confidence: "high",
+    });
+    seedSnapshot(db, {
+      itemId: "LOWCONF",
+      freshness: "fresh",
+      completeness: "complete",
+      confidence: "low",
+    });
 
     const results = await store.searchSnapshots({
       sellerId: "plasticov",
@@ -725,8 +744,18 @@ describe("searchSnapshots", () => {
   });
 
   it("applies freshness='allow-stale-with-warning' — includes all", async () => {
-    seedSnapshot(db, { itemId: "GOOD", freshness: "fresh", completeness: "complete", confidence: "high" });
-    seedSnapshot(db, { itemId: "STALE", freshness: "stale", completeness: "complete", confidence: "high" });
+    seedSnapshot(db, {
+      itemId: "GOOD",
+      freshness: "fresh",
+      completeness: "complete",
+      confidence: "high",
+    });
+    seedSnapshot(db, {
+      itemId: "STALE",
+      freshness: "stale",
+      completeness: "complete",
+      confidence: "high",
+    });
 
     const results = await store.searchSnapshots({
       sellerId: "plasticov",
@@ -737,10 +766,30 @@ describe("searchSnapshots", () => {
   });
 
   it("composes multiple filters (AND semantics)", async () => {
-    seedSnapshot(db, { itemId: "A", kind: "listing", capturedAt: "2026-07-05T00:00:00Z", dataJson: { status: "active", price: 2000 } });
-    seedSnapshot(db, { itemId: "B", kind: "listing", capturedAt: "2026-07-01T00:00:00Z", dataJson: { status: "active", price: 2000 } });
-    seedSnapshot(db, { itemId: "C", kind: "listing", capturedAt: "2026-07-05T00:00:00Z", dataJson: { status: "paused", price: 2000 } });
-    seedSnapshot(db, { itemId: "D", kind: "listing", capturedAt: "2026-07-05T00:00:00Z", dataJson: { status: "active", price: 500 } });
+    seedSnapshot(db, {
+      itemId: "A",
+      kind: "listing",
+      capturedAt: "2026-07-05T00:00:00Z",
+      dataJson: { status: "active", price: 2000 },
+    });
+    seedSnapshot(db, {
+      itemId: "B",
+      kind: "listing",
+      capturedAt: "2026-07-01T00:00:00Z",
+      dataJson: { status: "active", price: 2000 },
+    });
+    seedSnapshot(db, {
+      itemId: "C",
+      kind: "listing",
+      capturedAt: "2026-07-05T00:00:00Z",
+      dataJson: { status: "paused", price: 2000 },
+    });
+    seedSnapshot(db, {
+      itemId: "D",
+      kind: "listing",
+      capturedAt: "2026-07-05T00:00:00Z",
+      dataJson: { status: "active", price: 500 },
+    });
 
     const results = await store.searchSnapshots({
       sellerId: "plasticov",
@@ -755,7 +804,10 @@ describe("searchSnapshots", () => {
 
   it("defaults limit to 100", async () => {
     for (let i = 1; i <= 150; i++) {
-      seedSnapshot(db, { itemId: `ITEM-${i}`, capturedAt: `2026-07-${String(i).padStart(2, "0")}T00:00:00Z` });
+      seedSnapshot(db, {
+        itemId: `ITEM-${i}`,
+        capturedAt: `2026-07-${String(i).padStart(2, "0")}T00:00:00Z`,
+      });
     }
 
     const results = await store.searchSnapshots({ sellerId: "plasticov", kind: "listing" });
@@ -764,7 +816,10 @@ describe("searchSnapshots", () => {
 
   it("respects explicit limit", async () => {
     for (let i = 1; i <= 50; i++) {
-      seedSnapshot(db, { itemId: `ITEM-${i}`, capturedAt: `2026-07-${String(i).padStart(2, "0")}T00:00:00Z` });
+      seedSnapshot(db, {
+        itemId: `ITEM-${i}`,
+        capturedAt: `2026-07-${String(i).padStart(2, "0")}T00:00:00Z`,
+      });
     }
 
     const results = await store.searchSnapshots({

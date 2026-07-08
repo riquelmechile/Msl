@@ -1,9 +1,6 @@
 import OpenAI from "openai";
 import { getDeepSeekClient as getSharedDeepSeekClient } from "../deepseekClient.js";
-import {
-  resolveDeepSeekRuntimeConfig,
-  type DeepSeekRuntimeConfig,
-} from "../deepseekRuntime.js";
+import { resolveDeepSeekRuntimeConfig, type DeepSeekRuntimeConfig } from "../deepseekRuntime.js";
 import type { ToolDefinition } from "../tools.js";
 
 // ── Types ──────────────────────────────────────────────────────────────

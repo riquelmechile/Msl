@@ -8,11 +8,7 @@ import { ReasoningLevel } from "../reasoning/reasoningTypes.js";
 export type CostSupplierActionableFinding = {
   itemId: string;
   title?: string;
-  signalKind:
-    | "low-margin"
-    | "critical-margin"
-    | "below-cost"
-    | "restock-opportunity";
+  signalKind: "low-margin" | "critical-margin" | "below-cost" | "restock-opportunity";
   severity: "info" | "warning" | "critical";
   price: number;
   cost: number;
@@ -80,10 +76,7 @@ export class CostSupplierDeepSeekAdvisor {
     // ── Build prompt blocks ──────────────────────────────────
     const findingsSummary = actionableFindings
       .map((f) => {
-        const parts = [
-          `- ${f.signalKind} (${f.severity})`,
-          `item: ${f.itemId}`,
-        ];
+        const parts = [`- ${f.signalKind} (${f.severity})`, `item: ${f.itemId}`];
         if (f.title) parts.push(`"${f.title}"`);
         parts.push(`price: $${f.price}`);
         parts.push(`cost: $${f.cost}`);

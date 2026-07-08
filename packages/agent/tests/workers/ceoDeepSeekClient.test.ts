@@ -70,17 +70,29 @@ describe("createCeoDeepSeekClient", () => {
   // ── 1. Missing API key → null factory ───────────────────────────
 
   it("returns null when DEEPSEEK_API_KEY is not set", () => {
-    const client = createCeoDeepSeekClient({ apiKey: undefined, baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: undefined,
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).toBeNull();
   });
 
   it("returns null when DEEPSEEK_API_KEY is empty", () => {
-    const client = createCeoDeepSeekClient({ apiKey: "", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).toBeNull();
   });
 
   it("returns a client when DEEPSEEK_API_KEY is set", () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test-key", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test-key",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
     expect(client).toHaveProperty("reason");
   });
@@ -88,7 +100,11 @@ describe("createCeoDeepSeekClient", () => {
   // ── 2. Valid JSON parsed ────────────────────────────────────────
 
   it("returns recommendation map for valid DeepSeek JSON response", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     const identity = "product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming";
@@ -121,7 +137,11 @@ describe("createCeoDeepSeekClient", () => {
   });
 
   it("handles multiple findings in a single response", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     const id1 = "product-ads-cfo:seller-plasticov:camp-1:MLC-A:margin-consuming";
@@ -161,7 +181,11 @@ describe("createCeoDeepSeekClient", () => {
   // ── 3. Invalid proposalType → throws ────────────────────────────
 
   it("throws when LLM returns an unknown proposalType", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     const identity = "product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming";
@@ -188,7 +212,11 @@ describe("createCeoDeepSeekClient", () => {
   });
 
   it("throws when LLM returns empty content", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     mockCreate.mockResolvedValueOnce({
@@ -202,7 +230,11 @@ describe("createCeoDeepSeekClient", () => {
   });
 
   it("throws when LLM returns invalid JSON", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     mockCreate.mockResolvedValueOnce({
@@ -218,7 +250,11 @@ describe("createCeoDeepSeekClient", () => {
   // ── 4. Timeout → throws ─────────────────────────────────────────
 
   it("throws on DeepSeek API timeout", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     mockCreate.mockRejectedValueOnce(new Error("AbortError: The operation was aborted"));
@@ -231,7 +267,11 @@ describe("createCeoDeepSeekClient", () => {
   // ── 5. Cortex enrichment ────────────────────────────────────────
 
   it("queries Cortex for profitability context per finding", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     const identity = "product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming";
@@ -253,7 +293,11 @@ describe("createCeoDeepSeekClient", () => {
     });
 
     const queryByMetadata = vi.fn().mockReturnValue([
-      { id: 1, label: "profitability:plasticov", metadata: { type: "profitability", sellerId: "seller-plasticov", margin: -0.15 } },
+      {
+        id: 1,
+        label: "profitability:plasticov",
+        metadata: { type: "profitability", sellerId: "seller-plasticov", margin: -0.15 },
+      },
     ]);
 
     const cortex = { queryByMetadata } as unknown as GraphEngine;
@@ -271,7 +315,11 @@ describe("createCeoDeepSeekClient", () => {
   // ── 6. Cost ledger recording ────────────────────────────────────
 
   it("records an insertEntry on the cost ledger after a successful call", async () => {
-    const client = createCeoDeepSeekClient({ apiKey: "sk-test", baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+    const client = createCeoDeepSeekClient({
+      apiKey: "sk-test",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+    });
     expect(client).not.toBeNull();
 
     const identity = "product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming";
@@ -298,7 +346,12 @@ describe("createCeoDeepSeekClient", () => {
       insertEntry,
       listEntries: vi.fn().mockReturnValue([]),
       count: vi.fn().mockReturnValue(0),
-      aggregateCosts: vi.fn().mockReturnValue({ byAgent: new Map(), byDepartment: new Map(), byPeriod: [], cacheEfficiency: 0 }),
+      aggregateCosts: vi.fn().mockReturnValue({
+        byAgent: new Map(),
+        byDepartment: new Map(),
+        byPeriod: [],
+        cacheEfficiency: 0,
+      }),
     } as unknown as WorkforceCostCacheLedgerStore;
 
     await client!.reason(makeFindings(), makeMockCortex(), ledger);

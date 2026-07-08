@@ -1,4 +1,10 @@
-import type { MlcApiClient, MlcSellerPromotionsSnapshot, MlcPromotionDetailSnapshot, MlcPromotionItemsSnapshot, MlcItemPromotionsSnapshot } from "@msl/mercadolibre";
+import type {
+  MlcApiClient,
+  MlcSellerPromotionsSnapshot,
+  MlcPromotionDetailSnapshot,
+  MlcPromotionItemsSnapshot,
+  MlcItemPromotionsSnapshot,
+} from "@msl/mercadolibre";
 import {
   MLC_PROMOTIONS_ITEMS_DEFAULT_LIMIT,
   MLC_PROMOTIONS_ITEMS_MAX_LIMIT,
@@ -6,12 +12,7 @@ import {
 
 import type { ToolDefinition } from "../tools.js";
 import { sanitizeToolErrorText } from "../toolErrorSanitizer.js";
-import {
-  coerceSellerId,
-  coerceItemId,
-  coercePromotionId,
-  coercePromotionType,
-} from "./_shared.js";
+import { coerceSellerId, coerceItemId, coercePromotionId, coercePromotionType } from "./_shared.js";
 
 // ---------------------------------------------------------------------------
 // read_seller_promotions tool

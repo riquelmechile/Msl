@@ -1186,7 +1186,11 @@ export {
 // Re-exports from normalization.ts
 // ---------------------------------------------------------------------------
 
-export { normalizeMlcItemId, assertCompleteMlcItem, normalizeImageOrchestration } from "./normalization.js";
+export {
+  normalizeMlcItemId,
+  assertCompleteMlcItem,
+  normalizeImageOrchestration,
+} from "./normalization.js";
 
 export { buildNewItemFromMlItem } from "./syncPreview.js";
 

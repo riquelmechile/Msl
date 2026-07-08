@@ -40,7 +40,11 @@ interface VideoModelConfig {
 }
 
 const VIDEO_MODELS: Record<string, VideoModelConfig> = {
-  "MiniMax-Hailuo-2.3-Fast": { model: "MiniMax-Hailuo-2.3-Fast", costPerSecond: 0.017, resolution: "768P" },
+  "MiniMax-Hailuo-2.3-Fast": {
+    model: "MiniMax-Hailuo-2.3-Fast",
+    costPerSecond: 0.017,
+    resolution: "768P",
+  },
   "MiniMax-Hailuo-2.3": { model: "MiniMax-Hailuo-2.3", costPerSecond: 0.033, resolution: "1080P" },
 };
 
@@ -197,9 +201,7 @@ export class MinimaxVideoProvider implements CreativeProvider {
    * Tries up to MAX_POLL_ATTEMPTS at POLL_INTERVAL_MS intervals.
    * Once successful, downloads the file and returns the file URL.
    */
-  private async pollVideoTask(
-    taskId: string,
-  ): Promise<{ status: string; downloadUrl: string }> {
+  private async pollVideoTask(taskId: string): Promise<{ status: string; downloadUrl: string }> {
     for (let attempt = 1; attempt <= this.maxPollAttempts; attempt++) {
       await this.sleep(this.pollIntervalMs);
 
@@ -297,9 +299,7 @@ export class MinimaxVideoProvider implements CreativeProvider {
     return prompt.slice(0, 2000);
   }
 
-  private getFirstFrame(
-    references: CreativeAssetRequest["references"],
-  ): string | undefined {
+  private getFirstFrame(references: CreativeAssetRequest["references"]): string | undefined {
     const imageRef = references.find(
       (r) => r.type === "product-image" || r.type === "supplier-image",
     );

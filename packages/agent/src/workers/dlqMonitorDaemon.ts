@@ -24,10 +24,16 @@ export async function runDlqMonitor(
     for (const msg of failed) {
       try {
         bus.reenqueueFailed?.(msg.messageId);
-        alerts.push(`🔄 Re-enqueued failed message ${msg.messageId} (${msg.senderAgentId} → ${msg.receiverAgentId})`);
-      } catch { /* re-enqueue may fail if already claimed — skip */ }
+        alerts.push(
+          `🔄 Re-enqueued failed message ${msg.messageId} (${msg.senderAgentId} → ${msg.receiverAgentId})`,
+        );
+      } catch {
+        /* re-enqueue may fail if already claimed — skip */
+      }
     }
-  } catch { /* bus methods may not exist yet */ }
+  } catch {
+    /* bus methods may not exist yet */
+  }
 
   // ── Check stuck processing messages ──────────────
   try {
@@ -36,17 +42,23 @@ export async function runDlqMonitor(
       try {
         bus.reenqueueFailed?.(msg.messageId);
         alerts.push(`🔄 Re-enqueued stuck message ${msg.messageId} (was processing >10min)`);
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
-  } catch { /* skip */ }
+  } catch {
+    /* skip */
+  }
 
   // ── Send alerts ──────────────────────────────────
   if (alerts.length > 0 && sendMessage && adminChatIds.length > 0) {
-    const text = `🗑️ <b>DLQ Monitor</b>\n${alerts.map(a => `• ${a}`).join("\n")}`;
+    const text = `🗑️ <b>DLQ Monitor</b>\n${alerts.map((a) => `• ${a}`).join("\n")}`;
     for (const chatId of adminChatIds) {
       try {
         await sendMessage(Number(chatId), text);
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
   }
 }

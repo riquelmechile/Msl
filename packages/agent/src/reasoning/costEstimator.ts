@@ -45,10 +45,7 @@ export type EstimateCostInput = {
  * Estimate cost in microCLP for a given model and token usage.
  * Returns undefined when the model has no known pricing.
  */
-export function estimateCost(
-  model: string,
-  input: EstimateCostInput,
-): number | undefined {
+export function estimateCost(model: string, input: EstimateCostInput): number | undefined {
   const pricing = REASONING_PRICING[model];
   if (!pricing) return undefined;
 
@@ -56,8 +53,7 @@ export function estimateCost(
     ((input.cacheHitTokens ?? 0) * pricing.inputCacheHitMicrosPerMillionTokens) / 1_000_000;
   const missCost =
     ((input.cacheMissTokens ?? 0) * pricing.inputCacheMissMicrosPerMillionTokens) / 1_000_000;
-  const outputCost =
-    ((input.outputTokens ?? 0) * pricing.outputMicrosPerMillionTokens) / 1_000_000;
+  const outputCost = ((input.outputTokens ?? 0) * pricing.outputMicrosPerMillionTokens) / 1_000_000;
 
   return Math.ceil(hitCost + missCost + outputCost);
 }

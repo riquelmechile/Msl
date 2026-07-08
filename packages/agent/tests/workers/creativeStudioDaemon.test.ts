@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { creativeStudioDaemon, resetConcurrencyGate, setLastJobTime } from "../../src/workers/creativeStudioDaemon.js";
+import {
+  creativeStudioDaemon,
+  resetConcurrencyGate,
+  setLastJobTime,
+} from "../../src/workers/creativeStudioDaemon.js";
 import type { AgentMessage } from "../../src/conversation/agentMessageBusStore.js";
 import type { DaemonHandler } from "../../src/workers/daemonTypes.js";
 
@@ -22,9 +26,7 @@ function claimFixture(overrides: Partial<AgentMessage> = {}): AgentMessage {
         kind: "product-cover-i2i",
         objective: "ctr",
         budgetTier: "low",
-        references: [
-          { type: "supplier-image", uri: "https://example.com/product.jpg" },
-        ],
+        references: [{ type: "supplier-image", uri: "https://example.com/product.jpg" }],
         productContext: { title: "Test Product", sku: "TST-001", categoryId: "MLC1055" },
         constraints: {
           preserveProductTruth: true,
@@ -44,16 +46,18 @@ function claimFixture(overrides: Partial<AgentMessage> = {}): AgentMessage {
 }
 
 const mockBus = () => ({
-  enqueue: vi.fn((input: {
-    senderAgentId: string;
-    receiverAgentId: string;
-    messageType: string;
-    payloadJson: string;
-    dedupeKey?: string;
-  }) => ({
-    ...input,
-    messageId: `msg_${Date.now()}`,
-  })),
+  enqueue: vi.fn(
+    (input: {
+      senderAgentId: string;
+      receiverAgentId: string;
+      messageType: string;
+      payloadJson: string;
+      dedupeKey?: string;
+    }) => ({
+      ...input,
+      messageId: `msg_${Date.now()}`,
+    }),
+  ),
   resolve: vi.fn(),
   fail: vi.fn(),
   claimNext: vi.fn(),
@@ -69,16 +73,18 @@ function baseContext(claim: AgentMessage): {
   ctx: Parameters<DaemonHandler>[0];
   enqueue: ReturnType<typeof vi.fn>;
 } {
-  const enqueue = vi.fn((input: {
-    senderAgentId: string;
-    receiverAgentId: string;
-    messageType: string;
-    payloadJson: string;
-    dedupeKey?: string;
-  }) => ({
-    ...input,
-    messageId: `msg_${Date.now()}`,
-  }));
+  const enqueue = vi.fn(
+    (input: {
+      senderAgentId: string;
+      receiverAgentId: string;
+      messageType: string;
+      payloadJson: string;
+      dedupeKey?: string;
+    }) => ({
+      ...input,
+      messageId: `msg_${Date.now()}`,
+    }),
+  );
 
   const ctx = {
     claim,
@@ -110,9 +116,7 @@ describe("creativeStudioDaemon", () => {
     process.env.MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS = "3";
     process.env.MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS = "0";
     resetConcurrencyGate();
-    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(new Response()),
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(new Response()));
   });
 
   afterEach(() => {

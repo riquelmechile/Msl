@@ -26,11 +26,7 @@ export class CreativeAssetStore {
    * Save an asset buffer to local storage.
    * Returns the storage URI (file:// scheme).
    */
-  async saveAsset(
-    assetId: string,
-    buffer: Buffer,
-    metadata: object,
-  ): Promise<string> {
+  async saveAsset(assetId: string, buffer: Buffer, metadata: object): Promise<string> {
     this.ensureDir();
 
     const filePath = resolve(this.storagePath, assetId);

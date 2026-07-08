@@ -41,11 +41,7 @@ const MIN_REVIEWS_REQUIRED = 2;
 
 // ── Public types ─────────────────────────────────────────────────────
 
-export type ReviewVerdict =
-  | "approve"
-  | "reject"
-  | "needs_more_evidence"
-  | "risk_warning";
+export type ReviewVerdict = "approve" | "reject" | "needs_more_evidence" | "risk_warning";
 
 export type AgentReview = {
   id: number;
@@ -69,11 +65,7 @@ export type ConsensusResult = {
   proposalId: string;
   reviews: AgentReview[];
   verdicts: Record<string, number>;
-  recommendation:
-    | "approved"
-    | "rejected"
-    | "needs_review"
-    | "insufficient_reviews";
+  recommendation: "approved" | "rejected" | "needs_review" | "insufficient_reviews";
   minReviewsRequired: number;
   hasQuorum: boolean;
 };
@@ -130,9 +122,7 @@ function computeRecommendation(
 
 // ── Factory ──────────────────────────────────────────────────────────
 
-export function createAgentConsensusStore(
-  db: Database.Database,
-): AgentConsensusStore {
+export function createAgentConsensusStore(db: Database.Database): AgentConsensusStore {
   db.exec(SCHEMA_SQL);
 
   // ── Prepared statements ────────────────────────────────────
@@ -173,9 +163,7 @@ export function createAgentConsensusStore(
       input.confidence < 0 ||
       input.confidence > 1
     ) {
-      throw new Error(
-        `Confidence must be a number between 0.0 and 1.0, got ${input.confidence}.`,
-      );
+      throw new Error(`Confidence must be a number between 0.0 and 1.0, got ${input.confidence}.`);
     }
 
     if (!input.rationale || input.rationale.trim().length === 0) {
@@ -185,10 +173,7 @@ export function createAgentConsensusStore(
     // Prevent duplicate reviews from the same reviewer for the same proposal
     // (wrapped in a transaction to prevent TOCTOU race)
     const submitReviewTx = db.transaction((txInput: SubmitReviewInput) => {
-      const existing = selectDuplicateReviewStmt.get(
-        txInput.proposalId,
-        txInput.reviewerAgentId,
-      );
+      const existing = selectDuplicateReviewStmt.get(txInput.proposalId, txInput.reviewerAgentId);
       if (existing) {
         throw new Error(
           `Agent "${txInput.reviewerAgentId}" has already submitted a review for proposal "${txInput.proposalId}".`,
@@ -231,10 +216,7 @@ export function createAgentConsensusStore(
     };
   };
 
-  const requiresConsensus = (
-    proposalKind: string,
-    riskDelta?: number,
-  ): boolean => {
+  const requiresConsensus = (proposalKind: string, riskDelta?: number): boolean => {
     if (proposalKind === "price-change") {
       // Default: price-change requires consensus (e.g. when called from agentLoop
       // without explicit riskDelta). When riskDelta is provided, only require

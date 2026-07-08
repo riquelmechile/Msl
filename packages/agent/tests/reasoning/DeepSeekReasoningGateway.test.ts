@@ -119,7 +119,9 @@ describe("DeepSeekReasoningGateway", () => {
     );
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    const callArgs = mockCreate.mock.calls[0]![0] as { messages: Array<{ role: string; content: string }> };
+    const callArgs = mockCreate.mock.calls[0]![0] as {
+      messages: Array<{ role: string; content: string }>;
+    };
     const messages = callArgs.messages;
 
     // 3 blocks: system/stable, system/cacheable, user/volatile
@@ -141,7 +143,9 @@ describe("DeepSeekReasoningGateway", () => {
       }),
     );
 
-    const callArgs = mockCreate.mock.calls[0]![0] as { messages: Array<{ role: string; content: string }> };
+    const callArgs = mockCreate.mock.calls[0]![0] as {
+      messages: Array<{ role: string; content: string }>;
+    };
     const messages = callArgs.messages;
     expect(messages).toHaveLength(2);
     expect(messages[0]).toEqual({ role: "system", content: "STABLE" });
@@ -260,7 +264,11 @@ describe("DeepSeekReasoningGateway", () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
     const autonomy = makeMockAutonomy(true); // canAutoApprove returns true
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), undefined, autonomy);
+    const gateway = new DeepSeekReasoningGateway(
+      new OpenAI({ apiKey: "test" }),
+      undefined,
+      autonomy,
+    );
     const result = await gateway.reason(makeCall({ level: ReasoningLevel.Classification }));
 
     expect(result.requiresApproval).toBe(false);
@@ -270,7 +278,11 @@ describe("DeepSeekReasoningGateway", () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
     const autonomy = makeMockAutonomy(false); // canAutoApprove returns false
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), undefined, autonomy);
+    const gateway = new DeepSeekReasoningGateway(
+      new OpenAI({ apiKey: "test" }),
+      undefined,
+      autonomy,
+    );
     const result = await gateway.reason(makeCall({ level: ReasoningLevel.Prioritization }));
 
     expect(result.requiresApproval).toBe(true);
@@ -280,7 +292,11 @@ describe("DeepSeekReasoningGateway", () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
     const autonomy = makeMockAutonomy(true);
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), undefined, autonomy);
+    const gateway = new DeepSeekReasoningGateway(
+      new OpenAI({ apiKey: "test" }),
+      undefined,
+      autonomy,
+    );
     const result = await gateway.reason(makeCall({ level: ReasoningLevel.Recommendation }));
 
     expect(result.requiresApproval).toBe(true);
@@ -290,7 +306,11 @@ describe("DeepSeekReasoningGateway", () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
     const autonomy = makeMockAutonomy(true);
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), undefined, autonomy);
+    const gateway = new DeepSeekReasoningGateway(
+      new OpenAI({ apiKey: "test" }),
+      undefined,
+      autonomy,
+    );
     const result = await gateway.reason(makeCall({ level: ReasoningLevel.Decision }));
 
     expect(result.requiresApproval).toBe(true);
@@ -306,7 +326,10 @@ describe("DeepSeekReasoningGateway", () => {
     await gateway.reason(makeCall());
 
     expect(ledger.insertEntry).toHaveBeenCalledTimes(1);
-    const entry = (ledger.insertEntry as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    const entry = (ledger.insertEntry as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
     expect(entry.provider).toBe("deepseek");
     expect(entry.model).toBe("deepseek-v4-flash");
     expect(entry.departmentId).toBe("test-dept");

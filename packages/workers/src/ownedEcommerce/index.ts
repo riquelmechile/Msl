@@ -10,14 +10,8 @@ import type {
   StorefrontCandidate,
   StorefrontProjection,
 } from "@msl/domain";
-import {
-  DEFAULT_DEEPSEEK_MODEL,
-  resolveDeepSeekCredentialRef,
-} from "@msl/agent";
-import {
-  guardrailsForCandidateEvidence,
-  summarizeProjectionReadiness,
-} from "@msl/domain";
+import { DEFAULT_DEEPSEEK_MODEL, resolveDeepSeekCredentialRef } from "@msl/agent";
+import { guardrailsForCandidateEvidence, summarizeProjectionReadiness } from "@msl/domain";
 import type { OwnedEcommerceStore } from "@msl/memory";
 
 export const OWNED_ECOMMERCE_DEEPSEEK_PROVIDER = "deepseek";

@@ -7,7 +7,11 @@ import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
  * midnight and sends a Telegram briefing + enqueues CEO alerts.
  */
 export const morningReportDaemon: DaemonHandler = async ({
-  reader, cortex, sellerIds, bus, ceoContext,
+  reader,
+  cortex,
+  sellerIds,
+  bus,
+  ceoContext,
 }) => {
   const findings: DaemonFinding[] = [];
   const now = new Date();
@@ -24,35 +28,50 @@ export const morningReportDaemon: DaemonHandler = async ({
     // Orders since midnight
     try {
       const orderSnaps = await reader.searchSnapshots<{ status?: string }>({
-        sellerId, kind: "order_snapshot", capturedAfter: midnight, limit: 200,
+        sellerId,
+        kind: "order_snapshot",
+        capturedAfter: midnight,
+        limit: 200,
       });
       if (orderSnaps.length > 0) {
         summary.push(`   🛒 ${orderSnaps.length} órdenes nuevas`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
 
     // Claims since midnight
     try {
       const claimSnaps = await reader.searchSnapshots<{ status?: string; reason?: string }>({
-        sellerId, kind: "claim_snapshot", capturedAfter: midnight, limit: 100,
+        sellerId,
+        kind: "claim_snapshot",
+        capturedAfter: midnight,
+        limit: 100,
       });
-      const openClaims = claimSnaps.filter(c => c.data.status !== "closed");
+      const openClaims = claimSnaps.filter((c) => c.data.status !== "closed");
       if (openClaims.length > 0) {
         summary.push(`   ⚠️ ${openClaims.length} claims abiertos`);
         allAlerts.push(`🔴 ${sellerName}: ${openClaims.length} claims sin resolver`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
 
     // Unanswered questions
     try {
       const qSnaps = await reader.searchSnapshots<{ status?: string }>({
-        sellerId, kind: "question_snapshot", status: "UNANSWERED", limit: 100,
+        sellerId,
+        kind: "question_snapshot",
+        status: "UNANSWERED",
+        limit: 100,
       });
       if (qSnaps.length > 0) {
         summary.push(`   ❓ ${qSnaps.length} preguntas sin responder`);
         allAlerts.push(`🟡 ${sellerName}: ${qSnaps.length} preguntas pendientes`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
 
     // Reputation delta (look at Cortex for change)
     try {
@@ -67,21 +86,26 @@ export const morningReportDaemon: DaemonHandler = async ({
         }
         summary.push(`   ⭐ Reputación: ${latest.reputationLevel ?? "N/A"}`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
 
   // ── Send to Telegram if wired ─────────────────────
   const reportText = `🌅 <b>Morning Briefing — ${now.toLocaleDateString("es-CL")}</b>\n${summary.join("\n")}`;
-  const alertText = allAlerts.length > 0
-    ? `\n\n⚠️ <b>Requieren atención:</b>\n${allAlerts.map(a => `• ${a}`).join("\n")}`
-    : "";
+  const alertText =
+    allAlerts.length > 0
+      ? `\n\n⚠️ <b>Requieren atención:</b>\n${allAlerts.map((a) => `• ${a}`).join("\n")}`
+      : "";
 
   if (ceoContext?.adminChatIds && ceoContext.sendProactiveMessage) {
     for (const chatId of ceoContext.adminChatIds) {
       const id = Number(chatId);
       try {
         await ceoContext.sendProactiveMessage(id, reportText + alertText);
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
   }
 
@@ -91,16 +115,27 @@ export const morningReportDaemon: DaemonHandler = async ({
       senderAgentId: "morning-report",
       receiverAgentId: "ceo",
       messageType: "morning_briefing",
-      payloadJson: JSON.stringify({ summary: reportText, alerts: allAlerts, generatedAt: now.toISOString() }),
+      payloadJson: JSON.stringify({
+        summary: reportText,
+        alerts: allAlerts,
+        generatedAt: now.toISOString(),
+      }),
       priority: 3,
     });
     findings.push({
-      kind: "alert", summary: "Morning report with alerts generated",
-      evidenceIds: [], severity: "info",
+      kind: "alert",
+      summary: "Morning report with alerts generated",
+      evidenceIds: [],
+      severity: "info",
     });
     return { findings, proposalEnqueued: true, messageIds: [messageId.messageId] };
   }
 
-  findings.push({ kind: "info", summary: "Morning report: all clear", evidenceIds: [], severity: "info" });
+  findings.push({
+    kind: "info",
+    summary: "Morning report: all clear",
+    evidenceIds: [],
+    severity: "info",
+  });
   return { findings, proposalEnqueued: false, messageIds: [] };
 };

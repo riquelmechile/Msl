@@ -1,5 +1,9 @@
 import type { CompanyAgentRegistry } from "../companyAgents.js";
-import type { CompanyAgentLearningStore, AgentLessonScope, AgentLessonType } from "../companyAgentLearningStore.js";
+import type {
+  CompanyAgentLearningStore,
+  AgentLessonScope,
+  AgentLessonType,
+} from "../companyAgentLearningStore.js";
 import type { ToolDefinition } from "./types.js";
 import {
   safeString,

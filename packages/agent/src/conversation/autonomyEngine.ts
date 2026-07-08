@@ -283,15 +283,18 @@ export function createAutonomyEngine(
     const reason = reasons.join(" | ");
     const nowIsoVal = normalizeTs(now.toISOString());
 
-    const avgMargin = weekRows.length > 0
-      ? weekRows.reduce((sum, r) => sum + r.margin_compliance, 0) / weekRows.length
-      : 0;
-    const avgSuccess = monthRows.length > 0
-      ? monthRows.reduce((sum, r) => sum + r.success_rate, 0) / monthRows.length
-      : 0;
-    const avgAccuracy = monthRows.length > 0
-      ? monthRows.reduce((sum, r) => sum + r.response_accuracy, 0) / monthRows.length
-      : 0;
+    const avgMargin =
+      weekRows.length > 0
+        ? weekRows.reduce((sum, r) => sum + r.margin_compliance, 0) / weekRows.length
+        : 0;
+    const avgSuccess =
+      monthRows.length > 0
+        ? monthRows.reduce((sum, r) => sum + r.success_rate, 0) / monthRows.length
+        : 0;
+    const avgAccuracy =
+      monthRows.length > 0
+        ? monthRows.reduce((sum, r) => sum + r.response_accuracy, 0) / monthRows.length
+        : 0;
 
     const eventSnapshot: KpiSnapshot = {
       level: current,

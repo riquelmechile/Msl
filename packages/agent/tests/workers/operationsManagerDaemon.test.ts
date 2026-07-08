@@ -136,9 +136,7 @@ describe("operationsManagerDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const claimFindings = result.findings.filter(
-        (f) => f.summary.includes("claim"),
-      );
+      const claimFindings = result.findings.filter((f) => f.summary.includes("claim"));
       expect(claimFindings).toEqual([]);
     });
   });
@@ -204,9 +202,7 @@ describe("operationsManagerDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const questionFindings = result.findings.filter(
-        (f) => f.summary.includes("question"),
-      );
+      const questionFindings = result.findings.filter((f) => f.summary.includes("question"));
       expect(questionFindings).toEqual([]);
     });
 
@@ -236,9 +232,7 @@ describe("operationsManagerDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const questionFindings = result.findings.filter(
-        (f) => f.summary.includes("question"),
-      );
+      const questionFindings = result.findings.filter((f) => f.summary.includes("question"));
       expect(questionFindings).toEqual([]);
     });
   });
@@ -284,8 +278,8 @@ describe("operationsManagerDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const delayedFindings = result.findings.filter(
-        (f) => f.summary.includes("past estimated delivery"),
+      const delayedFindings = result.findings.filter((f) =>
+        f.summary.includes("past estimated delivery"),
       );
       expect(delayedFindings.length).toBeGreaterThanOrEqual(1);
     });
@@ -308,9 +302,7 @@ describe("operationsManagerDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const delayedFindings = result.findings.filter(
-        (f) => f.summary.includes("delivery"),
-      );
+      const delayedFindings = result.findings.filter((f) => f.summary.includes("delivery"));
       expect(delayedFindings).toEqual([]);
     });
   });
@@ -333,9 +325,7 @@ describe("operationsManagerDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const repFindings = result.findings.filter(
-        (f) => f.summary.includes("reputation"),
-      );
+      const repFindings = result.findings.filter((f) => f.summary.includes("reputation"));
       expect(repFindings.length).toBeGreaterThanOrEqual(1);
       expect(repFindings[0]!.severity).toBe("warning");
     });
@@ -355,9 +345,7 @@ describe("operationsManagerDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const repFindings = result.findings.filter(
-        (f) => f.summary.includes("reputation"),
-      );
+      const repFindings = result.findings.filter((f) => f.summary.includes("reputation"));
       expect(repFindings).toEqual([]);
     });
   });
@@ -384,9 +372,9 @@ describe("operationsManagerDaemon", () => {
       expect(result.messageIds.length).toBeGreaterThan(0);
 
       const msgId = result.messageIds[0]!;
-      const row = db
-        .prepare("SELECT * FROM agent_message_bus WHERE message_id = ?")
-        .get(msgId) as Record<string, unknown> | undefined;
+      const row = db.prepare("SELECT * FROM agent_message_bus WHERE message_id = ?").get(msgId) as
+        | Record<string, unknown>
+        | undefined;
 
       expect(row).toBeDefined();
       expect(row!.sender_agent_id).toBe("operations-manager");

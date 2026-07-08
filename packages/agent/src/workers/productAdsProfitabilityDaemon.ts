@@ -73,11 +73,7 @@ export const productAdsProfitabilityDaemon: DaemonHandler = async ({
     return { findings, proposalEnqueued: false, messageIds };
   }
 
-  const economics = enrichWithEconomics(
-    ctx.ads,
-    ctx.listingPrice,
-    ctx.costMap,
-  );
+  const economics = enrichWithEconomics(ctx.ads, ctx.listingPrice, ctx.costMap);
 
   if (economics.length === 0) {
     return { findings: [], proposalEnqueued: false, messageIds };
@@ -107,10 +103,7 @@ export const productAdsProfitabilityDaemon: DaemonHandler = async ({
         severity: "info",
         kind: "info",
         summary: `Insufficient cost data for advertised product ${prod.itemId} (campaign ${prod.campaignId}, ad ${prod.adId}): cannot compute profitability economics.`,
-        evidenceIds: [
-          `cost_snapshot:${prod.itemId}`,
-          `product-ads-insights:ad:${prod.adId}`,
-        ],
+        evidenceIds: [`cost_snapshot:${prod.itemId}`, `product-ads-insights:ad:${prod.adId}`],
         actionability: "data-quality",
       });
       continue; // Skip seller-impacting signals when cost is missing
@@ -118,10 +111,7 @@ export const productAdsProfitabilityDaemon: DaemonHandler = async ({
 
     // ── 1. Margin-consuming (critical) ──────────────────────────────
     // netContribution <= 0 where netContribution = (price × units) − (cost × units) − adSpend
-    if (
-      prod.netContribution !== undefined &&
-      prod.netContribution <= 0
-    ) {
+    if (prod.netContribution !== undefined && prod.netContribution <= 0) {
       productFindings.push({
         product: prod,
         signal: "margin-consuming",
@@ -176,10 +166,7 @@ export const productAdsProfitabilityDaemon: DaemonHandler = async ({
         severity: "warning",
         kind: "alert",
         summary: `Budget waste: product ${prod.itemId} — ad spend ${prod.adSpend.toFixed(0)} exceeds 50% of cost, CVR only ${(prod.cvr * 100).toFixed(1)}%`,
-        evidenceIds: [
-          `cost_snapshot:${prod.itemId}`,
-          `product-ads-insights:ad:${prod.adId}`,
-        ],
+        evidenceIds: [`cost_snapshot:${prod.itemId}`, `product-ads-insights:ad:${prod.adId}`],
         actionability: "seller-impacting",
       });
     }
@@ -210,12 +197,12 @@ export const productAdsProfitabilityDaemon: DaemonHandler = async ({
     // ── 5. Unit economics (info) ────────────────────────────────────
     // Always emitted for products with full cost data as informational
     if (prod.dataCompleteness === "full" || prod.dataCompleteness === "partial") {
-      const margin = prod.contributionMarginPct !== undefined
-        ? `${(prod.contributionMarginPct * 100).toFixed(0)}%`
-        : "unknown";
-      const beCpa = prod.breakEvenCpa !== undefined
-        ? `${prod.breakEvenCpa.toFixed(0)} CLP`
-        : "unknown";
+      const margin =
+        prod.contributionMarginPct !== undefined
+          ? `${(prod.contributionMarginPct * 100).toFixed(0)}%`
+          : "unknown";
+      const beCpa =
+        prod.breakEvenCpa !== undefined ? `${prod.breakEvenCpa.toFixed(0)} CLP` : "unknown";
       productFindings.push({
         product: prod,
         signal: "unit-economics",

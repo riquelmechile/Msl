@@ -26,7 +26,12 @@ import {
   type Strategy,
 } from "@msl/mercadolibre";
 import { createPreparedActionTool } from "@msl/tools";
-import type { McpServerConfig, SyncPreviewDependency, SyncProductPreview, SyncProductReadinessEvidenceProviders } from "../index.js";
+import type {
+  McpServerConfig,
+  SyncPreviewDependency,
+  SyncProductPreview,
+  SyncProductReadinessEvidenceProviders,
+} from "../index.js";
 import { areStrategies } from "../strategyValidation.js";
 import type { McpToolResult } from "./utils.js";
 import {
@@ -239,7 +244,9 @@ function hasUnsupportedBulkIntent(request: SyncProductInput): boolean {
   );
 }
 
-function validateMlcRoleConfig(roleConfig: MlAccountRoleConfig): import("./utils.js").SyncProductBlockedReason | null {
+function validateMlcRoleConfig(
+  roleConfig: MlAccountRoleConfig,
+): import("./utils.js").SyncProductBlockedReason | null {
   if (!trimmedString(roleConfig.sourceSellerId) || !trimmedString(roleConfig.targetSellerId)) {
     return "missing-account-roles";
   }

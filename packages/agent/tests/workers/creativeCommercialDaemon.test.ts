@@ -57,10 +57,7 @@ function seedOrmSnapshot(
   );
 }
 
-function seedCortexNode(
-  engine: GraphEngine,
-  metadata: Record<string, unknown>,
-): number {
+function seedCortexNode(engine: GraphEngine, metadata: Record<string, unknown>): number {
   const node = engine.getOrCreateNode(
     `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     metadata,
@@ -207,8 +204,8 @@ describe("creativeCommercialDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const allFindings = result.findings.filter(
-        (f) => f.evidenceIds.includes("listing_snapshot:MLC-003"),
+      const allFindings = result.findings.filter((f) =>
+        f.evidenceIds.includes("listing_snapshot:MLC-003"),
       );
       expect(allFindings).toEqual([]);
     });
@@ -249,9 +246,7 @@ describe("creativeCommercialDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const stagnantFindings = result.findings.filter(
-        (f) => f.summary.includes("Stagnant"),
-      );
+      const stagnantFindings = result.findings.filter((f) => f.summary.includes("Stagnant"));
       expect(stagnantFindings.length).toBeGreaterThanOrEqual(1);
       expect(stagnantFindings[0]!.severity).toBe("info");
     });
@@ -281,9 +276,7 @@ describe("creativeCommercialDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const stagnantFindings = result.findings.filter(
-        (f) => f.summary.includes("Stagnant"),
-      );
+      const stagnantFindings = result.findings.filter((f) => f.summary.includes("Stagnant"));
       expect(stagnantFindings).toEqual([]);
     });
 
@@ -327,9 +320,7 @@ describe("creativeCommercialDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const stagnantFindings = result.findings.filter(
-        (f) => f.summary.includes("Stagnant"),
-      );
+      const stagnantFindings = result.findings.filter((f) => f.summary.includes("Stagnant"));
       expect(stagnantFindings).toEqual([]);
     });
   });
@@ -371,9 +362,9 @@ describe("creativeCommercialDaemon", () => {
       expect(result.messageIds.length).toBeGreaterThan(0);
 
       const msgId = result.messageIds[0]!;
-      const row = db
-        .prepare("SELECT * FROM agent_message_bus WHERE message_id = ?")
-        .get(msgId) as Record<string, unknown> | undefined;
+      const row = db.prepare("SELECT * FROM agent_message_bus WHERE message_id = ?").get(msgId) as
+        | Record<string, unknown>
+        | undefined;
 
       expect(row).toBeDefined();
       expect(row!.sender_agent_id).toBe("creative-commercial");
@@ -568,9 +559,7 @@ describe("creativeCommercialDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const stagnantFindings = result.findings.filter(
-        (f) => f.summary.includes("stagnant"),
-      );
+      const stagnantFindings = result.findings.filter((f) => f.summary.includes("stagnant"));
       expect(stagnantFindings.length).toBeGreaterThanOrEqual(1);
       expect(stagnantFindings[0]!.summary).toContain("MLC-CRX-STG");
       // Should show ~50 days active, not 0 days (capturedAt was set to now)

@@ -48,7 +48,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     status: string;
     reason: string;
     claimId: string;
-  }
+  };
   type QuestionEntry = {
     itemId: string;
     sellerId: string;
@@ -56,14 +56,14 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     text: string;
     questionId: string;
     createdAt: string;
-  }
+  };
   type OrderEntry = {
     itemId: string;
     sellerId: string;
     status: string;
     estimatedDelivery: string;
     orderId: string;
-  }
+  };
 
   const allClaims: ClaimEntry[] = [];
   const allQuestions: QuestionEntry[] = [];
@@ -126,10 +126,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
         itemId: snap.itemId,
         sellerId,
         status: String(d.status ?? "unknown"),
-        estimatedDelivery: metadataString(
-          d.estimated_delivery ?? d.estimatedDelivery,
-          "",
-        ),
+        estimatedDelivery: metadataString(d.estimated_delivery ?? d.estimatedDelivery, ""),
         orderId: String(d.order_id ?? d.orderId ?? snap.itemId),
       });
     }
@@ -144,7 +141,10 @@ export const operationsManagerDaemon: DaemonHandler = async ({
 
     const rep =
       repSnaps.length > 0 && repSnaps[0]
-        ? { score: Number(repSnaps[0].data.score ?? 0), color: String(repSnaps[0].data.color ?? "") }
+        ? {
+            score: Number(repSnaps[0].data.score ?? 0),
+            color: String(repSnaps[0].data.color ?? ""),
+          }
         : (() => {
             // Fallback: Cortex query
             const cortexRepNodes = cortex.queryByMetadata({
@@ -183,10 +183,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
       kind: "alert",
       severity: "critical",
       summary: `Open post-purchase claim: #${claim.claimId} (${claim.reason || "no reason"})`,
-      evidenceIds: [
-        `claim_snapshot:${claim.itemId}`,
-        `seller:${claim.sellerId}`,
-      ],
+      evidenceIds: [`claim_snapshot:${claim.itemId}`, `seller:${claim.sellerId}`],
     });
   }
 
@@ -198,26 +195,19 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     const created = new Date(q.createdAt);
     if (isNaN(created.getTime())) continue;
     if (created < deadline) {
-      const hoursUnanswered = Math.round(
-        (now.getTime() - created.getTime()) / (1000 * 60 * 60),
-      );
+      const hoursUnanswered = Math.round((now.getTime() - created.getTime()) / (1000 * 60 * 60));
       findings.push({
         kind: "alert",
         severity: "warning",
         summary: `Unanswered buyer question (${hoursUnanswered}h): #${q.questionId} — "${q.text.slice(0, 80)}${q.text.length > 80 ? "…" : ""}"`,
-        evidenceIds: [
-          `question_snapshot:${q.itemId}`,
-          `seller:${q.sellerId}`,
-        ],
+        evidenceIds: [`question_snapshot:${q.itemId}`, `seller:${q.sellerId}`],
       });
     }
   }
 
   // C. Delayed orders → critical
   const delayedThreshold = new Date(now);
-  delayedThreshold.setHours(
-    delayedThreshold.getHours() - DELAYED_ORDER_GRACE_HOURS,
-  );
+  delayedThreshold.setHours(delayedThreshold.getHours() - DELAYED_ORDER_GRACE_HOURS);
 
   for (const order of allOrders) {
     // Check status-based first
@@ -226,10 +216,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
         kind: "alert",
         severity: "critical",
         summary: `Delayed shipment: #${order.orderId} — order marked as delayed`,
-        evidenceIds: [
-          `order_snapshot:${order.itemId}`,
-          `seller:${order.sellerId}`,
-        ],
+        evidenceIds: [`order_snapshot:${order.itemId}`, `seller:${order.sellerId}`],
       });
     }
 
@@ -238,31 +225,29 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     const estDate = new Date(order.estimatedDelivery);
     if (isNaN(estDate.getTime())) continue;
     if (estDate < delayedThreshold) {
-      const daysLate = Math.round(
-        (now.getTime() - estDate.getTime()) / (1000 * 60 * 60 * 24),
-      );
+      const daysLate = Math.round((now.getTime() - estDate.getTime()) / (1000 * 60 * 60 * 24));
       findings.push({
         kind: "alert",
         severity: "critical",
         summary: `Order past estimated delivery (${daysLate}d late): #${order.orderId}`,
-        evidenceIds: [
-          `order_snapshot:${order.itemId}`,
-          `seller:${order.sellerId}`,
-        ],
+        evidenceIds: [`order_snapshot:${order.itemId}`, `seller:${order.sellerId}`],
       });
     }
   }
 
   // ── AI Enrichment (claims + reputation only) ────────────────
   const hasClaims = allClaims.length > 0;
-  const hasReputationIssues = Object.keys(reputationBySeller).length > 0 &&
+  const hasReputationIssues =
+    Object.keys(reputationBySeller).length > 0 &&
     Object.values(reputationBySeller).some((r) => r.score < REPUTATION_SCORE_THRESHOLD);
-  let aiEnrichment: {
-    findings: OperationsAnalysisFinding[];
-    summary: string;
-    modelUsed: string;
-    enrichedAt: string;
-  } | undefined;
+  let aiEnrichment:
+    | {
+        findings: OperationsAnalysisFinding[];
+        summary: string;
+        modelUsed: string;
+        enrichedAt: string;
+      }
+    | undefined;
 
   if (operationsAdvisor && (hasClaims || hasReputationIssues)) {
     try {

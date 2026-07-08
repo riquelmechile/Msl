@@ -66,7 +66,11 @@ export const productiveRequestPattern =
 export const companyAgentIdPattern = /^[a-z][a-z0-9-]{2,62}$/;
 export const agentLessonIdPattern = /^[a-z][a-z0-9:_-]{2,95}$/;
 
-export const validDepartmentIds = new Set<CompanyDepartmentId>(["executive", "operations", "commercial"]);
+export const validDepartmentIds = new Set<CompanyDepartmentId>([
+  "executive",
+  "operations",
+  "commercial",
+]);
 export const validLessonTypes = new Set<AgentLessonType>([
   "ceo-correction",
   "research-finding",

@@ -3,12 +3,12 @@ import { randomUUID } from "node:crypto";
 // ── MiniMax API error codes ──────────────────────────────────────────
 
 export type MinimaxErrorCode =
-  | 0       // success
-  | 1002    // rate limit
-  | 1004    // auth failure
-  | 1008    // insufficient balance
-  | 1026    // content safety
-  | 2049;   // token auth failure (alternative)
+  | 0 // success
+  | 1002 // rate limit
+  | 1004 // auth failure
+  | 1008 // insufficient balance
+  | 1026 // content safety
+  | 2049; // token auth failure (alternative)
 
 export type MinimaxStatusCategory =
   | "success"
@@ -97,7 +97,11 @@ export class MinimaxClient {
       }
 
       // Check MiniMax API-level errors
-      if (maybeBaseResp && maybeBaseResp.status_code !== 0 && maybeBaseResp.status_code !== undefined) {
+      if (
+        maybeBaseResp &&
+        maybeBaseResp.status_code !== 0 &&
+        maybeBaseResp.status_code !== undefined
+      ) {
         throw classifyError(maybeBaseResp.status_code, data as unknown as MinimaxBaseResponse);
       }
 
@@ -142,9 +146,10 @@ function classifyError(
   statusCode: MinimaxErrorCode | 0,
   responseOrMessage: MinimaxBaseResponse | string,
 ): MinimaxRequestError {
-  const message = typeof responseOrMessage === "string"
-    ? responseOrMessage
-    : responseOrMessage.base_resp?.status_message ?? "Unknown MiniMax error";
+  const message =
+    typeof responseOrMessage === "string"
+      ? responseOrMessage
+      : (responseOrMessage.base_resp?.status_message ?? "Unknown MiniMax error");
 
   switch (statusCode) {
     case 1004:
