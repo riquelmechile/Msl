@@ -1,4 +1,5 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import type { OperationsAnalysisFinding } from "../conversation/operationsDeepSeekAdvisor.js";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
   cortex,
   bus,
   sellerIds,
+  operationsAdvisor,
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
@@ -66,6 +68,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
   const allClaims: ClaimEntry[] = [];
   const allQuestions: QuestionEntry[] = [];
   const allOrders: OrderEntry[] = [];
+  const reputationBySeller: Record<string, { score: number; color: string }> = {};
   for (const sellerId of sellerIds) {
     // ── 1. Claims ───────────────────────────────────────────
     const claimSnaps = await reader.searchSnapshots<{
@@ -159,13 +162,16 @@ export const operationsManagerDaemon: DaemonHandler = async ({
             return null;
           })();
 
-    if (rep && rep.score < REPUTATION_SCORE_THRESHOLD) {
-      findings.push({
-        kind: "alert",
-        severity: "warning",
-        summary: `Seller ${sellerId} reputation score ${rep.score} below threshold ${REPUTATION_SCORE_THRESHOLD} (color: ${rep.color || "unknown"})`,
-        evidenceIds: [`reputation_snapshot`],
-      });
+    if (rep) {
+      reputationBySeller[sellerId] = rep;
+      if (rep.score < REPUTATION_SCORE_THRESHOLD) {
+        findings.push({
+          kind: "alert",
+          severity: "warning",
+          summary: `Seller ${sellerId} reputation score ${rep.score} below threshold ${REPUTATION_SCORE_THRESHOLD} (color: ${rep.color || "unknown"})`,
+          evidenceIds: [`reputation_snapshot`],
+        });
+      }
     }
   }
 
@@ -247,6 +253,50 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     }
   }
 
+  // ── AI Enrichment (claims + reputation only) ────────────────
+  const hasClaims = allClaims.length > 0;
+  const hasReputationIssues = Object.keys(reputationBySeller).length > 0 &&
+    Object.values(reputationBySeller).some((r) => r.score < REPUTATION_SCORE_THRESHOLD);
+  let aiEnrichment: {
+    findings: OperationsAnalysisFinding[];
+    summary: string;
+    modelUsed: string;
+    enrichedAt: string;
+  } | undefined;
+
+  if (operationsAdvisor && (hasClaims || hasReputationIssues)) {
+    try {
+      const repScores = Object.values(reputationBySeller);
+      const avgRepScore =
+        repScores.length > 0
+          ? repScores.reduce((sum, r) => sum + r.score, 0) / repScores.length
+          : 1;
+
+      const analysis = await operationsAdvisor.analyze({
+        sellerId: sellerIds.join(","),
+        openClaims: allClaims.map((c) => ({
+          claimId: c.claimId,
+          reason: c.reason,
+          sellerId: c.sellerId,
+          itemId: c.itemId,
+        })),
+        reputationScore: avgRepScore,
+      });
+
+      aiEnrichment = {
+        findings: analysis.findings,
+        summary: analysis.summary,
+        modelUsed: analysis.modelUsed,
+        enrichedAt: capturedAt,
+      };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[operations-manager] Advisor enrichment failed, using rule-only: ${errorMessage}`,
+      );
+    }
+  }
+
   // ── Enqueue CEO proposals ──────────────────────────────────
   let proposalEnqueued = false;
 
@@ -259,6 +309,7 @@ export const operationsManagerDaemon: DaemonHandler = async ({
     const enqueueGroup = (
       group: DaemonFinding[],
       kind: string,
+      enrichment?: typeof aiEnrichment,
     ) => {
       if (group.length === 0) return;
       const summary = `Operations ${kind}s: ${group.length} finding(s)`;
@@ -267,30 +318,37 @@ export const operationsManagerDaemon: DaemonHandler = async ({
           ? "Review and resolve immediately — open claims and delayed orders require urgent attention"
           : "Review and respond — unanswered questions and reputation risks should be addressed";
 
+      const payloadJson: Record<string, unknown> = {
+        type: "proposal",
+        summary,
+        findings: group.map((f) => ({
+          kind: f.kind,
+          severity: f.severity,
+          summary: f.summary,
+          evidenceIds: f.evidenceIds,
+        })),
+        recommendedAction,
+        capturedAt,
+        noMutationExecuted: true,
+      };
+
+      // Attach AI enrichment to critical (claims) and warning (reputation) groups
+      if (enrichment && (kind === "critical" || kind === "warning")) {
+        payloadJson.aiEnrichment = enrichment;
+      }
+
       const message = bus.enqueue({
         senderAgentId: "operations-manager",
         receiverAgentId: "ceo",
         messageType: "proposal",
-        payloadJson: JSON.stringify({
-          type: "proposal",
-          summary,
-          findings: group.map((f) => ({
-            kind: f.kind,
-            severity: f.severity,
-            summary: f.summary,
-            evidenceIds: f.evidenceIds,
-          })),
-          recommendedAction,
-          capturedAt,
-          noMutationExecuted: true,
-        }),
+        payloadJson: JSON.stringify(payloadJson),
         dedupeKey: `operations-manager-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);
     };
 
-    enqueueGroup(criticals, "critical");
-    enqueueGroup(warnings, "warning");
+    enqueueGroup(criticals, "critical", aiEnrichment);
+    enqueueGroup(warnings, "warning", aiEnrichment);
     enqueueGroup(infos, "opportunity");
     proposalEnqueued = true;
   }

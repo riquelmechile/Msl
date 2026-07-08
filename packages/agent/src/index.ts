@@ -124,7 +124,6 @@ export { ceoProfitabilityHandler } from "./workers/ceoProfitabilityHandler.js";
 export { supplierManagerDaemon } from "./workers/supplierManagerDaemon.js";
 export { morningReportDaemon } from "./workers/morningReportDaemon.js";
 export { eodSummaryDaemon } from "./workers/eodSummaryDaemon.js";
-export { unansweredQuestionsWatcher } from "./workers/unansweredQuestionsWatcher.js";
 export { runSystemHealthCheck } from "./workers/systemHealthDaemon.js";
 export type { SystemHealthCheck } from "./workers/systemHealthDaemon.js";
 export { runDlqMonitor } from "./workers/dlqMonitorDaemon.js";
@@ -165,6 +164,12 @@ export type {
   SupplierMirrorAnalysisFinding,
   SupplierMirrorAnalysisInput,
 } from "./conversation/supplierMirrorDeepSeekAdvisor.js";
+export { OperationsDeepSeekAdvisor } from "./conversation/operationsDeepSeekAdvisor.js";
+export type {
+  OperationsAnalysis,
+  OperationsAnalysisFinding,
+  OperationsAnalysisInput,
+} from "./conversation/operationsDeepSeekAdvisor.js";
 
 export {
   applySupplierPricingPolicy,

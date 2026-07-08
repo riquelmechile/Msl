@@ -3,6 +3,7 @@ import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { OperationalReadModelReader } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
+import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -77,4 +78,9 @@ export type DaemonHandler = (input: {
    *  for stock-gap detections and appends aiEnrichment to the proposal payload.
    *  When absent, all proposals are rule-only. */
   advisor?: SupplierMirrorDeepSeekAdvisor;
+  /** Optional OperationsDeepSeekAdvisor for AI enrichment of claim and reputation
+   *  signals. When present, the operations-manager daemon calls operationsAdvisor.analyze()
+   *  for claims and reputation detections and appends aiEnrichment to the proposal payload.
+   *  When absent, all proposals are rule-only. */
+  operationsAdvisor?: OperationsDeepSeekAdvisor;
 }) => Promise<DaemonResult>;

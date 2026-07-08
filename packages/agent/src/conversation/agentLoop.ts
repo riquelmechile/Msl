@@ -100,6 +100,7 @@ import type {
 import type { CompanyAgentSkillStore } from "./companyAgentSkillStore.js";
 import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
 import { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
+import { OperationsDeepSeekAdvisor } from "./operationsDeepSeekAdvisor.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
 import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
 import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
@@ -350,6 +351,20 @@ export function createAgentLoop(config: AgentLoopConfig) {
       if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
     }
   }
+
+  // ── Operations DeepSeek Advisor ──────────────────────────────────
+  // Lazily passed to the daemon scheduler via createAgentLoop return.
+  // The scheduler extracts it from config and injects into the
+  // operations-manager daemon for claim and reputation enrichment.
+  const operationsDeepSeekAdvisor: OperationsDeepSeekAdvisor | undefined =
+    openai && config.sellerId && config.workforceCostCacheLedgerStore
+      ? new OperationsDeepSeekAdvisor({
+          openai,
+          sellerIds: [config.sellerId],
+          ledger: config.workforceCostCacheLedgerStore,
+        })
+      : undefined;
+
   if (config.ownedEcommerceStore) {
     for (const tool of createOwnedEcommerceTools(config.ownedEcommerceStore)) {
       if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
@@ -969,6 +984,8 @@ ${strategyLines.join("\n")}`;
     getToolNames(): string[] {
       return Array.from(toolMap.keys());
     },
+
+    operationsDeepSeekAdvisor,
   };
 }
 

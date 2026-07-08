@@ -5,6 +5,7 @@ import type { LaneId } from "../conversation/lanes.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
 import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
+import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
 import { marketCatalogDaemon } from "./marketCatalogDaemon.js";
 import { operationsManagerDaemon } from "./operationsManagerDaemon.js";
 import { costSupplierDaemon } from "./costSupplierDaemon.js";
@@ -16,7 +17,6 @@ import { ceoProfitabilityHandler } from "./ceoProfitabilityHandler.js";
 import { supplierManagerDaemon } from "./supplierManagerDaemon.js";
 import { morningReportDaemon } from "./morningReportDaemon.js";
 import { eodSummaryDaemon } from "./eodSummaryDaemon.js";
-import { unansweredQuestionsWatcher } from "./unansweredQuestionsWatcher.js";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -40,6 +40,9 @@ export type DaemonSchedulerConfig = {
   /** Optional SupplierMirrorDeepSeekAdvisor for AI enrichment of stock-gap
    *  signals in the supplier-manager daemon. */
   advisor?: SupplierMirrorDeepSeekAdvisor;
+  /** Optional OperationsDeepSeekAdvisor for AI enrichment of claim and reputation
+   *  signals in the operations-manager daemon. */
+  operationsAdvisor?: OperationsDeepSeekAdvisor;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -59,7 +62,6 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "supplier-manager": supplierManagerDaemon,
   "morning-report": morningReportDaemon,
   "eod-summary": eodSummaryDaemon,
-  "unanswered-questions": unansweredQuestionsWatcher,
 };
 
 // ── Cycle-level cache ───────────────────────────────────────────────
@@ -133,6 +135,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               supplierMirrorStore: config.supplierMirrorStore,
               ceoContext: config.ceoContext,
               advisor: config.advisor,
+              operationsAdvisor: config.operationsAdvisor,
             });
             config.bus.resolve(claim.messageId, result);
           } catch (err) {
