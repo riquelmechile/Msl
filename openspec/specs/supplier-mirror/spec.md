@@ -216,3 +216,25 @@ Pricing tables (`SUPPLIER_MIRROR_DEEPSEEK_PRICING`) and model selection logic (`
 - GIVEN the refactored `SupplierMirrorDeepSeekAdvisor` is tested
 - WHEN `npm test` runs
 - THEN all existing advisor tests SHALL pass unchanged
+
+### Requirement: Supplier Mirror Daemon AI Enrichment
+
+The daemon SHALL enrich stock-gap signals with AI analysis via `SupplierMirrorDeepSeekAdvisor.analyze()`.
+
+The system SHALL use `ReasoningLevel.classification` (Flash model) for enrichment calls.
+
+If the advisor fails (timeout, error, or unavailable), the daemon SHALL fall back to the rule-only proposal — enrichment is best-effort.
+
+Non-stock-gap signals (price-change, unfilled-mirror) SHALL remain rule-only with no advisor call.
+
+Context data for the advisor (policies, notifications, fallback policies) SHALL be loaded only for stock-gap signals — not preloaded for every detection cycle.
+
+The enriched proposal payload SHALL include an `aiEnrichment` field containing `findings` (array of findings with kind, severity, summary, detail, evidenceIds) and `summary` (string).
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Stock-gap signal enriched | Daemon detects a stock gap, advisor is available, and signal not deduplicated this hour | Daemon enriches the proposal | The payload SHALL include `aiEnrichment` with `findings` and `summary` from the advisor; the advisor SHALL receive the supplier ID, name, and a stock-gap-specific question |
+| Advisor unavailable or fails | Advisor is not present or `analyze()` throws | Daemon detects a stock gap | The proposal SHALL enqueue without `aiEnrichment`; the daemon SHALL NOT crash |
+| Advisor call deduplicated | A stock-gap signal was already enriched this hour for the same (supplier, supplierItemId, hourKey) | Daemon checks the signal again in the same hour | The advisor SHALL NOT be called again — idempotency key prevents duplicate API cost |
+| Price-change signal remains rule-only | Daemon detects a price change >5% | The proposal is enqueued | The payload SHALL NOT include `aiEnrichment`; the advisor SHALL NOT be called |
+| Unfilled-mirror signal remains rule-only | Daemon detects an unfilled mirror item | The proposal is enqueued | The payload SHALL NOT include `aiEnrichment`; the advisor SHALL NOT be called |

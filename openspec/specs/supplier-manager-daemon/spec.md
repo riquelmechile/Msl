@@ -37,7 +37,7 @@ The daemon MUST detect supplier items that have never been published to any Merc
 
 ### Requirement: Daemon Contract
 
-The daemon MUST export an `investigate` function conforming to `DaemonHandler`. It SHALL accept `supplierMirrorStore` via the extended handler input. Findings MUST use `{ kind, severity, summary, evidenceIds }`. Proposals SHALL be enqueued to the `ceo` lane via the message bus.
+The daemon MUST export an `investigate` function conforming to `DaemonHandler`. It SHALL accept `supplierMirrorStore` and an optional `advisor` (`SupplierMirrorDeepSeekAdvisor | undefined`) via the extended handler input. Findings MUST use `{ kind, severity, summary, evidenceIds }`. Proposals SHALL be enqueued to the `ceo` lane via the message bus.
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
@@ -65,3 +65,20 @@ The daemon SHALL return empty findings with no errors when `supplierMirrorStore`
 |----------|-------|------|------|
 | Store absent | supplierMirrorStore is undefined | investigate() runs | Empty findings, `proposalEnqueued: false`, no error |
 | Partial Cortex missing | One seller has no Cortex data, another has full data | investigate() runs | Seller without data skipped; signals evaluated for remaining seller |
+
+### Requirement: Daemon AI Enrichment
+
+The daemon SHALL accept an optional `SupplierMirrorDeepSeekAdvisor` instance in its handler context.
+
+When an advisor is present and a stock-gap signal is detected, the daemon SHALL call `advisor.analyze()` using `ReasoningLevel.classification` before enqueuing the proposal.
+
+Advisor calls SHALL be isolated behind try/catch — an advisor failure SHALL NOT crash the daemon or prevent the rule-only proposal from enqueuing.
+
+Advisor calls SHALL use the existing hourly idempotency key pattern (`stock-gap_{supplierId}_{supplierItemId}_{hourKey}`) to prevent duplicate API calls within the same hour for the same signal.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Advisor called for stock-gap signal | Advisor is present, stock-gap signal detected, and no idempotency key matches this hour | Daemon processes the signal | `advisor.analyze()` SHALL be called with supplier context and a stock-gap-specific question; enriched findings SHALL be appended to the proposal payload via `aiEnrichment` |
+| Advisor failure does not block daemon | `advisor.analyze()` throws an exception or times out | Daemon processes the failing signal | The daemon SHALL catch the error, log it, and enqueue the rule-only proposal without `aiEnrichment`; remaining signals SHALL continue processing unaffected |
+| Advisor call deduplicated hourly | Advisor was already called this hour for the same (supplierId, supplierItemId) | Daemon detects the same stock-gap signal again | `advisor.analyze()` SHALL NOT be called — the idempotency key prevents the duplicate |
+| No advisor in context | The daemon handler input has no advisor instance | Any signal is detected | All proposals SHALL be rule-only with no enrichment — the daemon operates as before this change |
