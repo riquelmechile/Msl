@@ -2,6 +2,7 @@ export type LaneId =
   | "ceo"
   | "cost-supplier"
   | "market-catalog"
+  | "creative-assets"
   | "creative-commercial"
   | "operations-manager"
   | "owned-ecommerce"
@@ -211,10 +212,33 @@ export const PRODUCT_ADS_MONITOR_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const CREATIVE_ASSETS_LANE: LaneContract = {
+  laneId: "creative-assets",
+  label: "Creative Assets Monitor",
+  stablePrefix: [
+    "You are the Creative Assets Monitor lane.",
+    "Monitor creative quality, moderation status, image counts, and PICTURES scores.",
+    "Detect listings with low image count, moderation blocks, poor PICTURES scores, high-traffic listings with poor creative, and moderated listings in active campaigns.",
+    "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "creative snapshots, visit snapshots, product-ads-insights, and moderation evidence",
+  inputs: ["creative-snapshot", "visit-snapshot", "product-ads-insights"],
+  outputs: ["creative asset alerts", "risk priority", "evidence IDs"],
+  boundaries: [
+    "proposal-only; never execute mutations",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["creative-snapshot", "visit-snapshot", "product-ads-insights"],
+  credentialScope: "provider-default",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
   MARKET_CATALOG_LANE,
+  CREATIVE_ASSETS_LANE,
   CREATIVE_COMMERCIAL_LANE,
   OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,

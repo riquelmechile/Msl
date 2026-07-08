@@ -86,6 +86,7 @@ const laneDepartments: Record<LaneId, CompanyDepartmentId> = {
   ceo: "executive",
   "cost-supplier": "operations",
   "market-catalog": "operations",
+  "creative-assets": "commercial",
   "creative-commercial": "commercial",
   "operations-manager": "operations",
   "owned-ecommerce": "commercial",

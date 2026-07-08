@@ -81,6 +81,7 @@ export const KIND_FRESHNESS_TTL = {
   message: 6 * 60 * 60 * 1000, // 6h — low velocity
   reputation: 6 * 60 * 60 * 1000, // 6h — low velocity
   "product-ads-insights": 24 * 60 * 60 * 1000, // 24h — seller-level ads snapshot
+  "creative-snapshot": 24 * 60 * 60 * 1000, // 24h — seller-level creative snapshot
   pricing: 6 * 60 * 60 * 1000, // 6h — catalog competition snapshot
 };
 
@@ -92,6 +93,28 @@ export const KIND_DEFAULT_MAX_PAGES = {
   message: 100,
   reputation: 1, // single snapshot per cycle
   "product-ads-insights": 1, // single seller-level snapshot per cycle
+  "creative-snapshot": 1, // single seller-level snapshot per cycle
+};
+
+// ── Creative Snapshot type ──────────────────────────────────────────
+
+/**
+ * Snapshot of a listing's creative assets — picture count, moderation
+ * status, and Phase 7 PICTURES score. Persisted with 24h TTL for the
+ * creative-assets daemon to consume.
+ */
+export type CreativeSnapshotData = {
+  itemId: string;
+  sellerId: string;
+  pictureCount: number;
+  variationPictureCount: number;
+  hasMainImage: boolean;
+  moderationStatus: "none" | "active" | "paused" | "blocked";
+  moderationTags: string[];
+  moderationWordings: Array<{ kind: string; value: string }>;
+  performancePicturesStatus?: "COMPLETED" | "PENDING";
+  performancePicturesScore?: number;
+  capturedAt: string;
 };
 
 /** Default max price-to-win reads per seller cycle. */
@@ -976,6 +999,189 @@ export async function processSellerProductAds(
       return { persisted: false };
     }
     throw err;
+  }
+}
+
+export async function processSellerCreativeAssets(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+): Promise<{ persisted: number }> {
+  if (!config.operationalStore) return { persisted: 0 };
+
+  const BATCH_SIZE = 50;
+
+  try {
+    // ── Read listing snapshots from ORM ──────────────────────────
+    const listingSnaps = await config.operationalStore.searchSnapshots<Record<string, unknown>>({
+      sellerId,
+      kind: "listing_snapshot",
+      limit: BATCH_SIZE,
+    });
+
+    if (listingSnaps.length === 0) return { persisted: 0 };
+
+    let persisted = 0;
+
+    for (const snap of listingSnaps) {
+      const itemId = snap.itemId;
+      if (!itemId) continue;
+
+      const data = snap.data;
+      const pictures = (data.pictures as Array<unknown> | undefined) ?? [];
+      const pictureCount = Array.isArray(pictures) ? pictures.length : 0;
+
+      // Detect variations and their picture_ids (common ML API pattern)
+      const variations = (data.variations as Array<Record<string, unknown>> | undefined) ?? [];
+      let variationPictureCount = 0;
+      for (const v of variations) {
+        const ids = (v.picture_ids as Array<unknown> | undefined) ?? [];
+        variationPictureCount += Array.isArray(ids) ? ids.length : 0;
+      }
+
+      const hasMainImage = pictureCount > 0;
+
+      // ── Moderation status check ────────────────────────────────
+      let moderationStatus: CreativeSnapshotData["moderationStatus"] = "none";
+      const moderationTags: string[] = [];
+      const moderationWordings: Array<{ kind: string; value: string }> = [];
+
+      if (typeof config.mlcClient.getModerationStatus === "function") {
+        try {
+          const modSnap = await config.mlcClient.getModerationStatus(sellerId, itemId);
+          const modData = modSnap.data;
+
+          if (modData.blocked) {
+            moderationStatus = "blocked";
+          } else if (data.status === "active") {
+            moderationStatus = "active";
+          } else if (data.status === "paused") {
+            moderationStatus = "paused";
+          }
+
+          if (modData.wordings) {
+            for (const w of modData.wordings) {
+              moderationTags.push(w.kind);
+              moderationWordings.push({ kind: w.kind, value: w.value });
+            }
+          }
+        } catch {
+          // 429 backoff or other error — skip moderation data
+          moderationStatus = data.status === "active" ? "active" : "none";
+        }
+      }
+
+      // ── PICTURES score extraction from Cortex quality snapshots ─
+      let performancePicturesStatus: "COMPLETED" | "PENDING" | undefined;
+      let performancePicturesScore: number | undefined;
+
+      try {
+        const qualitySnaps = config.engine.queryByMetadata({
+          type: "quality_snapshot",
+          itemId,
+          limit: 1,
+        });
+
+        const qualitySnap = qualitySnaps[0];
+        if (qualitySnap?.metadata) {
+          const meta = qualitySnap.metadata as Record<string, unknown>;
+          const score = Number(meta.score ?? 0);
+
+          // Check for PICTURES bucket in the performance data
+          // The quality snapshot stores the raw MlcPerformanceSummary
+          // which has buckets with variables like "PICTURES"
+          const buckets = (meta.buckets ?? meta.variables) as
+            | Array<Record<string, unknown>>
+            | undefined;
+
+          if (Array.isArray(buckets)) {
+            for (const bucket of buckets) {
+              const title = bucket.title ?? "";
+              if (typeof title === "string" && title.toUpperCase().includes("PICTURE")) {
+                const tmpStatus = bucket.status as string | undefined;
+                if (tmpStatus === "COMPLETED" || tmpStatus === "PENDING") {
+                  performancePicturesStatus = tmpStatus;
+                  performancePicturesScore = Number(bucket.score ?? score);
+                }
+                break;
+              }
+              // Also check variables within buckets
+              const variables = bucket.variables as Array<Record<string, unknown>> | undefined;
+              if (Array.isArray(variables)) {
+                for (const v of variables) {
+                  const vTitle = v.title ?? "";
+                  if (typeof vTitle === "string" && vTitle.toUpperCase().includes("PICTURE")) {
+                    const tmpStatus = v.status as string | undefined;
+                    if (tmpStatus === "COMPLETED" || tmpStatus === "PENDING") {
+                      performancePicturesStatus = tmpStatus;
+                      performancePicturesScore = Number(v.score ?? score);
+                    }
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Missing or unavailable quality data — skip silently
+      }
+
+      // ── Upsert creative-snapshot to ORM ─────────────────────────
+      const capturedAt = new Date().toISOString();
+      const capturedAtDate = new Date(capturedAt);
+      const creativeData: CreativeSnapshotData = {
+        itemId,
+        sellerId,
+        pictureCount,
+        variationPictureCount,
+        hasMainImage,
+        moderationStatus,
+        moderationTags,
+        moderationWordings,
+        performancePicturesStatus,
+        performancePicturesScore,
+        capturedAt,
+      };
+
+      await config.operationalStore.upsertSnapshot({
+        sellerId,
+        kind: "creative-snapshot",
+        source: "mercadolibre-api",
+        data: creativeData,
+        completeness: "complete",
+        freshness: {
+          source: "mercadolibre-api",
+          signalKind: "creative-snapshot",
+          risk: "medium",
+          capturedAt: capturedAtDate,
+          maxAgeMs: KIND_FRESHNESS_TTL["creative-snapshot"],
+          status: "fresh",
+        },
+        confidence: "high",
+        evidence: {
+          evidenceId: `orm:creative-snapshot:${sellerId}:${itemId}:${capturedAt}`,
+          snapshotKind: "creative-snapshot",
+          sellerId,
+          entityId: itemId,
+          capturedAt: capturedAtDate,
+          freshnessStatus: "fresh",
+          completeness: "complete",
+          source: "operational-read-model",
+        },
+      });
+
+      persisted++;
+    }
+
+    await config.operationalStore.upsertCheckpoint(sellerId, "creative-snapshot", new Date().toISOString());
+
+    return { persisted };
+  } catch (err) {
+    console.error(
+      `[background-ingestion] Failed to process creative assets for seller ${sellerId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return { persisted: 0 };
   }
 }
 
@@ -2357,6 +2563,9 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
 
         // ── Product Ads ────────────────────────────────────
         await processSellerProductAds(config, sellerId);
+
+        // ── Creative Assets ────────────────────────────────
+        await processSellerCreativeAssets(config, sellerId);
       } catch (err) {
         console.error(
           `[background-ingestion] Failed to process seller ${sellerId}:`,
