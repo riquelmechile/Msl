@@ -2,6 +2,7 @@ import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMe
 import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { OperationalReadModelReader } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
+import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -71,4 +72,9 @@ export type DaemonHandler = (input: {
   supplierMirrorStore?: SupplierMirrorStore;
   /** Optional CEO handler context for Telegram notifications and action preparation. */
   ceoContext?: CeoHandlerContext;
+  /** Optional SupplierMirrorDeepSeekAdvisor for AI enrichment of stock-gap
+   *  signals. When present, the supplier-manager daemon calls advisor.analyze()
+   *  for stock-gap detections and appends aiEnrichment to the proposal payload.
+   *  When absent, all proposals are rule-only. */
+  advisor?: SupplierMirrorDeepSeekAdvisor;
 }) => Promise<DaemonResult>;

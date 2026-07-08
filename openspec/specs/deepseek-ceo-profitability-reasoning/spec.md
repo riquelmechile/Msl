@@ -8,13 +8,15 @@ Standalone DeepSeek reasoning wrapper that enriches profitability findings with 
 
 ### Requirement: Batched DeepSeek Reasoning
 
-The system SHALL receive all profitability findings from a handler cycle as a single batch, enrich them with Cortex context, build a prompt, and call DeepSeek with `response_format: { type: "json_object" }` once per cycle. The LLM SHALL return a structured recommendation per finding.
+The system SHALL receive all profitability findings from a handler cycle as a single batch, enrich them with Cortex context, and call DeepSeek via `DeepSeekReasoningGateway.reason()` once per cycle.
 
-#### Scenario: Findings enriched and reasoned in a single cycle
+(Previously: Called DeepSeek directly via `this.openai.chat.completions.create` with inline AbortController)
+
+#### Scenario: Findings reasoned through gateway in a single cycle
 
 - GIVEN a handler cycle produces profitability findings
-- WHEN `CeoDeepSeekClient.reason()` is called with all findings
-- THEN a single DeepSeek API call SHALL be made
+- WHEN `CeoDeepSeekClient.reason()` is called
+- THEN one gateway `reason()` call SHALL be made with `level: recommendation`
 - AND each finding SHALL receive a structured recommendation
 
 #### Scenario: Cold Cortex passes no-history sentinel
@@ -22,11 +24,12 @@ The system SHALL receive all profitability findings from a handler cycle as a si
 - GIVEN Cortex has no historical data for the seller/campaign/item
 - WHEN findings are enriched
 - THEN the prompt SHALL include "no historical data available"
-- AND the LLM SHALL reason on current data alone
 
 ### Requirement: Cortex Context Enrichment
 
-The system SHALL query Cortex via `queryByMetadata()` for historical profitability data, cost snapshots, and past outcomes for the target seller/campaign/item before building the LLM prompt.
+The system SHALL query Cortex via `queryByMetadata()` before building the ReasoningCall. Behavior unchanged — only transport layer changes.
+
+(Previously: Enrichment was identical; only where the prompt was sent changed)
 
 #### Scenario: Cortex returns historical context
 
@@ -36,45 +39,45 @@ The system SHALL query Cortex via `queryByMetadata()` for historical profitabili
 
 ### Requirement: Structured Output Validation
 
-The system SHALL validate every LLM response against known `proposalType` enum values. Invalid or missing `proposalType` SHALL trigger fallback to `SIGNAL_TO_ACTION`.
+The system SHALL validate LLM responses against known `proposalType` enum values. The gateway SHALL perform JSON schema validation; `CeoDeepSeekClient` SHALL retain its `proposalType` enum check. Invalid output SHALL trigger `SIGNAL_TO_ACTION` fallback.
+
+(Previously: Single validation pass in `reason()` with inline JSON.parse + enum check)
 
 #### Scenario: Valid proposalType accepted
 
-- GIVEN the LLM returns a JSON response with a known `proposalType`
-- WHEN the response is validated
+- GIVEN the gateway returns `status: "success"` with valid `proposalType`
+- WHEN `CeoDeepSeekClient` validates the result
 - THEN the recommendation SHALL be returned to the handler
 
 #### Scenario: Invalid proposalType triggers fallback
 
 - GIVEN the LLM returns a `proposalType` not in the known enum
-- WHEN the response is validated
-- THEN the system SHALL fall back to `SIGNAL_TO_ACTION`
+- WHEN validation runs
+- THEN `SIGNAL_TO_ACTION` SHALL be used immediately
 
 ### Requirement: Deterministic Fallback
 
-The system SHALL fall back to the static `SIGNAL_TO_ACTION` map on any DeepSeek error, timeout exceeding 5 seconds, or invalid response. Fallback SHALL be immediate with no retry.
+The system SHALL fall back to `SIGNAL_TO_ACTION` on any gateway `status: "fallback"` result. Timeout now controlled by gateway per level (15s for recommendation).
 
-#### Scenario: API unreachable
+(Previously: Client managed its own 5s AbortController timeout)
 
-- GIVEN DeepSeek API is unreachable
-- WHEN `reason()` is called
-- THEN `SIGNAL_TO_ACTION` SHALL produce the recommendation immediately
+#### Scenario: Gateway returns fallback
 
-#### Scenario: Timeout exceeded
-
-- GIVEN DeepSeek call exceeds 5-second timeout
-- WHEN the request is aborted
+- GIVEN the gateway returns `status: "fallback"` with empty recommendations
+- WHEN `reason()` processes the result
 - THEN `SIGNAL_TO_ACTION` SHALL produce the recommendation immediately
 
 ### Requirement: Cost Ledger Integration
 
-The system SHALL call `insertEntry()` on the workforce cost ledger for every DeepSeek API call, recording `department_id: product-ads-ceo-profitability`, token counts, and cost estimates.
+Cost recording SHALL be delegated to the gateway. `CeoDeepSeekClient` SHALL NOT call `insertEntry()` directly.
 
-#### Scenario: Successful call recorded in ledger
+(Previously: Client called `ledger.insertEntry()` with inline cost metadata extraction)
 
-- GIVEN a DeepSeek call completes
-- WHEN the response is received
-- THEN a ledger entry SHALL be created with `department_id: product-ads-ceo-profitability`
+#### Scenario: Cost recorded by gateway
+
+- GIVEN a DeepSeek call completes through the gateway
+- WHEN the handler checks ledger entries
+- THEN a ledger entry SHALL exist with `departmentId: product-ads-ceo-profitability`
 
 ### Requirement: Flash Model with Prefix Caching
 
@@ -85,3 +88,25 @@ The system SHALL use Flash model via `DEEPSEEK_API_KEY` and apply the existing `
 - GIVEN a stable policy prefix with `cacheBlocks` configuration
 - WHEN consecutive handler cycles run
 - THEN cache hits SHALL reduce token cost
+
+### Requirement: Factory Returns Null When No API Key
+
+`createCeoDeepSeekClient()` SHALL return `null` when `DEEPSEEK_API_KEY` is unset. Gateway creation SHALL be lazy — instantiated only when API key is available.
+
+(Previously: Factory created `CeoDeepSeekClientImpl` directly or returned null)
+
+### Requirement: Gateway Routing
+
+`CeoDeepSeekClientImpl` SHALL construct a `ReasoningCall` from findings, Cortex data, and the stable `POLICY_BLOCK`, then delegate to `DeepSeekReasoningGateway.reason()`.
+
+#### Scenario: Client constructs ReasoningCall from findings
+
+- GIVEN `CeoDeepSeekClientImpl.reason()` receives findings and Cortex context
+- WHEN it prepares the call
+- THEN it SHALL build a `ReasoningCall` with `level: recommendation`, `stablePrefix` from `POLICY_BLOCK`, `cacheableContext` from Cortex data, and `volatileInput` from findings JSON
+
+#### Scenario: Existing tests pass after refactor
+
+- GIVEN the refactored `CeoDeepSeekClientImpl` is tested
+- WHEN `npm test` runs in the agent package
+- THEN all tests in `ceoDeepSeekClient.test.ts` SHALL pass unchanged

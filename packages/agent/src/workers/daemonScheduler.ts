@@ -4,6 +4,7 @@ import type { OperationalReadModelReader, GraphEngine, SupplierMirrorStore } fro
 import type { LaneId } from "../conversation/lanes.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
 import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
+import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import { marketCatalogDaemon } from "./marketCatalogDaemon.js";
 import { operationsManagerDaemon } from "./operationsManagerDaemon.js";
 import { costSupplierDaemon } from "./costSupplierDaemon.js";
@@ -36,6 +37,9 @@ export type DaemonSchedulerConfig = {
   supplierMirrorStore?: SupplierMirrorStore;
   /** Optional CEO handler context for Telegram notifications and action preparation. */
   ceoContext?: CeoHandlerContext;
+  /** Optional SupplierMirrorDeepSeekAdvisor for AI enrichment of stock-gap
+   *  signals in the supplier-manager daemon. */
+  advisor?: SupplierMirrorDeepSeekAdvisor;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -128,6 +132,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               sellerIds: config.sellerIds,
               supplierMirrorStore: config.supplierMirrorStore,
               ceoContext: config.ceoContext,
+              advisor: config.advisor,
             });
             config.bus.resolve(claim.messageId, result);
           } catch (err) {
