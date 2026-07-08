@@ -294,6 +294,9 @@ Supplier Mirror spans multiple packages but stays local-first and disabled by de
 | `packages/memory/src/supplierMirrorStore.ts`    | SQLite persistence for suppliers, item snapshots, stock observations, mappings, policies, ledger records, notification preferences/events, and fallback policies. |
 | `packages/mercadolibre/src/supplierSource.ts`   | Source adapter boundary; MercadoLibre API is stock-authoritative, XKP/fallback evidence is not.                                                                   |
 | `packages/workers/src/supplierMirror/`          | Disabled-by-default scheduler, stock-break monitor, runtime gate checks, and Jinpeng bootstrap/readiness flow.                                                    |
+| `packages/memory/src/supplierMirrorRuntime.ts`  | Shared singleton factory (`getSupplierMirrorRuntimeFromEnv`) wired into bot, daemons, and web.                                                                    |
+| `packages/agent/src/conversation/supplierMirrorDeepSeekAdvisor.ts` | DeepSeek V4 Flash/Pro advisor that analyzes supplier evidence (stock, mappings, policies, notifications) and returns structured findings for CEO review. |
+| `packages/agent/src/conversation/supplierMirrorTools.ts` | 7 internal tools: readiness review, opportunities, notifications, pricing policy, fallback lessons, DeepSeek usage planning, and AI-powered evidence analysis. |
 | `scripts/supplier-mirror-jinpeng-bootstrap.mjs` | Operator CLI behind `npm run supplier-mirror:jinpeng:dry-run`; opens only `MSL_SUPPLIER_MIRROR_DB_PATH`, redacts config, and reports safety flags.                |
 
 Runtime gate flow: seed/readiness evidence → CEO review of missing credentials/source info and target proposals → explicit worker enablement only when runtime env, stored readiness, and CEO approval all exist. The Jinpeng dry-run never stores secrets, calls external APIs, publishes, pauses, or updates prices.

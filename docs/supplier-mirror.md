@@ -7,6 +7,8 @@ Supplier Mirror mirrors supplier evidence into the CEO workflow without exposing
 | Area             | Status                                                                                                                      |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Core model/store | Supplier domain model and SQLite store are available.                                                                       |
+| Runtime wiring   | `getSupplierMirrorRuntimeFromEnv()` singleton wired into bot, daemons, and web. Store auto-injected when `MSL_SUPPLIER_MIRROR_DB_PATH` is set. |
+| DeepSeek advisor | `SupplierMirrorDeepSeekAdvisor` provides AI-powered analysis of supplier evidence via `analyze_supplier_mirror_evidence` tool. |
 | Source boundary  | MercadoLibre API evidence is stock-authoritative; XKP enrichment is supporting catalog/context evidence only.               |
 | Worker runtime   | Scheduler and stock-break planning exist but remain disabled unless explicit runtime gate + readiness + CEO approval exist. |
 | Jinpeng          | Safe local dry-run/bootstrap is ready for operator execution.                                                               |
@@ -88,6 +90,26 @@ npm run supplier-mirror:jinpeng:dry-run
 | 2. Proposals      | Prepare pricing, publishing, mapping, and policy proposals for CEO approval.                             | Blind publish or price update. |
 | 3. Verified pause | Pause mapped target listings only after verified stock break, policy membership, ledger, and CEO notice. | Broad autonomous sync.         |
 | 4. Learned policy | Propose deterministic policies from repeated CEO answers and saved fallback lessons.                     | Self-approved autonomy.        |
+
+## DeepSeek AI Advisor
+
+The `SupplierMirrorDeepSeekAdvisor` provides on-demand AI analysis of supplier evidence. The CEO can invoke it conversationally through the `analyze_supplier_mirror_evidence` tool.
+
+**What it analyzes:**
+- Stock levels and discrepancies vs active mappings
+- Price opportunities based on supplier cost vs ML listing prices
+- Mapping suggestions for unmatched supplier items
+- Policy recommendations based on observed patterns
+
+**Model selection:** V4 Flash by default (routine extraction/classification), V4 Pro for policy conflicts.
+
+**Cost:** ~$0.001 per analysis (cached). Costs are recorded in the workforce ledger.
+
+**Example CEO queries:**
+- "¿hay stock bajo en Jinpeng?"
+- "¿qué productos de XKP conviene mapear primero?"
+- "analizame las oportunidades de margen con los precios del proveedor"
+- "¿hay discrepancias entre el stock de Jinpeng y mis listings activos?"
 
 ## Operational verification
 
