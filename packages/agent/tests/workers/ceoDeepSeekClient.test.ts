@@ -310,6 +310,8 @@ describe("createCeoDeepSeekClient", () => {
     expect(callArg.provider).toBe("deepseek");
     expect(callArg.inputTokens).toBe(150);
     expect(callArg.outputTokens).toBe(20);
-    expect(callArg.metadata).toEqual({ model: "deepseek-v4-flash", source: "ceo-deepseek-client" });
+    // Gateway selects deepseek-v4-pro for recommendation level
+    // and records cost with reasoning-gateway source
+    expect(callArg.metadata).toEqual({ model: "deepseek-v4-pro", source: "reasoning-gateway" });
   });
 });

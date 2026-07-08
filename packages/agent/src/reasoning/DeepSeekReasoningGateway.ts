@@ -1,0 +1,283 @@
+import crypto from "node:crypto";
+import OpenAI from "openai";
+
+import type { AutonomyEngine } from "../conversation/autonomyEngine.js";
+import {
+  buildDeepSeekChatCompletionRequest,
+  resolveDeepSeekUserId,
+} from "../conversation/deepseekRuntime.js";
+import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
+
+import { estimateCost } from "./costEstimator.js";
+import { selectModel } from "./modelRouter.js";
+import {
+  getLevelRisk,
+  getLevelTimeout,
+  isAutoExecuteLevel,
+  requiresApprovalByDefault,
+} from "./reasoningLevels.js";
+import type { ReasoningCall, ReasoningResult, CostTelemetry } from "./reasoningTypes.js";
+
+// ── Gateway ──────────────────────────────────────────────────────────
+
+/**
+ * Unified DeepSeek reasoning gateway.
+ *
+ * Wraps the shared OpenAI singleton and standardizes:
+ * - Model selection (Flash default, Pro escalation)
+ * - 3-block prompt cache (stable + cacheable + volatile)
+ * - Per-level timeout via AbortController
+ * - Structured output validation
+ * - Cost ledger recording
+ * - Autonomy gate integration
+ *
+ * Never throws — all errors return `status: "fallback"`.
+ */
+export class DeepSeekReasoningGateway {
+  private client: OpenAI;
+  private ledger?: WorkforceCostCacheLedgerStore;
+  private autonomy?: AutonomyEngine;
+
+  constructor(
+    client: OpenAI,
+    ledger?: WorkforceCostCacheLedgerStore,
+    autonomy?: AutonomyEngine,
+  ) {
+    this.client = client;
+    this.ledger = ledger;
+    this.autonomy = autonomy;
+  }
+
+  /**
+   * Execute a reasoning call through DeepSeek.
+   *
+   * Flow: selectModel → buildPrompt (3-block cache) → AbortController timeout →
+   * chat.completions.create → JSON parse & validate → recordCost →
+   * checkAutonomy → ReasoningResult.
+   *
+   * When `costLedgerOverride` is provided, cost is recorded on that ledger
+   * instead of the constructor-injected one. This allows callers like
+   * `CeoDeepSeekClient` to pass call-site ledger references for backward compat.
+   */
+  async reason(
+    call: ReasoningCall,
+    costLedgerOverride?: WorkforceCostCacheLedgerStore,
+  ): Promise<ReasoningResult> {
+    try {
+      // 1. Select model
+      const model = selectModel(call.level, call.forcePro);
+
+      // 2. Build 3-block prompt
+      const messages = this.buildPrompt(call);
+
+      // 3. Timeout via AbortController
+      const timeoutMs = getLevelTimeout(call.level, call.timeoutMs);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      let completion;
+      try {
+        const userId = resolveDeepSeekUserId({ laneId: call.laneId });
+        const request = buildDeepSeekChatCompletionRequest({
+          model,
+          messages,
+          response_format: { type: "json_object" } as const,
+          stream: false as const,
+          ...(userId ? { userId, user: userId } : {}),
+        });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        completion = await this.client.chat.completions.create(request as any, {
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // 4. Extract raw response
+      const raw = completion.choices[0]?.message?.content;
+      if (!raw) return this.fallback("Empty response from DeepSeek");
+
+      // 5. Parse JSON
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw) as unknown;
+      } catch {
+        return this.fallback("Invalid JSON response from DeepSeek");
+      }
+
+      // 6. Validate against expected schema (when provided)
+      if (call.expectedSchema && !this.validateSchema(parsed, call.expectedSchema)) {
+        return this.fallback("Response does not match expected schema");
+      }
+
+      // 7. Build cost telemetry
+      const usage = completion.usage;
+      const rawPromptDetails = usage?.prompt_tokens_details as
+        | { cached_tokens?: number }
+        | undefined;
+      const cacheHitTokens = rawPromptDetails?.cached_tokens ?? 0;
+      const cacheMissTokens = usage?.prompt_tokens ?? 0;
+      const outputTokens = usage?.completion_tokens ?? 0;
+
+      const costTelemetry: CostTelemetry = {
+        inputTokens: usage?.prompt_tokens ?? 0,
+        outputTokens,
+        cacheHitTokens,
+        cacheMissTokens,
+        estimatedCostMicros:
+          estimateCost(model, { cacheHitTokens, cacheMissTokens, outputTokens }) ?? 0,
+      };
+
+      // 8. Record cost ledger entry
+      this.recordCost(call, model, costTelemetry, costLedgerOverride ?? this.ledger);
+
+      // 9. Check autonomy gate
+      const requiresApproval = this.resolveApproval(call.level);
+
+      return {
+        status: "success",
+        summary: "DeepSeek reasoning completed successfully",
+        confidence: 0.8,
+        recommendations: [parsed],
+        modelUsed: model,
+        costTelemetry,
+        requiresApproval,
+        rawResponse: raw,
+      };
+    } catch (err) {
+      return this.fallback(err instanceof Error ? err.message : "Unknown error");
+    }
+  }
+
+  // ── Private: 3-block prompt construction ───────────────────────────
+
+  /**
+   * Builds the 3-block prompt messages array:
+   *   1. System: stablePrefix (cached)
+   *   2. System: cacheableContext (slow-changing, cached)
+   *   3. User: volatileInput (uncached)
+   */
+  private buildPrompt(call: ReasoningCall): Array<{ role: string; content: string }> {
+    const messages: Array<{ role: string; content: string }> = [];
+
+    if (call.stablePrefix) {
+      messages.push({ role: "system", content: call.stablePrefix });
+    }
+    if (call.cacheableContext) {
+      messages.push({ role: "system", content: call.cacheableContext });
+    }
+    messages.push({ role: "user", content: call.volatileInput });
+
+    return messages;
+  }
+
+  // ── Private: Cost recording ────────────────────────────────────────
+
+  private recordCost(
+    call: ReasoningCall,
+    model: string,
+    telemetry: CostTelemetry,
+    ledger: WorkforceCostCacheLedgerStore | undefined,
+  ): void {
+    if (!ledger) return;
+
+    try {
+      const cacheStatus =
+        telemetry.cacheHitTokens > 0
+          ? "hit"
+          : telemetry.cacheMissTokens > 0
+            ? "miss"
+            : ("unknown" as const);
+
+      ledger.insertEntry({
+        entryId: `reasoning-gateway:${call.laneId}:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`,
+        agentId: call.agentId,
+        laneId: call.laneId as import("../conversation/lanes.js").LaneId,
+        departmentId: call.departmentId,
+        provider: "deepseek",
+        model,
+        operation: "chat.completions.create",
+        promptCacheHitTokens: telemetry.cacheHitTokens || undefined,
+        promptCacheMissTokens: telemetry.cacheMissTokens || undefined,
+        inputTokens: telemetry.inputTokens || undefined,
+        outputTokens: telemetry.outputTokens || undefined,
+        estimatedCostMicros: telemetry.estimatedCostMicros || undefined,
+        cacheStatus,
+        metadata: { model, source: "reasoning-gateway" },
+        measuredAt: new Date().toISOString(),
+      });
+    } catch {
+      // ledger is best-effort
+    }
+  }
+
+  // ── Private: Autonomy gate ─────────────────────────────────────────
+
+  private resolveApproval(level: ReasoningLevel): boolean {
+    // Recommendation and decision always require approval
+    if (requiresApprovalByDefault(level)) return true;
+
+    // Auto-execute levels: check autonomy gate when available
+    if (this.autonomy) {
+      const risk = getLevelRisk(level);
+      return !this.autonomy.canAutoApprove(risk);
+    }
+
+    // No autonomy engine → auto-execute is allowed
+    return false;
+  }
+
+  // ── Private: Schema validation ─────────────────────────────────────
+
+  /**
+   * Lightweight JSON schema validation.
+   * Checks basic type constraints when expectedSchema is provided.
+   * For full JSON Schema compliance, use a dedicated validator (future).
+   */
+  private validateSchema(data: unknown, schema: Record<string, unknown>): boolean {
+    if (!schema || typeof schema !== "object") return true;
+
+    const type = schema.type as string | undefined;
+
+    if (type === "object") {
+      if (typeof data !== "object" || data === null || Array.isArray(data)) return false;
+    } else if (type === "array") {
+      if (!Array.isArray(data)) return false;
+    } else if (type === "string") {
+      if (typeof data !== "string") return false;
+    } else if (type === "number") {
+      if (typeof data !== "number") return false;
+    }
+
+    // Additional properties validation when specified
+    const required = schema.required as string[] | undefined;
+    if (required && typeof data === "object" && data !== null) {
+      for (const field of required) {
+        if (!(field in (data as Record<string, unknown>))) return false;
+      }
+    }
+
+    return true;
+  }
+
+  // ── Private: Fallback ──────────────────────────────────────────────
+
+  private fallback(reason: string): ReasoningResult {
+    return {
+      status: "fallback",
+      summary: reason,
+      confidence: 0,
+      recommendations: [],
+      modelUsed: "none",
+      costTelemetry: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheHitTokens: 0,
+        cacheMissTokens: 0,
+        estimatedCostMicros: 0,
+      },
+      requiresApproval: true,
+    };
+  }
+}
