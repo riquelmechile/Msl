@@ -6,6 +6,7 @@ export type MetricName =
   | "sync.product"
   | "escribano.observation"
   | "autonomy.degradation"
+  | "autonomy.promotion"
   | "token.refresh";
 
 export type Metric = {

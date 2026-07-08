@@ -9,7 +9,10 @@ export type LaneId =
   | "product-ads-monitor"
   | "product-ads-ceo-profitability"
   | "product-ads-profitability"
-  | "supplier-manager";
+  | "supplier-manager"
+  | "morning-report"
+  | "eod-summary"
+  | "unanswered-questions";
 
 export type CacheTelemetry = {
   provider: string;

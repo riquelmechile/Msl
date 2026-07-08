@@ -1431,6 +1431,15 @@ ${strategyLines.join("\n")}`;
         metrics?.record("escribano.observation", 1, { outcome });
       }
 
+      // --- Promotion evaluation (after successful turn, no proposal generated) ---
+      if (config.autonomyEngine && !proposal) {
+        const promotion = config.autonomyEngine.evaluatePromotion();
+        if (promotion.recommend) {
+          config.autonomyEngine.setLevel(promotion.to, "KPI thresholds met — auto-promotion");
+          metrics?.record("autonomy.promotion", 1, { from: String(promotion.to - 1), to: String(promotion.to) });
+        }
+      }
+
       // --- Record turn metrics ---
       const durationMs = Date.now() - turnStart;
       metrics?.record("conversation.turn", 1);

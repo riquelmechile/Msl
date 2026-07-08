@@ -94,6 +94,14 @@ export type AgentMessageBusStore = {
     prefix: string,
     since: string,
   ): AgentMessage[];
+  /** Retrieve messages that have reached max attempts and are in `failed` status. */
+  getFailedMessages(limit?: number): AgentMessage[];
+  /** Reset a failed message back to `pending` with 0 attempts so it can be retried. */
+  reenqueueFailed(messageId: string): void;
+  /** Retrieve messages stuck in `processing` longer than `timeoutMinutes` (default 10). */
+  getProcessingStuck(timeoutMinutes?: number): AgentMessage[];
+  /** Count of messages currently in `pending` status. */
+  getPendingCount(): number;
 };
 
 // ── Row mapper ───────────────────────────────────────────────────────
@@ -192,6 +200,30 @@ export function createAgentMessageBusStore(
     ORDER BY created_at DESC
   `);
 
+  const getFailedMessagesStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE status = 'failed'
+    ORDER BY updated_at DESC
+    LIMIT ?
+  `);
+
+  const reenqueueFailedStmt = db.prepare(`
+    UPDATE agent_message_bus
+    SET status = 'pending', attempts = 0, locked_at = NULL, updated_at = datetime('now')
+    WHERE message_id = ? AND status = 'failed'
+  `);
+
+  const getProcessingStuckStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE status = 'processing'
+    AND locked_at < datetime('now', ?)
+    ORDER BY locked_at ASC
+  `);
+
+  const getPendingCountStmt = db.prepare(`
+    SELECT COUNT(*) as cnt FROM agent_message_bus WHERE status = 'pending'
+  `);
+
   // ── API methods ────────────────────────────────────────────
 
   const enqueue = (input: EnqueueAgentMessageInput): AgentMessage => {
@@ -282,5 +314,30 @@ export function createAgentMessageBusStore(
     return rows.map(rowToAgentMessage);
   };
 
-  return { enqueue, claimNext, resolve, fail, cancel, lookupRecentByDedupePrefix };
+  const getFailedMessages = (limit?: number): AgentMessage[] => {
+    const rows = getFailedMessagesStmt.all(limit ?? 50) as AgentMessageBusRow[];
+    return rows.map(rowToAgentMessage);
+  };
+
+  const reenqueueFailed = (messageId: string): void => {
+    const info = reenqueueFailedStmt.run(messageId);
+    if (info.changes === 0) {
+      throw new Error(
+        `AgentMessage "${messageId}" not found or not in failed state.`,
+      );
+    }
+  };
+
+  const getProcessingStuck = (timeoutMinutes?: number): AgentMessage[] => {
+    const threshold = `-${timeoutMinutes ?? 10} minutes`;
+    const rows = getProcessingStuckStmt.all(threshold) as AgentMessageBusRow[];
+    return rows.map(rowToAgentMessage);
+  };
+
+  const getPendingCount = (): number => {
+    const row = getPendingCountStmt.get() as { cnt: number } | undefined;
+    return row?.cnt ?? 0;
+  };
+
+  return { enqueue, claimNext, resolve, fail, cancel, lookupRecentByDedupePrefix, getFailedMessages, reenqueueFailed, getProcessingStuck, getPendingCount };
 }

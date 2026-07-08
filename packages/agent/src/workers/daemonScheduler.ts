@@ -13,6 +13,9 @@ import { productAdsProfitabilityDaemon } from "./productAdsProfitabilityDaemon.j
 import { creativeAssetsDaemon } from "./creativeAssetsDaemon.js";
 import { ceoProfitabilityHandler } from "./ceoProfitabilityHandler.js";
 import { supplierManagerDaemon } from "./supplierManagerDaemon.js";
+import { morningReportDaemon } from "./morningReportDaemon.js";
+import { eodSummaryDaemon } from "./eodSummaryDaemon.js";
+import { unansweredQuestionsWatcher } from "./unansweredQuestionsWatcher.js";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -50,6 +53,9 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "product-ads-ceo-profitability": ceoProfitabilityHandler,
   "product-ads-profitability": productAdsProfitabilityDaemon,
   "supplier-manager": supplierManagerDaemon,
+  "morning-report": morningReportDaemon,
+  "eod-summary": eodSummaryDaemon,
+  "unanswered-questions": unansweredQuestionsWatcher,
 };
 
 // ── Scheduler ───────────────────────────────────────────────────────

@@ -153,8 +153,34 @@ const handle = startDaemonScheduler({
   intervalMs: 15 * 60 * 1000, // 15 minutes
 });
 
+// ── Proactive monitors (independent of message-driven scheduler) ──
+const { runSystemHealthCheck } = await import("@msl/agent");
+const { runDlqMonitor } = await import("@msl/agent");
+
+// Health check every 30 minutes
+const healthInterval = setInterval(() => {
+  const health = runSystemHealthCheck(bus, engine);
+  if (!health.ok && ceoContext?.adminChatIds && ceoContext.sendProactiveMessage) {
+    const alertMsg = health.checks
+      .filter(c => c.status !== "ok")
+      .map(c => `• [${c.status.toUpperCase()}] ${c.name}: ${c.detail}`)
+      .join("\n");
+    for (const chatId of ceoContext.adminChatIds) {
+      ceoContext.sendProactiveMessage(Number(chatId), `🏥 <b>System Health Alert</b>\n${alertMsg}`).catch(() => {});
+    }
+  }
+  console.log("[agent-daemons] Health check:", health.ok ? "OK" : "ISSUES FOUND");
+}, 30 * 60 * 1000);
+
+// DLQ monitor every 15 minutes
+const dlqInterval = setInterval(() => {
+  runDlqMonitor(bus, ceoContext?.adminChatIds ?? [], ceoContext?.sendProactiveMessage);
+}, 15 * 60 * 1000);
+
 // ── Graceful shutdown ──────────────────────────────────────────
 process.on("SIGINT", () => {
+  clearInterval(healthInterval);
+  clearInterval(dlqInterval);
   console.log("\n[agent-daemons] Stopping daemon scheduler...");
   handle.stop();
   busDb.close();
@@ -164,6 +190,8 @@ process.on("SIGINT", () => {
 });
 
 process.on("SIGTERM", () => {
+  clearInterval(healthInterval);
+  clearInterval(dlqInterval);
   console.log("\n[agent-daemons] Stopping daemon scheduler...");
   handle.stop();
   busDb.close();
