@@ -1,5 +1,5 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
-import type { MlcProductAdsInsights } from "@msl/mercadolibre";
+import { loadProductAdsContext } from "./productAdsShared.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -24,24 +24,6 @@ function isoWeekKey(dateStr: string): string {
   );
   return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
-
-// ── Flattened ad / campaign helpers ────────────────────────────────
-
-type AdFlat = {
-  id: string;
-  name: string;
-  itemId: string;
-  campaignId: string;
-  status: string;
-  metrics: Record<string, number>;
-};
-
-type CampaignFlat = {
-  id: string;
-  name: string;
-  metrics: Record<string, number>;
-  advertisedItemIds: Set<string>;
-};
 
 // ── Signal check thresholds ────────────────────────────────────────
 
@@ -81,85 +63,16 @@ export const productAdsMonitorDaemon: DaemonHandler = async ({
   const now = new Date();
   const capturedAt = now.toISOString();
 
-  // ── 2.1a – Fetch product-ads-insights from ORM ──────────────
+  // ── 2.1a – Load shared context (ads, campaigns, listings, costs) ──
 
-  const allAds: AdFlat[] = [];
-  const campaignsMap = new Map<string, CampaignFlat>();
-
-  for (const sid of sellerIds) {
-    const snaps = await reader.searchSnapshots<MlcProductAdsInsights>({
-      sellerId: sid,
-      kind: "product-ads-insights",
-      limit: 10,
-    });
-
-    for (const snap of snaps) {
-      const d = snap.data;
-
-      for (const c of d.campaigns) {
-        if (!c.id) continue;
-        if (!campaignsMap.has(c.id)) {
-          campaignsMap.set(c.id, {
-            id: c.id,
-            name: c.name ?? c.id,
-            metrics: { ...(c.metrics ?? {}) },
-            advertisedItemIds: new Set(),
-          });
-        }
-      }
-
-      for (const a of d.ads) {
-        allAds.push({
-          id: a.id,
-          name: a.name ?? a.id,
-          itemId: a.itemId ?? "",
-          campaignId: a.campaignId ?? "",
-          status: a.status ?? "",
-          metrics: { ...(a.metrics ?? {}) },
-        });
-        if (a.campaignId && a.itemId) {
-          const camp = campaignsMap.get(a.campaignId);
-          if (camp) camp.advertisedItemIds.add(a.itemId);
-        }
-      }
-    }
-  }
+  const ctx = await loadProductAdsContext(reader, cortex, sellerIds);
+  const allAds = ctx.ads;
+  const campaignsMap = ctx.campaigns;
+  const listingPrice = ctx.listingPrice;
+  const costMap = ctx.costMap;
 
   if (allAds.length === 0) {
     return { findings, proposalEnqueued: false, messageIds };
-  }
-
-  // ── 2.1b – Fetch listing snapshots (prices) ────────────────
-
-  const listingPrice = new Map<string, number>();
-  for (const sid of sellerIds) {
-    const lst = await reader.searchSnapshots<{ price?: number }>({
-      sellerId: sid,
-      kind: "listing_snapshot",
-      limit: 1000,
-    });
-    for (const s of lst) {
-      const p = Number(s.data.price ?? 0);
-      if (p > 0) listingPrice.set(s.itemId, p);
-    }
-  }
-
-  // ── 2.1c – Fetch cost snapshots from Cortex ────────────────
-
-  const costMap = new Map<string, number>();
-  for (const sid of sellerIds) {
-    const nodes = cortex.queryByMetadata({
-      type: "cost_snapshot",
-      sellerId: sid,
-      limit: 2000,
-    });
-    for (const n of nodes) {
-      const m = n.metadata;
-      const itemId = metadataString(m.itemId);
-      if (!itemId) continue;
-      const c = Number(m.cost ?? m.unit_cost ?? m.supplier_cost ?? 0);
-      if (c > 0) costMap.set(itemId, c);
-    }
   }
 
   // ── 2.1d – Fetch visit snapshots from Cortex (last 3 wk) ───

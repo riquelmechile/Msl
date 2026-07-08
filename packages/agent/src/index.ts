@@ -94,6 +94,7 @@ export { operationsManagerDaemon } from "./workers/operationsManagerDaemon.js";
 export { costSupplierDaemon } from "./workers/costSupplierDaemon.js";
 export { creativeCommercialDaemon } from "./workers/creativeCommercialDaemon.js";
 export { productAdsMonitorDaemon } from "./workers/productAdsMonitorDaemon.js";
+export { productAdsProfitabilityDaemon } from "./workers/productAdsProfitabilityDaemon.js";
 export { creativeAssetsDaemon } from "./workers/creativeAssetsDaemon.js";
 export { supplierManagerDaemon } from "./workers/supplierManagerDaemon.js";
 

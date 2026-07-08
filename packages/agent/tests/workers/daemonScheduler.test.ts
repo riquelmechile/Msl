@@ -1,35 +1,10 @@
 import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
-import type {
-  AgentMessageBusStore,
-  AgentMessage,
-} from "../../src/conversation/agentMessageBusStore.js";
+import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { startDaemonScheduler } from "../../src/workers/daemonScheduler.js";
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-/** Build a minimal claim fixture matching AgentMessage shape. */
-function claimFixture(overrides: Partial<AgentMessage> = {}): AgentMessage {
-  return {
-    id: overrides.id ?? 1,
-    messageId: overrides.messageId ?? crypto.randomUUID(),
-    senderAgentId: overrides.senderAgentId ?? "ceo",
-    receiverAgentId: overrides.receiverAgentId ?? "market-catalog",
-    messageType: overrides.messageType ?? "task",
-    payloadJson: overrides.payloadJson ?? "{}",
-    status: overrides.status ?? "processing",
-    priority: overrides.priority ?? 5,
-    attempts: overrides.attempts ?? 0,
-    dedupeKey: overrides.dedupeKey ?? null,
-    lockedAt: overrides.lockedAt ?? null,
-    resolvedAt: overrides.resolvedAt ?? null,
-    createdAt: overrides.createdAt ?? new Date().toISOString(),
-    updatedAt: overrides.updatedAt ?? new Date().toISOString(),
-  };
-}
 
 // ── Scheduler Tests ─────────────────────────────────────────────────
 
@@ -85,7 +60,7 @@ describe("daemonScheduler", () => {
   describe("error isolation", () => {
     it("continues to next agent when a daemon throws", async () => {
       // Enqueue a message for market-catalog agent
-      const msg = bus.enqueue({
+      bus.enqueue({
         senderAgentId: "ceo",
         receiverAgentId: "market-catalog",
         messageType: "task",
@@ -110,6 +85,41 @@ describe("daemonScheduler", () => {
       // After the daemon runs (even if it finds nothing), the message
       // should be resolved
       scheduler.stop();
+    });
+  });
+
+  describe("product-ads-profitability lane dispatch", () => {
+    it("dispatches product-ads-profitability daemon when a matching message is claimed", async () => {
+      // Enqueue a message for product-ads-profitability agent
+      bus.enqueue({
+        senderAgentId: "ceo",
+        receiverAgentId: "product-ads-profitability",
+        messageType: "task",
+        payloadJson: '{"task":"profitability-check"}',
+      });
+
+      const reader = createSqliteOperationalReadModel(db);
+      const cortex = createGraphEngine(":memory:");
+
+      const scheduler = startDaemonScheduler({
+        bus,
+        reader,
+        cortex,
+        sellerIds: ["seller-1"],
+        intervalMs: 60_000,
+      });
+
+      // Wait for the cycle to complete and daemon to process
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // The message should be resolved by the daemon (even if it finds nothing)
+      scheduler.stop();
+
+      // Verify the message was consumed — claimNext for product-ads-profitability
+      // should return empty after processing
+      const remaining = bus.claimNext("product-ads-profitability");
+      // The message is either resolved or failed — pending messages should not include it
+      expect(remaining.length).toBe(0);
     });
   });
 });

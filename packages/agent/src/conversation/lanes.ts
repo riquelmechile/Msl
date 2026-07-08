@@ -7,6 +7,7 @@ export type LaneId =
   | "operations-manager"
   | "owned-ecommerce"
   | "product-ads-monitor"
+  | "product-ads-profitability"
   | "supplier-manager";
 
 export type CacheTelemetry = {
@@ -235,6 +236,30 @@ export const SUPPLIER_MANAGER_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const PRODUCT_ADS_PROFITABILITY_LANE: LaneContract = {
+  laneId: "product-ads-profitability",
+  label: "Product Ads Profitability",
+  stablePrefix: [
+    "You are the Product Ads Profitability lane.",
+    "Evaluate per-product advertising economics inside each campaign: net contribution, margin, ROAS, CVR, CPC, units, conversion, and data completeness.",
+    "Compute CFO-grade signals (margin-consuming, scale candidate, budget waste, underinvested, unit economics) per product independently — never average campaign-level aggregates into product decisions.",
+    "Emit daily data-quality notices for insufficient cost/unit evidence; seller-impacting recommendations (budget, pause, scale) only on a rolling 7-day cadence.",
+    "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "product-ads insights, Cortex cost snapshots, listing snapshots",
+  inputs: ["product-ads-insights", "cost-snapshot", "listing-snapshot"],
+  outputs: ["cfo profitability signals", "data completeness findings", "scale/risk recommendations", "evidence IDs"],
+  boundaries: [
+    "proposal-only; never execute mutations",
+    "no profitability claims without cost evidence",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product-ads-insights", "cost-snapshot", "listing-snapshot"],
+  credentialScope: "provider-default",
+};
+
 export const CREATIVE_ASSETS_LANE: LaneContract = {
   laneId: "creative-assets",
   label: "Creative Assets Monitor",
@@ -266,6 +291,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,
   PRODUCT_ADS_MONITOR_LANE,
+  PRODUCT_ADS_PROFITABILITY_LANE,
   SUPPLIER_MANAGER_LANE,
 ];
 

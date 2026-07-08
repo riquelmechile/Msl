@@ -89,6 +89,11 @@ export type AgentMessageBusStore = {
   resolve(messageId: string, result: unknown): void;
   fail(messageId: string, error: string): void;
   cancel(messageId: string, reason?: string): void;
+  /** Look up recent messages whose dedupe_key starts with `prefix` and were created after `since` (ISO date string). */
+  lookupRecentByDedupePrefix(
+    prefix: string,
+    since: string,
+  ): AgentMessage[];
 };
 
 // ── Row mapper ───────────────────────────────────────────────────────
@@ -181,6 +186,12 @@ export function createAgentMessageBusStore(
     WHERE message_id = ? AND status IN ('pending', 'processing')
   `);
 
+  const lookupRecentByDedupePrefixStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE dedupe_key LIKE ? AND created_at > ?
+    ORDER BY created_at DESC
+  `);
+
   // ── API methods ────────────────────────────────────────────
 
   const enqueue = (input: EnqueueAgentMessageInput): AgentMessage => {
@@ -260,5 +271,16 @@ export function createAgentMessageBusStore(
     }
   };
 
-  return { enqueue, claimNext, resolve, fail, cancel };
+  const lookupRecentByDedupePrefix = (
+    prefix: string,
+    since: string,
+  ): AgentMessage[] => {
+    const rows = lookupRecentByDedupePrefixStmt.all(
+      `${prefix}%`,
+      since,
+    ) as AgentMessageBusRow[];
+    return rows.map(rowToAgentMessage);
+  };
+
+  return { enqueue, claimNext, resolve, fail, cancel, lookupRecentByDedupePrefix };
 }
