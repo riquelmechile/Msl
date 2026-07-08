@@ -385,6 +385,155 @@ describe("creativeCommercialDaemon", () => {
     });
   });
 
+  // ── Creative Studio delegation (Phase 5) ──────────────────────
+
+  describe("creative-studio delegation", () => {
+    it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", async () => {
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 50);
+
+      seedOrmSnapshot(
+        db,
+        SELLER_IDS[0]!,
+        "MLC-STUDIO-CC-001",
+        "listing_snapshot",
+        { status: "active", price: 12000, title: "Social candidate product" },
+        oldDate.toISOString(),
+      );
+
+      // High visits → creative candidate
+      seedCortexNode(engine, {
+        type: "visit_snapshot",
+        sellerId: SELLER_IDS[0],
+        itemId: "MLC-STUDIO-CC-001",
+        totalVisits: 200,
+      });
+
+      // Also seed orders for good conversion rate (need >= 2% of 200 visits)
+      const sid = SELLER_IDS[0];
+      seedCortexNode(engine, {
+        type: "order_snapshot",
+        sellerId: sid,
+        itemId: "MLC-STUDIO-CC-001",
+        orderId: "ORD-001",
+        totalAmount: 500,
+      });
+      seedCortexNode(engine, {
+        type: "order_snapshot",
+        sellerId: sid,
+        itemId: "MLC-STUDIO-CC-001",
+        orderId: "ORD-002",
+        totalAmount: 300,
+      });
+      seedCortexNode(engine, {
+        type: "order_snapshot",
+        sellerId: sid,
+        itemId: "MLC-STUDIO-CC-001",
+        orderId: "ORD-003",
+        totalAmount: 200,
+      });
+      seedCortexNode(engine, {
+        type: "order_snapshot",
+        sellerId: sid,
+        itemId: "MLC-STUDIO-CC-001",
+        orderId: "ORD-004",
+        totalAmount: 400,
+      });
+      seedCortexNode(engine, {
+        type: "order_snapshot",
+        sellerId: sid,
+        itemId: "MLC-STUDIO-CC-001",
+        orderId: "ORD-005",
+        totalAmount: 350,
+      });
+
+      // Enable creative-studio env gate
+      process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
+
+      const result = await creativeCommercialDaemon({
+        claim: claimFixture(),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+      });
+
+      // CEO proposal should still be enqueued
+      const ceoMessages = db
+        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
+        .all() as Array<Record<string, unknown>>;
+      expect(ceoMessages.length).toBeGreaterThan(0);
+
+      // creative-studio delegation should be enqueued
+      const studioMessages = db
+        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'creative-studio'")
+        .all() as Array<Record<string, unknown>>;
+      expect(studioMessages.length).toBeGreaterThan(0);
+      expect(studioMessages[0]!.sender_agent_id).toBe("creative-commercial");
+      expect(studioMessages[0]!.message_type).toBe("proposal");
+
+      const payload = JSON.parse(studioMessages[0]!.payload_json as string);
+      expect(payload.kind).toBe("social-pack");
+      expect(payload.channel).toBe("mercadolibre");
+
+      delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
+    });
+
+    it("does NOT enqueue social-pack to creative-studio when env gate is disabled", async () => {
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 50);
+
+      seedOrmSnapshot(
+        db,
+        SELLER_IDS[0]!,
+        "MLC-STUDIO-CC-002",
+        "listing_snapshot",
+        { status: "active", price: 12000, title: "Social candidate product 2" },
+        oldDate.toISOString(),
+      );
+
+      const sid2 = SELLER_IDS[0];
+      seedCortexNode(engine, {
+        type: "visit_snapshot",
+        sellerId: sid2,
+        itemId: "MLC-STUDIO-CC-002",
+        totalVisits: 200,
+      });
+
+      seedCortexNode(engine, {
+        type: "order_snapshot",
+        sellerId: sid2,
+        itemId: "MLC-STUDIO-CC-002",
+        orderId: "ORD-002",
+        totalAmount: 500,
+      });
+
+      process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
+
+      const result = await creativeCommercialDaemon({
+        claim: claimFixture(),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+      });
+
+      // CEO proposal still enqueued
+      const ceoMessages = db
+        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
+        .all() as Array<Record<string, unknown>>;
+      expect(ceoMessages.length).toBeGreaterThan(0);
+
+      // No creative-studio delegation
+      const studioMessages = db
+        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'creative-studio'")
+        .all() as Array<Record<string, unknown>>;
+      expect(studioMessages).toEqual([]);
+
+      delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
+    });
+  });
+
   // ── Cortex fallback (ORM parity) ──────────────────────────────
 
   describe("Cortex fallback when ORM is empty", () => {

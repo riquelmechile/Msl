@@ -1,5 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CreativeDeepSeekAdvisor, CreativeActionableFinding, CreativeEnrichmentFinding } from "../conversation/creativeDeepSeekAdvisor.js";
+import type { CreativeAssetRequest } from "@msl/creative-studio";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 
@@ -290,6 +291,55 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
     enqueueGroup(warnings, "warning");
     enqueueGroup(infos, "opportunity");
     proposalEnqueued = true;
+
+    // ── Creative Studio delegation (additive, supplementary) ──
+    const creativeStudioEnabled = process.env.MSL_CREATIVE_STUDIO_ENABLED === "true";
+    if (creativeStudioEnabled) {
+      // Find creative candidate findings (high-visit, good conversion)
+      const creativeCandidates = findings.filter(
+        (f) => f.severity === "info" && f.summary.includes("Creative candidate"),
+      );
+
+      for (const f of creativeCandidates) {
+        const itemId = f.evidenceIds.find((id) => id.startsWith("listing_snapshot:"))
+          ?.replace("listing_snapshot:", "");
+        if (!itemId) continue;
+
+        const listing = activeListings.find((l) => l.itemId === itemId);
+        if (!listing) continue;
+
+        const request: CreativeAssetRequest = {
+          requestId: `cj_${now.getTime()}_${itemId}`,
+          requestedByAgent: "creative-commercial",
+          sellerId: listing.sellerId,
+          channel: "mercadolibre",
+          kind: "social-pack",
+          objective: "engagement",
+          budgetTier: "low",
+          references: [],
+          productContext: {
+            itemId,
+            title: listing.title,
+            sku: "",
+            categoryId: "",
+          },
+          constraints: {
+            preserveProductTruth: true,
+            noBrandInfringement: true,
+            requiresHumanApproval: true,
+          },
+        };
+
+        const studioMsg = bus.enqueue({
+          senderAgentId: "creative-commercial",
+          receiverAgentId: "creative-studio",
+          messageType: "proposal",
+          payloadJson: JSON.stringify(request),
+          dedupeKey: `creative-social-pack-${itemId}-${capturedAt.slice(0, 13)}`,
+        });
+        messageIds.push(studioMsg.messageId);
+      }
+    }
   }
 
   return {

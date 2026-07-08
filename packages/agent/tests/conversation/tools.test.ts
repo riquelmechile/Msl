@@ -414,6 +414,7 @@ describe("company agent registry and request_agent_evidence", () => {
       "market-catalog",
       "creative-assets",
       "creative-commercial",
+      "creative-studio",
       "operations-manager",
       "owned-ecommerce",
       "product-ads-monitor",

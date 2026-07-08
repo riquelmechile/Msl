@@ -16,6 +16,7 @@ import { creativeCommercialDaemon } from "./creativeCommercialDaemon.js";
 import { productAdsMonitorDaemon } from "./productAdsMonitorDaemon.js";
 import { productAdsProfitabilityDaemon } from "./productAdsProfitabilityDaemon.js";
 import { creativeAssetsDaemon } from "./creativeAssetsDaemon.js";
+import { creativeStudioDaemon } from "./creativeStudioDaemon.js";
 import { ceoProfitabilityHandler } from "./ceoProfitabilityHandler.js";
 import { supplierManagerDaemon } from "./supplierManagerDaemon.js";
 import { morningReportDaemon } from "./morningReportDaemon.js";
@@ -68,6 +69,7 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "cost-supplier": costSupplierDaemon,
   "creative-assets": creativeAssetsDaemon,
   "creative-commercial": creativeCommercialDaemon,
+  "creative-studio": creativeStudioDaemon,
   "product-ads-monitor": productAdsMonitorDaemon,
   "product-ads-ceo-profitability": ceoProfitabilityHandler,
   "product-ads-profitability": productAdsProfitabilityDaemon,

@@ -4,6 +4,7 @@ export type LaneId =
   | "market-catalog"
   | "creative-assets"
   | "creative-commercial"
+  | "creative-studio"
   | "operations-manager"
   | "owned-ecommerce"
   | "product-ads-monitor"
@@ -286,6 +287,43 @@ export const CREATIVE_ASSETS_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const CREATIVE_STUDIO_LANE: LaneContract = {
+  laneId: "creative-studio",
+  label: "Creative Studio",
+  stablePrefix: [
+    "You are the Creative Studio lane.",
+    "Generate or edit product images, short clips, and creative assets on demand.",
+    "Receive creative requests via the agent message bus from any authorized agent.",
+    "Apply image policies, MercadoLibre diagnostic pre-checks, and cost controls.",
+    "Return candidate assets with cost, provider, and policy metadata.",
+    "Never publish directly to any channel. Always require CEO (or channel agent) approval.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "creative job queue, MiniMax API, Cortex outcome history, style profiles",
+  inputs: [
+    "creative-asset-request",
+    "product-context",
+    "reference-images",
+    "channel-constraints",
+  ],
+  outputs: [
+    "creative-execution-result",
+    "candidate-assets",
+    "policy-flags",
+    "cost-report",
+    "evidence-ids",
+  ],
+  boundaries: [
+    "prepare-only; never publish, upload, or mutate external channels",
+    "never generate without product truth constraints",
+    "never exceed budget without approval",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product", "reference-image", "channel-constraint"],
+  credentialScope: "api-key",
+};
+
 export const PRODUCT_ADS_CEO_PROFITABILITY_LANE: LaneContract = {
   laneId: "product-ads-ceo-profitability",
   label: "Product Ads CEO Profitability",
@@ -312,6 +350,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   MARKET_CATALOG_LANE,
   CREATIVE_ASSETS_LANE,
   CREATIVE_COMMERCIAL_LANE,
+  CREATIVE_STUDIO_LANE,
   OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,
   PRODUCT_ADS_MONITOR_LANE,

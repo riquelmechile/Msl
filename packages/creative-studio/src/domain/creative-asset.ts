@@ -8,7 +8,7 @@ export interface CreativeAsset {
   kind: CreativeAssetKind;
   storageUri: string;
   sha256: string;
-  mlDiagnostic?: MlDiagnosticResult;
+  mlDiagnostic?: MlDiagnosticResult | undefined;
   policyFlags: string[];
 }
 
