@@ -126,6 +126,14 @@ function mockStore(
     getLearnedFallbackPolicy:
       (overrides.getLearnedFallbackPolicy as SupplierMirrorStore["getLearnedFallbackPolicy"]) ??
       nullResult,
+    listTargetPolicies:
+      (overrides.listTargetPolicies as SupplierMirrorStore["listTargetPolicies"]) ?? emptyList,
+    listApprovedItemMappings:
+      (overrides.listApprovedItemMappings as SupplierMirrorStore["listApprovedItemMappings"]) ??
+      emptyList,
+    listLearnedFallbackPolicies:
+      (overrides.listLearnedFallbackPolicies as SupplierMirrorStore["listLearnedFallbackPolicies"]) ??
+      emptyList,
   };
 }
 

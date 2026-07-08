@@ -11,6 +11,7 @@ import type {
 } from "@msl/domain";
 import type { SupplierMirrorStore } from "@msl/memory";
 
+import type { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
 import type { ToolDefinition } from "./tools.js";
 import {
   buildSupplierMirrorDeepSeekPromptPlan,
@@ -236,7 +237,10 @@ function buildJinpengReadinessLedgerKeys(): readonly string[] {
   ];
 }
 
-export function createSupplierMirrorTools(store: SupplierMirrorStore): ToolDefinition[] {
+export function createSupplierMirrorTools(
+  store: SupplierMirrorStore,
+  advisor?: SupplierMirrorDeepSeekAdvisor,
+): ToolDefinition[] {
   const reviewReadiness: ToolDefinition = {
     name: "review_supplier_mirror_readiness",
     description:
@@ -611,7 +615,55 @@ export function createSupplierMirrorTools(store: SupplierMirrorStore): ToolDefin
     },
   };
 
-  return [
+  const analyzeEvidence: ToolDefinition | null = advisor
+    ? {
+        name: "analyze_supplier_mirror_evidence",
+        description:
+          "Analyzes supplier evidence with DeepSeek AI. Returns stock alerts, price opportunities, mapping suggestions, and policy recommendations. The CEO can ask specific questions like '¿hay stock bajo?' or '¿qué productos conviene mapear primero?'.",
+        parameters: {
+          type: "object",
+          properties: {
+            supplierId: { type: "string", description: "ID del proveedor (ej: 'jinpeng')" },
+            supplierName: { type: "string", description: "Nombre del proveedor" },
+            question: { type: "string", description: "Pregunta específica opcional del CEO" },
+          },
+          required: ["supplierId", "supplierName"],
+        },
+        execute: async (args) => {
+          const supplierId = readString(args.supplierId);
+          const supplierName = readString(args.supplierName);
+          if (!supplierId || !supplierName) {
+            return {
+              status: "blocked",
+              reason: "supplierId and supplierName are required",
+              noMutationExecuted: true,
+            };
+          }
+          try {
+            const question = readString(args.question);
+            const result = await advisor.analyze({
+              supplierId,
+              supplierName,
+              ...(question !== undefined ? { question } : {}),
+            });
+            return {
+              status: "analyzed",
+              ...result,
+              noMutationExecuted: true,
+              workerSelectionExposed: false,
+            };
+          } catch (err) {
+            return {
+              status: "error",
+              error: err instanceof Error ? err.message : String(err),
+              noMutationExecuted: true,
+            };
+          }
+        },
+      }
+    : null;
+
+  const tools: ToolDefinition[] = [
     reviewReadiness,
     reviewOpportunities,
     reviewNotifications,
@@ -619,4 +671,6 @@ export function createSupplierMirrorTools(store: SupplierMirrorStore): ToolDefin
     recordFallbackLesson,
     planDeepSeekUsage,
   ];
+  if (analyzeEvidence) tools.push(analyzeEvidence);
+  return tools;
 }

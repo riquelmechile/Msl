@@ -99,6 +99,7 @@ import type {
 } from "./companyAgentLearningStore.js";
 import type { CompanyAgentSkillStore } from "./companyAgentSkillStore.js";
 import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
+import { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
 import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
 import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
@@ -336,7 +337,16 @@ export function createAgentLoop(config: AgentLoopConfig) {
     );
   }
   if (config.supplierMirrorStore) {
-    for (const tool of createSupplierMirrorTools(config.supplierMirrorStore)) {
+    let advisor: SupplierMirrorDeepSeekAdvisor | undefined;
+    if (openai && config.sellerId && config.workforceCostCacheLedgerStore) {
+      advisor = new SupplierMirrorDeepSeekAdvisor({
+        store: config.supplierMirrorStore,
+        openai,
+        sellerIds: [config.sellerId],
+        ledger: config.workforceCostCacheLedgerStore,
+      });
+    }
+    for (const tool of createSupplierMirrorTools(config.supplierMirrorStore, advisor)) {
       if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
     }
   }

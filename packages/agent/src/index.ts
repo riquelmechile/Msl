@@ -154,6 +154,13 @@ export {
 export type { LaneContract, LaneOutput, CacheTelemetry, LaneId } from "./conversation/lanes.js";
 export { LANE_CONTRACTS, getLaneContract } from "./conversation/lanes.js";
 
+export { SupplierMirrorDeepSeekAdvisor } from "./conversation/supplierMirrorDeepSeekAdvisor.js";
+export type {
+  SupplierMirrorAnalysis,
+  SupplierMirrorAnalysisFinding,
+  SupplierMirrorAnalysisInput,
+} from "./conversation/supplierMirrorDeepSeekAdvisor.js";
+
 export {
   applySupplierPricingPolicy,
   createSupplierMirrorTools,

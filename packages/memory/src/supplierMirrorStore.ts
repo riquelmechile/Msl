@@ -133,6 +133,9 @@ export type SupplierMirrorStore = {
     supplierItemId: string,
   ): Promise<SupplierItemSnapshot | null>;
   listSupplierItemSnapshots(supplierId: SupplierId): Promise<SupplierItemSnapshot[]>;
+  listTargetPolicies(supplierId: SupplierId): Promise<SupplierTargetPolicy[]>;
+  listApprovedItemMappings(supplierId: SupplierId): Promise<SupplierTargetMapping[]>;
+  listLearnedFallbackPolicies(supplierId: SupplierId): Promise<SupplierLearnedFallbackPolicy[]>;
   recordStockObservation(observation: SupplierStockObservation): Promise<void>;
   listStockObservations(
     supplierId: SupplierId,
@@ -577,6 +580,17 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
       status = excluded.status
   `);
   const getLearnedPolicyStmt = db.prepare("SELECT * FROM learned_fallback_policies WHERE id = ?");
+  const listPoliciesStmt = db.prepare(
+    "SELECT * FROM target_policies WHERE supplier_id = ? ORDER BY scope_type ASC, scope_id ASC",
+  );
+  const listApprovedMappingsStmt = db.prepare(`
+    SELECT * FROM item_mappings WHERE supplier_id = ? AND state = 'approved' ORDER BY supplier_item_id ASC
+  `);
+  const listLearnedFallbackStmt = db.prepare(`
+    SELECT * FROM learned_fallback_policies
+    WHERE json_extract(scope_json, '$.supplierId') = ?
+    ORDER BY policy_type ASC, id ASC
+  `);
 
   /* eslint-disable @typescript-eslint/require-await */
   return {
@@ -622,6 +636,17 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
     },
     async listSupplierItemSnapshots(supplierId) {
       return (listItemsStmt.all(supplierId) as SupplierItemRow[]).map(itemFromRow);
+    },
+    async listTargetPolicies(supplierId) {
+      return (listPoliciesStmt.all(supplierId) as PolicyRow[]).map(policyFromRow);
+    },
+    async listApprovedItemMappings(supplierId) {
+      return (listApprovedMappingsStmt.all(supplierId) as MappingRow[]).map(mappingFromRow);
+    },
+    async listLearnedFallbackPolicies(supplierId) {
+      return (listLearnedFallbackStmt.all(supplierId) as LearnedFallbackPolicyRow[]).map(
+        learnedPolicyFromRow,
+      );
     },
     async recordStockObservation(observation) {
       insertObservationStmt.run(
