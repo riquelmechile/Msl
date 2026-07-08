@@ -118,8 +118,21 @@ export function createDatabase(path = ":memory:"): Database.Database {
   // Enforce foreign key constraints (off by default in SQLite)
   db.pragma("foreign_keys = ON");
 
+  // Performance tunings
+  db.pragma("synchronous = NORMAL");
+  db.pragma("cache_size = -8000");
+  db.pragma("temp_store = MEMORY");
+  db.pragma("busy_timeout = 5000");
+
   // Apply schema
   db.exec(SCHEMA_SQL);
+
+  // Additional indexes for query performance
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_nodes_label ON nodes(label);
+    CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
+    CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
+  `);
 
   // Run any pending migrations
   migrate(db);

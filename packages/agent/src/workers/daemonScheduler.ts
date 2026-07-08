@@ -68,47 +68,44 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
 
   const run = async () => {
     const agents = listCompanyAgents();
+    const activeAgents = agents.filter(
+      (agent) => agent.profile.laneId &&
+                daemonHandlerMap[agent.profile.laneId] &&
+                agent.status === "active"
+    );
 
-    for (const agent of agents) {
-      // Skip agents without a matching daemon handler
-      const laneId = agent.profile.laneId;
-      if (!laneId) continue;
+    // ── Run all active daemons in parallel with error isolation ──
+    await Promise.all(
+      activeAgents.map(async (agent) => {
+        const laneId = agent.profile.laneId!;
+        const handler = daemonHandlerMap[laneId]!;
 
-      const handler = daemonHandlerMap[laneId];
-      if (!handler) continue;
+        const claimed = config.bus.claimNext(laneId);
+        if (claimed.length === 0) return;
 
-      // Skip suspended agents — they stay dormant
-      if (agent.status !== "active") continue;
-
-      // ── Claim pending messages for this agent ────────────────
-      const claimed = config.bus.claimNext(laneId);
-      if (claimed.length === 0) continue;
-
-      // ── Dispatch each claimed message to the daemon ──────────
-      for (const claim of claimed) {
-        try {
-          const result = await handler({
-            claim,
-            reader: config.reader,
-            cortex: config.cortex,
-            bus: config.bus,
-            sellerIds: config.sellerIds,
-            supplierMirrorStore: config.supplierMirrorStore,
-            ceoContext: config.ceoContext,
-          });
-
-          config.bus.resolve(claim.messageId, result);
-        } catch (err) {
-          const errorMessage =
-            err instanceof Error ? err.message : String(err);
-          console.error(
-            `[daemon-scheduler] Daemon ${laneId} failed for message ${claim.messageId}: ${errorMessage}`,
-          );
-          config.bus.fail(claim.messageId, errorMessage);
-          // Continue to next message — error isolation per daemon spec
+        for (const claim of claimed) {
+          try {
+            const result = await handler({
+              claim,
+              reader: config.reader,
+              cortex: config.cortex,
+              bus: config.bus,
+              sellerIds: config.sellerIds,
+              supplierMirrorStore: config.supplierMirrorStore,
+              ceoContext: config.ceoContext,
+            });
+            config.bus.resolve(claim.messageId, result);
+          } catch (err) {
+            const errorMessage =
+              err instanceof Error ? err.message : String(err);
+            console.error(
+              `[daemon-scheduler] Daemon ${laneId} failed for message ${claim.messageId}: ${errorMessage}`,
+            );
+            config.bus.fail(claim.messageId, errorMessage);
+          }
         }
-      }
-    }
+      }),
+    );
 
     // ── CEO message consumption ────────────────────────────────────
     // Daemons enqueue proposals addressed to "ceo" — consume them so

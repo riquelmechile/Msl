@@ -172,6 +172,12 @@ export function migrateOperationalStore(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_snapshots_kind_captured
       ON operational_snapshots(kind, captured_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_snapshots_seller_kind_captured
+      ON operational_snapshots(seller_id, kind, captured_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_snapshots_seller_item
+      ON operational_snapshots(seller_id, item_id);
   `);
 }
 

@@ -2492,6 +2492,38 @@ function runRelistChecks(config: BackgroundIngestionConfig): {
   return { alerts, opportunitiesFound };
 }
 
+// ── Freshness skip-gate helper ────────────────────────────────────────
+
+/**
+ * Skip a processor if a recent checkpoint exists and is within the
+ * kind's TTL.  Falls back to `fallback` (matching the processor's
+ * return type) when the checkpoint is fresh.
+ */
+async function withFreshnessSkip<T>(
+  config: BackgroundIngestionConfig,
+  sellerId: string,
+  kind: keyof typeof KIND_FRESHNESS_TTL,
+  processor: () => Promise<T>,
+  fallback: T,
+): Promise<T> {
+  if (!config.operationalStore) return processor();
+  try {
+    const checkpoint = await config.operationalStore.getCheckpoint(sellerId, kind);
+    if (checkpoint) {
+      const age = Date.now() - new Date(checkpoint.last_captured_at).getTime();
+      if (age < KIND_FRESHNESS_TTL[kind]) {
+        console.log(
+          `[background-ingestion] Skipping ${kind} for ${sellerId} — checkpoint is fresh (${Math.round(age / 1000)}s old, TTL: ${Math.round(KIND_FRESHNESS_TTL[kind] / 1000)}s)`,
+        );
+        return fallback;
+      }
+    }
+  } catch {
+    // proceed if checkpoint check fails
+  }
+  return processor();
+}
+
 // ── Worker ─────────────────────────────────────────────────────────────
 
 /**
@@ -2531,47 +2563,63 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
       const sellerName = sellerNames[sellerId] ?? sellerId;
 
       try {
-        // ── Listings & visits ──────────────────────────────
+        // ── Listings & visits (must run first — feeds pricing and cross-account) ──
         const result = await processSellerListings(config, sellerId, sellerName);
         sellerListingMap.set(sellerId, result.listings);
         totalListings += result.listings.length;
         alerts.push(...result.alerts);
 
-        // ── Pricing competition ─────────────────────────────
-        await processSellerPricing(config, sellerId, result.listings);
+        // ── Parallel independent phases (each wrapped with freshness gate) ──
+        const [, orderResult, claimsResult, questionsResult, messagesResult, reputationResult] = await Promise.all([
+          withFreshnessSkip(config, sellerId, "pricing",
+            () => processSellerPricing(config, sellerId, result.listings).then(() => ({ alerts: [] as string[] })),
+            { alerts: [] as string[] },
+          ),
+          withFreshnessSkip(config, sellerId, "order",
+            () => processSellerOrders(config, sellerId, sellerName),
+            { alerts: [], orderCount: 0, totalAmount: 0 },
+          ),
+          withFreshnessSkip(config, sellerId, "claim",
+            () => processSellerClaims(config, sellerId, sellerName),
+            { alerts: [], claimCount: 0 },
+          ),
+          withFreshnessSkip(config, sellerId, "question",
+            () => processSellerQuestions(config, sellerId, sellerName),
+            { alerts: [], questionCount: 0 },
+          ),
+          withFreshnessSkip(config, sellerId, "message",
+            () => processSellerMessages(config, sellerId, sellerName),
+            { alerts: [], messageCount: 0 },
+          ),
+          withFreshnessSkip(config, sellerId, "reputation",
+            () => processSellerReputation(config, sellerId, sellerName),
+            { alerts: [] },
+          ),
+        ]);
 
-        // ── Orders ─────────────────────────────────────────
-        const orderResult = await processSellerOrders(config, sellerId, sellerName);
         totalOrders += orderResult.orderCount;
         alerts.push(...orderResult.alerts);
-
-        // ── Claims ─────────────────────────────────────────
-        const claimsResult = await processSellerClaims(config, sellerId, sellerName);
         alerts.push(...claimsResult.alerts);
-
-        // ── Questions ──────────────────────────────────────
-        const questionsResult = await processSellerQuestions(config, sellerId, sellerName);
         alerts.push(...questionsResult.alerts);
-
-        // ── Messages ───────────────────────────────────────
-        const messagesResult = await processSellerMessages(config, sellerId, sellerName);
         alerts.push(...messagesResult.alerts);
-
-        // ── Reputation ─────────────────────────────────────
-        const reputationResult = await processSellerReputation(config, sellerId, sellerName);
         alerts.push(...reputationResult.alerts);
 
-        // ── Product Ads ────────────────────────────────────
-        await processSellerProductAds(config, sellerId);
-
-        // ── Creative Assets ────────────────────────────────
-        await processSellerCreativeAssets(config, sellerId);
+        // ── Product Ads + Creative Assets (freshness-gated) ──
+        await Promise.all([
+          withFreshnessSkip(config, sellerId, "product-ads-insights",
+            () => processSellerProductAds(config, sellerId),
+            { persisted: false },
+          ),
+          withFreshnessSkip(config, sellerId, "creative-snapshot",
+            () => processSellerCreativeAssets(config, sellerId),
+            { persisted: 0 },
+          ),
+        ]);
       } catch (err) {
         console.error(
           `[background-ingestion] Failed to process seller ${sellerId}:`,
           err instanceof Error ? err.message : String(err),
         );
-        // Skip this seller cycle, retry next interval
       }
     }
 
@@ -2635,16 +2683,18 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
           `🔔 <b>Alerta de catálogo — ${todayLabel()}</b>\n\n` +
           alerts.map((a) => `• ${a}`).join("\n");
 
-        for (const chatId of chatIds) {
-          try {
-            await config.sendProactiveMessage(chatId, alertMessage);
-          } catch (err) {
-            console.error(
-              `[background-ingestion] Failed to send alert to chat ${chatId}:`,
-              err instanceof Error ? err.message : String(err),
-            );
-          }
-        }
+        await Promise.all(
+          chatIds.map(async (chatId) => {
+            try {
+              await config.sendProactiveMessage(chatId, alertMessage);
+            } catch (err) {
+              console.error(
+                `[background-ingestion] Failed to send alert to chat ${chatId}:`,
+                err instanceof Error ? err.message : String(err),
+              );
+            }
+          }),
+        );
       } catch (err) {
         console.error(
           "[background-ingestion] Failed to list or message active chats:",
@@ -2670,16 +2720,18 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
           const chatIds = await config.listActiveChats();
           const insightMessage = `🧠 <b>Análisis DeepSeek del negocio</b>\n\n${insights}`;
 
-          for (const chatId of chatIds) {
-            try {
-              await config.sendProactiveMessage(chatId, insightMessage);
-            } catch (err) {
-              console.error(
-                `[background-ingestion] Failed to send insights to chat ${chatId}:`,
-                err instanceof Error ? err.message : String(err),
-              );
-            }
-          }
+          await Promise.all(
+            chatIds.map(async (chatId) => {
+              try {
+                await config.sendProactiveMessage(chatId, insightMessage);
+              } catch (err) {
+                console.error(
+                  `[background-ingestion] Failed to send insights to chat ${chatId}:`,
+                  err instanceof Error ? err.message : String(err),
+                );
+              }
+            }),
+          );
         }
       } catch (err) {
         console.error(

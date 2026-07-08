@@ -36,6 +36,9 @@ export function getSharedDb(path = ":memory:"): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
+  db.pragma("synchronous = NORMAL");
+  db.pragma("cache_size = -8000");
+  db.pragma("temp_store = MEMORY");
   sharedDb = db;
   sharedPath = path;
   return db;
