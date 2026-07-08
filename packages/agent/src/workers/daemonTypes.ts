@@ -4,6 +4,7 @@ import type { OperationalReadModelReader } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
+import type { CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -83,4 +84,9 @@ export type DaemonHandler = (input: {
    *  for claims and reputation detections and appends aiEnrichment to the proposal payload.
    *  When absent, all proposals are rule-only. */
   operationsAdvisor?: OperationsDeepSeekAdvisor;
+  /** Optional CatalogDeepSeekAdvisor for AI enrichment of market catalog signals.
+   *  When present, the market-catalog daemon calls catalogAdvisor.analyze() for critical
+   *  (relist-expiring) and warning (low-visit, above-market) signals and appends
+   *  aiEnrichment to the proposal payload. When absent, all proposals are rule-only. */
+  catalogAdvisor?: CatalogDeepSeekAdvisor;
 }) => Promise<DaemonResult>;

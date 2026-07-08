@@ -170,6 +170,13 @@ export type {
   OperationsAnalysisFinding,
   OperationsAnalysisInput,
 } from "./conversation/operationsDeepSeekAdvisor.js";
+export { CatalogDeepSeekAdvisor } from "./conversation/catalogDeepSeekAdvisor.js";
+export type {
+  CatalogAnalysis,
+  CatalogAnalysisFinding,
+  CatalogAnalysisInput,
+  CatalogActionableFinding,
+} from "./conversation/catalogDeepSeekAdvisor.js";
 
 export {
   applySupplierPricingPolicy,

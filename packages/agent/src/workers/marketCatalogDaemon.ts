@@ -1,4 +1,5 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import type { CatalogActionableFinding, CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
   cortex,
   bus,
   sellerIds,
+  catalogAdvisor,
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
@@ -305,9 +307,107 @@ export const marketCatalogDaemon: DaemonHandler = async ({
     const warnings = findings.filter((f) => f.severity === "warning");
     const infos = findings.filter((f) => f.severity === "info");
 
+    // ── Helper: extract itemId from evidenceIds ─────────────────
+    function extractItemId(evidenceIds: string[]): string | undefined {
+      for (const eid of evidenceIds) {
+        const parts = eid.split(":");
+        if (parts.length >= 2 && parts[0] === "listing_snapshot") {
+          return parts[1];
+        }
+      }
+      return undefined;
+    }
+
+    // ── Helper: build CatalogActionableFinding from DaemonFinding ──
+    function buildActionableFinding(
+      f: DaemonFinding,
+      signalKind: "low-visit" | "above-market" | "relist-expiring",
+      severity: "warning" | "critical",
+    ): CatalogActionableFinding {
+      const itemId = extractItemId(f.evidenceIds) ?? "";
+      const listing = newestPerItem.get(itemId);
+      const visits = visitsPerItem.get(itemId) ?? 0;
+      const median = listing ? categoryMedians.get(listing.categoryId) : undefined;
+      return {
+        itemId,
+        sellerId: listing?.sellerId ?? "",
+        title: listing?.title ?? itemId,
+        price: listing?.price ?? 0,
+        status: listing?.status ?? "",
+        visits,
+        categoryId: listing?.categoryId ?? "",
+        categoryMedian: median,
+        signalKind,
+        severity,
+      };
+    }
+
+    // ── AI enrichment: critical signals (relist-expiring) ──────
+    type AiEnrichmentPayload = {
+      findings: Array<{
+        kind: string;
+        severity: string;
+        summary: string;
+        detail: string;
+        evidenceIds: string[];
+      }>;
+      summary: string;
+      modelUsed: string;
+      enrichedAt: string;
+    };
+
+    let criticalEnrichment: AiEnrichmentPayload | undefined;
+    if (catalogAdvisor && criticals.length > 0) {
+      const actionableFindings: CatalogActionableFinding[] = criticals.map((f) =>
+        buildActionableFinding(f, "relist-expiring", "critical"),
+      );
+      try {
+        const analysis = await catalogAdvisor.analyze({ actionableFindings });
+        criticalEnrichment = {
+          findings: analysis.findings,
+          summary: analysis.summary,
+          modelUsed: analysis.modelUsed,
+          enrichedAt: capturedAt,
+        };
+      } catch (err) {
+        console.error(
+          "[market-catalog-daemon] Advisor enrichment failed for critical signals:",
+          err,
+        );
+      }
+    }
+
+    // ── AI enrichment: warning signals (low-visit, above-market) ──
+    let warningEnrichment: AiEnrichmentPayload | undefined;
+    if (catalogAdvisor && warnings.length > 0) {
+      const actionableFindings: CatalogActionableFinding[] = warnings.map((f) => {
+        const isLowVisit = f.summary.startsWith("Low-visit");
+        return buildActionableFinding(
+          f,
+          isLowVisit ? "low-visit" : "above-market",
+          "warning",
+        );
+      });
+      try {
+        const analysis = await catalogAdvisor.analyze({ actionableFindings });
+        warningEnrichment = {
+          findings: analysis.findings,
+          summary: analysis.summary,
+          modelUsed: analysis.modelUsed,
+          enrichedAt: capturedAt,
+        };
+      } catch (err) {
+        console.error(
+          "[market-catalog-daemon] Advisor enrichment failed for warning signals:",
+          err,
+        );
+      }
+    }
+
     const enqueueGroup = (
       group: DaemonFinding[],
       kind: string,
+      enrichment?: AiEnrichmentPayload,
     ) => {
       if (group.length === 0) return;
       const summary = `Market catalog ${kind}s: ${group.length} finding(s)`;
@@ -334,15 +434,16 @@ export const marketCatalogDaemon: DaemonHandler = async ({
           recommendedAction,
           capturedAt,
           noMutationExecuted: true,
+          ...(enrichment ? { aiEnrichment: enrichment } : {}),
         }),
         dedupeKey: `market-catalog-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);
     };
 
-    enqueueGroup(criticals, "critical");
-    enqueueGroup(warnings, "warning");
-    enqueueGroup(infos, "opportunity");
+    enqueueGroup(criticals, "critical", criticalEnrichment);
+    enqueueGroup(warnings, "warning", warningEnrichment);
+    enqueueGroup(infos, "opportunity"); // No AI enrichment for info-only proposals
     proposalEnqueued = true;
   }
 

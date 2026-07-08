@@ -6,6 +6,7 @@ import { listCompanyAgents } from "../conversation/companyAgents.js";
 import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
+import type { CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
 import { marketCatalogDaemon } from "./marketCatalogDaemon.js";
 import { operationsManagerDaemon } from "./operationsManagerDaemon.js";
 import { costSupplierDaemon } from "./costSupplierDaemon.js";
@@ -43,6 +44,9 @@ export type DaemonSchedulerConfig = {
   /** Optional OperationsDeepSeekAdvisor for AI enrichment of claim and reputation
    *  signals in the operations-manager daemon. */
   operationsAdvisor?: OperationsDeepSeekAdvisor;
+  /** Optional CatalogDeepSeekAdvisor for AI enrichment of market catalog signals
+   *  in the market-catalog daemon. */
+  catalogAdvisor?: CatalogDeepSeekAdvisor;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -136,6 +140,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               ceoContext: config.ceoContext,
               advisor: config.advisor,
               operationsAdvisor: config.operationsAdvisor,
+              catalogAdvisor: config.catalogAdvisor,
             });
             config.bus.resolve(claim.messageId, result);
           } catch (err) {
