@@ -77,15 +77,15 @@ El gap más importante es runtime wiring:
 
 ### Diagnóstico por capa
 
-| Capa | Estado | Lectura |
-|---|---:|---|
-| Dominio Supplier Mirror | Alto | El modelo parece cohesionado. |
-| Seguridad / gates | Alto | El diseño parte cerrado y read-only. |
-| UX CEO-only | Alto | Calza con la visión de empresa agente. |
-| Runtime web | Medio/Bajo | Falta inyección clara del store. |
-| Runtime Telegram | Medio/Bajo | Falta inyección clara del store. |
-| DeepSeek cache | Medio | Hay oportunidad grande, falta adapter/observabilidad. |
-| Observabilidad | Medio/Bajo | Faltan logs claros de cache hit/miss y decisiones. |
+| Capa                    |     Estado | Lectura                                               |
+| ----------------------- | ---------: | ----------------------------------------------------- |
+| Dominio Supplier Mirror |       Alto | El modelo parece cohesionado.                         |
+| Seguridad / gates       |       Alto | El diseño parte cerrado y read-only.                  |
+| UX CEO-only             |       Alto | Calza con la visión de empresa agente.                |
+| Runtime web             | Medio/Bajo | Falta inyección clara del store.                      |
+| Runtime Telegram        | Medio/Bajo | Falta inyección clara del store.                      |
+| DeepSeek cache          |      Medio | Hay oportunidad grande, falta adapter/observabilidad. |
+| Observabilidad          | Medio/Bajo | Faltan logs claros de cache hit/miss y decisiones.    |
 
 ## Implementación recomendada
 
@@ -448,13 +448,13 @@ Invalidar cache cuando:
 
 TTL recomendado:
 
-| Tipo de análisis | TTL |
-|---|---:|
-| Readiness proveedor | 15-60 min |
-| Oportunidades catálogo | 6-24 h |
-| Anomalías stock | 5-15 min |
+| Tipo de análisis            |                             TTL |
+| --------------------------- | ------------------------------: |
+| Readiness proveedor         |                       15-60 min |
+| Oportunidades catálogo      |                          6-24 h |
+| Anomalías stock             |                        5-15 min |
 | Descripción/título sugerido | 24 h o hasta cambio de snapshot |
-| Auditoría de políticas | 24 h |
+| Auditoría de políticas      |                            24 h |
 
 ## Uso de modelos
 
@@ -466,10 +466,10 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 Uso recomendado:
 
-| Modelo | Uso |
-|---|---|
-| `deepseek-v4-flash` | Default para análisis frecuente, proveedor, catálogo, readiness, JSON. |
-| `deepseek-v4-pro` | Solo para decisiones complejas, auditorías grandes o resolución de conflictos. |
+| Modelo              | Uso                                                                            |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `deepseek-v4-flash` | Default para análisis frecuente, proveedor, catálogo, readiness, JSON.         |
+| `deepseek-v4-pro`   | Solo para decisiones complejas, auditorías grandes o resolución de conflictos. |
 
 No construir sobre aliases legacy si la documentación actual ya indica modelos V4 nuevos. Mantener nombres de modelo en env para poder rotar sin tocar código.
 
@@ -635,16 +635,16 @@ Resultado: proveedor sincronizado sin perder control.
 
 ## Riesgos principales
 
-| Riesgo | Impacto | Mitigación |
-|---|---:|---|
-| Exponer subagentes al usuario | Alto | CEO-only UX estricta. |
-| XKP usado como stock authority | Alto | Regla fija: XKP solo enrichment. |
-| Mutaciones sin aprobación | Alto | Gates + ledger + “dale”. |
-| SQLite locks | Medio | Singleton, WAL, busy timeout, cierre limpio. |
-| Cache hit bajo | Medio | Prefijos estables y logs hit/miss. |
-| JSON inválido de DeepSeek | Medio | Schema validation y fallback seguro. |
-| Costos altos por prompts variables | Medio | Separar prefijo estable/sufijo variable. |
-| Secretos en DB/logs | Alto | Redacción y no persistir secretos. |
+| Riesgo                             | Impacto | Mitigación                                   |
+| ---------------------------------- | ------: | -------------------------------------------- |
+| Exponer subagentes al usuario      |    Alto | CEO-only UX estricta.                        |
+| XKP usado como stock authority     |    Alto | Regla fija: XKP solo enrichment.             |
+| Mutaciones sin aprobación          |    Alto | Gates + ledger + “dale”.                     |
+| SQLite locks                       |   Medio | Singleton, WAL, busy timeout, cierre limpio. |
+| Cache hit bajo                     |   Medio | Prefijos estables y logs hit/miss.           |
+| JSON inválido de DeepSeek          |   Medio | Schema validation y fallback seguro.         |
+| Costos altos por prompts variables |   Medio | Separar prefijo estable/sufijo variable.     |
+| Secretos en DB/logs                |    Alto | Redacción y no persistir secretos.           |
 
 ## Decisión recomendada
 

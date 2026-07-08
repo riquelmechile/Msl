@@ -43,20 +43,20 @@ Social Media Agent    = [futuro] boundary de publicación en redes
 
 ## Estado actual de MSL (verificado contra código)
 
-| Componente | Estado | Rol en Creative Studio |
-|---|---|---|
-| Agent Message Bus | ✅ Implementado (`agentMessageBusStore.ts`) | Canal para `creative.asset.requested` y respuestas |
-| Daemon Scheduler | ✅ Implementado (4 daemons activos) | El Studio será un 5º daemon |
-| `creativeAssetsDaemon` | ✅ Detecta problemas de imágenes | Cliente natural: detecta → pide generación al Studio |
-| `creativeCommercialDaemon` | ✅ Detecta oportunidades comerciales/creativas | Cliente natural: detecta → pide social pack al Studio |
-| `creative-assets` lane | ✅ Lane contract definido | Se extiende para incluir al Studio Agent |
-| `creative-commercial` lane | ✅ Lane contract definido | Se extiende para incluir social content |
-| Cortex | ✅ Memoria con spreading activation | Outcome feedback para routing de modelos/estilos |
-| ML Image Orchestration | ✅ `diagnose → upload → associate` prepare-only | Recibe assets aprobados del Studio |
-| Owned Ecommerce (Medusa) | ✅ Storefront preview | Consume assets del Studio para ecommerce propio |
-| Agent Consensus | ✅ `agent_reviews` con quorum | Revisa propuestas creativas de alto riesgo/costo |
-| **Creative Studio Agent** | ❌ **NO EXISTE** | **Esta propuesta** |
-| **Social Media Agent** | ❌ **NO EXISTE** | **Fase futura — contrato definido acá** |
+| Componente                 | Estado                                          | Rol en Creative Studio                                |
+| -------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| Agent Message Bus          | ✅ Implementado (`agentMessageBusStore.ts`)     | Canal para `creative.asset.requested` y respuestas    |
+| Daemon Scheduler           | ✅ Implementado (4 daemons activos)             | El Studio será un 5º daemon                           |
+| `creativeAssetsDaemon`     | ✅ Detecta problemas de imágenes                | Cliente natural: detecta → pide generación al Studio  |
+| `creativeCommercialDaemon` | ✅ Detecta oportunidades comerciales/creativas  | Cliente natural: detecta → pide social pack al Studio |
+| `creative-assets` lane     | ✅ Lane contract definido                       | Se extiende para incluir al Studio Agent              |
+| `creative-commercial` lane | ✅ Lane contract definido                       | Se extiende para incluir social content               |
+| Cortex                     | ✅ Memoria con spreading activation             | Outcome feedback para routing de modelos/estilos      |
+| ML Image Orchestration     | ✅ `diagnose → upload → associate` prepare-only | Recibe assets aprobados del Studio                    |
+| Owned Ecommerce (Medusa)   | ✅ Storefront preview                           | Consume assets del Studio para ecommerce propio       |
+| Agent Consensus            | ✅ `agent_reviews` con quorum                   | Revisa propuestas creativas de alto riesgo/costo      |
+| **Creative Studio Agent**  | ❌ **NO EXISTE**                                | **Esta propuesta**                                    |
+| **Social Media Agent**     | ❌ **NO EXISTE**                                | **Fase futura — contrato definido acá**               |
 
 ---
 
@@ -66,17 +66,17 @@ Social Media Agent    = [futuro] boundary de publicación en redes
 
 ### Especificaciones de imagen
 
-| Parámetro | Valor | Nota |
-|---|---|---|
-| Formatos aceptados | **JPG, JPEG, PNG** | Solo estos tres |
-| Espacio de color | **RGB** (no CMYK) | La imagen debe ocupar el 95% del espacio |
-| Tamaño máximo | **10 MB** | |
-| Tamaño recomendado | **1200 × 1200 px** | |
-| Tamaño máximo aceptado | **1920 × 1920 px** | Se redimensiona a esta versión (F) |
-| Tamaño mínimo | **500 × 500 px** | No se agranda si es menor |
-| Zoom widget | Se activa si ancho > 800 px | |
-| Upload endpoint | `POST /pictures/items/upload` | Multipart form-data |
-| Associate endpoint | `POST /items/{id}/pictures` | Con `picture_id` |
+| Parámetro              | Valor                         | Nota                                     |
+| ---------------------- | ----------------------------- | ---------------------------------------- |
+| Formatos aceptados     | **JPG, JPEG, PNG**            | Solo estos tres                          |
+| Espacio de color       | **RGB** (no CMYK)             | La imagen debe ocupar el 95% del espacio |
+| Tamaño máximo          | **10 MB**                     |                                          |
+| Tamaño recomendado     | **1200 × 1200 px**            |                                          |
+| Tamaño máximo aceptado | **1920 × 1920 px**            | Se redimensiona a esta versión (F)       |
+| Tamaño mínimo          | **500 × 500 px**              | No se agranda si es menor                |
+| Zoom widget            | Se activa si ancho > 800 px   |                                          |
+| Upload endpoint        | `POST /pictures/items/upload` | Multipart form-data                      |
+| Associate endpoint     | `POST /items/{id}/pictures`   | Con `picture_id`                         |
 
 ### API de diagnóstico
 
@@ -84,20 +84,20 @@ Endpoint: `POST /moderations/pictures/diagnostic`
 
 **Criterios que evalúa** (según categoría):
 
-| Criterio | Campo `name` | Qué detecta |
-|---|---|---|
-| Fondo blanco | `white_background` | Fondo no blanco digitalizado |
-| Tamaño mínimo | `minimum_size` | Imagen por debajo del mínimo |
-| Texto/logo | `text_logo` | Logos o texto no permitido en la imagen |
-| Marca de agua | `watermark` | Watermarks en la imagen |
+| Criterio      | Campo `name`       | Qué detecta                             |
+| ------------- | ------------------ | --------------------------------------- |
+| Fondo blanco  | `white_background` | Fondo no blanco digitalizado            |
+| Tamaño mínimo | `minimum_size`     | Imagen por debajo del mínimo            |
+| Texto/logo    | `text_logo`        | Logos o texto no permitido en la imagen |
+| Marca de agua | `watermark`        | Watermarks en la imagen                 |
 
 **Tipos de imagen** (`picture_type`):
 
-| Tipo | Rol | Reglas |
-|---|---|---|
-| `thumbnail` | Imagen principal | Las más estrictas |
-| `variation_thumbnail` | Imagen de variante | Estrictas, varían por categoría |
-| `other` | Imágenes secundarias | Más flexibles |
+| Tipo                  | Rol                  | Reglas                          |
+| --------------------- | -------------------- | ------------------------------- |
+| `thumbnail`           | Imagen principal     | Las más estrictas               |
+| `variation_thumbnail` | Imagen de variante   | Estrictas, varían por categoría |
+| `other`               | Imágenes secundarias | Más flexibles                   |
 
 **Body del request:**
 
@@ -118,6 +118,7 @@ Endpoint: `POST /moderations/pictures/diagnostic`
 ### Moderaciones de imágenes
 
 Posibles moderaciones con tag `poor_quality_thumbnail`:
+
 - **WATERMARK**: marcas de agua
 - **MULTIPLE**: múltiples problemas (mala iluminación, producto cortado, watermark, logo/texto)
 - Status puede ser `active` o `paused`
@@ -132,31 +133,32 @@ Posibles moderaciones con tag `poor_quality_thumbnail`:
 
 **Lo que SÍ existe (producto)**:
 
-| Feature | Detalle |
-|---|---|
-| Nombre oficial | "Clips" / "Videos" |
-| URL | `mercadolibre.cl/shorts/clips`, `mercadolibre.cl/video/creator` |
-| Impacto reportado | **4× más visitas**, **2× más ventas** en promedio |
-| Costo | **100% gratis**, ilimitado |
-| Dónde se muestra | Home, publicaciones, Mercado Play, sección "Videos" |
-| Creación | Desde app mobile (grabar o subir) o dashboard web |
-| AI integrada | ML ofrece **guiones generados por IA** basados en el producto, preguntas frecuentes y reviews |
-| Música | **Librería de música libre de derechos** incluida |
-| Agencias certificadas | Partners oficiales que crean clips por vos |
+| Feature               | Detalle                                                                                       |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| Nombre oficial        | "Clips" / "Videos"                                                                            |
+| URL                   | `mercadolibre.cl/shorts/clips`, `mercadolibre.cl/video/creator`                               |
+| Impacto reportado     | **4× más visitas**, **2× más ventas** en promedio                                             |
+| Costo                 | **100% gratis**, ilimitado                                                                    |
+| Dónde se muestra      | Home, publicaciones, Mercado Play, sección "Videos"                                           |
+| Creación              | Desde app mobile (grabar o subir) o dashboard web                                             |
+| AI integrada          | ML ofrece **guiones generados por IA** basados en el producto, preguntas frecuentes y reviews |
+| Música                | **Librería de música libre de derechos** incluida                                             |
+| Agencias certificadas | Partners oficiales que crean clips por vos                                                    |
 
 **Requisitos de formato**:
 
-| Parámetro | Valor |
-|---|---|
-| Orientación | **Vertical** (9:16) |
-| Duración máxima | **1 minuto** |
-| Contenido | Un solo producto por video |
-| Audio | Bueno, sin ruido de fondo |
-| Estilo | Mostrar producto en acción/contexto, divertido y genuino |
-| Subtítulos | Recomendados |
-| Moderación | Revisión manual (hasta 2 días hábiles) |
+| Parámetro       | Valor                                                    |
+| --------------- | -------------------------------------------------------- |
+| Orientación     | **Vertical** (9:16)                                      |
+| Duración máxima | **1 minuto**                                             |
+| Contenido       | Un solo producto por video                               |
+| Audio           | Bueno, sin ruido de fondo                                |
+| Estilo          | Mostrar producto en acción/contexto, divertido y genuino |
+| Subtítulos      | Recomendados                                             |
+| Moderación      | Revisión manual (hasta 2 días hábiles)                   |
 
 **Herramientas que ML da gratis al seller**:
+
 - Música libre de derechos (auto-añadida si no elegís)
 - Guiones generados por IA (basados en producto + FAQ + reviews)
 - Contenido mensual sugerido por tipo de video que convierte
@@ -164,12 +166,12 @@ Posibles moderaciones con tag `poor_quality_thumbnail`:
 
 **Lo que NO existe (API)**:
 
-| Lo que falta | Detalle |
-|---|---|
-| API de upload de video | ❌ No hay endpoint documentado en developers.mercadolibre.com |
-| API de moderación de video | ❌ Solo disponible vía dashboard/ayuda |
-| API de analytics de Clips | ❌ No expuesto programáticamente |
-| `video_id` en recurso `/items` | ❌ El recurso item no tiene campo de video |
+| Lo que falta                   | Detalle                                                       |
+| ------------------------------ | ------------------------------------------------------------- |
+| API de upload de video         | ❌ No hay endpoint documentado en developers.mercadolibre.com |
+| API de moderación de video     | ❌ Solo disponible vía dashboard/ayuda                        |
+| API de analytics de Clips      | ❌ No expuesto programáticamente                              |
+| `video_id` en recurso `/items` | ❌ El recurso item no tiene campo de video                    |
 
 ### Estrategia recomendada para video en ML
 
@@ -191,12 +193,12 @@ Fase futura (cuando ML exponga API de Clips):
 
 ### Estrategia de video por canal
 
-| Canal | API disponible | Acción del Studio |
-|---|---|---|
-| **ML Clips** | ❌ Sin API | Generar clip → CEO sube manualmente |
-| **Ecommerce propio (Medusa)** | ✅ Storefront preview | Generar clip → asociar a storefront projection |
-| **Redes sociales (futuro)** | ⚠️ APIs externas | Generar clip → Social Agent publica |
-| **ML Product Ads (video)** | ⚠️ Posible | Verificar endpoint de creative asset en Ads API |
+| Canal                         | API disponible        | Acción del Studio                               |
+| ----------------------------- | --------------------- | ----------------------------------------------- |
+| **ML Clips**                  | ❌ Sin API            | Generar clip → CEO sube manualmente             |
+| **Ecommerce propio (Medusa)** | ✅ Storefront preview | Generar clip → asociar a storefront projection  |
+| **Redes sociales (futuro)**   | ⚠️ APIs externas      | Generar clip → Social Agent publica             |
+| **ML Product Ads (video)**    | ⚠️ Posible            | Verificar endpoint de creative asset en Ads API |
 
 ---
 
@@ -208,16 +210,16 @@ Fase futura (cuando ML exponga API de Clips):
 
 **Endpoint**: `POST https://api.minimax.io/v1/image_generation`
 
-| Parámetro | Tipo | Requerido | Detalle |
-|---|---|---|---|
-| `model` | string | ✅ | `image-01` o `image-01-live` |
-| `prompt` | string | ✅ | Máx 1500 caracteres |
-| `subject_reference` | array | ❌ | Para image-to-image. Objetos `{type: "character", image_file: "url"}` |
-| `aspect_ratio` | string | ❌ | `1:1` (1024×1024), `16:9` (1280×720), `4:3`, `3:2`, `2:3`, `3:4`, `9:16`, `21:9` |
-| `width` / `height` | int | ❌ | 512–2048 px, múltiplos de 8. Si se especifica con aspect_ratio, aspect_ratio gana |
-| `n` | int | ❌ | 1–9 imágenes por request (default 1) |
-| `response_format` | string | ❌ | `url` (expira en 24h) o `base64` |
-| `prompt_optimizer` | bool | ❌ | Auto-optimizar prompt (default false) |
+| Parámetro           | Tipo   | Requerido | Detalle                                                                           |
+| ------------------- | ------ | --------- | --------------------------------------------------------------------------------- |
+| `model`             | string | ✅        | `image-01` o `image-01-live`                                                      |
+| `prompt`            | string | ✅        | Máx 1500 caracteres                                                               |
+| `subject_reference` | array  | ❌        | Para image-to-image. Objetos `{type: "character", image_file: "url"}`             |
+| `aspect_ratio`      | string | ❌        | `1:1` (1024×1024), `16:9` (1280×720), `4:3`, `3:2`, `2:3`, `3:4`, `9:16`, `21:9`  |
+| `width` / `height`  | int    | ❌        | 512–2048 px, múltiplos de 8. Si se especifica con aspect_ratio, aspect_ratio gana |
+| `n`                 | int    | ❌        | 1–9 imágenes por request (default 1)                                              |
+| `response_format`   | string | ❌        | `url` (expira en 24h) o `base64`                                                  |
+| `prompt_optimizer`  | bool   | ❌        | Auto-optimizar prompt (default false)                                             |
 
 **Especificaciones para MercadoLibre**: Generar a 1200×1200 (`aspect_ratio: "1:1"` con `width: 1200, height: 1200`). Idealmente `response_format: "url"` para download y posterior upload a ML.
 
@@ -231,23 +233,23 @@ Fase futura (cuando ML exponga API de Clips):
 
 #### Modos de generación
 
-| Modo | Parámetros clave | Modelos |
-|---|---|---|
-| **Text-to-Video** (T2V) | `prompt` requerido | `MiniMax-Hailuo-2.3`, `MiniMax-Hailuo-02`, `T2V-01-Director`, `T2V-01` |
-| **Image-to-Video** (I2V) | `first_frame_image` requerido + `prompt` opcional | `MiniMax-Hailuo-2.3`, `MiniMax-Hailuo-2.3-Fast`, `MiniMax-Hailuo-02`, `I2V-01-Director`, `I2V-01-live`, `I2V-01` |
-| **First & Last Frame** (FL2V) | `first_frame_image` + `last_frame_image` + `prompt` | Solo `MiniMax-Hailuo-02` |
-| **Subject Reference** (S2V) | `subject_reference` + `prompt` | `S2V-01` |
+| Modo                          | Parámetros clave                                    | Modelos                                                                                                          |
+| ----------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Text-to-Video** (T2V)       | `prompt` requerido                                  | `MiniMax-Hailuo-2.3`, `MiniMax-Hailuo-02`, `T2V-01-Director`, `T2V-01`                                           |
+| **Image-to-Video** (I2V)      | `first_frame_image` requerido + `prompt` opcional   | `MiniMax-Hailuo-2.3`, `MiniMax-Hailuo-2.3-Fast`, `MiniMax-Hailuo-02`, `I2V-01-Director`, `I2V-01-live`, `I2V-01` |
+| **First & Last Frame** (FL2V) | `first_frame_image` + `last_frame_image` + `prompt` | Solo `MiniMax-Hailuo-02`                                                                                         |
+| **Subject Reference** (S2V)   | `subject_reference` + `prompt`                      | `S2V-01`                                                                                                         |
 
 #### Parámetros comunes de video
 
-| Parámetro | Tipo | Detalle |
-|---|---|---|
-| `prompt` | string | Máx 2000 chars. Soporta 15 comandos de cámara: `[Truck left]`, `[Pan right]`, `[Push in]`, `[Pull out]`, `[Pedestal up]`, `[Tilt down]`, `[Zoom in]`, `[Zoom out]`, `[Shake]`, `[Tracking shot]`, `[Static shot]` |
-| `duration` | int | `6` o `10` segundos (depende del modelo y resolución) |
-| `resolution` | string | `512P`, `720P`, `768P`, `1080P` |
-| `first_frame_image` | string | URL pública o base64. Formatos: JPG, JPEG, PNG, WebP. <20MB. Short edge >300px. |
-| `prompt_optimizer` | bool | Default `true`. Auto-optimiza el prompt. |
-| `fast_pretreatment` | bool | Reduce tiempo de optimización (solo Hailuo-2.3 y Hailuo-02) |
+| Parámetro           | Tipo   | Detalle                                                                                                                                                                                                           |
+| ------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`            | string | Máx 2000 chars. Soporta 15 comandos de cámara: `[Truck left]`, `[Pan right]`, `[Push in]`, `[Pull out]`, `[Pedestal up]`, `[Tilt down]`, `[Zoom in]`, `[Zoom out]`, `[Shake]`, `[Tracking shot]`, `[Static shot]` |
+| `duration`          | int    | `6` o `10` segundos (depende del modelo y resolución)                                                                                                                                                             |
+| `resolution`        | string | `512P`, `720P`, `768P`, `1080P`                                                                                                                                                                                   |
+| `first_frame_image` | string | URL pública o base64. Formatos: JPG, JPEG, PNG, WebP. <20MB. Short edge >300px.                                                                                                                                   |
+| `prompt_optimizer`  | bool   | Default `true`. Auto-optimiza el prompt.                                                                                                                                                                          |
+| `fast_pretreatment` | bool   | Reduce tiempo de optimización (solo Hailuo-2.3 y Hailuo-02)                                                                                                                                                       |
 
 #### Flujo asíncrono
 
@@ -260,12 +262,12 @@ Fase futura (cuando ML exponga API de Clips):
 
 **Modelos recomendados por caso de uso**:
 
-| Caso | Modelo | Resolución | Duración |
-|---|---|---|---|
-| Product clip rápido (I2V) | `MiniMax-Hailuo-2.3-Fast` | 768P | 6s |
-| Product clip calidad (I2V) | `MiniMax-Hailuo-2.3` | 1080P | 6s |
-| Demo desde cero (T2V) | `T2V-01-Director` | 720P | 6s |
-| Transición A→B (FL2V) | `MiniMax-Hailuo-02` | 768P | 6s |
+| Caso                       | Modelo                    | Resolución | Duración |
+| -------------------------- | ------------------------- | ---------- | -------- |
+| Product clip rápido (I2V)  | `MiniMax-Hailuo-2.3-Fast` | 768P       | 6s       |
+| Product clip calidad (I2V) | `MiniMax-Hailuo-2.3`      | 1080P      | 6s       |
+| Demo desde cero (T2V)      | `T2V-01-Director`         | 720P       | 6s       |
+| Transición A→B (FL2V)      | `MiniMax-Hailuo-02`       | 768P       | 6s       |
 
 ### Voz y música (capacidad futura)
 
@@ -297,9 +299,16 @@ export const CREATIVE_STUDIO_LANE: LaneContract = {
     "Never publish directly to any channel. Always require CEO (or channel agent) approval.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider: "creative job queue, MiniMax API, Cortex outcome history, style profiles",
+  refreshableContextProvider:
+    "creative job queue, MiniMax API, Cortex outcome history, style profiles",
   inputs: ["creative-asset-request", "product-context", "reference-images", "channel-constraints"],
-  outputs: ["creative-execution-result", "candidate-assets", "policy-flags", "cost-report", "evidence-ids"],
+  outputs: [
+    "creative-execution-result",
+    "candidate-assets",
+    "policy-flags",
+    "cost-report",
+    "evidence-ids",
+  ],
   boundaries: [
     "prepare-only; never publish, upload, or mutate external channels",
     "never generate without product truth constraints",
@@ -409,30 +418,25 @@ El daemon `creativeStudioDaemon`:
 ### Tipos TypeScript
 
 ```ts
-export type CreativeChannel =
-  | "mercadolibre"
-  | "storefront"
-  | "instagram"
-  | "facebook"
-  | "tiktok";
+export type CreativeChannel = "mercadolibre" | "storefront" | "instagram" | "facebook" | "tiktok";
 
 export type CreativeJobKind =
-  | "product-cover-i2i"       // Portada desde foto real (MiniMax image-01)
-  | "product-gallery-i2i"     // Galería secundaria desde foto real
-  | "product-clip-6s"         // Clip 6s I2V genérico (Hailuo-2.3-Fast)
-  | "product-clip-10s"        // Clip 10s I2V
-  | "ml-clip-vertical-30s"    // Clip vertical 9:16 para ML Clips (max 1min, típico 30s)
-  | "social-pack"             // Pack para redes (imagen + clip + copy)
-  | "storefront-hero"         // Hero image para ecommerce propio
-  | "storefront-banner"       // Banner para storefront
-  | "voiceover"               // Voz para clip/producto
-  | "music-bed";              // Música de fondo
+  | "product-cover-i2i" // Portada desde foto real (MiniMax image-01)
+  | "product-gallery-i2i" // Galería secundaria desde foto real
+  | "product-clip-6s" // Clip 6s I2V genérico (Hailuo-2.3-Fast)
+  | "product-clip-10s" // Clip 10s I2V
+  | "ml-clip-vertical-30s" // Clip vertical 9:16 para ML Clips (max 1min, típico 30s)
+  | "social-pack" // Pack para redes (imagen + clip + copy)
+  | "storefront-hero" // Hero image para ecommerce propio
+  | "storefront-banner" // Banner para storefront
+  | "voiceover" // Voz para clip/producto
+  | "music-bed"; // Música de fondo
 
 export type CreativeJobStatus =
   | "queued"
   | "policy-review"
   | "provider-routing"
-  | "running"                  // MiniMax procesando (sync: imagen, async: video polling)
+  | "running" // MiniMax procesando (sync: imagen, async: video polling)
   | "needs-human-review"
   | "approved"
   | "rejected"
@@ -442,7 +446,7 @@ export type CreativeJobStatus =
 
 export interface CreativeAssetRequest {
   requestId: string;
-  requestedByAgent: string;   // agent ID del solicitante (e.g. "creative-assets-daemon")
+  requestedByAgent: string; // agent ID del solicitante (e.g. "creative-assets-daemon")
   sellerId: string;
   channel: CreativeChannel;
   kind: CreativeJobKind;
@@ -471,8 +475,8 @@ export interface CreativeAssetRequest {
       };
       // Para MercadoLibre Clips (video)
       mlClips?: {
-        orientation: "vertical";    // 9:16 requerido por ML
-        maxDurationSeconds: 60;     // Máximo 1 minuto por ML
+        orientation: "vertical"; // 9:16 requerido por ML
+        maxDurationSeconds: 60; // Máximo 1 minuto por ML
         recommendedDurationSeconds: 30; // Recomendado para mejor engagement
       };
       // Para redes sociales
@@ -517,18 +521,18 @@ export interface CreativeExecutionResult {
 
 ### Routing de modelos (versión verificada)
 
-| Caso | Modelo MiniMax | Especificación | Costo estimado | Nota |
-|---|---|---|---|---|
-| Portada producto i2i | `image-01` | 1200×1200, 1:1 | ~$0.015/img | Subject reference desde foto de proveedor |
-| Galería secundaria | `image-01` | 1200×1200, 1:1 | ~$0.015/img | Mismo modelo, prompts por ángulo |
-| **ML Clip vertical 30s** | `MiniMax-Hailuo-2.3` | 1080×1920, 9:16, 30s | ~$0.30/clip | Formato nativo ML Clips. I2V desde foto de producto |
-| ML Clip vertical 60s | `MiniMax-Hailuo-2.3` | 1080×1920, 9:16, 60s | ~$0.50/clip | Máximo permitido por ML. I2V |
-| Clip producto 6s rápido (I2V) | `MiniMax-Hailuo-2.3-Fast` | 768P, 6s | ~$0.10/clip | Para preview/storefront/social |
-| Clip producto 6s calidad (I2V) | `MiniMax-Hailuo-2.3` | 1080P, 6s | ~$0.20/clip | Mayor calidad visual |
-| Demo desde cero (T2V) | `T2V-01-Director` | 720P, 6s | ~$0.15/clip | Sin imagen de referencia |
-| Hero ecommerce premium | `image-01` | 1920×1080, 16:9 | ~$0.02/img | Mayor resolución |
-| Social pack (imagen + clip) | `image-01` + `Hailuo-2.3-Fast` | Varía por red | ~$0.12/pack | Batch coordinado |
-| Video first+last frame | `MiniMax-Hailuo-02` | 768P, 6s | ~$0.25/clip | Transición controlada A→B |
+| Caso                           | Modelo MiniMax                 | Especificación       | Costo estimado | Nota                                                |
+| ------------------------------ | ------------------------------ | -------------------- | -------------- | --------------------------------------------------- |
+| Portada producto i2i           | `image-01`                     | 1200×1200, 1:1       | ~$0.015/img    | Subject reference desde foto de proveedor           |
+| Galería secundaria             | `image-01`                     | 1200×1200, 1:1       | ~$0.015/img    | Mismo modelo, prompts por ángulo                    |
+| **ML Clip vertical 30s**       | `MiniMax-Hailuo-2.3`           | 1080×1920, 9:16, 30s | ~$0.30/clip    | Formato nativo ML Clips. I2V desde foto de producto |
+| ML Clip vertical 60s           | `MiniMax-Hailuo-2.3`           | 1080×1920, 9:16, 60s | ~$0.50/clip    | Máximo permitido por ML. I2V                        |
+| Clip producto 6s rápido (I2V)  | `MiniMax-Hailuo-2.3-Fast`      | 768P, 6s             | ~$0.10/clip    | Para preview/storefront/social                      |
+| Clip producto 6s calidad (I2V) | `MiniMax-Hailuo-2.3`           | 1080P, 6s            | ~$0.20/clip    | Mayor calidad visual                                |
+| Demo desde cero (T2V)          | `T2V-01-Director`              | 720P, 6s             | ~$0.15/clip    | Sin imagen de referencia                            |
+| Hero ecommerce premium         | `image-01`                     | 1920×1080, 16:9      | ~$0.02/img     | Mayor resolución                                    |
+| Social pack (imagen + clip)    | `image-01` + `Hailuo-2.3-Fast` | Varía por red        | ~$0.12/pack    | Batch coordinado                                    |
+| Video first+last frame         | `MiniMax-Hailuo-02`            | 768P, 6s             | ~$0.25/clip    | Transición controlada A→B                           |
 
 ---
 
@@ -538,17 +542,17 @@ El Creative Studio Agent y el Social Media Agent son dos boundaries distintos. E
 
 ### Responsabilidades divididas
 
-| Responsabilidad | Creative Studio Agent | Social Media Agent |
-|---|---|---|
-| Generar imagen/video | ✅ | ❌ |
-| Aplicar políticas de marca | ✅ | ❌ |
-| Diagnosticar contra reglas ML | ✅ | ❌ |
-| Controlar costos de generación | ✅ | ❌ |
-| Elegir plataforma y horario | ❌ | ✅ |
-| Escribir copy social | ❌ | ✅ |
-| Publicar en Instagram/TikTok/etc | ❌ | ✅ |
-| Medir engagement/CTR social | ❌ | ✅ |
-| Re-optimizar basado en métricas | ❌ | ✅ (pide nuevo asset al Studio) |
+| Responsabilidad                  | Creative Studio Agent | Social Media Agent              |
+| -------------------------------- | --------------------- | ------------------------------- |
+| Generar imagen/video             | ✅                    | ❌                              |
+| Aplicar políticas de marca       | ✅                    | ❌                              |
+| Diagnosticar contra reglas ML    | ✅                    | ❌                              |
+| Controlar costos de generación   | ✅                    | ❌                              |
+| Elegir plataforma y horario      | ❌                    | ✅                              |
+| Escribir copy social             | ❌                    | ✅                              |
+| Publicar en Instagram/TikTok/etc | ❌                    | ✅                              |
+| Medir engagement/CTR social      | ❌                    | ✅                              |
+| Re-optimizar basado en métricas  | ❌                    | ✅ (pide nuevo asset al Studio) |
 
 ### Flujo de interacción
 
@@ -719,10 +723,10 @@ export interface CreativeBudgetPolicy {
   maxDailyUsd: number;
   maxJobUsd: number;
   maxVariantsPerRequest: number;
-  requireApprovalAboveUsd: number;  // pedir aprobación CEO extra si el job supera esto
+  requireApprovalAboveUsd: number; // pedir aprobación CEO extra si el job supera esto
   allowedProviders: Array<"minimax" | "flux" | "local">;
-  dailySpentUsd: number;            // se actualiza con cada job
-  resetAt: string;                  // UTC midnight
+  dailySpentUsd: number; // se actualiza con cada job
+  resetAt: string; // UTC midnight
 }
 
 export function canAfford(
@@ -733,7 +737,10 @@ export function canAfford(
     return { allowed: false, reason: `Daily budget exceeded (${policy.maxDailyUsd} USD)` };
   }
   if (estimatedCostUsd > policy.maxJobUsd) {
-    return { allowed: false, reason: `Job cost ${estimatedCostUsd} exceeds max ${policy.maxJobUsd} USD` };
+    return {
+      allowed: false,
+      reason: `Job cost ${estimatedCostUsd} exceeds max ${policy.maxJobUsd} USD`,
+    };
   }
   return { allowed: true };
 }

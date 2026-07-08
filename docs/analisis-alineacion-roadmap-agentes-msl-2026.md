@@ -8,15 +8,15 @@
 
 Los 7 PRs del roadmap de agentes fueron implementados en una sola sesión SDD:
 
-| PR | Cambio | Estado | Commit |
-|----|--------|--------|--------|
-| 1 | `agent-message-bus` | ✅ Archivado | `0ddeaa5` |
-| 2 | `specialist-daemon-scheduler` | ✅ Archivado | `7be4400` |
-| 3 | `deep-evidence-provider` | ✅ Archivado | `0b0045b` |
-| 4 | `quality-relist-integration` | ✅ Absorbido por marketCatalogDaemon | `7be4400` |
-| 5 | `agent-consensus-review` | ✅ Archivado | `56e9d05` |
-| 6 | `process-separation` | ✅ Implementado | `637fce5` |
-| 7 | `roadmap-docs` | ✅ Este documento | — |
+| PR  | Cambio                        | Estado                               | Commit    |
+| --- | ----------------------------- | ------------------------------------ | --------- |
+| 1   | `agent-message-bus`           | ✅ Archivado                         | `0ddeaa5` |
+| 2   | `specialist-daemon-scheduler` | ✅ Archivado                         | `7be4400` |
+| 3   | `deep-evidence-provider`      | ✅ Archivado                         | `0b0045b` |
+| 4   | `quality-relist-integration`  | ✅ Absorbido por marketCatalogDaemon | `7be4400` |
+| 5   | `agent-consensus-review`      | ✅ Archivado                         | `56e9d05` |
+| 6   | `process-separation`          | ✅ Implementado                      | `637fce5` |
+| 7   | `roadmap-docs`                | ✅ Este documento                    | —         |
 
 ### Lo que cambió
 
@@ -35,6 +35,7 @@ Ahora:  Usuario → CEO
 ```
 
 ### Nuevos specs creados
+
 - `agent-message-bus` — cola de mensajes interna
 - `daemon-scheduler` — scheduler de daemons autónomos
 - `specialist-daemons` — 4 daemons especialistas (marketCatalog, operationsManager, costSupplier, creativeCommercial)
@@ -44,6 +45,7 @@ Ahora:  Usuario → CEO
 - `operational-lane-evidence` — evidencia estructurada por lane
 
 ### Métricas finales
+
 - **1580 tests** pasando en 61 archivos
 - **9 commits** en main
 - **7 specs** creados/actualizados en OpenSpec
@@ -86,26 +88,26 @@ Usuario → CEO
 
 ## Cambios del informe que ya están implementados o parcialmente implementados
 
-| Área del informe | Estado actual | Evidencia en repo |
-| --- | --- | --- |
-| Ingesta operacional MercadoLibre | Implementada y avanzada | `packages/agent/src/conversation/backgroundIngestion.ts` |
-| Multi-seller Plasticov/Maustian | Implementado en runtime OAuth y background ingestion | `packages/bot/src/index.ts`, commits OAuth multi-seller |
-| Cortex como memoria neuronal | Implementado | `packages/memory/src/cortex/engine.ts` |
-| Spreading activation | Implementado | `GraphEngine.spreadActivation()` |
-| Hebbian reinforcement / penalization | Implementado | `GraphEngine.reinforceEdge()`, `GraphEngine.penalizeEdge()` |
-| Darwinian pruning | Implementado | `GraphEngine.prune()` |
-| Operational Read Model | Implementado | `packages/memory/src/operationalReadModel.ts` |
-| Dual-write Operational DB + Cortex | Implementado en listings, claims, questions, messages, reputation, product ads, pricing y orders | `backgroundIngestion.ts` |
-| Product Ads evidence-only | Implementado | `processSellerProductAds()` |
-| Pricing competition snapshots | Implementado con batch rotativo | `processSellerPricing()` |
-| Company Agent Registry | Implementado | `packages/agent/src/conversation/companyAgentStore.ts` |
-| Agent Skill Registry | Implementado | `packages/agent/src/conversation/companyAgentSkillStore.ts` |
-| Agent lessons / workforce context | Implementado parcialmente | `agentLoop.ts`, learning store/tools |
-| CEO-only Telegram UX | Implementado | `packages/bot/src/index.ts`, `agentLoop.ts` |
-| Delegación a subagentes | Parcial: existe como tool proposal-only | `createDelegateToSubagentTool()` |
-| Herramientas reales MercadoLibre | Implementado ampliamente | `agentLoop.ts`, `syncTools.ts` |
-| Quality checks | Existe función, falta integrarla al ciclo principal | `runQualityChecks()` |
-| Relist opportunities | Existe función, falta integrarla al ciclo principal | `runRelistChecks()` |
+| Área del informe                     | Estado actual                                                                                    | Evidencia en repo                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Ingesta operacional MercadoLibre     | Implementada y avanzada                                                                          | `packages/agent/src/conversation/backgroundIngestion.ts`    |
+| Multi-seller Plasticov/Maustian      | Implementado en runtime OAuth y background ingestion                                             | `packages/bot/src/index.ts`, commits OAuth multi-seller     |
+| Cortex como memoria neuronal         | Implementado                                                                                     | `packages/memory/src/cortex/engine.ts`                      |
+| Spreading activation                 | Implementado                                                                                     | `GraphEngine.spreadActivation()`                            |
+| Hebbian reinforcement / penalization | Implementado                                                                                     | `GraphEngine.reinforceEdge()`, `GraphEngine.penalizeEdge()` |
+| Darwinian pruning                    | Implementado                                                                                     | `GraphEngine.prune()`                                       |
+| Operational Read Model               | Implementado                                                                                     | `packages/memory/src/operationalReadModel.ts`               |
+| Dual-write Operational DB + Cortex   | Implementado en listings, claims, questions, messages, reputation, product ads, pricing y orders | `backgroundIngestion.ts`                                    |
+| Product Ads evidence-only            | Implementado                                                                                     | `processSellerProductAds()`                                 |
+| Pricing competition snapshots        | Implementado con batch rotativo                                                                  | `processSellerPricing()`                                    |
+| Company Agent Registry               | Implementado                                                                                     | `packages/agent/src/conversation/companyAgentStore.ts`      |
+| Agent Skill Registry                 | Implementado                                                                                     | `packages/agent/src/conversation/companyAgentSkillStore.ts` |
+| Agent lessons / workforce context    | Implementado parcialmente                                                                        | `agentLoop.ts`, learning store/tools                        |
+| CEO-only Telegram UX                 | Implementado                                                                                     | `packages/bot/src/index.ts`, `agentLoop.ts`                 |
+| Delegación a subagentes              | Parcial: existe como tool proposal-only                                                          | `createDelegateToSubagentTool()`                            |
+| Herramientas reales MercadoLibre     | Implementado ampliamente                                                                         | `agentLoop.ts`, `syncTools.ts`                              |
+| Quality checks                       | Existe función, falta integrarla al ciclo principal                                              | `runQualityChecks()`                                        |
+| Relist opportunities                 | Existe función, falta integrarla al ciclo principal                                              | `runRelistChecks()`                                         |
 
 ## Corrección importante sobre credenciales
 
@@ -300,7 +302,7 @@ type SearchSnapshotsFilter = {
   priceMax?: number;
   capturedAfter?: string;
   capturedBefore?: string;
-  freshness?: 'fresh' | 'allow-stale-with-warning';
+  freshness?: "fresh" | "allow-stale-with-warning";
   limit?: number;
 };
 ```
