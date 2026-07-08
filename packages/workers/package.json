@@ -17,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@msl/agent": "0.1.0",
     "@msl/domain": "0.1.0",
     "@msl/memory": "0.1.0",
     "better-sqlite3": "^12.11.1"

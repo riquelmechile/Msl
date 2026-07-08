@@ -92,13 +92,31 @@ const deepseekApiKey = env.DEEPSEEK_API_KEY?.trim();
 // ── Start ingestion ────────────────────────────────────────────
 console.log("[worker-ingestion] Starting background ingestion worker...");
 
+// ── Optional Telegram integration ────────────────────────────
+let sendProactiveMessage = async () => {};
+let listActiveChats = async () => [];
+
+const botToken = env.BOT_TOKEN?.trim();
+const adminChatIds = env.MSL_TELEGRAM_ADMIN_CHAT_IDS?.trim()
+  ? env.MSL_TELEGRAM_ADMIN_CHAT_IDS.split(",").map(id => id.trim()).filter(Boolean)
+  : [];
+
+if (botToken && adminChatIds.length > 0) {
+  const { Bot } = await import("grammy");
+  const bot = new Bot(botToken);
+
+  sendProactiveMessage = async (chatId, text) => {
+    await bot.api.sendMessage(chatId, text, { parse_mode: "HTML" });
+  };
+  listActiveChats = async () => adminChatIds.map(Number);
+  console.log(`[worker-ingestion] Telegram alerts enabled for ${adminChatIds.length} admin chat(s)`);
+}
+
 const baseConfig = {
   mlcClient,
   engine,
-  sendProactiveMessage: async () => {
-    // No-op: standalone worker has no Telegram access
-  },
-  listActiveChats: async () => [],
+  sendProactiveMessage,
+  listActiveChats,
   sellerIds,
   sellerNames,
   intervalMs: 6 * 60 * 60 * 1000, // 6 hours

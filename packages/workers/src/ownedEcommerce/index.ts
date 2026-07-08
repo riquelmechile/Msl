@@ -12,8 +12,10 @@ import type {
 } from "@msl/domain";
 import {
   DEFAULT_DEEPSEEK_MODEL,
-  guardrailsForCandidateEvidence,
   resolveDeepSeekCredentialRef,
+} from "@msl/agent";
+import {
+  guardrailsForCandidateEvidence,
   summarizeProjectionReadiness,
 } from "@msl/domain";
 import type { OwnedEcommerceStore } from "@msl/memory";

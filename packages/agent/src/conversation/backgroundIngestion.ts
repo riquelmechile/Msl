@@ -4,7 +4,7 @@ import {
   buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
   resolveDeepSeekUserId,
-} from "@msl/domain";
+} from "./deepseekRuntime.js";
 import type { GraphEngine, OperationalReadModelWriter } from "@msl/memory";
 import type {
   MlcApiClient,

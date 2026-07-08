@@ -144,18 +144,21 @@ function isProductAdsPrepareWriteTarget(target: PrepareWriteInput["target"]): bo
 }
 
 const mcpSyncProductInputSchema = {
-  sourceSellerId: z.unknown().optional(),
-  targetSellerId: z.unknown().optional(),
-  itemId: z.unknown().optional(),
-  itemIds: z.unknown().optional(),
-  productIds: z.unknown().optional(),
-  items: z.unknown().optional(),
-  syncAll: z.unknown().optional(),
-  bulk: z.unknown().optional(),
-  rationale: z.unknown().optional(),
-  expiresAt: z.unknown().optional(),
-  requiresApproval: z.unknown().optional(),
-  risk: z.unknown().optional(),
+  sourceSellerId: z.string().optional(),
+  targetSellerId: z.string().optional(),
+  itemId: z.string().optional(),
+  itemIds: z.array(z.string()).optional(),
+  productIds: z.array(z.string()).optional(),
+  items: z.array(z.object({
+    itemId: z.string(),
+    variations: z.array(z.unknown()).optional(),
+  })).optional(),
+  syncAll: z.boolean().optional(),
+  bulk: z.boolean().optional(),
+  rationale: z.string().optional(),
+  expiresAt: z.string().optional(),
+  requiresApproval: z.boolean().optional(),
+  risk: z.enum(["low", "medium", "high", "critical"]).optional(),
   msl_api_key: z.string().optional(),
 };
 
@@ -1389,13 +1392,15 @@ export function createMcpServer(config: McpServerConfig = {}) {
         msl_api_key: z.string().optional(),
       },
     },
-    ({ actorType, msl_api_key }) => {
+    ({ actorType, query, msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
         return unauthorizedResult();
       }
       return jsonResult({
         result: "simulado",
         actor: actorType ?? "desconocido",
+        query: query ?? "(sin consulta)",
+        nota: "Simulación de actor preparada. En el agent loop, esto se procesaría con DeepSeek.",
       });
     },
   );
@@ -1411,11 +1416,19 @@ export function createMcpServer(config: McpServerConfig = {}) {
         msl_api_key: z.string().optional(),
       },
     },
-    ({ msl_api_key }) => {
+    ({ questions, views, msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
         return unauthorizedResult();
       }
-      return jsonResult({ status: "ok", tool: "detect_probes" });
+      const questionCount = Array.isArray(questions) ? questions.length : 0;
+      const viewCount = Array.isArray(views) ? views.length : 0;
+      return jsonResult({
+        status: "ok",
+        tool: "detect_probes",
+        questionsReceived: questionCount,
+        viewsReceived: viewCount,
+        nota: questionCount === 0 && viewCount === 0 ? "Sin datos para analizar. Proporcioná preguntas o vistas." : "Análisis de patrones preparado.",
+      });
     },
   );
 
@@ -2059,7 +2072,11 @@ export function createMcpServer(config: McpServerConfig = {}) {
       if (!validateApiKey(msl_api_key)) {
         return unauthorizedResult();
       }
-      return jsonResult({ strategies: [], count: 0 });
+      if (config.strategyStore) {
+        const strategies = config.strategyStore.listActive();
+        return jsonResult({ strategies, count: strategies.length });
+      }
+      return jsonResult({ strategies: [], count: 0, nota: "Strategy store not configured in this MCP runtime." });
     },
   );
 
@@ -2073,11 +2090,16 @@ export function createMcpServer(config: McpServerConfig = {}) {
         msl_api_key: z.string().optional(),
       },
     },
-    ({ msl_api_key }) => {
+    ({ query, msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
         return unauthorizedResult();
       }
-      return jsonResult({ status: "ok", tool: "consult_cortex" });
+      return jsonResult({
+        status: "ok",
+        tool: "consult_cortex",
+        query: query ?? "(sin consulta)",
+        nota: "Consulta a Cortex registrada. La memoria neuronal se procesa en el agent loop.",
+      });
     },
   );
 
@@ -2951,9 +2973,15 @@ function registerMlcListingPricesReadTool(
   );
 }
 
+/** Minimal strategy store interface matching the subset needed by MCP tools. */
+export type McpStrategyStore = {
+  listActive(): unknown[];
+};
+
 /** Configuration for MCP server dependencies. Dependencies are injected by callers. */
 export type McpServerConfig = {
   mlcClient?: MlcApiClient;
+  strategyStore?: McpStrategyStore;
   syncPreview?: SyncPreviewDependency;
   readinessEvidence?: SyncProductReadinessEvidenceProviders;
   accountRoles?: MlAccountRoleConfig;

@@ -5,8 +5,8 @@ import {
   buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
   resolveDeepSeekUserId,
-} from "@msl/domain";
-import type { DeepSeekRuntimeConfig } from "@msl/domain";
+  type DeepSeekRuntimeConfig,
+} from "../conversation/deepseekRuntime.js";
 import type { GraphEngine } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
 

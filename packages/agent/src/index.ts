@@ -45,6 +45,23 @@ export {
 } from "./conversation/agentLoop.js";
 export { buildSystemPrompt } from "./conversation/systemPrompt.js";
 export { getDeepSeekClient, resetDeepSeekClient } from "./conversation/deepseekClient.js";
+export {
+  DEFAULT_DEEPSEEK_BASE_URL,
+  DEFAULT_DEEPSEEK_MODEL,
+  DEEPSEEK_API_KEY_ENV,
+  DEEPSEEK_BASE_URL_ENV,
+  DEEPSEEK_MODEL_ENV,
+  resolveDeepSeekRuntimeConfig,
+  resolveDeepSeekCredentialRef,
+  resolveDeepSeekUserId,
+  deepSeekChatCompletionExtraBody,
+  buildDeepSeekChatCompletionRequest,
+} from "./conversation/deepseekRuntime.js";
+export type {
+  DeepSeekEnv,
+  DeepSeekRuntimeConfig,
+  DeepSeekRoutingInput,
+} from "./conversation/deepseekRuntime.js";
 
 // ── Observability (metrics + structured logging) ──────────────────
 export {

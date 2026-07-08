@@ -5,7 +5,7 @@ import {
   resolveDeepSeekRuntimeConfig,
   resolveDeepSeekUserId,
   type DeepSeekRuntimeConfig,
-} from "@msl/domain";
+} from "./deepseekRuntime.js";
 import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
