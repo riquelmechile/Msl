@@ -1,5 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CreativeSnapshotData } from "../conversation/backgroundIngestion.js";
+import type { CreativeDeepSeekAdvisor, CreativeActionableFinding, CreativeEnrichmentFinding } from "../conversation/creativeDeepSeekAdvisor.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
   cortex,
   bus,
   sellerIds,
+  creativeAdvisor,
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
@@ -268,7 +270,53 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
     /* isolated */
   }
 
-  // ── 2.7 CEO proposal enqueue (per severity tier) ────────────
+  // ── 2.7 AI Enrichment (critical + warning only) ──────────────
+
+  let aiEnrichment: {
+    findings: CreativeEnrichmentFinding[];
+    summary: string;
+    modelUsed: string;
+    enrichedAt: string;
+  } | undefined;
+
+  const actionableFindings: CreativeActionableFinding[] = [];
+  for (const f of findings) {
+    if (f.severity === "info") continue;
+    const itemId = f.evidenceIds.find((id) => id.startsWith("creative-snapshot:"))?.replace("creative-snapshot:", "") ?? "";
+    actionableFindings.push({
+      itemId,
+      signalKind: f.summary.includes("Low image count") ? "low-image-count"
+        : f.summary.includes("Moderation blocked") ? "moderation-blocked"
+        : f.summary.includes("Poor PICTURES") ? "poor-pictures-score"
+        : f.summary.includes("High-traffic poor") ? "high-traffic-poor-creative"
+        : f.summary.includes("Moderated-in-campaign") ? "moderated-in-campaign"
+        : "low-image-count",
+      severity: f.severity === "critical" ? "critical" : "warning",
+    });
+  }
+
+  if (creativeAdvisor && actionableFindings.length > 0) {
+    try {
+      const analysis = await creativeAdvisor.analyze({
+        daemonKind: "creative-assets",
+        actionableFindings,
+      });
+
+      aiEnrichment = {
+        findings: analysis.findings,
+        summary: analysis.summary,
+        modelUsed: analysis.modelUsed,
+        enrichedAt: capturedAt,
+      };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[creative-assets] Advisor enrichment failed, using rule-only: ${errorMessage}`,
+      );
+    }
+  }
+
+  // ── 2.8 CEO proposal enqueue (per severity tier) ────────────
 
   let proposalEnqueued = false;
 
@@ -285,23 +333,29 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
           ? "Review moderated-in-campaign listings immediately — pause or delist"
           : "Review creative quality issues — add images, fix moderation, improve PICTURES score";
 
+      const payload: Record<string, unknown> = {
+        type: "proposal",
+        summary,
+        findings: group.map((f) => ({
+          kind: f.kind,
+          severity: f.severity,
+          summary: f.summary,
+          evidenceIds: f.evidenceIds,
+        })),
+        recommendedAction,
+        capturedAt,
+        noMutationExecuted: true,
+      };
+
+      if (aiEnrichment) {
+        payload.aiEnrichment = aiEnrichment;
+      }
+
       const msg = bus.enqueue({
         senderAgentId: "creative-assets",
         receiverAgentId: "ceo",
         messageType: "proposal",
-        payloadJson: JSON.stringify({
-          type: "proposal",
-          summary,
-          findings: group.map((f) => ({
-            kind: f.kind,
-            severity: f.severity,
-            summary: f.summary,
-            evidenceIds: f.evidenceIds,
-          })),
-          recommendedAction,
-          capturedAt,
-          noMutationExecuted: true,
-        }),
+        payloadJson: JSON.stringify(payload),
         dedupeKey: `creative-assets-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(msg.messageId);

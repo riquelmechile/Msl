@@ -177,6 +177,13 @@ export type {
   CatalogAnalysisInput,
   CatalogActionableFinding,
 } from "./conversation/catalogDeepSeekAdvisor.js";
+export { CreativeDeepSeekAdvisor } from "./conversation/creativeDeepSeekAdvisor.js";
+export type {
+  CreativeEnrichment,
+  CreativeEnrichmentFinding,
+  CreativeEnrichmentInput,
+  CreativeActionableFinding,
+} from "./conversation/creativeDeepSeekAdvisor.js";
 
 export {
   applySupplierPricingPolicy,

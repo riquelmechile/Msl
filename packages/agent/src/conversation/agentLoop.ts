@@ -102,6 +102,7 @@ import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerSt
 import { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
 import { OperationsDeepSeekAdvisor } from "./operationsDeepSeekAdvisor.js";
 import { CatalogDeepSeekAdvisor } from "./catalogDeepSeekAdvisor.js";
+import { CreativeDeepSeekAdvisor } from "./creativeDeepSeekAdvisor.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
 import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
 import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
@@ -373,6 +374,19 @@ export function createAgentLoop(config: AgentLoopConfig) {
   const catalogDeepSeekAdvisor: CatalogDeepSeekAdvisor | undefined =
     openai && config.sellerId && config.workforceCostCacheLedgerStore
       ? new CatalogDeepSeekAdvisor({
+          openai,
+          sellerIds: [config.sellerId],
+          ledger: config.workforceCostCacheLedgerStore,
+        })
+      : undefined;
+
+  // ── Creative DeepSeek Advisor ────────────────────────────────────
+  // Lazily passed to the daemon scheduler via createAgentLoop return.
+  // The scheduler extracts it from config and injects into the
+  // creative-assets and creative-commercial daemons for creative signal enrichment.
+  const creativeDeepSeekAdvisor: CreativeDeepSeekAdvisor | undefined =
+    openai && config.sellerId && config.workforceCostCacheLedgerStore
+      ? new CreativeDeepSeekAdvisor({
           openai,
           sellerIds: [config.sellerId],
           ledger: config.workforceCostCacheLedgerStore,
@@ -1001,6 +1015,7 @@ ${strategyLines.join("\n")}`;
 
     operationsDeepSeekAdvisor,
     catalogDeepSeekAdvisor,
+    creativeDeepSeekAdvisor,
   };
 }
 

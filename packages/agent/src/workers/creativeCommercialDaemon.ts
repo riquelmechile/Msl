@@ -1,4 +1,5 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import type { CreativeDeepSeekAdvisor, CreativeActionableFinding, CreativeEnrichmentFinding } from "../conversation/creativeDeepSeekAdvisor.js";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
   cortex,
   bus,
   sellerIds,
+  creativeAdvisor,
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
@@ -191,6 +193,49 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
     }
   }
 
+  // ── AI Enrichment (warning only — info stays rule-based) ──
+
+  let aiEnrichment: {
+    findings: CreativeEnrichmentFinding[];
+    summary: string;
+    modelUsed: string;
+    enrichedAt: string;
+  } | undefined;
+
+  const warningFindings = findings.filter((f) => f.severity === "warning");
+  const actionableFindings: CreativeActionableFinding[] = [];
+
+  for (const f of warningFindings) {
+    const itemId = f.evidenceIds.find((id) => id.startsWith("listing_snapshot:"))?.replace("listing_snapshot:", "") ?? "";
+    actionableFindings.push({
+      itemId,
+      title: f.summary,
+      signalKind: "high-visit-low-conversion",
+      severity: "warning",
+    });
+  }
+
+  if (creativeAdvisor && actionableFindings.length > 0) {
+    try {
+      const analysis = await creativeAdvisor.analyze({
+        daemonKind: "creative-commercial",
+        actionableFindings,
+      });
+
+      aiEnrichment = {
+        findings: analysis.findings,
+        summary: analysis.summary,
+        modelUsed: analysis.modelUsed,
+        enrichedAt: capturedAt,
+      };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[creative-commercial] Advisor enrichment failed, using rule-only: ${errorMessage}`,
+      );
+    }
+  }
+
   // ── Enqueue CEO proposals ──────────────────────────────────
   let proposalEnqueued = false;
 
@@ -212,23 +257,30 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
             ? "Review title, images, or price to improve conversion"
             : "Review candidates for social content, ads, or refresh";
 
+      const payload: Record<string, unknown> = {
+        type: "proposal",
+        summary,
+        findings: group.map((f) => ({
+          kind: f.kind,
+          severity: f.severity,
+          summary: f.summary,
+          evidenceIds: f.evidenceIds,
+        })),
+        recommendedAction,
+        capturedAt,
+        noMutationExecuted: true,
+      };
+
+      // Only attach enrichment to warning proposals (info stays rule-based)
+      if (kind === "warning" && aiEnrichment) {
+        payload.aiEnrichment = aiEnrichment;
+      }
+
       const message = bus.enqueue({
         senderAgentId: "creative-commercial",
         receiverAgentId: "ceo",
         messageType: "proposal",
-        payloadJson: JSON.stringify({
-          type: "proposal",
-          summary,
-          findings: group.map((f) => ({
-            kind: f.kind,
-            severity: f.severity,
-            summary: f.summary,
-            evidenceIds: f.evidenceIds,
-          })),
-          recommendedAction,
-          capturedAt,
-          noMutationExecuted: true,
-        }),
+        payloadJson: JSON.stringify(payload),
         dedupeKey: `creative-commercial-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);
