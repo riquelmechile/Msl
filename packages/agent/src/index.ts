@@ -63,6 +63,11 @@ export type {
   DeepSeekRoutingInput,
 } from "./conversation/deepseekRuntime.js";
 
+// ── Reasoning Gateway ────────────────────────────────────────────────
+export { DeepSeekReasoningGateway } from "./reasoning/DeepSeekReasoningGateway.js";
+export { ReasoningLevel } from "./reasoning/reasoningTypes.js";
+export type { ReasoningCall, ReasoningResult, CostTelemetry } from "./reasoning/reasoningTypes.js";
+
 // ── Observability (metrics + structured logging) ──────────────────
 export {
   createMetrics,

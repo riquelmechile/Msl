@@ -1,17 +1,66 @@
 import type { LaneId } from "./lanes.js";
 
+// ── Consolidated imports from gateway modules ───────────────────────
+// Pricing tables and model selection logic now live in the reasoning
+// gateway modules. This file re-exports for backward compatibility.
+
+export {
+  DEEPSEEK_V4_FLASH as SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
+  DEEPSEEK_V4_PRO as SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
+} from "../reasoning/modelRouter.js";
+
+export { REASONING_PRICING as SUPPLIER_MIRROR_DEEPSEEK_PRICING } from "../reasoning/costEstimator.js";
+
+import { estimateCost } from "../reasoning/costEstimator.js";
+
+import {
+  DEEPSEEK_V4_FLASH,
+  DEEPSEEK_V4_PRO,
+} from "../reasoning/modelRouter.js";
+
+/**
+ * Backward-compatible cost estimation wrapper.
+ * Accepts the old parameter shape (single input object) and
+ * delegates to the consolidated estimateCost in costEstimator.
+ */
+export function estimateSupplierMirrorDeepSeekCostMicros(input: {
+  model: string;
+  promptCacheHitTokens?: number | undefined;
+  promptCacheMissTokens?: number | undefined;
+  outputTokens?: number | undefined;
+}): number | undefined {
+  return estimateCost(input.model, {
+    cacheHitTokens: input.promptCacheHitTokens,
+    cacheMissTokens: input.promptCacheMissTokens,
+    outputTokens: input.outputTokens,
+  }) ?? undefined;
+}
+
 export const SUPPLIER_MIRROR_DEEPSEEK_PROVIDER = "deepseek";
-export const SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH = "deepseek-v4-flash";
-export const SUPPLIER_MIRROR_DEEPSEEK_V4_PRO = "deepseek-v4-pro";
 
 export type SupplierMirrorDeepSeekModel =
-  | typeof SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH
-  | typeof SUPPLIER_MIRROR_DEEPSEEK_V4_PRO;
+  | typeof DEEPSEEK_V4_FLASH
+  | typeof DEEPSEEK_V4_PRO;
 
 export type SupplierMirrorDeepSeekOperation =
   | "supplier-extraction"
   | "supplier-classification"
   | "policy-conflict";
+
+// ── Backward Compat Wrapper ──────────────────────────────────────────
+
+/**
+ * Model selection for supplier mirror operations.
+ * Consolidated gateway-side — this wrapper preserved for backward compat.
+ */
+export function selectSupplierMirrorDeepSeekModel(input: {
+  operation: string;
+  hardPolicyConflict?: boolean;
+}): string {
+  return input.operation === "policy-conflict" || input.hardPolicyConflict === true
+    ? DEEPSEEK_V4_PRO
+    : DEEPSEEK_V4_FLASH;
+}
 
 export type SupplierMirrorDeepSeekPricing = {
   model: SupplierMirrorDeepSeekModel;
@@ -21,24 +70,7 @@ export type SupplierMirrorDeepSeekPricing = {
   source: "deepseek-official-pricing-2026-07";
 };
 
-export const SUPPLIER_MIRROR_DEEPSEEK_PRICING: Readonly<
-  Record<SupplierMirrorDeepSeekModel, SupplierMirrorDeepSeekPricing>
-> = Object.freeze({
-  [SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH]: Object.freeze({
-    model: SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
-    inputCacheHitMicrosPerMillionTokens: 2_800,
-    inputCacheMissMicrosPerMillionTokens: 140_000,
-    outputMicrosPerMillionTokens: 280_000,
-    source: "deepseek-official-pricing-2026-07",
-  }),
-  [SUPPLIER_MIRROR_DEEPSEEK_V4_PRO]: Object.freeze({
-    model: SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
-    inputCacheHitMicrosPerMillionTokens: 3_625,
-    inputCacheMissMicrosPerMillionTokens: 435_000,
-    outputMicrosPerMillionTokens: 870_000,
-    source: "deepseek-official-pricing-2026-07",
-  }),
-});
+// ── Prompt Plan Builder (kept local) ─────────────────────────────────
 
 export type SupplierMirrorDeepSeekPromptPlanInput = {
   laneId?: LaneId;
@@ -55,31 +87,6 @@ export type SupplierMirrorDeepSeekPromptPlan = {
   volatileContextBlock: string;
   metadata: Readonly<Record<string, string>>;
 };
-
-export function selectSupplierMirrorDeepSeekModel(input: {
-  operation: SupplierMirrorDeepSeekOperation;
-  hardPolicyConflict?: boolean;
-}): SupplierMirrorDeepSeekModel {
-  return input.operation === "policy-conflict" || input.hardPolicyConflict === true
-    ? SUPPLIER_MIRROR_DEEPSEEK_V4_PRO
-    : SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH;
-}
-
-export function estimateSupplierMirrorDeepSeekCostMicros(input: {
-  model: string;
-  promptCacheHitTokens?: number | undefined;
-  promptCacheMissTokens?: number | undefined;
-  outputTokens?: number | undefined;
-}): number | undefined {
-  const pricing = SUPPLIER_MIRROR_DEEPSEEK_PRICING[input.model as SupplierMirrorDeepSeekModel];
-  if (!pricing) return undefined;
-  const hitCost =
-    ((input.promptCacheHitTokens ?? 0) * pricing.inputCacheHitMicrosPerMillionTokens) / 1_000_000;
-  const missCost =
-    ((input.promptCacheMissTokens ?? 0) * pricing.inputCacheMissMicrosPerMillionTokens) / 1_000_000;
-  const outputCost = ((input.outputTokens ?? 0) * pricing.outputMicrosPerMillionTokens) / 1_000_000;
-  return Math.ceil(hitCost + missCost + outputCost);
-}
 
 export function buildSupplierMirrorDeepSeekPromptPlan(
   input: SupplierMirrorDeepSeekPromptPlanInput,
@@ -113,8 +120,8 @@ export function buildSupplierMirrorDeepSeekPromptPlan(
     volatileContextBlock,
     metadata: Object.freeze({
       provider: SUPPLIER_MIRROR_DEEPSEEK_PROVIDER,
-      modelDefault: SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
-      modelEscalation: SUPPLIER_MIRROR_DEEPSEEK_V4_PRO,
+      modelDefault: DEEPSEEK_V4_FLASH,
+      modelEscalation: DEEPSEEK_V4_PRO,
       cacheStrategy: "stable-prefix-plus-refreshable-evidence",
       laneId,
     }),

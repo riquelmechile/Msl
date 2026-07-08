@@ -1,11 +1,8 @@
 import OpenAI from "openai";
 import type { SupplierMirrorStore } from "@msl/memory";
-import {
-  selectSupplierMirrorDeepSeekModel,
-  estimateSupplierMirrorDeepSeekCostMicros,
-  SUPPLIER_MIRROR_DEEPSEEK_V4_FLASH,
-} from "./supplierMirrorDeepSeekPolicy.js";
 import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
+import { DeepSeekReasoningGateway } from "../reasoning/DeepSeekReasoningGateway.js";
+import { ReasoningLevel } from "../reasoning/reasoningTypes.js";
 
 export type SupplierMirrorAnalysisInput = {
   supplierId: string;
@@ -33,6 +30,7 @@ export type SupplierMirrorAnalysis = {
 
 export class SupplierMirrorDeepSeekAdvisor {
   private store: SupplierMirrorStore;
+  private gateway: DeepSeekReasoningGateway | null = null;
   private openai: OpenAI;
   private ledger: WorkforceCostCacheLedgerStore | undefined;
   private sellerIds: string[];
@@ -47,6 +45,18 @@ export class SupplierMirrorDeepSeekAdvisor {
     this.openai = input.openai;
     this.sellerIds = input.sellerIds;
     this.ledger = input.ledger;
+  }
+
+  /**
+   * Lazily initializes the reasoning gateway, sharing the singleton
+   * OpenAI client. Keeps constructor signature unchanged for
+   * backward compat with AgentLoop.
+   */
+  private getGateway(): DeepSeekReasoningGateway {
+    if (!this.gateway) {
+      this.gateway = new DeepSeekReasoningGateway(this.openai, this.ledger);
+    }
+    return this.gateway;
   }
 
   async analyze(input: SupplierMirrorAnalysisInput): Promise<SupplierMirrorAnalysis> {
@@ -77,12 +87,7 @@ export class SupplierMirrorDeepSeekAdvisor {
       } catch { /* skip */ }
     }
 
-    // ── Build prompt ──────────────────────────────────────
-    const model = selectSupplierMirrorDeepSeekModel({
-      operation: "supplier-extraction",
-      hardPolicyConflict: false,
-    });
-
+    // ── Build prompt blocks ──────────────────────────────
     const itemsSummary = items.slice(0, 50).map(i =>
       `- ${i.supplierItemId}: ${i.title} | SKU: ${i.sku ?? "N/A"} | Precio: ${i.price ?? "N/A"} ${i.currency ?? ""} | Confianza: ${i.confidence}`
     ).join("\n");
@@ -99,7 +104,8 @@ export class SupplierMirrorDeepSeekAdvisor {
       `- scope: ${p.scopeType}/${p.scopeId} | targets: ${p.targetSellerIds.join(",")} | lowStock: ${p.lowStockThreshold} | autoPause: ${p.autoPauseAllowed}`
     ).join("\n");
 
-    const systemPrompt = [
+    // Spanish system prompt preserved from pre-gateway implementation
+    const stablePrefix = [
       "Sos un asesor interno de Supplier Mirror para el CEO de MSL.",
       "Analizás datos de proveedores y generás hallazgos accionables.",
       "Reglas:",
@@ -110,7 +116,7 @@ export class SupplierMirrorDeepSeekAdvisor {
       "- Cada hallazgo debe incluir: qué, por qué, evidencia, acción sugerida.",
     ].join("\n");
 
-    const userPrompt = [
+    const volatileInput = [
       `## Proveedor: ${supplierName} (${supplierId})`,
       question ? `\n### Consulta del CEO: ${question}\n` : "",
       `\n### Items del proveedor (${items.length} total, mostrando ${Math.min(50, items.length)}):`,
@@ -129,66 +135,35 @@ export class SupplierMirrorDeepSeekAdvisor {
       `{ "findings": [{ "kind": "stock-alert|price-opportunity|mapping-suggestion|policy-recommendation|general-insight", "severity": "info|warning|critical", "summary": "una línea", "detail": "explicación", "evidenceIds": ["id1"] }], "summary": "resumen general en 2-3 oraciones" }`,
     ].join("\n");
 
-    // ── Call DeepSeek ─────────────────────────────────────
-    const startTime = Date.now();
-    const completion = await this.openai.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-      response_format: { type: "json_object" },
-    } as any);
-
-    const usage = completion.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
-    const cacheHitTokens = (completion as any).usage?.prompt_cache_hit_tokens ?? 0;
-    const cacheMissTokens = (completion as any).usage?.prompt_cache_miss_tokens ?? usage.prompt_tokens;
-    const durationMs = Date.now() - startTime;
-
-    // ── Parse response ────────────────────────────────────
-    let parsed: { findings?: SupplierMirrorAnalysisFinding[]; summary?: string } = {};
-    try {
-      const content = completion.choices[0]?.message?.content ?? "{}";
-      parsed = JSON.parse(content);
-    } catch {
-      parsed = { findings: [], summary: "DeepSeek response could not be parsed." };
-    }
-
-    // ── Record cost ───────────────────────────────────────
-    const costMicros = estimateSupplierMirrorDeepSeekCostMicros({
-      model,
-      promptCacheHitTokens: cacheHitTokens,
-      promptCacheMissTokens: cacheMissTokens,
-      outputTokens: usage.completion_tokens,
+    // ── Call DeepSeek via gateway ─────────────────────────
+    const gateway = this.getGateway();
+    const result = await gateway.reason({
+      laneId: "supplier-mirror",
+      level: ReasoningLevel.Classification,
+      stablePrefix,
+      volatileInput,
+      departmentId: "supplier-mirror",
+      agentId: "supplier-mirror-advisor",
     });
 
-    if (this.ledger) {
-      try {
-        this.ledger.insertEntry({
-          entryId: `supplier-mirror-advisor:${supplierId}:${Date.now()}`,
-          agentId: "supplier-mirror-advisor",
-          operation: "supplier-extraction",
-          provider: "deepseek",
-          model,
-          promptCacheHitTokens: cacheHitTokens,
-          promptCacheMissTokens: cacheMissTokens,
-          outputTokens: usage.completion_tokens,
-          estimatedCostMicros: costMicros ?? 0,
-          metadata: { supplierId, supplierName },
-        });
-      } catch { /* ledger is best-effort */ }
+    // ── Parse response ────────────────────────────────────
+    const telemetry = result.costTelemetry;
+    let parsed: { findings?: SupplierMirrorAnalysisFinding[]; summary?: string } = {};
+    try {
+      const content = result.rawResponse ?? "{}";
+      parsed = JSON.parse(content) as { findings?: SupplierMirrorAnalysisFinding[]; summary?: string };
+    } catch {
+      parsed = { findings: [], summary: "DeepSeek response could not be parsed." };
     }
 
     return {
       findings: parsed.findings ?? [],
       summary: parsed.summary ?? "Análisis completado.",
-      modelUsed: model,
-      costMicros: costMicros ?? 0,
-      cacheHitTokens,
-      cacheMissTokens,
-      outputTokens: usage.completion_tokens,
+      modelUsed: result.modelUsed,
+      costMicros: telemetry.estimatedCostMicros,
+      cacheHitTokens: telemetry.cacheHitTokens,
+      cacheMissTokens: telemetry.cacheMissTokens,
+      outputTokens: telemetry.outputTokens,
     };
   }
 }

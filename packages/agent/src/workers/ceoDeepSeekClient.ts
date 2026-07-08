@@ -1,14 +1,14 @@
-import crypto from "node:crypto";
 import OpenAI from "openai";
 import { getDeepSeekClient } from "../conversation/deepseekClient.js";
 import {
-  buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
-  resolveDeepSeekUserId,
   type DeepSeekRuntimeConfig,
 } from "../conversation/deepseekRuntime.js";
 import type { GraphEngine } from "@msl/memory";
+import type { AutonomyEngine } from "../conversation/autonomyEngine.js";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
+import { DeepSeekReasoningGateway } from "../reasoning/DeepSeekReasoningGateway.js";
+import { ReasoningLevel } from "../reasoning/reasoningTypes.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -19,7 +19,6 @@ const VALID_PROPOSAL_TYPES = new Set([
   "resume-campaign",
 ]);
 
-const DEFAULT_TIMEOUT_MS = 5000;
 const DEPT_ID = "product-ads-ceo-profitability";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -39,9 +38,9 @@ export type CeoFinding = {
 
 export type CeoDeepSeekClient = {
   /**
-   * Enriches findings with Cortex context, calls DeepSeek Flash once per
-   * batch, validates structured JSON output, records cost in the workforce
-   * ledger, and returns a Map of recommendationIdentity → proposalType.
+   * Enriches findings with Cortex context, calls DeepSeek via the
+   * reasoning gateway, validates structured JSON output, and returns
+   * a Map of recommendationIdentity → proposalType.
    *
    * On error, timeout, or invalid response this throws — the caller (handler)
    * catches and falls back to the static SIGNAL_TO_ACTION map.
@@ -54,9 +53,8 @@ export type CeoDeepSeekClient = {
 };
 
 // ── Prompt blocks ────────────────────────────────────────────────────
-// Stable prefix designed for prefix caching via cacheBlocks pattern.
-// In a future iteration the policy block can be cached via Cortex
-// cacheBlocks while only the context + findings are refreshed.
+// Stable prefix designed for prefix caching via the gateway's 3-block
+// prompt cache strategy (stablePrefix + cacheableContext + volatileInput).
 
 const POLICY_BLOCK = `You are a CFO-grade profitability analyst for MercadoLibre Product Ads.
 Your task is to analyze each profitability finding and recommend the best action.
@@ -72,30 +70,37 @@ and each value is an object: { "proposalType": "<valid action>", "rationale": "<
 
 // ── Factory ──────────────────────────────────────────────────────────
 
+export type CeoDeepSeekClientDeps = {
+  autonomy?: AutonomyEngine;
+};
+
 /**
  * Creates a CeoDeepSeekClient or returns null when DEEPSEEK_API_KEY is
  * unset — handler falls back to the static SIGNAL_TO_ACTION map.
+ *
+ * The gateway is created lazily inside the impl, sharing the singleton
+ * OpenAI client from getDeepSeekClient().
  */
 export function createCeoDeepSeekClient(
   runtime?: DeepSeekRuntimeConfig,
+  _deps?: CeoDeepSeekClientDeps,
 ): CeoDeepSeekClient | null {
   const resolved = runtime ?? resolveDeepSeekRuntimeConfig();
   if (!resolved.apiKey) return null;
 
   const openai = getDeepSeekClient(resolved.apiKey, resolved.baseURL);
+  const gateway = new DeepSeekReasoningGateway(openai, undefined, _deps?.autonomy);
 
-  return new CeoDeepSeekClientImpl(openai, resolved.model);
+  return new CeoDeepSeekClientImpl(gateway);
 }
 
 // ── Implementation ──────────────────────────────────────────────────
 
 class CeoDeepSeekClientImpl implements CeoDeepSeekClient {
-  private openai: OpenAI;
-  private model: string;
+  private gateway: DeepSeekReasoningGateway;
 
-  constructor(openai: OpenAI, model: string) {
-    this.openai = openai;
-    this.model = model;
+  constructor(gateway: DeepSeekReasoningGateway) {
+    this.gateway = gateway;
   }
 
   async reason(
@@ -123,75 +128,27 @@ class CeoDeepSeekClientImpl implements CeoDeepSeekClient {
         ? contextBlocks.join("\n")
         : "no historical data available";
 
-    // 2. Build prompt
-    const prompt = `${POLICY_BLOCK}
+    // 2. Build ReasoningCall and delegate to gateway
+    const result = await this.gateway.reason(
+      {
+        laneId: DEPT_ID,
+        level: ReasoningLevel.Recommendation,
+        stablePrefix: POLICY_BLOCK,
+        cacheableContext: `CORTEX CONTEXT:\n${cortexContext}`,
+        volatileInput: `FINDINGS:\n${JSON.stringify(findings, null, 2)}`,
+        departmentId: DEPT_ID,
+        agentId: "product-ads-ceo-profitability",
+      },
+      ledger, // pass the call-site ledger for cost recording
+    );
 
-CORTEX CONTEXT:
-${cortexContext}
-
-FINDINGS:
-${JSON.stringify(findings, null, 2)}`;
-
-    // 3. Call DeepSeek Flash with structured output + AbortController timeout
-    const userId = resolveDeepSeekUserId({ laneId: DEPT_ID });
-
-    const request = buildDeepSeekChatCompletionRequest({
-      model: this.model,
-      messages: [{ role: "user" as const, content: prompt }],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      response_format: { type: "json_object" as any },
-      stream: false as const,
-      ...(userId ? { userId, user: userId } : {}),
-    });
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-
-    let completion;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-      completion = await this.openai.chat.completions.create(request as any, {
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
+    // 3. Handle fallback — translate to throw for backward compat
+    if (result.status === "fallback") {
+      throw new Error(result.summary);
     }
 
-    // 4. Record cost ledger entry
-    const usage = completion.usage;
-    const entryId = crypto.randomUUID();
-    const now = new Date().toISOString();
-    ledger.insertEntry({
-      entryId,
-      agentId: "product-ads-ceo-profitability",
-      laneId: "product-ads-ceo-profitability",
-      departmentId: DEPT_ID,
-      provider: "deepseek",
-      model: this.model,
-      operation: "chat.completions.create",
-      promptCacheHitTokens: usage?.prompt_tokens_details
-        ? ("cached_tokens" in usage.prompt_tokens_details
-            ? (usage.prompt_tokens_details as { cached_tokens?: number }).cached_tokens
-            : undefined)
-        : undefined,
-      inputTokens: usage?.prompt_tokens ?? undefined,
-      outputTokens: usage?.completion_tokens ?? undefined,
-      estimatedCostMicros: undefined, // cost estimation out of scope for v1
-      currency: "CLP",
-      cacheStatus: usage?.prompt_tokens_details
-        ? ("cached_tokens" in usage.prompt_tokens_details &&
-            (usage.prompt_tokens_details as { cached_tokens?: number }).cached_tokens &&
-            (usage.prompt_tokens_details as { cached_tokens?: number }).cached_tokens! > 0
-          ? "hit"
-          : "miss")
-        : "unknown",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      metadata: { model: this.model, source: "ceo-deepseek-client" } as any,
-      measuredAt: now,
-    });
-
-    // 5. Parse and validate response
-    const raw = completion.choices[0]?.message?.content;
+    // 4. Parse and validate response
+    const raw = result.rawResponse;
     if (!raw) throw new Error("Empty response from DeepSeek");
 
     let parsed: Record<string, { proposalType: string; rationale?: string }>;
@@ -201,7 +158,7 @@ ${JSON.stringify(findings, null, 2)}`;
       throw new Error("Invalid JSON response from DeepSeek");
     }
 
-    // 6. Validate each proposalType; invalid → throw so caller falls back
+    // 5. Validate each proposalType; invalid → throw so caller falls back
     const recommendations = new Map<string, string>();
     for (const [identity, rec] of Object.entries(parsed)) {
       if (!rec.proposalType || !VALID_PROPOSAL_TYPES.has(rec.proposalType)) {
