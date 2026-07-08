@@ -1,5 +1,5 @@
 import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
-import type { GraphEngine } from "@msl/memory";
+import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { OperationalReadModelReader } from "@msl/memory";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
@@ -30,4 +30,7 @@ export type DaemonHandler = (input: {
   cortex: GraphEngine;
   bus: AgentMessageBusStore;
   sellerIds: string[];
+  /** Optional SupplierMirrorStore for supplier-manager daemon. When absent
+   *  the supplier-manager daemon returns empty findings without error. */
+  supplierMirrorStore?: SupplierMirrorStore;
 }) => Promise<DaemonResult>;

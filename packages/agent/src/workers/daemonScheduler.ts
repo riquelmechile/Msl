@@ -1,6 +1,6 @@
 import type { AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { AgentConsensusStore } from "../conversation/agentConsensusStore.js";
-import type { OperationalReadModelReader, GraphEngine } from "@msl/memory";
+import type { OperationalReadModelReader, GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { LaneId } from "../conversation/lanes.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
 import type { DaemonHandler } from "./daemonTypes.js";
@@ -10,6 +10,7 @@ import { costSupplierDaemon } from "./costSupplierDaemon.js";
 import { creativeCommercialDaemon } from "./creativeCommercialDaemon.js";
 import { productAdsMonitorDaemon } from "./productAdsMonitorDaemon.js";
 import { creativeAssetsDaemon } from "./creativeAssetsDaemon.js";
+import { supplierManagerDaemon } from "./supplierManagerDaemon.js";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ export type DaemonSchedulerConfig = {
    * payload will automatically receive a `needs_more_evidence` review.
    */
   consensusStore?: AgentConsensusStore;
+  /** Optional SupplierMirrorStore for the supplier-manager daemon. */
+  supplierMirrorStore?: SupplierMirrorStore;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -40,6 +43,7 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "creative-assets": creativeAssetsDaemon,
   "creative-commercial": creativeCommercialDaemon,
   "product-ads-monitor": productAdsMonitorDaemon,
+  "supplier-manager": supplierManagerDaemon,
 };
 
 // ── Scheduler ───────────────────────────────────────────────────────
@@ -83,6 +87,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
             cortex: config.cortex,
             bus: config.bus,
             sellerIds: config.sellerIds,
+            supplierMirrorStore: config.supplierMirrorStore,
           });
 
           config.bus.resolve(claim.messageId, result);

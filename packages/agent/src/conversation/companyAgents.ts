@@ -91,6 +91,7 @@ const laneDepartments: Record<LaneId, CompanyDepartmentId> = {
   "operations-manager": "operations",
   "owned-ecommerce": "commercial",
   "product-ads-monitor": "commercial",
+  "supplier-manager": "operations",
 };
 
 function toCompanyAgent(contract: LaneContract): CompanyAgent {

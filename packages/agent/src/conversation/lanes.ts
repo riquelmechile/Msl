@@ -6,7 +6,8 @@ export type LaneId =
   | "creative-commercial"
   | "operations-manager"
   | "owned-ecommerce"
-  | "product-ads-monitor";
+  | "product-ads-monitor"
+  | "supplier-manager";
 
 export type CacheTelemetry = {
   provider: string;
@@ -212,6 +213,28 @@ export const PRODUCT_ADS_MONITOR_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const SUPPLIER_MANAGER_LANE: LaneContract = {
+  laneId: "supplier-manager",
+  label: "Supplier Manager",
+  stablePrefix: [
+    "You are the Supplier Manager lane.",
+    "Monitor supplier items, stock discrepancies, price changes, and unfilled mirror items.",
+    "Detect cross-account stock gaps, supplier price shifts >5%, and unpublished mirror items.",
+    "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "supplier mirror store, Cortex listing snapshots, sync ledger",
+  inputs: ["supplier-mirror-evidence", "listing-snapshot", "sync-ledger"],
+  outputs: ["supplier alerts", "stock discrepancy warnings", "price change warnings", "evidence IDs"],
+  boundaries: [
+    "proposal-only; never execute mutations",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["supplier-mirror-evidence", "listing-snapshot", "sync-ledger"],
+  credentialScope: "provider-default",
+};
+
 export const CREATIVE_ASSETS_LANE: LaneContract = {
   laneId: "creative-assets",
   label: "Creative Assets Monitor",
@@ -243,6 +266,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,
   PRODUCT_ADS_MONITOR_LANE,
+  SUPPLIER_MANAGER_LANE,
 ];
 
 export function getLaneContract(laneId: LaneId): LaneContract {
