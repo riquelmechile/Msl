@@ -681,7 +681,7 @@ describe("productAdsProfitabilityDaemon", () => {
       expect(result1.messageIds.length).toBeGreaterThanOrEqual(1);
 
       // Verify the enqueued message's dedupe key starts with the lookup prefix
-      const ceoMsgs1 = bus.claimNext("ceo", { limit: 10 });
+      const ceoMsgs1 = bus.claimNext("product-ads-ceo-profitability", { limit: 10 });
       const margMsg = ceoMsgs1.find((m) =>
         m.dedupeKey?.startsWith(
           "product-ads-cfo:seller-plasticov:camp-regr:MLC-REGR-001:margin-consuming",
@@ -794,8 +794,8 @@ describe("productAdsProfitabilityDaemon", () => {
       expect(result.proposalEnqueued).toBe(true);
       expect(result.messageIds.length).toBeGreaterThan(0);
 
-      // Verify CEO messages exist on the bus
-      const ceoMsgs = bus.claimNext("ceo", { limit: 10 });
+      // Verify CEO profitability messages exist on the bus
+      const ceoMsgs = bus.claimNext("product-ads-ceo-profitability", { limit: 10 });
       const ceoIds = new Set(ceoMsgs.map((m) => m.messageId));
       for (const msgId of result.messageIds) {
         expect(ceoIds.has(msgId)).toBe(true);
@@ -836,7 +836,7 @@ describe("productAdsProfitabilityDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const ceoMsgs = bus.claimNext("ceo", { limit: 10 });
+      const ceoMsgs = bus.claimNext("product-ads-ceo-profitability", { limit: 10 });
       const ceoIds = new Set(ceoMsgs.map((m) => m.messageId));
       for (const msgId of result.messageIds) {
         expect(ceoIds.has(msgId)).toBe(true);

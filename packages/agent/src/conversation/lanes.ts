@@ -7,6 +7,7 @@ export type LaneId =
   | "operations-manager"
   | "owned-ecommerce"
   | "product-ads-monitor"
+  | "product-ads-ceo-profitability"
   | "product-ads-profitability"
   | "supplier-manager";
 
@@ -282,6 +283,26 @@ export const CREATIVE_ASSETS_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const PRODUCT_ADS_CEO_PROFITABILITY_LANE: LaneContract = {
+  laneId: "product-ads-ceo-profitability",
+  label: "Product Ads CEO Profitability",
+  stablePrefix: [
+    "You are the Product Ads CEO Profitability handler.",
+    "Process CFO-grade profitability signals from the profitability daemon into actionable Product Ads actions.",
+    "Map signals to actions: margin-consuming→pause-campaign, scale-candidate→adjust-campaign-budget, budget-waste→review-campaign-structure, underinvested→adjust-campaign-budget, unit-economics→review-campaign-structure.",
+    "Send proactive Telegram notifications to seller forum topics with 7-day deduplication.",
+  ].join("\n"),
+  refreshableContextProvider: "profitability proposals, seller forum topics, deduplication state",
+  inputs: ["profitability-proposal"],
+  outputs: ["product-ads-action", "telegram-notification"],
+  boundaries: [
+    "no auto-execution — always requires seller approval for actionable findings",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product-ads-insights", "cost-snapshot"],
+  credentialScope: "provider-default",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
@@ -291,6 +312,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,
   PRODUCT_ADS_MONITOR_LANE,
+  PRODUCT_ADS_CEO_PROFITABILITY_LANE,
   PRODUCT_ADS_PROFITABILITY_LANE,
   SUPPLIER_MANAGER_LANE,
 ];

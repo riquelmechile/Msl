@@ -85,6 +85,7 @@ export type { BackgroundIngestionConfig } from "./conversation/backgroundIngesti
 export { startDaemonScheduler } from "./workers/daemonScheduler.js";
 export type { DaemonSchedulerConfig } from "./workers/daemonScheduler.js";
 export type {
+  CeoHandlerContext,
   DaemonFinding,
   DaemonResult,
   DaemonHandler,
@@ -96,6 +97,7 @@ export { creativeCommercialDaemon } from "./workers/creativeCommercialDaemon.js"
 export { productAdsMonitorDaemon } from "./workers/productAdsMonitorDaemon.js";
 export { productAdsProfitabilityDaemon } from "./workers/productAdsProfitabilityDaemon.js";
 export { creativeAssetsDaemon } from "./workers/creativeAssetsDaemon.js";
+export { ceoProfitabilityHandler } from "./workers/ceoProfitabilityHandler.js";
 export { supplierManagerDaemon } from "./workers/supplierManagerDaemon.js";
 
 export { EscribanoObserver } from "./conversation/escribano.js";

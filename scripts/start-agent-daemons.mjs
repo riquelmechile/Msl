@@ -61,6 +61,40 @@ const reader = createSqliteOperationalReadModel(readerDb);
 const roleConfig = getMlAccountRoleConfig(env);
 const sellerIds = [roleConfig.sourceSellerId, roleConfig.targetSellerId];
 
+// ── CEO handler Telegram context ────────────────────────────────
+const botToken = env.BOT_TOKEN?.trim();
+const adminChatIds = env.MSL_TELEGRAM_ADMIN_CHAT_IDS?.trim()
+  ? env.MSL_TELEGRAM_ADMIN_CHAT_IDS.split(",").map((id) => id.trim()).filter(Boolean)
+  : [];
+
+const sellerNames = {};
+if (env.MERCADOLIBRE_SOURCE_SELLER_NAME?.trim()) {
+  sellerNames[roleConfig.sourceSellerId] = env.MERCADOLIBRE_SOURCE_SELLER_NAME.trim();
+}
+if (env.MERCADOLIBRE_TARGET_SELLER_NAME?.trim()) {
+  sellerNames[roleConfig.targetSellerId] = env.MERCADOLIBRE_TARGET_SELLER_NAME.trim();
+}
+
+let ceoContext = undefined;
+if (botToken && adminChatIds.length > 0) {
+  // Create a lightweight grammY Bot instance for API calls only (no polling)
+  const { Bot } = await import("grammy");
+  const bot = new Bot(botToken);
+
+  ceoContext = {
+    sendProactiveMessage: async (chatId, text, threadId) => {
+      const params = { parse_mode: "HTML" };
+      if (threadId !== undefined) params.message_thread_id = threadId;
+      await bot.api.sendMessage(chatId, text, params);
+    },
+    createForumTopic: async (chatId, name) => {
+      return await bot.api.createForumTopic(chatId, name);
+    },
+    adminChatIds,
+    sellerNames,
+  };
+}
+
 // ── Start daemon scheduler ─────────────────────────────────────
 console.log("[agent-daemons] Starting daemon scheduler...");
 
@@ -70,6 +104,7 @@ const handle = startDaemonScheduler({
   cortex: engine,
   sellerIds,
   consensusStore,
+  ceoContext,
   intervalMs: 15 * 60 * 1000, // 15 minutes
 });
 

@@ -122,4 +122,54 @@ describe("daemonScheduler", () => {
       expect(remaining.length).toBe(0);
     });
   });
+
+  describe("product-ads-ceo-profitability lane dispatch", () => {
+    it("dispatches ceo-profitability handler when a matching proposal is claimed", async () => {
+      // Enqueue a proposal message for product-ads-ceo-profitability lane
+      const now = new Date().toISOString();
+      bus.enqueue({
+        senderAgentId: "product-ads-profitability",
+        receiverAgentId: "product-ads-ceo-profitability",
+        messageType: "proposal",
+        payloadJson: JSON.stringify({
+          type: "proposal",
+          tier: "margin-consuming",
+          severity: "critical",
+          summary: "Test CEO profitability proposal",
+          findings: [
+            {
+              kind: "alert",
+              severity: "critical",
+              summary: "Margin-consuming ad: item MLC-SCHED-001",
+              evidenceIds: ["listing_snapshot:MLC-SCHED-001"],
+              actionability: "seller-impacting",
+              recommendationIdentity: "product-ads-cfo:seller-1:camp-1:MLC-SCHED-001:margin-consuming",
+            },
+          ],
+          capturedAt: now,
+          noMutationExecuted: true,
+        }),
+      });
+
+      const reader = createSqliteOperationalReadModel(db);
+      const cortex = createGraphEngine(":memory:");
+
+      const scheduler = startDaemonScheduler({
+        bus,
+        reader,
+        cortex,
+        sellerIds: ["seller-1"],
+        intervalMs: 60_000,
+      });
+
+      // Wait for the cycle to complete and handler to process
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      scheduler.stop();
+
+      // The message should be consumed — claimNext should return empty
+      const remaining = bus.claimNext("product-ads-ceo-profitability");
+      expect(remaining.length).toBe(0);
+    });
+  });
 });

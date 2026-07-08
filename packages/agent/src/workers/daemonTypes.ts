@@ -24,6 +24,35 @@ export type DaemonResult = {
 
 // ── Daemon Handler ──────────────────────────────────────────────────
 
+export type CeoHandlerContext = {
+  /** Send a proactive Telegram message to a chat, optionally in a forum thread. */
+  sendProactiveMessage?: (chatId: number, text: string, threadId?: number) => Promise<void>;
+  /** Create a forum topic in a Telegram chat via grammY API. */
+  createForumTopic?: (chatId: number, name: string) => Promise<{ message_thread_id: number }>;
+  /** Admin chat IDs for Telegram notifications (comma-separated string values). */
+  adminChatIds?: string[];
+  /** Mapping from sellerId to human-readable seller name. */
+  sellerNames?: Record<string, string>;
+  /**
+   * Prepare a Product Ads action for seller approval.
+   * When absent, actionable findings will only send Telegram notifications
+   * without creating formal action proposals.
+   */
+  prepareProductAdsAction?: (input: {
+    sellerId: string;
+    proposalType: string;
+    campaignId: string;
+    itemId: string;
+    adId?: string;
+    currentStatus: string;
+    metricsSnapshotSummary: string;
+    rationale: string;
+    sourceTool: string;
+    observedAt: string;
+    expiresAt: string;
+  }) => Promise<void>;
+};
+
 export type DaemonHandler = (input: {
   claim: AgentMessage;
   reader: OperationalReadModelReader;
@@ -33,4 +62,6 @@ export type DaemonHandler = (input: {
   /** Optional SupplierMirrorStore for supplier-manager daemon. When absent
    *  the supplier-manager daemon returns empty findings without error. */
   supplierMirrorStore?: SupplierMirrorStore;
+  /** Optional CEO handler context for Telegram notifications and action preparation. */
+  ceoContext?: CeoHandlerContext;
 }) => Promise<DaemonResult>;

@@ -3,7 +3,7 @@ import type { AgentConsensusStore } from "../conversation/agentConsensusStore.js
 import type { OperationalReadModelReader, GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { LaneId } from "../conversation/lanes.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
-import type { DaemonHandler } from "./daemonTypes.js";
+import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
 import { marketCatalogDaemon } from "./marketCatalogDaemon.js";
 import { operationsManagerDaemon } from "./operationsManagerDaemon.js";
 import { costSupplierDaemon } from "./costSupplierDaemon.js";
@@ -11,6 +11,7 @@ import { creativeCommercialDaemon } from "./creativeCommercialDaemon.js";
 import { productAdsMonitorDaemon } from "./productAdsMonitorDaemon.js";
 import { productAdsProfitabilityDaemon } from "./productAdsProfitabilityDaemon.js";
 import { creativeAssetsDaemon } from "./creativeAssetsDaemon.js";
+import { ceoProfitabilityHandler } from "./ceoProfitabilityHandler.js";
 import { supplierManagerDaemon } from "./supplierManagerDaemon.js";
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -30,6 +31,8 @@ export type DaemonSchedulerConfig = {
   consensusStore?: AgentConsensusStore;
   /** Optional SupplierMirrorStore for the supplier-manager daemon. */
   supplierMirrorStore?: SupplierMirrorStore;
+  /** Optional CEO handler context for Telegram notifications and action preparation. */
+  ceoContext?: CeoHandlerContext;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -44,6 +47,7 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "creative-assets": creativeAssetsDaemon,
   "creative-commercial": creativeCommercialDaemon,
   "product-ads-monitor": productAdsMonitorDaemon,
+  "product-ads-ceo-profitability": ceoProfitabilityHandler,
   "product-ads-profitability": productAdsProfitabilityDaemon,
   "supplier-manager": supplierManagerDaemon,
 };
@@ -90,6 +94,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
             bus: config.bus,
             sellerIds: config.sellerIds,
             supplierMirrorStore: config.supplierMirrorStore,
+            ceoContext: config.ceoContext,
           });
 
           config.bus.resolve(claim.messageId, result);

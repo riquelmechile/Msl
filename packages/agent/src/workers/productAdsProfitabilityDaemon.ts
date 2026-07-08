@@ -299,7 +299,7 @@ export const productAdsProfitabilityDaemon: DaemonHandler = async ({
 
     const msg = bus.enqueue({
       senderAgentId: "product-ads-profitability",
-      receiverAgentId: "ceo",
+      receiverAgentId: "product-ads-ceo-profitability",
       messageType: "proposal",
       payloadJson: JSON.stringify({
         type: "proposal",

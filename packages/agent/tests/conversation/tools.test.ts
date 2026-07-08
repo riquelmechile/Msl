@@ -417,6 +417,7 @@ describe("company agent registry and request_agent_evidence", () => {
       "operations-manager",
       "owned-ecommerce",
       "product-ads-monitor",
+      "product-ads-ceo-profitability",
       "product-ads-profitability",
       "supplier-manager",
     ]);
