@@ -160,6 +160,14 @@ export function decideReadSnapshotFreshness(
   };
 }
 
+export {
+  ingestSupplierToCortex,
+  ingestAllSuppliersToCortex,
+  ingestFallbackLessonToCortex,
+  getCortexNodeIdsForSupplierCandidate,
+} from "./supplierMirrorCortexBridge.js";
+export type { SupplierCortexIngestionResult } from "./supplierMirrorCortexBridge.js";
+
 export function decideSelectiveSync(input: {
   freshness: CacheFreshness;
   explicitRemoteSyncNeeded: boolean;

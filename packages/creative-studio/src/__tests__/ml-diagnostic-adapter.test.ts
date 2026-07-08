@@ -28,9 +28,7 @@ describe("MlDiagnosticAdapter", () => {
   let adapter: MlDiagnosticAdapter;
 
   beforeEach(() => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(new Response()),
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(new Response()));
     adapter = new MlDiagnosticAdapter(CONFIG);
   });
 
@@ -40,14 +38,13 @@ describe("MlDiagnosticAdapter", () => {
 
   describe("diagnoseImage", () => {
     it("returns passed: true when action is empty", async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(
-        mockResponse({ action: "empty" }) as Response,
-      );
+      vi.mocked(fetch).mockResolvedValueOnce(mockResponse({ action: "empty" }) as Response);
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(true);
       expect(result.detections).toHaveLength(0);
@@ -59,10 +56,11 @@ describe("MlDiagnosticAdapter", () => {
         mockResponse({ action: "diagnostic", detections: [] }) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(true);
       expect(result.detections).toHaveLength(0);
@@ -83,10 +81,11 @@ describe("MlDiagnosticAdapter", () => {
         }) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(false);
       expect(result.detections).toHaveLength(1);
@@ -109,10 +108,11 @@ describe("MlDiagnosticAdapter", () => {
         }) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(false);
       expect(result.detections).toHaveLength(1);
@@ -126,18 +126,17 @@ describe("MlDiagnosticAdapter", () => {
           detections: [
             {
               name: "watermark",
-              wordings: [
-                { kind: "description", value: "La imagen contiene una marca de agua" },
-              ],
+              wordings: [{ kind: "description", value: "La imagen contiene una marca de agua" }],
             },
           ],
         }) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(false);
       expect(result.detections).toHaveLength(1);
@@ -152,17 +151,21 @@ describe("MlDiagnosticAdapter", () => {
             {
               name: "minimum_size",
               wordings: [
-                { kind: "description", value: "La imagen no cumple con el tamaño mínimo requerido" },
+                {
+                  kind: "description",
+                  value: "La imagen no cumple con el tamaño mínimo requerido",
+                },
               ],
             },
           ],
         }) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(false);
       expect(result.detections).toHaveLength(1);
@@ -186,10 +189,11 @@ describe("MlDiagnosticAdapter", () => {
         }) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(false);
       expect(result.detections).toHaveLength(2);
@@ -212,10 +216,11 @@ describe("MlDiagnosticAdapter", () => {
         }) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       // Unknown types are filtered → no detections → passed: true
       expect(result.passed).toBe(true);
@@ -225,10 +230,11 @@ describe("MlDiagnosticAdapter", () => {
     it("returns passed: true on API error (non-blocking)", async () => {
       vi.mocked(fetch).mockRejectedValueOnce(new Error("Network failure"));
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(true);
       expect(result.detections).toHaveLength(0);
@@ -239,10 +245,11 @@ describe("MlDiagnosticAdapter", () => {
         mockResponse({ error: "Unauthorized" }, 401) as Response,
       );
 
-      const result = await adapter.diagnoseImage(
-        "https://cdn.example.com/img.jpg",
-        { categoryId: "MLC1055", title: "Test Product", pictureType: "thumbnail" },
-      );
+      const result = await adapter.diagnoseImage("https://cdn.example.com/img.jpg", {
+        categoryId: "MLC1055",
+        title: "Test Product",
+        pictureType: "thumbnail",
+      });
 
       expect(result.passed).toBe(true);
       expect(result.detections).toHaveLength(0);
@@ -255,10 +262,11 @@ describe("MlDiagnosticAdapter", () => {
         return mockResponse({ action: "empty" }) as Response;
       });
 
-      await adapter.diagnoseImage(
-        "https://cdn.example.com/product.jpg",
-        { categoryId: "MLC1055", title: "My Product", pictureType: "thumbnail" },
-      );
+      await adapter.diagnoseImage("https://cdn.example.com/product.jpg", {
+        categoryId: "MLC1055",
+        title: "My Product",
+        pictureType: "thumbnail",
+      });
 
       const body = JSON.parse(capturedBody!);
       expect(body.picture_url).toBe("https://cdn.example.com/product.jpg");

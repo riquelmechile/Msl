@@ -1,5 +1,9 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
-import type { CreativeDeepSeekAdvisor, CreativeActionableFinding, CreativeEnrichmentFinding } from "../conversation/creativeDeepSeekAdvisor.js";
+import type {
+  CreativeDeepSeekAdvisor,
+  CreativeActionableFinding,
+  CreativeEnrichmentFinding,
+} from "../conversation/creativeDeepSeekAdvisor.js";
 import type { CreativeAssetRequest } from "@msl/creative-studio";
 
 // ── Thresholds ──────────────────────────────────────────────────────
@@ -50,7 +54,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
     price: number;
     capturedAt: string;
     listingCreatedAt: string;
-  }
+  };
   const activeListings: ListingEntry[] = [];
 
   for (const sellerId of sellerIds) {
@@ -96,7 +100,10 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
           status: "active",
           price: Number(m.price ?? 0),
           capturedAt: metadataString(m.capturedAt, capturedAt),
-          listingCreatedAt: metadataString(m.created_at ?? m.start_time ?? m.date_created ?? m.capturedAt, capturedAt),
+          listingCreatedAt: metadataString(
+            m.created_at ?? m.start_time ?? m.date_created ?? m.capturedAt,
+            capturedAt,
+          ),
         });
       }
     }
@@ -166,10 +173,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
           kind: "opportunity",
           severity: "info",
           summary: `Creative candidate: ${listing.title} (${listing.itemId}) — ${visits} visits, ${orders} orders (${(conversionRate * 100).toFixed(1)}% conversion)`,
-          evidenceIds: [
-            `listing_snapshot:${listing.itemId}`,
-            `visit_snapshot:${listing.itemId}`,
-          ],
+          evidenceIds: [`listing_snapshot:${listing.itemId}`, `visit_snapshot:${listing.itemId}`],
         });
       }
     }
@@ -185,10 +189,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
           kind: "opportunity",
           severity: "info",
           summary: `Stagnant stock: ${listing.title} (${listing.itemId}) — active ${daysActive} days, ${visits} visits, zero orders`,
-          evidenceIds: [
-            `listing_snapshot:${listing.itemId}`,
-            `visit_snapshot:${listing.itemId}`,
-          ],
+          evidenceIds: [`listing_snapshot:${listing.itemId}`, `visit_snapshot:${listing.itemId}`],
         });
       }
     }
@@ -196,18 +197,23 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
 
   // ── AI Enrichment (warning only — info stays rule-based) ──
 
-  let aiEnrichment: {
-    findings: CreativeEnrichmentFinding[];
-    summary: string;
-    modelUsed: string;
-    enrichedAt: string;
-  } | undefined;
+  let aiEnrichment:
+    | {
+        findings: CreativeEnrichmentFinding[];
+        summary: string;
+        modelUsed: string;
+        enrichedAt: string;
+      }
+    | undefined;
 
   const warningFindings = findings.filter((f) => f.severity === "warning");
   const actionableFindings: CreativeActionableFinding[] = [];
 
   for (const f of warningFindings) {
-    const itemId = f.evidenceIds.find((id) => id.startsWith("listing_snapshot:"))?.replace("listing_snapshot:", "") ?? "";
+    const itemId =
+      f.evidenceIds
+        .find((id) => id.startsWith("listing_snapshot:"))
+        ?.replace("listing_snapshot:", "") ?? "";
     actionableFindings.push({
       itemId,
       title: f.summary,
@@ -245,10 +251,7 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
     const warnings = findings.filter((f) => f.severity === "warning");
     const infos = findings.filter((f) => f.severity === "info");
 
-    const enqueueGroup = (
-      group: DaemonFinding[],
-      kind: string,
-    ) => {
+    const enqueueGroup = (group: DaemonFinding[], kind: string) => {
       if (group.length === 0) return;
       const summary = `Creative/Commercial ${kind}s: ${group.length} finding(s)`;
       const recommendedAction =
@@ -301,7 +304,8 @@ export const creativeCommercialDaemon: DaemonHandler = async ({
       );
 
       for (const f of creativeCandidates) {
-        const itemId = f.evidenceIds.find((id) => id.startsWith("listing_snapshot:"))
+        const itemId = f.evidenceIds
+          .find((id) => id.startsWith("listing_snapshot:"))
           ?.replace("listing_snapshot:", "");
         if (!itemId) continue;
 

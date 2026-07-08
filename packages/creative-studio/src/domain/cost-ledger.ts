@@ -40,8 +40,7 @@ export class CostLedger {
     if (estimatedCostUsd > this.config.maxJobUsd) {
       return {
         allowed: false,
-        reason:
-          `Job cost $${estimatedCostUsd} exceeds max job USD $${this.config.maxJobUsd}`,
+        reason: `Job cost $${estimatedCostUsd} exceeds max job USD $${this.config.maxJobUsd}`,
       };
     }
 

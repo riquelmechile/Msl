@@ -23,10 +23,7 @@ export function createQueryCreativeTaskTool(): ToolDefinition {
           description: "The request ID to query as alternative.",
         },
       },
-      oneOf: [
-        { required: ["jobId"] },
-        { required: ["requestId"] },
-      ],
+      oneOf: [{ required: ["jobId"] }, { required: ["requestId"] }],
     },
     execute: (args: Record<string, unknown>): Record<string, unknown> => {
       return {
@@ -89,8 +86,7 @@ export function createApproveCreativeAssetTool(
           approved: false,
           jobId: args.jobId,
           assetId: args.assetId,
-          message:
-            "Not authorized to approve creative assets. Only the CEO agent can approve.",
+          message: "Not authorized to approve creative assets. Only the CEO agent can approve.",
           noMutationExecuted: true,
         };
       }

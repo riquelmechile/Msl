@@ -42,10 +42,7 @@ export interface CortexSink {
 export class CortexBridge implements CortexSink {
   constructor(
     private readonly cortex: {
-      getOrCreateNode: (
-        label: string,
-        metadata: Record<string, unknown>,
-      ) => { id: number };
+      getOrCreateNode: (label: string, metadata: Record<string, unknown>) => { id: number };
     },
   ) {}
 

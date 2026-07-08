@@ -350,7 +350,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
         ledger: config.workforceCostCacheLedgerStore,
       });
     }
-    for (const tool of createSupplierMirrorTools(config.supplierMirrorStore, advisor)) {
+    for (const tool of createSupplierMirrorTools(config.supplierMirrorStore, advisor, config.engine)) {
       if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
     }
   }

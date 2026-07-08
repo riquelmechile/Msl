@@ -49,34 +49,26 @@ export class MlDiagnosticAdapter {
    * @param context  — Category, title, and picture type for context-aware diagnosis
    * @returns MlDiagnosticResult (never throws — API errors degrade gracefully)
    */
-  async diagnoseImage(
-    imageUrl: string,
-    context: MlDiagnosticContext,
-  ): Promise<MlDiagnosticResult> {
+  async diagnoseImage(imageUrl: string, context: MlDiagnosticContext): Promise<MlDiagnosticResult> {
     try {
-      const response = await fetch(
-        `${this.baseUrl}/moderations/pictures/diagnostic`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.authToken}`,
-          },
-          body: JSON.stringify({
-            picture_url: imageUrl,
-            context: {
-              category_id: context.categoryId,
-              title: context.title,
-              picture_type: context.pictureType,
-            },
-          }),
+      const response = await fetch(`${this.baseUrl}/moderations/pictures/diagnostic`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.authToken}`,
         },
-      );
+        body: JSON.stringify({
+          picture_url: imageUrl,
+          context: {
+            category_id: context.categoryId,
+            title: context.title,
+            picture_type: context.pictureType,
+          },
+        }),
+      });
 
       if (!response.ok) {
-        console.warn(
-          `[ml-diagnostic] API returned ${response.status} — deferring to passed: true`,
-        );
+        console.warn(`[ml-diagnostic] API returned ${response.status} — deferring to passed: true`);
         return { passed: true, picture_type: context.pictureType, detections: [] };
       }
 
@@ -115,9 +107,7 @@ export class MlDiagnosticAdapter {
     } catch (err) {
       // Non-blocking: log and return passed: true
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[ml-diagnostic] API call failed: ${errorMessage} — deferring to passed: true`,
-      );
+      console.warn(`[ml-diagnostic] API call failed: ${errorMessage} — deferring to passed: true`);
       return { passed: true, picture_type: context.pictureType, detections: [] };
     }
   }

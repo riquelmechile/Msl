@@ -1,6 +1,15 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CreativeAssetRequest, CreativeExecutionResult } from "@msl/creative-studio";
-import { PolicyEngine, CostLedger, MinimaxClient, MinimaxImageProvider, MinimaxVideoProvider, CreativeAssetStore, MlDiagnosticAdapter, CortexBridge } from "@msl/creative-studio";
+import {
+  PolicyEngine,
+  CostLedger,
+  MinimaxClient,
+  MinimaxImageProvider,
+  MinimaxVideoProvider,
+  CreativeAssetStore,
+  MlDiagnosticAdapter,
+  CortexBridge,
+} from "@msl/creative-studio";
 import type { CortexSink } from "@msl/creative-studio";
 import type { GraphEngine } from "@msl/memory";
 
@@ -8,7 +17,8 @@ import type { GraphEngine } from "@msl/memory";
 
 function env(name: string, fallback = ""): string {
   return (globalThis as Record<string, unknown>).process
-    ? ((globalThis as typeof globalThis & { process: { env: Record<string, string | undefined> } }).process.env[name] ?? fallback)
+    ? ((globalThis as typeof globalThis & { process: { env: Record<string, string | undefined> } })
+        .process.env[name] ?? fallback)
     : fallback;
 }
 
@@ -119,9 +129,7 @@ export const creativeStudioDaemon: DaemonHandler = async ({
   try {
     request = JSON.parse(claim.payloadJson) as CreativeAssetRequest;
   } catch {
-    console.error(
-      `[creative-studio] Failed to parse payload for message ${claim.messageId}`,
-    );
+    console.error(`[creative-studio] Failed to parse payload for message ${claim.messageId}`);
     findings.push({
       kind: "alert",
       severity: "warning",
@@ -239,16 +247,20 @@ export const creativeStudioDaemon: DaemonHandler = async ({
       });
 
       const pictureType = request.constraints.channelFormat?.ml?.pictureType ?? "thumbnail";
-      const categoryId = request.productContext?.categoryId ?? request.constraints.channelFormat?.ml?.expectedCategoryId ?? "";
+      const categoryId =
+        request.productContext?.categoryId ??
+        request.constraints.channelFormat?.ml?.expectedCategoryId ??
+        "";
       const title = request.productContext?.title ?? "";
 
       for (const output of result.outputs) {
         if (output.storageUri && output.kind === "image") {
           try {
-            const diagResult = await diagnosticAdapter.diagnoseImage(
-              output.storageUri,
-              { categoryId, title, pictureType },
-            );
+            const diagResult = await diagnosticAdapter.diagnoseImage(output.storageUri, {
+              categoryId,
+              title,
+              pictureType,
+            });
             // Attach diagnostic to the output
             (output as { mlDiagnostic?: unknown }).mlDiagnostic = diagResult;
           } catch (err) {

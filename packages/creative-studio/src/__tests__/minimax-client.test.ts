@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { MinimaxClient, MinimaxRequestError } from "../infrastructure/providers/minimax/minimax-client.js";
+import {
+  MinimaxClient,
+  MinimaxRequestError,
+} from "../infrastructure/providers/minimax/minimax-client.js";
 
 // ── Tests ────────────────────────────────────────────────────────────
 

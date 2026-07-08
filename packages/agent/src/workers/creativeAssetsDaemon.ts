@@ -1,6 +1,10 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CreativeSnapshotData } from "../conversation/backgroundIngestion.js";
-import type { CreativeDeepSeekAdvisor, CreativeActionableFinding, CreativeEnrichmentFinding } from "../conversation/creativeDeepSeekAdvisor.js";
+import type {
+  CreativeDeepSeekAdvisor,
+  CreativeActionableFinding,
+  CreativeEnrichmentFinding,
+} from "../conversation/creativeDeepSeekAdvisor.js";
 import type { CreativeAssetRequest } from "@msl/creative-studio";
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -123,10 +127,7 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
       limit: 1,
     });
     if (itemNodes.length > 0) {
-      itemLatestVisits.set(
-        snap.itemId,
-        Number(itemNodes[0]!.metadata.totalVisits ?? 0),
-      );
+      itemLatestVisits.set(snap.itemId, Number(itemNodes[0]!.metadata.totalVisits ?? 0));
     }
   }
 
@@ -238,10 +239,7 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
           kind: "alert",
           severity: "warning",
           summary: `High-traffic poor creative: ${snap.itemId} has ${itemVisits} visits (avg ${Math.round(avg)}) with poor creative quality`,
-          evidenceIds: [
-            `creative-snapshot:${snap.itemId}`,
-            `visit_snapshot:${snap.itemId}`,
-          ],
+          evidenceIds: [`creative-snapshot:${snap.itemId}`, `visit_snapshot:${snap.itemId}`],
         });
       }
     }
@@ -260,10 +258,7 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
           kind: "alert",
           severity: "critical",
           summary: `Moderated-in-campaign: ${snap.itemId} is blocked AND in active Product Ads campaign — immediate review needed`,
-          evidenceIds: [
-            `creative-snapshot:${snap.itemId}`,
-            `product-ads-insights:${snap.itemId}`,
-          ],
+          evidenceIds: [`creative-snapshot:${snap.itemId}`, `product-ads-insights:${snap.itemId}`],
         });
       }
     }
@@ -273,25 +268,35 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
 
   // ── 2.7 AI Enrichment (critical + warning only) ──────────────
 
-  let aiEnrichment: {
-    findings: CreativeEnrichmentFinding[];
-    summary: string;
-    modelUsed: string;
-    enrichedAt: string;
-  } | undefined;
+  let aiEnrichment:
+    | {
+        findings: CreativeEnrichmentFinding[];
+        summary: string;
+        modelUsed: string;
+        enrichedAt: string;
+      }
+    | undefined;
 
   const actionableFindings: CreativeActionableFinding[] = [];
   for (const f of findings) {
     if (f.severity === "info") continue;
-    const itemId = f.evidenceIds.find((id) => id.startsWith("creative-snapshot:"))?.replace("creative-snapshot:", "") ?? "";
+    const itemId =
+      f.evidenceIds
+        .find((id) => id.startsWith("creative-snapshot:"))
+        ?.replace("creative-snapshot:", "") ?? "";
     actionableFindings.push({
       itemId,
-      signalKind: f.summary.includes("Low image count") ? "low-image-count"
-        : f.summary.includes("Moderation blocked") ? "moderation-blocked"
-        : f.summary.includes("Poor PICTURES") ? "poor-pictures-score"
-        : f.summary.includes("High-traffic poor") ? "high-traffic-poor-creative"
-        : f.summary.includes("Moderated-in-campaign") ? "moderated-in-campaign"
-        : "low-image-count",
+      signalKind: f.summary.includes("Low image count")
+        ? "low-image-count"
+        : f.summary.includes("Moderation blocked")
+          ? "moderation-blocked"
+          : f.summary.includes("Poor PICTURES")
+            ? "poor-pictures-score"
+            : f.summary.includes("High-traffic poor")
+              ? "high-traffic-poor-creative"
+              : f.summary.includes("Moderated-in-campaign")
+                ? "moderated-in-campaign"
+                : "low-image-count",
       severity: f.severity === "critical" ? "critical" : "warning",
     });
   }
@@ -376,7 +381,8 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
           f.summary.includes("High-traffic poor");
         if (!hasSignal) continue;
 
-        const itemId = f.evidenceIds.find((id) => id.startsWith("creative-snapshot:"))
+        const itemId = f.evidenceIds
+          .find((id) => id.startsWith("creative-snapshot:"))
           ?.replace("creative-snapshot:", "");
 
         if (!itemId) continue;

@@ -1,9 +1,4 @@
-export type CreativeChannel =
-  | "mercadolibre"
-  | "storefront"
-  | "instagram"
-  | "facebook"
-  | "tiktok";
+export type CreativeChannel = "mercadolibre" | "storefront" | "instagram" | "facebook" | "tiktok";
 
 export type CreativeJobKind =
   | "product-cover-i2i"

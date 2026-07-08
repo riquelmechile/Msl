@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MinimaxVideoProvider } from "../infrastructure/providers/minimax/minimax-video-provider.js";
-import { MinimaxClient, MinimaxRequestError } from "../infrastructure/providers/minimax/minimax-client.js";
+import {
+  MinimaxClient,
+  MinimaxRequestError,
+} from "../infrastructure/providers/minimax/minimax-client.js";
 import type { CreativeAssetRequest, CreativeJobKind } from "../contracts/creative-requests.js";
 
 // ── Polling mock helper ──────────────────────────────────────────────
@@ -106,9 +109,7 @@ describe("MinimaxVideoProvider", () => {
   let provider: MinimaxVideoProvider;
 
   beforeEach(() => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(new Response()),
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(new Response()));
     client = new MinimaxClient({
       apiKey: "sk-test",
       apiHost: "https://api.minimax.io",
@@ -159,9 +160,7 @@ describe("MinimaxVideoProvider", () => {
       const cost10s = provider.estimate(makeRequest({ kind: "product-clip-10s" }));
       expect(cost10s).toBeCloseTo(0.33); // 10 * 0.033 (quality model)
 
-      const cost30s = provider.estimate(
-        makeRequest({ kind: "ml-clip-vertical-30s" }),
-      );
+      const cost30s = provider.estimate(makeRequest({ kind: "ml-clip-vertical-30s" }));
       expect(cost30s).toBeCloseTo(0.99); // 30 * 0.033 (quality model)
     });
   });
@@ -183,9 +182,7 @@ describe("MinimaxVideoProvider", () => {
       // This test validates the code path for exceeding 60s.
       // We simulate by calling execute with ml-clip-vertical-30s (30s, ok)
       mockPollingFlow("mm_dur_ok", "mm_dur_file");
-      const result = await provider.execute(
-        makeRequest({ kind: "ml-clip-vertical-30s" }),
-      );
+      const result = await provider.execute(makeRequest({ kind: "ml-clip-vertical-30s" }));
       expect(result.status).not.toBe("rejected");
 
       // Any non-ML clip kind with reasonable duration passes too
@@ -204,9 +201,7 @@ describe("MinimaxVideoProvider", () => {
       expect(result.provider).toBe("minimax");
       expect(result.outputs).toHaveLength(1);
       expect(result.outputs[0]?.kind).toBe("video");
-      expect(result.outputs[0]?.storageUri).toBe(
-        "https://cdn.minimax.io/video/mm_file_abc.mp4",
-      );
+      expect(result.outputs[0]?.storageUri).toBe("https://cdn.minimax.io/video/mm_file_abc.mp4");
       expect(result.status).toBe("needs-human-review");
       expect(result.noMutationExecuted).toBe(true);
       expect(result.actualCostUsd).toBeCloseTo(0.102); // 6 * 0.017

@@ -1,7 +1,4 @@
-import type {
-  CreativeAssetRequest,
-  CreativeJobKind,
-} from "../contracts/creative-requests.js";
+import type { CreativeAssetRequest, CreativeJobKind } from "../contracts/creative-requests.js";
 
 const productKinds: CreativeJobKind[] = [
   "product-cover-i2i",
@@ -11,10 +8,7 @@ const productKinds: CreativeJobKind[] = [
   "ml-clip-vertical-30s",
 ];
 
-const i2iKinds: CreativeJobKind[] = [
-  "product-cover-i2i",
-  "product-gallery-i2i",
-];
+const i2iKinds: CreativeJobKind[] = ["product-cover-i2i", "product-gallery-i2i"];
 
 export class PolicyEngine {
   /**
@@ -32,9 +26,7 @@ export class PolicyEngine {
     // Rule 1: preserveProductTruth constraint requires references for product kinds
     if (request.constraints.preserveProductTruth && productKinds.includes(request.kind)) {
       if (request.references.length === 0) {
-        issues.push(
-          `preserveProductTruth requires at least one reference for ${request.kind}`,
-        );
+        issues.push(`preserveProductTruth requires at least one reference for ${request.kind}`);
       }
     }
 
@@ -50,9 +42,7 @@ export class PolicyEngine {
 
     // Rule 4: image-to-image kinds require references (empty prompt guard)
     if (i2iKinds.includes(request.kind) && request.references.length === 0) {
-      issues.push(
-        "image-to-image kinds require at least one reference image as prompt equivalent",
-      );
+      issues.push("image-to-image kinds require at least one reference image as prompt equivalent");
     }
 
     return { valid: issues.length === 0, issues };

@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PolicyEngine, CostLedger } from "../index.js";
 import { MlDiagnosticAdapter } from "../infrastructure/ml-diagnostic-adapter.js";
 import { CortexBridge } from "../application/cortex-bridge.js";
-import type { CreativeAssetRequest, CreativeExecutionResult } from "../contracts/creative-requests.js";
+import type {
+  CreativeAssetRequest,
+  CreativeExecutionResult,
+} from "../contracts/creative-requests.js";
 
 // ── Mock API responses ──────────────────────────────────────────────
 
@@ -21,7 +24,10 @@ describe("creative-studio end-to-end (all mocked)", () => {
   let costLedger: CostLedger;
   let mlDiagnostic: MlDiagnosticAdapter;
   let cortexBridge: CortexBridge;
-  let cortexMock: { nodes: Array<Record<string, unknown>>; getOrCreateNode: ReturnType<typeof vi.fn> };
+  let cortexMock: {
+    nodes: Array<Record<string, unknown>>;
+    getOrCreateNode: ReturnType<typeof vi.fn>;
+  };
   let mlApiCalls: number;
 
   const SELLER_ID = "e2e-test-seller";
@@ -137,14 +143,11 @@ describe("creative-studio end-to-end (all mocked)", () => {
       }),
     );
 
-    const diagResult = await mlDiagnostic.diagnoseImage(
-      mockResult.outputs[0]!.storageUri,
-      {
-        categoryId: CATEGORY_ID,
-        title: request.productContext?.title ?? "",
-        pictureType: "thumbnail",
-      },
-    );
+    const diagResult = await mlDiagnostic.diagnoseImage(mockResult.outputs[0]!.storageUri, {
+      categoryId: CATEGORY_ID,
+      title: request.productContext?.title ?? "",
+      pictureType: "thumbnail",
+    });
     expect(diagResult.passed).toBe(true);
     expect(diagResult.detections).toHaveLength(0);
 
@@ -212,9 +215,7 @@ describe("creative-studio end-to-end (all mocked)", () => {
     expect(result.noMutationExecuted).toBe(true);
 
     // ML diagnosis doesn't mutate
-    vi.mocked(fetch).mockResolvedValueOnce(
-      mockMlApiResponse({ action: "empty" }),
-    );
+    vi.mocked(fetch).mockResolvedValueOnce(mockMlApiResponse({ action: "empty" }));
     const diag = await mlDiagnostic.diagnoseImage(result.outputs[0]!.storageUri, {
       categoryId: CATEGORY_ID,
       title: "No mutation test",

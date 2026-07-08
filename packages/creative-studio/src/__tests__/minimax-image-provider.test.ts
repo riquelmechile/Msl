@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MinimaxImageProvider } from "../infrastructure/providers/minimax/minimax-image-provider.js";
-import { MinimaxClient, MinimaxRequestError } from "../infrastructure/providers/minimax/minimax-client.js";
+import {
+  MinimaxClient,
+  MinimaxRequestError,
+} from "../infrastructure/providers/minimax/minimax-client.js";
 import type { CreativeAssetRequest, CreativeJobKind } from "../contracts/creative-requests.js";
 
 // ── Factory ──────────────────────────────────────────────────────────
@@ -41,9 +44,7 @@ describe("MinimaxImageProvider", () => {
   let provider: MinimaxImageProvider;
 
   beforeEach(() => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(new Response()),
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(new Response()));
     client = new MinimaxClient({
       apiKey: "sk-test",
       apiHost: "https://api.minimax.io",

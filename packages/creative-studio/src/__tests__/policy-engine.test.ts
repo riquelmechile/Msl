@@ -47,9 +47,7 @@ describe("PolicyEngine", () => {
       const result = engine.validate(makeValidRequest({ references: [] }));
       expect(result.valid).toBe(false);
       expect(result.issues.length).toBeGreaterThanOrEqual(1);
-      expect(
-        result.issues.some((i) => i.includes("requires at least one reference")),
-      ).toBe(true);
+      expect(result.issues.some((i) => i.includes("requires at least one reference"))).toBe(true);
     });
 
     it("rejects preserveProductTruth requests without references for product kinds", () => {
@@ -60,9 +58,7 @@ describe("PolicyEngine", () => {
         }),
       );
       expect(result.valid).toBe(false);
-      expect(
-        result.issues.some((i) => i.includes("preserveProductTruth")),
-      ).toBe(true);
+      expect(result.issues.some((i) => i.includes("preserveProductTruth"))).toBe(true);
     });
 
     it("allows non-product kind requests without references", () => {
@@ -89,9 +85,7 @@ describe("PolicyEngine", () => {
         }),
       );
       expect(result.valid).toBe(false);
-      expect(
-        result.issues.some((i) => i.includes("reference image")),
-      ).toBe(true);
+      expect(result.issues.some((i) => i.includes("reference image"))).toBe(true);
     });
 
     it("allows voiceover kind without references", () => {
