@@ -9,6 +9,7 @@ import { createCeoDeepSeekClient } from "./ceoDeepSeekClient.js";
 const FORUM_TOPICS_FILE = resolve(process.cwd(), "msl-forum-topics.json");
 const STALE_WINDOW_HOURS = 24;
 const DEDUPE_WINDOW_DAYS = 7;
+const MISSING_DATA_DEDUPE_WINDOW_HOURS = 24;
 const SIGNAL_TO_ACTION: Record<string, { proposalType: string; severity: string; requiresApproval: boolean }> = {
   "margin-consuming": { proposalType: "pause-campaign", severity: "critical", requiresApproval: true },
   "scale-candidate": { proposalType: "adjust-campaign-budget", severity: "opportunity", requiresApproval: true },
@@ -75,6 +76,7 @@ type CeoFinding = {
   evidenceIds: string[];
   capturedAt: string;
   recommendationIdentity: string;
+  dataGapDate?: string;
 };
 
 function parseFindings(payloadJson: string): {
@@ -98,7 +100,16 @@ function parseFindings(payloadJson: string): {
       const sellerId = parts[1] ?? "";
       const campaignId = parts[2] ?? "";
       const itemId = parts[3] ?? "";
-      const signal = parts[4] ?? "unit-economics";
+      let signal: string;
+      let dataGapDate: string | undefined;
+
+      if (identity.startsWith("product-ads-data-gap:")) {
+        signal = "missing-cost-data";
+        dataGapDate = parts[4] ?? undefined;
+      } else {
+        signal = parts[4] ?? "unit-economics";
+        dataGapDate = undefined;
+      }
 
       return {
         sellerId,
@@ -111,6 +122,7 @@ function parseFindings(payloadJson: string): {
         evidenceIds: (f.evidenceIds as string[]) ?? [],
         capturedAt,
         recommendationIdentity: identity,
+        dataGapDate,
       };
     });
 
@@ -251,6 +263,33 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
 
   for (const finding of parsedFindings) {
     try {
+      // ── Data-gap findings (missing cost data) ─────────────────────
+      if (finding.signal === "missing-cost-data") {
+        const windowStart24h = new Date(Date.now() - MISSING_DATA_DEDUPE_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+        const recentDataGap = bus.lookupRecentByDedupePrefix(finding.recommendationIdentity, windowStart24h);
+        if (recentDataGap.length > 0) continue; // Suppress within 24h window
+
+        // Send Telegram notification for data-gap
+        if (ceoCtx.sendProactiveMessage && primaryAdminChatId) {
+          const sellerName = sellerNameMap[finding.sellerId] ?? finding.sellerId;
+          const threadId = await ensureTopic(finding.sellerId, sellerName, primaryAdminChatId, ceoCtx);
+          const notificationText = [
+            `<b>📊 Missing Cost Data — ${sellerName}</b>`,
+            ``,
+            `Product ${finding.itemId} in campaign ${finding.campaignId} has insufficient cost data`,
+            `for profitability analysis.`,
+            ``,
+            finding.summary,
+            ``,
+            `📋 Please provide the unit cost and any additional cost info for this product.`,
+            `Reply in the bot and the CEO will process it.`,
+          ].join("\n");
+
+          await ceoCtx.sendProactiveMessage(primaryAdminChatId, notificationText, threadId);
+        }
+        continue; // Skip regular processing
+      }
+
       // ── Dedupe check ──────────────────────────────────────────────
       const dedupeIdentity = `product-ads-cfo:${finding.sellerId}:${finding.campaignId}:${finding.itemId}:${finding.signal}`;
       const recent = bus.lookupRecentByDedupePrefix(dedupeIdentity, windowStart);

@@ -46,6 +46,8 @@ const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonSchedu
 const { createGraphEngine, createDatabase, createSqliteOperationalReadModel } =
   await import("@msl/memory");
 const { getMlAccountRoleConfig } = await import("@msl/mercadolibre");
+const { createSqliteApprovalQueueRepository, createInMemoryApprovalQueueRepository } =
+  await import("@msl/tools");
 
 // ── Bus DB (agent message bus uses its own SQLite tables) ──────
 const busDb = createDatabase(cortexPath);
@@ -76,6 +78,7 @@ if (env.MERCADOLIBRE_TARGET_SELLER_NAME?.trim()) {
 }
 
 let ceoContext = undefined;
+let approvalRepo = undefined;
 if (botToken && adminChatIds.length > 0) {
   // Create a lightweight grammY Bot instance for API calls only (no polling)
   const { Bot } = await import("grammy");
@@ -92,6 +95,48 @@ if (botToken && adminChatIds.length > 0) {
     },
     adminChatIds,
     sellerNames,
+  };
+
+  const approvalQueuePath = env.MSL_APPROVAL_QUEUE_DB_PATH?.trim();
+  approvalRepo = approvalQueuePath
+    ? createSqliteApprovalQueueRepository(approvalQueuePath)
+    : createInMemoryApprovalQueueRepository();
+
+  ceoContext.prepareProductAdsAction = async (input) => {
+    const actionId = `product-ads:${input.proposalType}:${input.sellerId}:${Date.now()}`;
+    await approvalRepo.save({
+      action: {
+        id: actionId,
+        sellerId: input.sellerId,
+        kind: "product-ads-action",
+        target: {
+          type: "product-ads-campaign",
+          campaignId: input.campaignId,
+          itemId: input.itemId,
+          adId: input.adId ?? null,
+        },
+        exactChange: [
+          { field: "sellerId", from: null, to: input.sellerId },
+          { field: "proposalType", from: null, to: input.proposalType },
+          { field: "campaignId", from: null, to: input.campaignId },
+          { field: "itemId", from: null, to: input.itemId },
+          { field: "adId", from: null, to: input.adId ?? null },
+          { field: "currentStatus", from: null, to: input.currentStatus },
+          { field: "metricsSnapshotSummary", from: null, to: input.metricsSnapshotSummary },
+          { field: "rationale", from: null, to: input.rationale },
+          { field: "sourceTool", from: null, to: input.sourceTool },
+          { field: "observedAt", from: null, to: input.observedAt },
+          { field: "mutationExecuted", from: null, to: false },
+        ],
+        rationale: input.rationale,
+        riskLevel: "medium",
+        expiresAt: input.expiresAt,
+        approvalStatus: "pending",
+      },
+      requestedAt: new Date().toISOString(),
+      highlightedRisk: "medium",
+      status: "pending",
+    });
   };
 }
 
@@ -114,6 +159,7 @@ process.on("SIGINT", () => {
   handle.stop();
   busDb.close();
   readerDb.close();
+  approvalRepo?.close?.();
   process.exit(0);
 });
 
@@ -122,5 +168,6 @@ process.on("SIGTERM", () => {
   handle.stop();
   busDb.close();
   readerDb.close();
+  approvalRepo?.close?.();
   process.exit(0);
 });
