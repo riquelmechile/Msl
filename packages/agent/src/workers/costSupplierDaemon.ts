@@ -1,4 +1,5 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import type { CostSupplierDeepSeekAdvisor, CostSupplierActionableFinding, CostSupplierEnrichmentFinding } from "../conversation/costSupplierDeepSeekAdvisor.js";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ export const costSupplierDaemon: DaemonHandler = async ({
   cortex,
   bus,
   sellerIds,
+  costSupplierAdvisor,
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
@@ -228,6 +230,85 @@ export const costSupplierDaemon: DaemonHandler = async ({
     }
   }
 
+  // ── AI Enrichment (critical + warning only) ───────────────────
+
+  let aiEnrichment: {
+    findings: CostSupplierEnrichmentFinding[];
+    summary: string;
+    modelUsed: string;
+    enrichedAt: string;
+  } | undefined;
+
+  const actionableFindings: CostSupplierActionableFinding[] = [];
+  if (costSupplierAdvisor) {
+    for (const f of findings) {
+      if (f.severity === "info") continue;
+      const itemId = f.evidenceIds.find((id) => id.startsWith("listing_snapshot:"))?.replace("listing_snapshot:", "") ?? "";
+      actionableFindings.push({
+        itemId,
+        signalKind: f.summary.includes("Critically low margin") ? "critical-margin"
+          : f.summary.includes("Selling below cost") ? "below-cost"
+          : f.summary.includes("Low margin") ? "low-margin"
+          : "restock-opportunity",
+        severity: f.severity === "critical" ? "critical" : f.severity === "warning" ? "warning" : "info",
+        price: 0,
+        cost: 0,
+        margin: 0,
+      });
+    }
+  }
+
+  if (costSupplierAdvisor && actionableFindings.length > 0) {
+    try {
+      // Re-extract price/cost/margin from findings text for advisor context
+      const enrichedActionables = actionableFindings.map((af) => {
+        const finding = findings.find((f) =>
+          f.evidenceIds.some((eid) => eid.includes(af.itemId)),
+        );
+        if (!finding) return af;
+
+        // Parse margin and price from summary strings like "Critically low margin (5.0%): Title (MLC123) — price $15000, costs ~$14250"
+        const marginMatch = finding.summary.match(/margin\s*\(([\d.]+)%\)/i);
+        const priceMatch = finding.summary.match(/price\s*\$(\d+)/i);
+        const costMatch = finding.summary.match(/costs?\s*~\s*\$(\d+)/i);
+        const belowCostPriceMatch = finding.summary.match(/price\s*\$(\d+)/i);
+        const belowCostCostMatch = finding.summary.match(/cost\s*\$(\d+)/i);
+
+        if (af.signalKind === "below-cost") {
+          return {
+            ...af,
+            price: Number(belowCostPriceMatch?.[1] ?? 0),
+            cost: Number(belowCostCostMatch?.[1] ?? 0),
+            margin: -1,
+          };
+        }
+
+        return {
+          ...af,
+          price: Number(priceMatch?.[1] ?? 0),
+          cost: Number(costMatch?.[1] ?? 0),
+          margin: Number(marginMatch?.[1] ?? 0) / 100,
+        };
+      });
+
+      const analysis = await costSupplierAdvisor.analyze({
+        actionableFindings: enrichedActionables,
+      });
+
+      aiEnrichment = {
+        findings: analysis.findings,
+        summary: analysis.summary,
+        modelUsed: analysis.modelUsed,
+        enrichedAt: capturedAt,
+      };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[cost-supplier] Advisor enrichment failed, using rule-only: ${errorMessage}`,
+      );
+    }
+  }
+
   // ── Enqueue CEO proposals ──────────────────────────────────
   let proposalEnqueued = false;
 
@@ -249,23 +330,30 @@ export const costSupplierDaemon: DaemonHandler = async ({
             ? "Review pricing and costs to improve margin viability"
             : "Review restock opportunities to capture demand";
 
+      const payloadJson: Record<string, unknown> = {
+        type: "proposal",
+        summary,
+        findings: group.map((f) => ({
+          kind: f.kind,
+          severity: f.severity,
+          summary: f.summary,
+          evidenceIds: f.evidenceIds,
+        })),
+        recommendedAction,
+        capturedAt,
+        noMutationExecuted: true,
+      };
+
+      // Attach AI enrichment to critical and warning groups
+      if (aiEnrichment && (kind === "critical" || kind === "warning")) {
+        payloadJson.aiEnrichment = aiEnrichment;
+      }
+
       const message = bus.enqueue({
         senderAgentId: "cost-supplier",
         receiverAgentId: "ceo",
         messageType: "proposal",
-        payloadJson: JSON.stringify({
-          type: "proposal",
-          summary,
-          findings: group.map((f) => ({
-            kind: f.kind,
-            severity: f.severity,
-            summary: f.summary,
-            evidenceIds: f.evidenceIds,
-          })),
-          recommendedAction,
-          capturedAt,
-          noMutationExecuted: true,
-        }),
+        payloadJson: JSON.stringify(payloadJson),
         dedupeKey: `cost-supplier-${kind}-${capturedAt.slice(0, 13)}`,
       });
       messageIds.push(message.messageId);

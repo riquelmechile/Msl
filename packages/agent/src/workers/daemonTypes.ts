@@ -5,6 +5,7 @@ import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCos
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
 import type { CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
+import type { CostSupplierDeepSeekAdvisor } from "../conversation/costSupplierDeepSeekAdvisor.js";
 import type { CreativeDeepSeekAdvisor } from "../conversation/creativeDeepSeekAdvisor.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
@@ -90,6 +91,11 @@ export type DaemonHandler = (input: {
    *  (relist-expiring) and warning (low-visit, above-market) signals and appends
    *  aiEnrichment to the proposal payload. When absent, all proposals are rule-only. */
   catalogAdvisor?: CatalogDeepSeekAdvisor;
+  /** Optional CostSupplierDeepSeekAdvisor for AI enrichment of cost, margin, and
+   *  restock signals. When present, the cost-supplier daemon calls costSupplierAdvisor.analyze()
+   *  for critical (critical-margin, below-cost) and warning (low-margin) signals and
+   *  appends aiEnrichment to the proposal payload. When absent, all proposals are rule-only. */
+  costSupplierAdvisor?: CostSupplierDeepSeekAdvisor;
   /** Optional CreativeDeepSeekAdvisor for AI enrichment of creative asset and commercial
    *  signals. When present, the creative-assets daemon calls creativeAdvisor.analyze()
    *  for critical (moderated-in-campaign) and warning signals, and the creative-commercial
