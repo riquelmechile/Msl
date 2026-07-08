@@ -13,6 +13,8 @@ export default defineConfig({
         .pathname,
       "@msl/bot": new URL("./packages/bot/src/index.ts", import.meta.url).pathname,
       "@msl/mcp": new URL("./packages/mcp/src/index.ts", import.meta.url).pathname,
+      "@msl/creative-studio": new URL("./packages/creative-studio/src/index.ts", import.meta.url)
+        .pathname,
     },
   },
   test: {
