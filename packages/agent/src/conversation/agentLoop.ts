@@ -102,6 +102,7 @@ import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerSt
 import { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
 import { OperationsDeepSeekAdvisor } from "./operationsDeepSeekAdvisor.js";
 import { CatalogDeepSeekAdvisor } from "./catalogDeepSeekAdvisor.js";
+import { CostSupplierDeepSeekAdvisor } from "./costSupplierDeepSeekAdvisor.js";
 import { CreativeDeepSeekAdvisor } from "./creativeDeepSeekAdvisor.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
 import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
@@ -387,6 +388,19 @@ export function createAgentLoop(config: AgentLoopConfig) {
   const creativeDeepSeekAdvisor: CreativeDeepSeekAdvisor | undefined =
     openai && config.sellerId && config.workforceCostCacheLedgerStore
       ? new CreativeDeepSeekAdvisor({
+          openai,
+          sellerIds: [config.sellerId],
+          ledger: config.workforceCostCacheLedgerStore,
+        })
+      : undefined;
+
+  // ── Cost Supplier DeepSeek Advisor ─────────────────────────────────
+  // Lazily passed to the daemon scheduler via createAgentLoop return.
+  // The scheduler extracts it from config and injects into the
+  // cost-supplier daemon for margin, cost, and restock enrichment.
+  const costSupplierDeepSeekAdvisor: CostSupplierDeepSeekAdvisor | undefined =
+    openai && config.sellerId && config.workforceCostCacheLedgerStore
+      ? new CostSupplierDeepSeekAdvisor({
           openai,
           sellerIds: [config.sellerId],
           ledger: config.workforceCostCacheLedgerStore,
@@ -1016,6 +1030,7 @@ ${strategyLines.join("\n")}`;
     operationsDeepSeekAdvisor,
     catalogDeepSeekAdvisor,
     creativeDeepSeekAdvisor,
+    costSupplierDeepSeekAdvisor,
   };
 }
 

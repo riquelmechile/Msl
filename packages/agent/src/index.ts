@@ -184,6 +184,13 @@ export type {
   CreativeEnrichmentInput,
   CreativeActionableFinding,
 } from "./conversation/creativeDeepSeekAdvisor.js";
+export { CostSupplierDeepSeekAdvisor } from "./conversation/costSupplierDeepSeekAdvisor.js";
+export type {
+  CostSupplierEnrichment,
+  CostSupplierEnrichmentFinding,
+  CostSupplierEnrichmentInput,
+  CostSupplierActionableFinding,
+} from "./conversation/costSupplierDeepSeekAdvisor.js";
 
 export {
   applySupplierPricingPolicy,

@@ -7,6 +7,7 @@ import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
 import type { CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
+import type { CostSupplierDeepSeekAdvisor } from "../conversation/costSupplierDeepSeekAdvisor.js";
 import type { CreativeDeepSeekAdvisor } from "../conversation/creativeDeepSeekAdvisor.js";
 import { marketCatalogDaemon } from "./marketCatalogDaemon.js";
 import { operationsManagerDaemon } from "./operationsManagerDaemon.js";
@@ -48,6 +49,9 @@ export type DaemonSchedulerConfig = {
   /** Optional CatalogDeepSeekAdvisor for AI enrichment of market catalog signals
    *  in the market-catalog daemon. */
   catalogAdvisor?: CatalogDeepSeekAdvisor;
+  /** Optional CostSupplierDeepSeekAdvisor for AI enrichment of cost, margin, and
+   *  restock signals in the cost-supplier daemon. */
+  costSupplierAdvisor?: CostSupplierDeepSeekAdvisor;
   /** Optional CreativeDeepSeekAdvisor for AI enrichment of creative asset and
    *  commercial signals in the creative-assets and creative-commercial daemons. */
   creativeAdvisor?: CreativeDeepSeekAdvisor;
@@ -145,6 +149,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               advisor: config.advisor,
               operationsAdvisor: config.operationsAdvisor,
               catalogAdvisor: config.catalogAdvisor,
+              costSupplierAdvisor: config.costSupplierAdvisor,
               creativeAdvisor: config.creativeAdvisor,
             });
             config.bus.resolve(claim.messageId, result);
