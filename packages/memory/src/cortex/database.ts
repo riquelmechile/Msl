@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS probe_results (
 `;
 
 /**
+ * Check whether a column exists in a table (idempotent migration guard).
+ */
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return info.some((col) => col.name === column);
+}
+
+/**
  * Registered migration steps.  Each entry is a tuple of
  * `[targetVersion, sql]`.  Migrations are applied in version order and
  * each is wrapped in `INSERT OR IGNORE INTO schema_version`.
@@ -58,8 +66,8 @@ CREATE TABLE IF NOT EXISTS probe_results (
 const MIGRATIONS: Array<[number, string]> = [
   // Version 1: baseline — all tables created by SCHEMA_SQL above.
   [1, `INSERT OR IGNORE INTO schema_version (version) VALUES (1);`],
-  // Future migrations add rows here, e.g.:
-  // [2, `ALTER TABLE nodes ADD COLUMN created_at TEXT DEFAULT (datetime('now'));`],
+  // Version 2: seller-scoped Cortex columns (applied via columnExists guards in createDatabase).
+  [2, `INSERT OR IGNORE INTO schema_version (version) VALUES (2);`],
 ];
 
 /**
@@ -136,6 +144,20 @@ export function createDatabase(path = ":memory:"): Database.Database {
 
   // Run any pending migrations
   migrate(db);
+
+  // ── Idempotent column migrations: seller-scoped Cortex (PRAGMA table_info guard) ──
+  if (!columnExists(db, "nodes", "seller_id")) {
+    db.exec(`ALTER TABLE nodes ADD COLUMN seller_id TEXT DEFAULT 'unknown'`);
+  }
+  if (!columnExists(db, "edges", "seller_id")) {
+    db.exec(`ALTER TABLE edges ADD COLUMN seller_id TEXT`);
+  }
+  if (!columnExists(db, "darwinian_lessons", "seller_id")) {
+    db.exec(`ALTER TABLE darwinian_lessons ADD COLUMN seller_id TEXT`);
+  }
+
+  // Index for seller-scoped node queries
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_nodes_seller ON nodes(seller_id)`);
 
   return db;
 }

@@ -26,13 +26,13 @@ Chain strategy: stacked-to-main
 
 ## PR 2 — Cortex: Seller Scoping + Engine API
 
-- [ ] 2.1 Migrate `nodes`: `ALTER TABLE ADD COLUMN seller_id TEXT DEFAULT 'unknown'` + `CREATE INDEX idx_nodes_seller` (idempotent with `PRAGMA table_info` guard). **Spec**: neural-graph-memory (node schema)
-- [ ] 2.2 Migrate `edges` + `darwinian_lessons`: `ALTER TABLE ADD COLUMN seller_id TEXT` on both (idempotent). **Gate fix #1**. **Spec**: neural-graph-memory (graph schema)
-- [ ] 2.3 Scope engine in `packages/memory/src/cortex/engine.ts` — `createNode`, `getOrCreateNode`, `queryByMetadata` accept optional `sellerId`. New `getNodesBySeller()`. **Spec**: neural-graph-memory (creation, query)
-- [ ] 2.4 Scope Hebbian — `reinforceEdge`/`penalizeEdge` validate source/target share `sellerId`. Cross-seller requests rejected. **Spec**: neural-graph-memory (scoped-hebbian)
-- [ ] 2.5 Scope spreading — `spread()` accepts `sellerId` in `SpreadingOptions`. CTE filters `WHERE nodes.seller_id = ? OR NULL`. **Spec**: neural-graph-memory (scoped-spreading)
-- [ ] 2.6 Scope Darwinian — `prune(sellerId?)` evaluates only edges whose both endpoints match `sellerId`. **Spec**: neural-graph-memory (scoped-darwinian)
-- [ ] 2.7 Seed AccountAsset node — `getOrCreateNode("account_asset:{sellerId}")` with edges to listing/order/claim/strategy/lesson nodes. **Spec**: learning-pipeline (cortex-chain)
+- [x] 2.1 Migrate `nodes`: `ALTER TABLE ADD COLUMN seller_id TEXT DEFAULT 'unknown'` + `CREATE INDEX idx_nodes_seller` (idempotent with `PRAGMA table_info` guard). **Spec**: neural-graph-memory (node schema)
+- [x] 2.2 Migrate `edges` + `darwinian_lessons`: `ALTER TABLE ADD COLUMN seller_id TEXT` on both (idempotent). **Gate fix #1**. **Spec**: neural-graph-memory (graph schema)
+- [x] 2.3 Scope engine in `packages/memory/src/cortex/engine.ts` — `createNode`, `getOrCreateNode`, `queryByMetadata` accept optional `sellerId`. New `getNodesBySeller()`. **Spec**: neural-graph-memory (creation, query)
+- [x] 2.4 Scope Hebbian — `reinforceEdge`/`penalizeEdge` validate source/target share `sellerId`. Cross-seller requests rejected. **Spec**: neural-graph-memory (scoped-hebbian)
+- [x] 2.5 Scope spreading — `spread()` accepts `sellerId` in `SpreadingOptions`. CTE filters `WHERE nodes.seller_id = ? OR NULL`. **Spec**: neural-graph-memory (scoped-spreading)
+- [x] 2.6 Scope Darwinian — `prune(sellerId?)` evaluates only edges whose both endpoints match `sellerId`. **Spec**: neural-graph-memory (scoped-darwinian)
+- [x] 2.7 Seed AccountAsset node — `getOrCreateNode("account_asset:{sellerId}")` with edges to listing/order/claim/strategy/lesson nodes. **Spec**: learning-pipeline (cortex-chain)
 
 ## PR 3 — Daemon Iteration + Autonomy + Approval
 

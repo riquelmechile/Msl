@@ -60,6 +60,12 @@ export type SpreadingOptions = {
   activationThreshold?: number;
   /** Per-hop decay factor applied to activation (default 0.5) */
   decayFactor?: number;
+  /**
+   * Optional seller scoping — when provided, the recursive CTE only
+   * traverses edges whose endpoint nodes match this sellerId or are
+   * global (NULL / 'unknown').
+   */
+  sellerId?: string;
 };
 
 export class DuplicateEdgeError extends Error {
