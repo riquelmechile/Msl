@@ -5,6 +5,7 @@ import type {
   CreativeJobKind,
 } from "../../../contracts/creative-requests.js";
 import { MinimaxClient, MinimaxRequestError } from "./minimax-client.js";
+import type { MinimaxTransport } from "./minimaxTransport.js";
 
 // ── Supported video kinds ────────────────────────────────────────────
 
@@ -54,18 +55,24 @@ const QUALITY_MODEL = "MiniMax-Hailuo-2.3";
 // ── Provider ─────────────────────────────────────────────────────────
 
 export class MinimaxVideoProvider implements CreativeProvider {
-  private readonly client: MinimaxClient;
+  private readonly client: MinimaxClient | undefined;
+  private readonly transport: MinimaxTransport | undefined;
   private readonly defaultModel: string;
   private readonly pollIntervalMs: number;
   private readonly maxPollAttempts: number;
 
   constructor(
-    client: MinimaxClient,
+    client?: MinimaxClient,
     defaultModel?: string,
     pollIntervalMs?: number,
     maxPollAttempts?: number,
+    transport?: MinimaxTransport,
   ) {
+    if (!client && !transport) {
+      throw new Error("MinimaxVideoProvider: either client or transport must be provided");
+    }
     this.client = client;
+    this.transport = transport;
     this.defaultModel = defaultModel ?? FAST_MODEL;
     this.pollIntervalMs = pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.maxPollAttempts = maxPollAttempts ?? DEFAULT_MAX_POLL_ATTEMPTS;
@@ -126,31 +133,63 @@ export class MinimaxVideoProvider implements CreativeProvider {
     let previewUrl: string | undefined;
 
     try {
-      const result = await this.client.post<{
-        base_resp: { status_code: number; status_message: string };
-        task_id: string;
-      }>("/v1/video_generation", body);
+      if (this.transport) {
+        const result = await this.transport.createVideoTask({
+          model: modelConfig.model,
+          prompt,
+          duration,
+          resolution: modelConfig.resolution,
+          first_frame_image: firstFrameImage,
+        });
 
-      const baseResp = result.base_resp;
-      if (baseResp.status_code === 0 && result.task_id) {
-        taskId = result.task_id;
-        policyFlags.push(`task_id:${taskId}`);
+        const baseResp = result.base_resp;
+        if (baseResp.status_code === 0 && result.task_id) {
+          taskId = result.task_id;
+          policyFlags.push(`task_id:${taskId}`);
 
-        // Poll for completion
-        const pollResult = await this.pollVideoTask(taskId);
-        status = pollResult.status;
-        storageUri = pollResult.downloadUrl;
-        previewUrl = pollResult.downloadUrl;
+          // Poll for completion
+          const pollResult = await this.pollVideoTask(taskId);
+          status = pollResult.status;
+          storageUri = pollResult.downloadUrl;
+          previewUrl = pollResult.downloadUrl;
 
-        if (pollResult.downloadUrl) {
-          actualCost = modelConfig.costPerSecond * duration;
+          if (pollResult.downloadUrl) {
+            actualCost = modelConfig.costPerSecond * duration;
+          } else {
+            status = "failed";
+          }
         } else {
-          // Failed or timed out — mark as failed, no outputs
           status = "failed";
+          policyFlags = [`minimax_error:${baseResp.status_code}`];
         }
       } else {
-        status = "failed";
-        policyFlags = [`minimax_error:${baseResp.status_code}`];
+        const client = this.client!;
+        const result = await client.post<{
+          base_resp: { status_code: number; status_message: string };
+          task_id: string;
+        }>("/v1/video_generation", body);
+
+        const baseResp = result.base_resp;
+        if (baseResp.status_code === 0 && result.task_id) {
+          taskId = result.task_id;
+          policyFlags.push(`task_id:${taskId}`);
+
+          // Poll for completion
+          const pollResult = await this.pollVideoTask(taskId);
+          status = pollResult.status;
+          storageUri = pollResult.downloadUrl;
+          previewUrl = pollResult.downloadUrl;
+
+          if (pollResult.downloadUrl) {
+            actualCost = modelConfig.costPerSecond * duration;
+          } else {
+            // Failed or timed out — mark as failed, no outputs
+            status = "failed";
+          }
+        } else {
+          status = "failed";
+          policyFlags = [`minimax_error:${baseResp.status_code}`];
+        }
       }
     } catch (err) {
       if (err instanceof MinimaxRequestError) {
@@ -206,11 +245,20 @@ export class MinimaxVideoProvider implements CreativeProvider {
       await this.sleep(this.pollIntervalMs);
 
       try {
-        const queryResult = await this.client.post<{
+        let queryResult: {
           base_resp: { status_code: number; status_message: string };
           status: string;
-          file_id?: string;
-        }>("/v1/query/video_generation", { task_id: taskId });
+          file_id?: string | undefined;
+        };
+        if (this.transport) {
+          queryResult = await this.transport.queryVideoTask(taskId);
+        } else {
+          queryResult = await this.client!.post<{
+            base_resp: { status_code: number; status_message: string };
+            status: string;
+            file_id?: string;
+          }>("/v1/query/video_generation", { task_id: taskId });
+        }
 
         const baseResp = queryResult.base_resp;
         if (baseResp.status_code !== 0) {
@@ -248,8 +296,18 @@ export class MinimaxVideoProvider implements CreativeProvider {
    * Returns the file URL.
    */
   private async downloadFile(fileId: string): Promise<string> {
+    if (this.transport) {
+      const result = await this.transport.retrieveFile(fileId);
+
+      if (result.base_resp.status_code === 0 && result.file?.download_url) {
+        return result.file.download_url;
+      }
+      // Fallback: construct URL from file_id
+      return `minimax://files/${fileId}`;
+    }
+
     // MiniMax file retrieval endpoint returns the file content directly or a download URL
-    const result = await this.client.post<{
+    const result = await this.client!.post<{
       base_resp: { status_code: number; status_message: string };
       file?: { download_url: string };
     }>("/v1/files/retrieve", { file_id: fileId });

@@ -101,6 +101,7 @@ export class DeepSeekRealTransport implements DeepSeekTransport {
       stream: true,
       ...(request.tools ? { tools: request.tools } : {}),
       ...(request.tool_choice ? { tool_choice: request.tool_choice } : {}),
+      ...(request.extra_body ? { extra_body: request.extra_body } : {}),
     } as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming);
 
     for await (const chunk of stream) {

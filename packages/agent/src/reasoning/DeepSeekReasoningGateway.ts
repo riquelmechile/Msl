@@ -1,12 +1,13 @@
 import crypto from "node:crypto";
-import OpenAI from "openai";
 
 import type { AutonomyEngine } from "../conversation/autonomyEngine.js";
-import {
-  buildDeepSeekChatCompletionRequest,
-  resolveDeepSeekUserId,
-} from "../conversation/deepseekRuntime.js";
+import { resolveDeepSeekUserId } from "../conversation/deepseekRuntime.js";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
+import type {
+  DeepSeekTransport,
+  DeepSeekChatRequest,
+  DeepSeekChatResponse,
+} from "../conversation/transports/deepseekTransport.js";
 
 import { estimateCost } from "./costEstimator.js";
 import { selectModel } from "./modelRouter.js";
@@ -23,10 +24,10 @@ import type {
 /**
  * Unified DeepSeek reasoning gateway.
  *
- * Wraps the shared OpenAI singleton and standardizes:
+ * Wraps a DeepSeekTransport and standardizes:
  * - Model selection (Flash default, Pro escalation)
  * - 3-block prompt cache (stable + cacheable + volatile)
- * - Per-level timeout via AbortController
+ * - Per-level timeout via Promise.race
  * - Structured output validation
  * - Cost ledger recording
  * - Autonomy gate integration
@@ -34,12 +35,16 @@ import type {
  * Never throws — all errors return `status: "fallback"`.
  */
 export class DeepSeekReasoningGateway {
-  private client: OpenAI;
+  private transport: DeepSeekTransport;
   private readonly ledger: WorkforceCostCacheLedgerStore | undefined;
   private readonly autonomy: AutonomyEngine | undefined;
 
-  constructor(client: OpenAI, ledger?: WorkforceCostCacheLedgerStore, autonomy?: AutonomyEngine) {
-    this.client = client;
+  constructor(
+    transport: DeepSeekTransport,
+    ledger?: WorkforceCostCacheLedgerStore,
+    autonomy?: AutonomyEngine,
+  ) {
+    this.transport = transport;
     this.ledger = ledger;
     this.autonomy = autonomy;
   }
@@ -66,32 +71,33 @@ export class DeepSeekReasoningGateway {
       // 2. Build 3-block prompt
       const messages = this.buildPrompt(call);
 
-      // 3. Timeout via AbortController
+      // 3. Timeout via Promise.race
       const timeoutMs = getLevelTimeout(call.level, call.timeoutMs);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-      let completion;
+      const userId = resolveDeepSeekUserId({ laneId: call.laneId });
+      const deepSeekRequest: DeepSeekChatRequest = {
+        model,
+        messages,
+        stream: false,
+        ...(userId ? { extra_body: { user_id: userId } } : {}),
+      };
+
+      let response: DeepSeekChatResponse;
       try {
-        const userId = resolveDeepSeekUserId({ laneId: call.laneId });
-        const request = buildDeepSeekChatCompletionRequest({
-          model,
-          messages,
-          response_format: { type: "json_object" } as const,
-          stream: false as const,
-          ...(userId ? { userId, user: userId } : {}),
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("DeepSeekGateway timeout")), timeoutMs);
         });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        completion = await this.client.chat.completions.create(request as any, {
-          signal: controller.signal,
-        });
+        response = await Promise.race([
+          this.transport.createChatCompletion(deepSeekRequest),
+          timeoutPromise,
+        ]);
       } finally {
-        clearTimeout(timeoutId);
+        if (timeoutId) clearTimeout(timeoutId);
       }
 
       // 4. Extract raw response
-      const raw = completion.choices[0]?.message?.content;
+      const raw = response.choices[0]?.message.content;
       if (!raw) return this.fallback("Empty response from DeepSeek");
 
       // 5. Parse JSON
@@ -108,10 +114,8 @@ export class DeepSeekReasoningGateway {
       }
 
       // 7. Build cost telemetry
-      const usage = completion.usage;
-      const rawPromptDetails = usage?.prompt_tokens_details as
-        { cached_tokens?: number } | undefined;
-      const cacheHitTokens = rawPromptDetails?.cached_tokens ?? 0;
+      const usage = response.usage;
+      const cacheHitTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
       const cacheMissTokens = usage?.prompt_tokens ?? 0;
       const outputTokens = usage?.completion_tokens ?? 0;
 

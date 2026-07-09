@@ -32,3 +32,22 @@ export { MlDiagnosticAdapter } from "./infrastructure/ml-diagnostic-adapter.js";
 export type { MlDiagnosticAdapterConfig } from "./infrastructure/ml-diagnostic-adapter.js";
 export { CortexBridge } from "./application/cortex-bridge.js";
 export type { CortexSink, CortexOutcome, AuditEvent } from "./application/cortex-bridge.js";
+
+// ── MiniMax Transport (abstracted provider) ─────────────────────────
+export { createMinimaxProviderFromEnv } from "./infrastructure/providers/minimax/minimaxFactory.js";
+export {
+  MinimaxRealTransport,
+  MinimaxFakeTransport,
+  MinimaxFixtureTransport,
+} from "./infrastructure/providers/minimax/minimaxTransport.js";
+export type {
+  MinimaxTransport,
+  MinimaxImageRequest,
+  MinimaxImageResponse,
+  MinimaxVideoRequest,
+  MinimaxVideoResponse,
+  MinimaxVideoQueryResponse,
+  MinimaxFileRetrieveResponse,
+} from "./infrastructure/providers/minimax/minimaxTransport.js";
+export { classifyMinimaxError } from "./infrastructure/providers/minimax/minimaxErrors.js";
+export type { MinimaxErrorCategory } from "./infrastructure/providers/minimax/minimaxErrors.js";

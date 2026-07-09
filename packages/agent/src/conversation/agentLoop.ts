@@ -1,10 +1,7 @@
-import OpenAI from "openai";
+import type { DeepSeekTransport } from "./transports/deepseekTransport.js";
+import { createDeepSeekProviderFromEnv } from "./transports/deepseekFactory.js";
 
-import {
-  buildDeepSeekChatCompletionRequest,
-  resolveDeepSeekRuntimeConfig,
-  resolveDeepSeekUserId,
-} from "./deepseekRuntime.js";
+import { resolveDeepSeekRuntimeConfig, resolveDeepSeekUserId } from "./deepseekRuntime.js";
 import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
@@ -111,7 +108,6 @@ import {
   buildWorkforceSkillContext,
   buildConsensusContext,
   buildMessages,
-  createDeepSeekClient,
   createOpenAiToolDefinitions,
   extractPromptCacheTelemetry,
   resolveTurnOutcome,
@@ -160,6 +156,7 @@ export type AgentLoopConfig = {
   systemPrompt: string;
   mockClient?: boolean;
   llmClient?: LlmClient;
+  deepSeekTransport?: DeepSeekTransport;
   model?: string;
   sellerId?: string;
   deepSeekUserId?: string;
@@ -217,7 +214,31 @@ export function createAgentLoop(config: AgentLoopConfig) {
     ...(config.activeCompanyAgentId ? { agentId: config.activeCompanyAgentId } : {}),
   };
   const deepSeekUserId = config.deepSeekUserId ?? resolveDeepSeekUserId(deepSeekRouting);
-  const openai = config.mockClient ? null : createDeepSeekClient(deepSeekRuntime);
+
+  // ── Transport resolution ────────────────────────────────────────
+  // Resolve transport from config, environment, or fallback.
+  const isProduction =
+    process.env["NODE_ENV"] === "production" || process.env["MSL_RUNTIME_MODE"] === "production";
+
+  let transport: DeepSeekTransport | undefined;
+  if (config.deepSeekTransport) {
+    transport = config.deepSeekTransport;
+  } else if (!config.mockClient) {
+    if (isProduction && !process.env["DEEPSEEK_API_KEY"]) {
+      throw new Error(
+        "MSL_RUNTIME_MODE is production but DEEPSEEK_API_KEY is missing. " +
+          "Configure it or provide a deepSeekTransport.",
+      );
+    }
+    transport = createDeepSeekProviderFromEnv(process.env);
+  }
+
+  // Real transport is available when config provides it explicitly or
+  // DEEPSEEK_API_KEY is set in the environment.
+  const hasRealTransport = !!(
+    config.deepSeekTransport ??
+    (!config.mockClient && process.env["DEEPSEEK_API_KEY"])
+  );
   const tools = config.tools ?? [];
   const toolMap = new Map(tools.map((t) => [t.name, t]));
 
@@ -334,10 +355,10 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.supplierMirrorStore) {
     let advisor: SupplierMirrorDeepSeekAdvisor | undefined;
-    if (openai && config.sellerId && config.workforceCostCacheLedgerStore) {
+    if (hasRealTransport && transport && config.sellerId && config.workforceCostCacheLedgerStore) {
       advisor = new SupplierMirrorDeepSeekAdvisor({
         store: config.supplierMirrorStore,
-        openai,
+        transport,
         sellerIds: [config.sellerId],
         ledger: config.workforceCostCacheLedgerStore,
       });
@@ -356,9 +377,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
   // The scheduler extracts it from config and injects into the
   // operations-manager daemon for claim and reputation enrichment.
   const operationsDeepSeekAdvisor: OperationsDeepSeekAdvisor | undefined =
-    openai && config.sellerId && config.workforceCostCacheLedgerStore
+    hasRealTransport && transport && config.sellerId && config.workforceCostCacheLedgerStore
       ? new OperationsDeepSeekAdvisor({
-          openai,
+          transport,
           sellerIds: [config.sellerId],
           ledger: config.workforceCostCacheLedgerStore,
         })
@@ -369,9 +390,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
   // The scheduler extracts it from config and injects into the
   // market-catalog daemon for low-visit, above-market, and relist-expiring enrichment.
   const catalogDeepSeekAdvisor: CatalogDeepSeekAdvisor | undefined =
-    openai && config.sellerId && config.workforceCostCacheLedgerStore
+    hasRealTransport && transport && config.sellerId && config.workforceCostCacheLedgerStore
       ? new CatalogDeepSeekAdvisor({
-          openai,
+          transport,
           sellerIds: [config.sellerId],
           ledger: config.workforceCostCacheLedgerStore,
         })
@@ -382,9 +403,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
   // The scheduler extracts it from config and injects into the
   // creative-assets and creative-commercial daemons for creative signal enrichment.
   const creativeDeepSeekAdvisor: CreativeDeepSeekAdvisor | undefined =
-    openai && config.sellerId && config.workforceCostCacheLedgerStore
+    hasRealTransport && transport && config.sellerId && config.workforceCostCacheLedgerStore
       ? new CreativeDeepSeekAdvisor({
-          openai,
+          transport,
           sellerIds: [config.sellerId],
           ledger: config.workforceCostCacheLedgerStore,
         })
@@ -395,9 +416,9 @@ export function createAgentLoop(config: AgentLoopConfig) {
   // The scheduler extracts it from config and injects into the
   // cost-supplier daemon for margin, cost, and restock enrichment.
   const costSupplierDeepSeekAdvisor: CostSupplierDeepSeekAdvisor | undefined =
-    openai && config.sellerId && config.workforceCostCacheLedgerStore
+    hasRealTransport && transport && config.sellerId && config.workforceCostCacheLedgerStore
       ? new CostSupplierDeepSeekAdvisor({
-          openai,
+          transport,
           sellerIds: [config.sellerId],
           ledger: config.workforceCostCacheLedgerStore,
         })
@@ -522,8 +543,8 @@ export function createAgentLoop(config: AgentLoopConfig) {
 
   const client: LlmClient =
     config.llmClient ??
-    (openai && !config.mockClient
-      ? createRealClient(openai, model, toolMap, deepSeekUserId, config.sellerId)
+    (hasRealTransport && transport && !config.mockClient
+      ? createRealClientFromTransport(transport, model, toolMap, deepSeekUserId, config.sellerId)
       : config.mockClient
         ? createMockClient(toolMap)
         : createNoopClient());
@@ -1192,11 +1213,11 @@ function handleStrategyCommand(
 }
 
 // ---------------------------------------------------------------------------
-// DeepSeek client (real) via OpenAI SDK
+// DeepSeek client (real) via DeepSeekTransport
 // ---------------------------------------------------------------------------
 
-function createRealClient(
-  openai: OpenAI,
+function createRealClientFromTransport(
+  transport: DeepSeekTransport,
   model: string,
   toolMap: Map<string, ToolDefinition>,
   userId?: string,
@@ -1204,25 +1225,27 @@ function createRealClient(
 ): LlmClient {
   const openAiTools = createOpenAiToolDefinitions(toolMap.values());
 
+  const extraBody: Record<string, string> | undefined = userId?.trim()
+    ? { user_id: userId.trim() }
+    : undefined;
+
+  void sellerId; // reserved for future routing — kept for signature compatibility
+
   return {
     async chat(messages) {
-      const request = buildDeepSeekChatCompletionRequest({
+      const response = await transport.createChatCompletion({
         model,
         messages,
-        ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: false,
-        ...(userId ? { userId } : {}),
-        ...(sellerId ? { user: sellerId } : {}),
+        ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
+        ...(extraBody ? { extra_body: extraBody } : {}),
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-      const completion = await openai.chat.completions.create(request as any);
 
-      const choice = completion.choices[0];
+      const choice = response.choices[0];
       const toolCalls = choice?.message?.tool_calls?.map((tc) => {
-        const name = "function" in tc ? tc.function.name : "";
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const args = "function" in tc ? JSON.parse(tc.function.arguments) : {};
-        return { name, arguments: args as Record<string, unknown> };
+        const args = JSON.parse(tc.function.arguments);
+        return { name: tc.function.name, arguments: args as Record<string, unknown> };
       });
 
       const result: {
@@ -1232,40 +1255,29 @@ function createRealClient(
       } = {
         content: choice?.message?.content ?? "",
       };
-      if (toolCalls) {
+      if (toolCalls && toolCalls.length > 0) {
         result.toolCalls = toolCalls;
       }
-      if (completion.usage) {
+      if (response.usage) {
         result.usage = {
           provider: "deepseek",
           model,
-          usage: completion.usage as unknown as Record<string, unknown>,
+          usage: response.usage,
         };
       }
       return result;
     },
 
     async *stream(messages) {
-      const request = buildDeepSeekChatCompletionRequest({
+      for await (const chunk of transport.streamChatCompletion({
         model,
         messages,
-        ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
         stream: true,
-        ...(userId ? { userId } : {}),
-        ...(sellerId ? { user: sellerId } : {}),
-      });
-      const stream = (await openai.chat.completions.create(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        request as any,
-      )) as unknown as AsyncIterable<{ choices?: Array<{ delta?: { content?: string | null } }> }>;
-
-      for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta?.content;
-        if (delta) {
-          yield { delta, done: false };
-        }
+        ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
+        ...(extraBody ? { extra_body: extraBody } : {}),
+      })) {
+        yield chunk;
       }
-      yield { delta: "", done: true };
     },
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import OpenAI from "openai";
 import { DeepSeekReasoningGateway } from "../../src/reasoning/DeepSeekReasoningGateway.js";
+import { DeepSeekRealTransport } from "../../src/conversation/transports/deepseekTransport.js";
 import { ReasoningLevel } from "../../src/reasoning/reasoningTypes.js";
 import type { ReasoningCall } from "../../src/reasoning/reasoningTypes.js";
 import type { WorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
@@ -83,7 +83,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("returns status success for a valid classification call", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall());
 
     expect(result.status).toBe("success");
@@ -97,7 +99,9 @@ describe("DeepSeekReasoningGateway", () => {
       makeSuccessResponse(JSON.stringify({ findings: [{ kind: "alert" }] })),
     );
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall());
 
     expect(result.status).toBe("success");
@@ -109,7 +113,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("passes 3-block prompt to OpenAI with stable prefix, cacheable context, and volatile input", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     await gateway.reason(
       makeCall({
         stablePrefix: "STABLE",
@@ -134,7 +140,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("builds 2-block prompt when cacheableContext is omitted", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     await gateway.reason(
       // Omit cacheableContext to test 2-block prompt
       makeCall({
@@ -157,7 +165,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("uses deepseek-v4-flash for classification by default", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     await gateway.reason(makeCall({ level: ReasoningLevel.Classification }));
     const callArgs = mockCreate.mock.calls[0]![0] as { model: string };
     expect(callArgs.model).toBe("deepseek-v4-flash");
@@ -166,7 +176,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("uses deepseek-v4-pro for recommendation", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     await gateway.reason(makeCall({ level: ReasoningLevel.Recommendation }));
     const callArgs = mockCreate.mock.calls[0]![0] as { model: string };
     expect(callArgs.model).toBe("deepseek-v4-pro");
@@ -175,7 +187,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("uses deepseek-v4-pro for decision", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     await gateway.reason(makeCall({ level: ReasoningLevel.Decision }));
     const callArgs = mockCreate.mock.calls[0]![0] as { model: string };
     expect(callArgs.model).toBe("deepseek-v4-pro");
@@ -184,7 +198,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("forcePro forces deepseek-v4-pro for classification", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     await gateway.reason(makeCall({ level: ReasoningLevel.Classification, forcePro: true }));
     const callArgs = mockCreate.mock.calls[0]![0] as { model: string };
     expect(callArgs.model).toBe("deepseek-v4-pro");
@@ -195,7 +211,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("returns status fallback on network error (never throws)", async () => {
     mockCreate.mockRejectedValueOnce(new Error("Network failure"));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall());
 
     expect(result.status).toBe("fallback");
@@ -209,7 +227,9 @@ describe("DeepSeekReasoningGateway", () => {
       usage: { prompt_tokens: 0, completion_tokens: 0 },
     });
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall());
 
     expect(result.status).toBe("fallback");
@@ -222,7 +242,9 @@ describe("DeepSeekReasoningGateway", () => {
       usage: { prompt_tokens: 10, completion_tokens: 5 },
     });
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall());
 
     expect(result.status).toBe("fallback");
@@ -232,7 +254,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("returns status fallback on schema mismatch (never throws)", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"unexpected": "shape"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(
       makeCall({
         expectedSchema: {
@@ -252,7 +276,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("returns fallback when the request times out", async () => {
     mockCreate.mockRejectedValueOnce(new DOMException("The operation was aborted", "AbortError"));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall({ level: ReasoningLevel.Classification }));
 
     expect(result.status).toBe("fallback");
@@ -265,7 +291,7 @@ describe("DeepSeekReasoningGateway", () => {
 
     const autonomy = makeMockAutonomy(true); // canAutoApprove returns true
     const gateway = new DeepSeekReasoningGateway(
-      new OpenAI({ apiKey: "test" }),
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
       undefined,
       autonomy,
     );
@@ -279,7 +305,7 @@ describe("DeepSeekReasoningGateway", () => {
 
     const autonomy = makeMockAutonomy(false); // canAutoApprove returns false
     const gateway = new DeepSeekReasoningGateway(
-      new OpenAI({ apiKey: "test" }),
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
       undefined,
       autonomy,
     );
@@ -293,7 +319,7 @@ describe("DeepSeekReasoningGateway", () => {
 
     const autonomy = makeMockAutonomy(true);
     const gateway = new DeepSeekReasoningGateway(
-      new OpenAI({ apiKey: "test" }),
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
       undefined,
       autonomy,
     );
@@ -307,7 +333,7 @@ describe("DeepSeekReasoningGateway", () => {
 
     const autonomy = makeMockAutonomy(true);
     const gateway = new DeepSeekReasoningGateway(
-      new OpenAI({ apiKey: "test" }),
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
       undefined,
       autonomy,
     );
@@ -322,7 +348,10 @@ describe("DeepSeekReasoningGateway", () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
     const ledger = makeMockLedger();
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), ledger);
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+      ledger,
+    );
     await gateway.reason(makeCall());
 
     expect(ledger.insertEntry).toHaveBeenCalledTimes(1); // eslint-disable-line @typescript-eslint/unbound-method
@@ -343,7 +372,10 @@ describe("DeepSeekReasoningGateway", () => {
 
     const constructorLedger = makeMockLedger();
     const overrideLedger = makeMockLedger();
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), constructorLedger);
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+      constructorLedger,
+    );
     await gateway.reason(makeCall(), overrideLedger);
 
     // override ledger should be used, not constructor ledger
@@ -359,7 +391,10 @@ describe("DeepSeekReasoningGateway", () => {
       throw new Error("Ledger full");
     });
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), ledger);
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+      ledger,
+    );
     const result = await gateway.reason(makeCall());
 
     // Should still return success even if ledger recording fails
@@ -371,7 +406,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("returns costTelemetry with all fields populated on success", async () => {
     mockCreate.mockResolvedValueOnce(makeSuccessResponse('{"result": "ok"}'));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall());
 
     expect(result.costTelemetry).toMatchObject({
@@ -392,7 +429,9 @@ describe("DeepSeekReasoningGateway", () => {
   it("returns zero costTelemetry on fallback", async () => {
     mockCreate.mockRejectedValueOnce(new Error("fail"));
 
-    const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
+    const gateway = new DeepSeekReasoningGateway(
+      new DeepSeekRealTransport("test", "https://api.deepseek.com"),
+    );
     const result = await gateway.reason(makeCall());
 
     expect(result.costTelemetry).toEqual({

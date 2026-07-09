@@ -311,6 +311,37 @@ export type {
 export { validateRuntimeEnv } from "./conversation/validateEnv.js";
 export type { EnvValidation } from "./conversation/validateEnv.js";
 
+// ── Production secrets validation ───────────────────────────────────
+export {
+  validateProductionSecrets,
+  formatProductionValidation,
+} from "./conversation/validateProductionSecrets.js";
+export type {
+  ProductionValidation,
+  SecretCheck,
+  ProductionSecretStatus,
+} from "./conversation/validateProductionSecrets.js";
+
+// ── DeepSeek Transport (abstracted LLM client) ──────────────────────
+export { createDeepSeekProviderFromEnv } from "./conversation/transports/deepseekFactory.js";
+export {
+  DeepSeekRealTransport,
+  DeepSeekFakeTransport,
+  DeepSeekFixtureTransport,
+} from "./conversation/transports/deepseekTransport.js";
+export type {
+  DeepSeekTransport,
+  DeepSeekModel,
+  DeepSeekChatRequest,
+  DeepSeekChatResponse,
+  DeepSeekStreamChunk,
+} from "./conversation/transports/deepseekTransport.js";
+export {
+  DeepSeekRequestError,
+  classifyDeepSeekError,
+} from "./conversation/transports/deepseekErrors.js";
+export type { DeepSeekErrorCategory } from "./conversation/transports/deepseekErrors.js";
+
 // ── Webhook ingestor ─────────────────────────────────────────────────
 export { createWebhookIngestor } from "./conversation/webhookIngestor.js";
 export type {
