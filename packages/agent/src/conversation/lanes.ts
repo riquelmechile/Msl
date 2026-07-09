@@ -342,6 +342,110 @@ export const PRODUCT_ADS_CEO_PROFITABILITY_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const MORNING_REPORT_LANE: LaneContract = {
+  laneId: "morning-report",
+  label: "Morning Report",
+  stablePrefix: [
+    "You are the Morning Report lane.",
+    "Generate a daily morning briefing with overnight activity across all sellers.",
+    "Summarize new orders, open claims, unanswered questions, and reputation changes since midnight.",
+    "Prioritize alerts needing immediate attention and enqueue findings to the CEO.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "overnight orders, claims, questions, and reputation delta evidence",
+  inputs: [
+    "overnight order snapshots",
+    "open claim snapshots",
+    "unanswered question snapshots",
+    "reputation delta evidence",
+  ],
+  outputs: [
+    "morning briefing summary",
+    "priority alerts",
+    "evidence IDs",
+  ],
+  boundaries: [
+    "report-only: never respond to buyers, resolve claims, or execute mutations",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: [
+    "order-snapshot",
+    "claim-snapshot",
+    "question-snapshot",
+    "reputation-snapshot",
+  ],
+  credentialScope: "provider-default",
+};
+
+export const EOD_SUMMARY_LANE: LaneContract = {
+  laneId: "eod-summary",
+  label: "End-of-Day Summary",
+  stablePrefix: [
+    "You are the End-of-Day Summary lane.",
+    "Generate a daily end-of-day summary of activity across all sellers.",
+    "Report total orders, sales value, claims resolved vs pending, questions answered vs unanswered, and action items for tomorrow.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "day's orders, claims, questions, proposals, and resolution evidence",
+  inputs: [
+    "today's order snapshots",
+    "claim resolution evidence",
+    "question status evidence",
+    "proposal outcomes",
+  ],
+  outputs: [
+    "end-of-day summary",
+    "completion rate",
+    "action items",
+    "evidence IDs",
+  ],
+  boundaries: [
+    "report-only: never respond to buyers, resolve claims, or execute mutations",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: [
+    "order-snapshot",
+    "claim-snapshot",
+    "question-snapshot",
+    "resolution",
+  ],
+  credentialScope: "provider-default",
+};
+
+export const UNANSWERED_QUESTIONS_LANE: LaneContract = {
+  laneId: "unanswered-questions",
+  label: "Unanswered Questions Monitor",
+  stablePrefix: [
+    "You are the Unanswered Questions Monitor lane.",
+    "Monitor buyer questions across all sellers and detect questions that have not received a seller response past the deadline.",
+    "Group unanswered questions by seller and enqueue aggregated CEO proposals with question text, aging, and priority.",
+    "Never answer questions directly — enqueue findings to the CEO for review.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "unanswered question snapshots across sellers",
+  inputs: [
+    "unanswered question snapshots",
+    "seller response evidence",
+  ],
+  outputs: [
+    "per-seller unanswered question list",
+    "aging analysis",
+    "priority assessment",
+    "evidence IDs",
+  ],
+  boundaries: [
+    "proposal-only: never answer questions or message buyers directly",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: [
+    "question-snapshot",
+  ],
+  credentialScope: "provider-default",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
@@ -355,6 +459,9 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   PRODUCT_ADS_CEO_PROFITABILITY_LANE,
   PRODUCT_ADS_PROFITABILITY_LANE,
   SUPPLIER_MANAGER_LANE,
+  MORNING_REPORT_LANE,
+  EOD_SUMMARY_LANE,
+  UNANSWERED_QUESTIONS_LANE,
 ];
 
 export function getLaneContract(laneId: LaneId): LaneContract {

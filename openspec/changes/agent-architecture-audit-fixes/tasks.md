@@ -43,11 +43,11 @@ Chain strategy: stacked-to-main
 
 ## PR3: Lane Contract Completeness (~300 lines)
 
-- [ ] 3.1 Add 3 lanes to `LANE_CONTRACTS` in `lanes.ts`
-- [ ] 3.2 Create `ownedEcommerceDaemon.ts` — investigate → CEO proposals
-- [ ] 3.3 Create `unansweredQuestionsDaemon.ts` — investigate → aggregated proposals
-- [ ] 3.4 Register both daemons in `daemonScheduler.ts`
-- [ ] 3.5 Tests: contracts, DaemonResult contract
+- [x] 3.1 Add 3 lanes to `LANE_CONTRACTS` in `lanes.ts`
+- [x] 3.2 Create `ownedEcommerceDaemon.ts` — investigate → CEO proposals
+- [x] 3.3 Create `unansweredQuestionsDaemon.ts` — investigate → aggregated proposals
+- [x] 3.4 Register both daemons in `daemonScheduler.ts`
+- [x] 3.5 Tests: contracts, DaemonResult contract
 
 ## PR4: Proposal Router + Durability (~250 lines)
 

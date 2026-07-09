@@ -27,6 +27,8 @@ import { ceoProfitabilityHandler } from "./ceoProfitabilityHandler.js";
 import { supplierManagerDaemon } from "./supplierManagerDaemon.js";
 import { morningReportDaemon } from "./morningReportDaemon.js";
 import { eodSummaryDaemon } from "./eodSummaryDaemon.js";
+import { ownedEcommerceDaemon } from "./ownedEcommerceDaemon.js";
+import { unansweredQuestionsDaemon } from "./unansweredQuestionsDaemon.js";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -82,6 +84,8 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "supplier-manager": supplierManagerDaemon,
   "morning-report": morningReportDaemon,
   "eod-summary": eodSummaryDaemon,
+  "owned-ecommerce": ownedEcommerceDaemon,
+  "unanswered-questions": unansweredQuestionsDaemon,
 };
 
 // ── Cycle-level cache ───────────────────────────────────────────────

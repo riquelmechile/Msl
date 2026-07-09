@@ -5,6 +5,7 @@ import { createSqliteOperationalReadModel } from "@msl/memory";
 import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { startDaemonScheduler, enqueueDaemonTick } from "../../src/workers/daemonScheduler.js";
+import { listCompanyAgents } from "../../src/conversation/companyAgents.js";
 
 // ── Scheduler Tests ─────────────────────────────────────────────────
 
@@ -180,6 +181,57 @@ describe("daemonScheduler", () => {
     });
   });
 
+  // ── Lane registration ──────────────────────────────────────────
+
+  describe("lane registration", () => {
+    it("includes morning-report in COMPANY_AGENTS", () => {
+      const agents = listCompanyAgents();
+      const morningReport = agents.find((a) => a.id === "morning-report");
+      expect(morningReport).toBeDefined();
+      expect(morningReport!.profile.laneId).toBe("morning-report");
+      expect(morningReport!.profile.noMutationBoundary).toBe(true);
+    });
+
+    it("includes eod-summary in COMPANY_AGENTS", () => {
+      const agents = listCompanyAgents();
+      const eod = agents.find((a) => a.id === "eod-summary");
+      expect(eod).toBeDefined();
+      expect(eod!.profile.laneId).toBe("eod-summary");
+      expect(eod!.profile.noMutationBoundary).toBe(true);
+    });
+
+    it("includes unanswered-questions in COMPANY_AGENTS", () => {
+      const agents = listCompanyAgents();
+      const uq = agents.find((a) => a.id === "unanswered-questions");
+      expect(uq).toBeDefined();
+      expect(uq!.profile.laneId).toBe("unanswered-questions");
+      expect(uq!.profile.noMutationBoundary).toBe(true);
+    });
+
+    it("includes all 4 new lanes in COMPANY_AGENTS", () => {
+      const agents = listCompanyAgents();
+      const laneIds = agents.map((a) => a.id);
+      expect(laneIds).toContain("morning-report");
+      expect(laneIds).toContain("eod-summary");
+      expect(laneIds).toContain("unanswered-questions");
+      expect(laneIds).toContain("owned-ecommerce");
+    });
+
+    it("enqueues ticks for the new owned-ecommerce and unanswered-questions lanes", () => {
+      enqueueDaemonTick(bus);
+
+      const tickRows = db
+        .prepare(
+          "SELECT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
+        )
+        .all() as Array<{ receiver_agent_id: string }>;
+
+      const laneIds = tickRows.map((r) => r.receiver_agent_id);
+      expect(laneIds).toContain("owned-ecommerce");
+      expect(laneIds).toContain("unanswered-questions");
+    });
+  });
+
   describe("enqueueDaemonTick", () => {
     it("enqueues one tick per registered lane", () => {
       enqueueDaemonTick(bus);
@@ -189,7 +241,7 @@ describe("daemonScheduler", () => {
         .prepare("SELECT receiver_agent_id, message_type FROM agent_message_bus WHERE message_type = 'daemon-tick'")
         .all() as Array<{ receiver_agent_id: string; message_type: string }>;
 
-      // We have 12 lanes in daemonHandlerMap
+      // We have 14 lanes in daemonHandlerMap
       expect(tickRows.length).toBeGreaterThan(0);
 
       // All ticks should have correct message type
