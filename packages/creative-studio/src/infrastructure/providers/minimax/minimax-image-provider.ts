@@ -5,6 +5,7 @@ import type {
   CreativeJobKind,
 } from "../../../contracts/creative-requests.js";
 import { MinimaxClient, MinimaxRequestError } from "./minimax-client.js";
+import type { MinimaxTransport } from "./minimaxTransport.js";
 
 // ── Supported image kinds ────────────────────────────────────────────
 
@@ -41,11 +42,16 @@ const CHANNEL_ASPECT_RATIOS: Record<string, string> = {
 // ── Provider ─────────────────────────────────────────────────────────
 
 export class MinimaxImageProvider implements CreativeProvider {
-  private readonly client: MinimaxClient;
+  private readonly client: MinimaxClient | undefined;
+  private readonly transport: MinimaxTransport | undefined;
   private readonly modelConfig: ImageModelConfig;
 
-  constructor(client: MinimaxClient, modelName?: string) {
+  constructor(client?: MinimaxClient, modelName?: string, transport?: MinimaxTransport) {
+    if (!client && !transport) {
+      throw new Error("MinimaxImageProvider: either client or transport must be provided");
+    }
     this.client = client;
+    this.transport = transport;
     const resolved =
       IMAGE_MODELS[modelName ?? DEFAULT_IMAGE_MODEL] ?? IMAGE_MODELS[DEFAULT_IMAGE_MODEL];
     if (!resolved) throw new Error(`Unknown image model: ${modelName ?? DEFAULT_IMAGE_MODEL}`);
@@ -74,42 +80,66 @@ export class MinimaxImageProvider implements CreativeProvider {
     // ML format: explicitly request 1200×1200 for MercadoLibre (in addition to aspect_ratio)
     const isMl = request.channel === "mercadolibre";
 
-    const body: Record<string, unknown> = {
-      model: this.modelConfig.model,
-      prompt,
-      aspect_ratio: aspectRatio,
-      n: 1,
-      response_format: "url",
-    };
-
-    if (isMl) {
-      body.width = 1200;
-      body.height = 1200;
-    }
-
-    if (subjectReference) {
-      body.subject_reference = subjectReference;
-    }
-
     let imageUrl = "";
     let status: string;
     let actualCost: number | undefined;
     let policyFlags: string[] = [];
 
     try {
-      const result = await this.client.post<{
-        base_resp: { status_code: number; status_message: string };
-        data: Array<{ image_url: string }>;
-      }>("/v1/image_generation", body);
+      if (this.transport) {
+        const result = await this.transport.createImageTask({
+          model: this.modelConfig.model,
+          prompt,
+          aspect_ratio: aspectRatio,
+          n: 1,
+          response_format: "url",
+          width: isMl ? 1200 : undefined,
+          height: isMl ? 1200 : undefined,
+          subject_reference: subjectReference,
+        });
 
-      const baseResp = result.base_resp;
-      if (baseResp.status_code === 0) {
-        status = "needs-human-review";
-        imageUrl = result.data?.[0]?.image_url ?? "";
-        actualCost = this.modelConfig.costPerCall;
+        const baseResp = result.base_resp;
+        if (baseResp.status_code === 0) {
+          status = "needs-human-review";
+          imageUrl = result.data?.[0]?.image_url ?? "";
+          actualCost = this.modelConfig.costPerCall;
+        } else {
+          status = "failed";
+          policyFlags = [`minimax_error:${baseResp.status_code}`];
+        }
       } else {
-        status = "failed";
-        policyFlags = [`minimax_error:${baseResp.status_code}`];
+        const client = this.client!;
+        const resultBody: Record<string, unknown> = {
+          model: this.modelConfig.model,
+          prompt,
+          aspect_ratio: aspectRatio,
+          n: 1,
+          response_format: "url",
+        };
+
+        if (isMl) {
+          resultBody.width = 1200;
+          resultBody.height = 1200;
+        }
+
+        if (subjectReference) {
+          resultBody.subject_reference = subjectReference;
+        }
+
+        const result = await client.post<{
+          base_resp: { status_code: number; status_message: string };
+          data: Array<{ image_url: string }>;
+        }>("/v1/image_generation", resultBody);
+
+        const baseResp = result.base_resp;
+        if (baseResp.status_code === 0) {
+          status = "needs-human-review";
+          imageUrl = result.data?.[0]?.image_url ?? "";
+          actualCost = this.modelConfig.costPerCall;
+        } else {
+          status = "failed";
+          policyFlags = [`minimax_error:${baseResp.status_code}`];
+        }
       }
     } catch (err) {
       if (err instanceof MinimaxRequestError) {

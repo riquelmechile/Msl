@@ -37,6 +37,11 @@ export type MinimaxVideoQueryResponse = {
   file_id?: string | undefined;
 };
 
+export type MinimaxFileRetrieveResponse = {
+  base_resp: { status_code: number; status_message: string };
+  file?: { download_url: string } | undefined;
+};
+
 // ── Transport type ────────────────────────────────────────────────────
 
 export type MinimaxTransport = {
@@ -44,6 +49,7 @@ export type MinimaxTransport = {
   createImageTask(request: MinimaxImageRequest): Promise<MinimaxImageResponse>;
   createVideoTask(request: MinimaxVideoRequest): Promise<MinimaxVideoResponse>;
   queryVideoTask(taskId: string): Promise<MinimaxVideoQueryResponse>;
+  retrieveFile(fileId: string): Promise<MinimaxFileRetrieveResponse>;
 };
 
 // ── Real transport (wraps MinimaxClient) ──────────────────────────────
@@ -73,6 +79,12 @@ export class MinimaxRealTransport implements MinimaxTransport {
       task_id: taskId,
     });
   }
+
+  async retrieveFile(fileId: string): Promise<MinimaxFileRetrieveResponse> {
+    return this.client.post<MinimaxFileRetrieveResponse>("/v1/files/retrieve", {
+      file_id: fileId,
+    });
+  }
 }
 
 // ── Fake transport (for unit tests) ───────────────────────────────────
@@ -93,21 +105,30 @@ const DEFAULT_FAKE_VIDEO_QUERY_RESPONSE: MinimaxVideoQueryResponse = {
   file_id: "fake-file-001",
 };
 
+const DEFAULT_FAKE_FILE_RETRIEVE_RESPONSE: MinimaxFileRetrieveResponse = {
+  base_resp: { status_code: 0, status_message: "success" },
+  file: { download_url: "https://fake-cdn.minimax.io/video/fake-file-001.mp4" },
+};
+
 export class MinimaxFakeTransport implements MinimaxTransport {
   private readonly imageResponse: MinimaxImageResponse;
   private readonly videoResponse: MinimaxVideoResponse;
   private readonly videoQueryResponse: MinimaxVideoQueryResponse;
+  private readonly fileRetrieveResponse: MinimaxFileRetrieveResponse;
   private readonly modelOverride: string | undefined;
 
   constructor(overrides?: {
     imageResponse?: MinimaxImageResponse | undefined;
     videoResponse?: MinimaxVideoResponse | undefined;
     videoQueryResponse?: MinimaxVideoQueryResponse | undefined;
+    fileRetrieveResponse?: MinimaxFileRetrieveResponse | undefined;
     modelOverride?: string | undefined;
   }) {
     this.imageResponse = overrides?.imageResponse ?? DEFAULT_FAKE_IMAGE_RESPONSE;
     this.videoResponse = overrides?.videoResponse ?? DEFAULT_FAKE_VIDEO_RESPONSE;
     this.videoQueryResponse = overrides?.videoQueryResponse ?? DEFAULT_FAKE_VIDEO_QUERY_RESPONSE;
+    this.fileRetrieveResponse =
+      overrides?.fileRetrieveResponse ?? DEFAULT_FAKE_FILE_RETRIEVE_RESPONSE;
     this.modelOverride = overrides?.modelOverride;
   }
 
@@ -130,6 +151,11 @@ export class MinimaxFakeTransport implements MinimaxTransport {
     void _taskId;
     return Promise.resolve({ ...this.videoQueryResponse });
   }
+
+  retrieveFile(_fileId: string): Promise<MinimaxFileRetrieveResponse> {
+    void _fileId;
+    return Promise.resolve({ ...this.fileRetrieveResponse });
+  }
 }
 
 // ── Fixture transport (for integration tests) ─────────────────────────
@@ -150,19 +176,27 @@ const DEFAULT_FIXTURE_VIDEO_QUERY_RESPONSE: MinimaxVideoQueryResponse = {
   file_id: "fixture-file-default",
 };
 
+const DEFAULT_FIXTURE_FILE_RETRIEVE_RESPONSE: MinimaxFileRetrieveResponse = {
+  base_resp: { status_code: 0, status_message: "success" },
+  file: { download_url: "https://fixture-cdn.minimax.io/video/fixture-file-default.mp4" },
+};
+
 export class MinimaxFixtureTransport implements MinimaxTransport {
   private readonly imageFixtures: Record<string, MinimaxImageResponse>;
   private readonly videoFixtures: Record<string, MinimaxVideoResponse>;
   private readonly videoQueryFixtures: Record<string, MinimaxVideoQueryResponse>;
+  private readonly fileRetrieveFixtures: Record<string, MinimaxFileRetrieveResponse>;
 
   constructor(fixtures?: {
     images?: Record<string, MinimaxImageResponse> | undefined;
     videos?: Record<string, MinimaxVideoResponse> | undefined;
     videoQueries?: Record<string, MinimaxVideoQueryResponse> | undefined;
+    fileRetrieves?: Record<string, MinimaxFileRetrieveResponse> | undefined;
   }) {
     this.imageFixtures = fixtures?.images ?? {};
     this.videoFixtures = fixtures?.videos ?? {};
     this.videoQueryFixtures = fixtures?.videoQueries ?? {};
+    this.fileRetrieveFixtures = fixtures?.fileRetrieves ?? {};
   }
 
   validateTextModel(model?: string): Promise<{ valid: boolean; model: string }> {
@@ -185,6 +219,13 @@ export class MinimaxFixtureTransport implements MinimaxTransport {
   queryVideoTask(taskId: string): Promise<MinimaxVideoQueryResponse> {
     const fixture = this.videoQueryFixtures[taskId];
     return Promise.resolve(fixture ? { ...fixture } : { ...DEFAULT_FIXTURE_VIDEO_QUERY_RESPONSE });
+  }
+
+  retrieveFile(fileId: string): Promise<MinimaxFileRetrieveResponse> {
+    const fixture = this.fileRetrieveFixtures[fileId];
+    return Promise.resolve(
+      fixture ? { ...fixture } : { ...DEFAULT_FIXTURE_FILE_RETRIEVE_RESPONSE },
+    );
   }
 
   private imageKey(request: MinimaxImageRequest): string {

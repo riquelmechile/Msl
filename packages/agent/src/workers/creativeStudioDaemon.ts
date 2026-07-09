@@ -3,12 +3,12 @@ import type { CreativeAssetRequest, CreativeExecutionResult } from "@msl/creativ
 import {
   PolicyEngine,
   CostLedger,
-  MinimaxClient,
   MinimaxImageProvider,
   MinimaxVideoProvider,
   CreativeAssetStore,
   MlDiagnosticAdapter,
   CortexBridge,
+  createMinimaxProviderFromEnv,
 } from "@msl/creative-studio";
 import type { CortexSink } from "@msl/creative-studio";
 import type { GraphEngine } from "@msl/memory";
@@ -127,11 +127,27 @@ export const creativeStudioDaemon: DaemonHandler = async ({
     return { findings, proposalEnqueued: false, messageIds };
   }
 
-  const apiKey = env("MINIMAX_API_KEY");
-  if (!apiKey) {
+  // Production guard — fail loudly in production if API key is missing
+  const isProduction = env("NODE_ENV") === "production" || env("MSL_RUNTIME_MODE") === "production";
+  if (isProduction && !env("MINIMAX_API_KEY")) {
+    throw new Error(
+      "MSL_CREATIVE_STUDIO_ENABLED=true in production mode but MINIMAX_API_KEY is missing.",
+    );
+  }
+
+  // Non-production safe fallback — return no findings when API key is absent
+  if (!env("MINIMAX_API_KEY")) {
     console.warn("[creative-studio] MINIMAX_API_KEY not set — returning empty findings");
     return { findings, proposalEnqueued: false, messageIds };
   }
+
+  // Create transport from environment (only reached when API key is present)
+  console.log("[creative-studio] MiniMax provider: real");
+  const transport = createMinimaxProviderFromEnv({
+    MINIMAX_API_KEY: env("MINIMAX_API_KEY"),
+    MINIMAX_API_HOST: env("MINIMAX_API_HOST"),
+    MINIMAX_BASE_URL: env("MINIMAX_BASE_URL"),
+  });
 
   // ── 2. Parse request ─────────────────────────────────────────
   let request: CreativeAssetRequest;
@@ -166,13 +182,15 @@ export const creativeStudioDaemon: DaemonHandler = async ({
   const maxJobUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_JOB_USD", 0.5);
   const ledger = new CostLedger({ maxDailyUsd, maxJobUsd });
 
-  const apiHost = resolveMinimaxApiHost();
-  const timeoutMs = envNumber("MINIMAX_REQUEST_TIMEOUT_MS", 120000);
-  const client = new MinimaxClient({ apiKey, apiHost, timeoutMs });
-
-  // Pick the right provider
-  const imageProvider = new MinimaxImageProvider(client);
-  const videoProvider = new MinimaxVideoProvider(client);
+  // Pick the right provider — inject transport for abstracted API calls
+  const imageProvider = new MinimaxImageProvider(undefined, undefined, transport);
+  const videoProvider = new MinimaxVideoProvider(
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    transport,
+  );
 
   let provider: MinimaxImageProvider | MinimaxVideoProvider;
   if (imageProvider.supports(request.kind)) {
