@@ -2318,6 +2318,7 @@ describe("buildConsensusContext", () => {
     return {
       submitReview: vi.fn(),
       getConsensus: vi.fn(),
+      getConsensusBySeller: vi.fn(),
       requiresConsensus: vi.fn(),
       ...overrides,
     };
@@ -2476,6 +2477,7 @@ describe("createAgentLoop — consensus context integration", () => {
   it("injects consensus context when consensus store is configured and kind requires it", async () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
+      getConsensusBySeller: vi.fn(),
       getConsensus: vi.fn(
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         (_proposalId: string) =>
@@ -2547,6 +2549,7 @@ describe("createAgentLoop — consensus context integration", () => {
   it("does not inject consensus context for kinds that do not require consensus", async () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
+      getConsensusBySeller: vi.fn(),
       getConsensus: vi.fn() as (proposalId: string) => ConsensusResult,
       requiresConsensus: vi.fn(() => false),
     };
@@ -2565,6 +2568,7 @@ describe("createAgentLoop — consensus context integration", () => {
   it("does not inject consensus context on dale confirmation", async () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
+      getConsensusBySeller: vi.fn(),
       getConsensus: vi.fn(
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         (_proposalId: string) =>

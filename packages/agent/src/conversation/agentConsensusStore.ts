@@ -51,6 +51,8 @@ export type AgentReview = {
   rationale: string;
   confidence: number;
   createdAt: string;
+  /** Optional seller scoping — NULL means global. */
+  sellerId?: string;
 };
 
 export type SubmitReviewInput = {
@@ -59,6 +61,8 @@ export type SubmitReviewInput = {
   verdict: ReviewVerdict;
   rationale: string;
   confidence: number;
+  /** Optional seller scoping for the review. */
+  sellerId?: string;
 };
 
 export type ConsensusResult = {
@@ -72,7 +76,8 @@ export type ConsensusResult = {
 
 export type AgentConsensusStore = {
   submitReview(input: SubmitReviewInput): AgentReview;
-  getConsensus(proposalId: string): ConsensusResult;
+  getConsensus(proposalId: string, sellerId?: string): ConsensusResult;
+  getConsensusBySeller(sellerId: string): ConsensusResult;
   requiresConsensus(proposalKind: string, riskDelta?: number): boolean;
 };
 
@@ -85,12 +90,14 @@ type AgentReviewRow = {
   verdict: string;
   rationale: string;
   confidence: number;
+  seller_id: string | null;
   created_at: string;
 };
 
 // ── Row mapper ───────────────────────────────────────────────────────
 
 function rowToAgentReview(row: AgentReviewRow): AgentReview {
+  const sellerId = row.seller_id ?? undefined;
   return {
     id: row.id,
     proposalId: row.proposal_id,
@@ -99,6 +106,7 @@ function rowToAgentReview(row: AgentReviewRow): AgentReview {
     rationale: row.rationale,
     confidence: row.confidence,
     createdAt: row.created_at,
+    ...(sellerId ? { sellerId } : {}),
   };
 }
 
@@ -122,19 +130,39 @@ function computeRecommendation(
 
 // ── Factory ──────────────────────────────────────────────────────────
 
+/**
+ * Check whether a column exists in a table (idempotent migration guard).
+ */
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return info.some((col) => col.name === column);
+}
+
 export function createAgentConsensusStore(db: Database.Database): AgentConsensusStore {
   db.exec(SCHEMA_SQL);
+
+  // ── Idempotent migration: add seller_id column ──────────────
+  if (!columnExists(db, "agent_reviews", "seller_id")) {
+    db.exec(`ALTER TABLE agent_reviews ADD COLUMN seller_id TEXT`);
+  }
 
   // ── Prepared statements ────────────────────────────────────
 
   const insertStmt = db.prepare(`
-    INSERT INTO agent_reviews (proposal_id, reviewer_agent_id, verdict, rationale, confidence)
-    VALUES (@proposalId, @reviewerAgentId, @verdict, @rationale, @confidence)
+    INSERT INTO agent_reviews (proposal_id, reviewer_agent_id, verdict, rationale, confidence, seller_id)
+    VALUES (@proposalId, @reviewerAgentId, @verdict, @rationale, @confidence, @sellerId)
   `);
 
   const selectByProposalStmt = db.prepare(`
     SELECT * FROM agent_reviews
-    WHERE proposal_id = ?
+    WHERE proposal_id = @proposalId
+      AND (@sellerId IS NULL OR seller_id = @sellerId OR seller_id IS NULL)
+    ORDER BY created_at ASC
+  `);
+
+  const selectBySellerStmt = db.prepare(`
+    SELECT * FROM agent_reviews
+    WHERE seller_id = @sellerId
     ORDER BY created_at ASC
   `);
 
@@ -185,6 +213,7 @@ export function createAgentConsensusStore(db: Database.Database): AgentConsensus
         verdict: txInput.verdict,
         rationale: txInput.rationale,
         confidence: txInput.confidence,
+        sellerId: txInput.sellerId ?? null,
       });
     });
 
@@ -194,8 +223,11 @@ export function createAgentConsensusStore(db: Database.Database): AgentConsensus
     return rowToAgentReview(row);
   };
 
-  const getConsensus = (proposalId: string): ConsensusResult => {
-    const rows = selectByProposalStmt.all(proposalId) as AgentReviewRow[];
+  const getConsensus = (proposalId: string, sellerId?: string): ConsensusResult => {
+    const rows = selectByProposalStmt.all({
+      proposalId,
+      sellerId: sellerId ?? null,
+    }) as AgentReviewRow[];
     const reviews = rows.map(rowToAgentReview);
 
     const verdicts: Record<string, number> = {};
@@ -216,6 +248,32 @@ export function createAgentConsensusStore(db: Database.Database): AgentConsensus
     };
   };
 
+  /**
+   * Return all reviews scoped to a specific seller account.
+   */
+  const getConsensusBySeller = (sellerId: string): ConsensusResult => {
+    const rows = selectBySellerStmt.all({ sellerId }) as AgentReviewRow[];
+    const reviews = rows.map(rowToAgentReview);
+
+    // Build a synthetic proposal-level summary across all proposals.
+    const verdicts: Record<string, number> = {};
+    for (const review of reviews) {
+      verdicts[review.verdict] = (verdicts[review.verdict] ?? 0) + 1;
+    }
+
+    return {
+      proposalId: `seller:${sellerId}`,
+      reviews,
+      verdicts,
+      recommendation:
+        reviews.length >= MIN_REVIEWS_REQUIRED
+          ? computeRecommendation(reviews, MIN_REVIEWS_REQUIRED)
+          : "insufficient_reviews",
+      minReviewsRequired: MIN_REVIEWS_REQUIRED,
+      hasQuorum: reviews.length >= MIN_REVIEWS_REQUIRED,
+    };
+  };
+
   const requiresConsensus = (proposalKind: string, riskDelta?: number): boolean => {
     if (proposalKind === "price-change") {
       // Default: price-change requires consensus (e.g. when called from agentLoop
@@ -227,5 +285,5 @@ export function createAgentConsensusStore(db: Database.Database): AgentConsensus
     return HIGH_RISK_KINDS.has(proposalKind);
   };
 
-  return { submitReview, getConsensus, requiresConsensus };
+  return { submitReview, getConsensus, getConsensusBySeller, requiresConsensus };
 }
