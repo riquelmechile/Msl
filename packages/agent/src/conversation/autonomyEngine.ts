@@ -69,7 +69,16 @@ type KpiRow = {
   safety_violations: number;
   response_accuracy: number;
   timestamp: string;
+  seller_id: string | null;
 };
+
+/**
+ * Check whether a column exists in a table (idempotent migration guard).
+ */
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return info.some((col) => col.name === column);
+}
 
 /**
  * Create the autonomy engine backed by SQLite.
@@ -87,6 +96,15 @@ export function createAutonomyEngine(
 ) {
   db.exec(SCHEMA_SQL);
 
+  // ── Idempotent migrations: add seller_id columns (PR 1) ──────
+  if (!columnExists(db, "kpi_history", "seller_id")) {
+    db.exec(`ALTER TABLE kpi_history ADD COLUMN seller_id TEXT`);
+  }
+  if (!columnExists(db, "degradation_events", "seller_id")) {
+    db.exec(`ALTER TABLE degradation_events ADD COLUMN seller_id TEXT`);
+  }
+  // NOTE: autonomy_state rebuild deferred to PR 3 (per-seller PK).
+
   // Seed the singleton state row if it doesn't exist.
   const initialLevel = config?.initialLevel ?? AutonomyLevel.SUGIERE;
   db.prepare(`INSERT OR IGNORE INTO autonomy_state (id, current_level) VALUES (1, ?)`).run(
@@ -103,8 +121,8 @@ export function createAutonomyEngine(
 
   const insertKpiStmt = db.prepare(`
     INSERT INTO kpi_history
-      (level, margin_compliance, success_rate, safety_violations, response_accuracy, timestamp)
-    VALUES (@level, @marginCompliance, @successRate, @safetyViolations, @responseAccuracy, @timestamp)
+      (level, margin_compliance, success_rate, safety_violations, response_accuracy, timestamp, seller_id)
+    VALUES (@level, @marginCompliance, @successRate, @safetyViolations, @responseAccuracy, @timestamp, @sellerId)
   `);
 
   /** Limit kpi_history to the most recent 1000 rows (FIFO eviction). */
@@ -119,14 +137,28 @@ export function createAutonomyEngine(
 
   const insertDegradationStmt = db.prepare(`
     INSERT INTO degradation_events
-      (from_level, to_level, reason, kpi_snapshot, timestamp)
-    VALUES (@from, @to, @reason, @kpiSnapshot, @timestamp)
+      (from_level, to_level, reason, kpi_snapshot, timestamp, seller_id)
+    VALUES (@from, @to, @reason, @kpiSnapshot, @timestamp, @sellerId)
   `);
 
   const kpiWindowStmt = db.prepare(`
     SELECT * FROM kpi_history
     WHERE timestamp >= @since AND timestamp <= @now
     ORDER BY timestamp ASC
+  `);
+
+  const getKpiHistoryStmt = db.prepare(`
+    SELECT * FROM kpi_history
+    WHERE (@sellerId IS NULL OR seller_id = @sellerId)
+    ORDER BY timestamp DESC
+    LIMIT @limit
+  `);
+
+  const getDegradationEventsStmt = db.prepare(`
+    SELECT * FROM degradation_events
+    WHERE (@sellerId IS NULL OR seller_id = @sellerId)
+    ORDER BY timestamp DESC
+    LIMIT @limit
   `);
 
   // ── Public API ────────────────────────────────────────────────
@@ -168,6 +200,7 @@ export function createAutonomyEngine(
         reason,
         kpiSnapshot: JSON.stringify(snapshot),
         timestamp: now,
+        sellerId: null,
       });
     })();
   };
@@ -186,9 +219,65 @@ export function createAutonomyEngine(
       safetyViolations: kpi.safetyViolations,
       responseAccuracy: kpi.responseAccuracy,
       timestamp: normalizeTs(kpi.timestamp),
+      sellerId: kpi.sellerId ?? null,
     });
     // Enforce FIFO cap: keep last 1000 records.
     trimKpiHistoryStmt.run();
+  };
+
+  /**
+   * Retrieve KPI history, optionally scoped to a seller.
+   *
+   * @param sellerId Optional seller filter. When omitted, returns all rows.
+   * @param limit    Maximum rows to return (default 100).
+   */
+  const getKpiHistory = (sellerId?: string, limit = 100): KpiSnapshot[] => {
+    const rows = getKpiHistoryStmt.all({
+      sellerId: sellerId ?? null,
+      limit: Math.max(1, Math.min(limit, 1000)),
+    }) as KpiRow[];
+    return rows.map((row) => {
+      const sellerId = row.seller_id ?? undefined;
+      return {
+        level: row.level,
+        marginCompliance: row.margin_compliance,
+        successRate: row.success_rate,
+        safetyViolations: row.safety_violations,
+        responseAccuracy: row.response_accuracy,
+        timestamp: row.timestamp,
+        ...(sellerId ? { sellerId } : {}),
+      };
+    });
+  };
+
+  /**
+   * Retrieve degradation events, optionally scoped to a seller.
+   *
+   * @param sellerId Optional seller filter. When omitted, returns all rows.
+   * @param limit    Maximum rows to return (default 50).
+   */
+  const getDegradationEvents = (
+    sellerId?: string,
+    limit = 50,
+  ): DegradationEvent[] => {
+    const rows = getDegradationEventsStmt.all({
+      sellerId: sellerId ?? null,
+      limit: Math.max(1, Math.min(limit, 500)),
+    }) as {
+      from_level: number;
+      to_level: number;
+      reason: string;
+      kpi_snapshot: string;
+      timestamp: string;
+      seller_id: string | null;
+    }[];
+    return rows.map((row) => ({
+      from: row.from_level,
+      to: row.to_level,
+      reason: row.reason,
+      kpiSnapshot: JSON.parse(row.kpi_snapshot) as KpiSnapshot,
+      timestamp: row.timestamp,
+    }));
   };
 
   // ── Evaluation helpers ────────────────────────────────────────
@@ -314,6 +403,7 @@ export function createAutonomyEngine(
         reason,
         kpiSnapshot: JSON.stringify(eventSnapshot),
         timestamp: nowIsoVal,
+        sellerId: null,
       });
     })();
 
@@ -391,6 +481,8 @@ export function createAutonomyEngine(
     getCurrentLevel,
     setLevel,
     recordKpi,
+    getKpiHistory,
+    getDegradationEvents,
     evaluateDegradation,
     evaluatePromotion,
     canAutoApprove,

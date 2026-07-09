@@ -32,6 +32,8 @@ export type KpiSnapshot = {
   responseAccuracy: number;
   /** ISO timestamp of when the snapshot was created. */
   timestamp: string;
+  /** Optional seller scoping — the account this KPI belongs to. */
+  sellerId?: string;
 };
 
 /** Recorded when the autonomy level drops due to KPI breaches. */
