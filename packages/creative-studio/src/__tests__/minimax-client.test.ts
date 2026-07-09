@@ -49,14 +49,14 @@ describe("MinimaxClient", () => {
 
       let capturedHeaders: Record<string, string> | undefined;
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementation(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementation((_url, opts) => {
+        
         capturedHeaders = opts?.headers as Record<string, string>;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () => Promise.resolve(JSON.stringify({ base_resp: { status_code: 0 } })),
-        } as Response;
+        } as Response);
       });
 
       await client.post("/v1/image_generation", { model: "image-01" });

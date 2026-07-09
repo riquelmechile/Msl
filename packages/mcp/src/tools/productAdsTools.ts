@@ -1,6 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { type PrepareWriteInput } from "@msl/tools";
 import type { ExactChange, PreparedAction, RiskLevel } from "@msl/domain";
 import type { ApprovalQueueEntry } from "@msl/tools";
 import type { McpServerConfig } from "../index.js";
@@ -129,11 +128,6 @@ const CREDENTIAL_LIKE_KEY_PATTERN =
   /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth|client[_-]?secret|secret|password|passwd|credential|db[_-]?path|database[_-]?(?:path|url)|sqlite)/i;
 
 // ── Product Ads helper functions ─────────────────────────────────────
-
-function isProductAdsPrepareWriteTarget(target: PrepareWriteInput["target"]): boolean {
-   
-  return target.type === "product-ads-campaign" || target.type === "product-ads-ad";
-}
 
 function productAdsRisk(proposalType: ProductAdsActionType): RiskLevel {
   return proposalType === "review-campaign-structure" ? "medium" : "high";

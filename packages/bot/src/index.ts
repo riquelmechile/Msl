@@ -279,8 +279,9 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
 
     // Hourly periodic sync — keeps Cortex in sync with SM store
     const syncInterval = setInterval(
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       async () => {
-         
+        
         try {
           await ingestAllSuppliersToCortex(supplierMirrorRuntime.store, engine);
           console.log("[bot] Supplier Mirror → Cortex hourly sync complete");

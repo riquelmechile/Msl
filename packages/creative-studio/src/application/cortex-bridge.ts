@@ -53,8 +53,8 @@ export class CortexBridge implements CortexSink {
    * @param result  — The full execution result
    * @param outcome — Approval/publish state + optional metrics
    */
-  async recordOutcome(
-     
+  recordOutcome(
+    
     jobId: string,
     result: CreativeExecutionResult,
     outcome: CortexOutcome,
@@ -76,5 +76,6 @@ export class CortexBridge implements CortexSink {
       metrics: outcome.metrics ? JSON.stringify(outcome.metrics) : null,
       recordedAt: new Date().toISOString(),
     });
+    return Promise.resolve();
   }
 }

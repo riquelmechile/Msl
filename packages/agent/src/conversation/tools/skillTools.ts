@@ -6,7 +6,6 @@ import {
   safeString,
   normalizeCompanyAgentText,
   validateCompanyAgentText,
-  truncateCompanyAgentText,
   summarizeAgentSkill,
   companyAgentTextLimits,
   validSkillCategories,

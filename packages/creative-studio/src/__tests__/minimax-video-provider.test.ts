@@ -255,10 +255,10 @@ describe("MinimaxVideoProvider", () => {
 
     it("includes first_frame_image from references", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -268,7 +268,7 @@ describe("MinimaxVideoProvider", () => {
                 task_id: "mm_task_67890",
               }),
             ),
-        } as Response;
+        } as Response);
       });
 
       // Need polling mocks too (will timeout but we only care about capturedBody)
@@ -303,10 +303,10 @@ describe("MinimaxVideoProvider", () => {
       let capturedBody: string | undefined;
       // Override the first mock from mockPollingFlow to capture the request body
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -316,7 +316,7 @@ describe("MinimaxVideoProvider", () => {
                 task_id: "mm_task_mlclip",
               }),
             ),
-        } as Response;
+        } as Response);
       });
       // Re-add polling and download mocks
       for (let i = 0; i < 3; i++) {
@@ -350,10 +350,10 @@ describe("MinimaxVideoProvider", () => {
 
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -363,7 +363,7 @@ describe("MinimaxVideoProvider", () => {
                 task_id: "mm_task_no_ref",
               }),
             ),
-        } as Response;
+        } as Response);
       });
       for (let i = 0; i < 3; i++) {
         vi.mocked(fetch).mockResolvedValueOnce({

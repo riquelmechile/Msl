@@ -718,22 +718,22 @@ export function createSupplierMirrorTools(
       },
       required: ["supplierId"],
     },
-    execute: async (args) => {
-       
+    execute: (args) => {
+      
       const supplierId = readString(args.supplierId);
       const queryType = readString(args.queryType) ?? "all";
       const depth = readNumber(args.depth) ?? 2;
 
       if (!supplierId) {
-        return { status: "blocked", missingInputs: ["supplierId"], noMutationExecuted: true };
+        return Promise.resolve({ status: "blocked", missingInputs: ["supplierId"], noMutationExecuted: true });
       }
 
       if (!engine) {
-        return {
+        return Promise.resolve({
           status: "blocked",
           reason: "Cortex graph engine is not wired. Cannot query supplier patterns.",
           noMutationExecuted: true,
-        };
+        });
       }
 
       const results: Record<string, unknown> = {
@@ -788,7 +788,7 @@ export function createSupplierMirrorTools(
         }
       }
 
-      return results;
+      return Promise.resolve(results);
     },
   };
 

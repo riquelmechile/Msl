@@ -9,7 +9,6 @@ import type {
   AgentMessage,
 } from "../../src/conversation/agentMessageBusStore.js";
 import { supplierManagerDaemon } from "../../src/workers/supplierManagerDaemon.js";
-import type { DaemonResult } from "../../src/workers/daemonTypes.js"; // eslint-disable-line @typescript-eslint/no-unused-vars
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -67,15 +66,15 @@ function mockStore(
   }> = {},
 ): SupplierMirrorStore {
   const noop = async () => {};
-  const emptyList = async () => []; // eslint-disable-line @typescript-eslint/require-await
-  const nullResult = async () => null; // eslint-disable-line @typescript-eslint/require-await
+  const emptyList = () => Promise.resolve([]);
+  const nullResult = () => Promise.resolve(null);
 
   return {
     upsertSupplier: overrides.upsertSupplier ?? noop,
     getSupplier: (overrides.getSupplier as SupplierMirrorStore["getSupplier"]) ?? nullResult,
     listEnabledSuppliers:
       overrides.listEnabledSuppliers ??
-      (async () => [
+      (() => Promise.resolve([
          
         {
           id: "su-1",
@@ -86,7 +85,7 @@ function mockStore(
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
-      ]),
+      ])),
     upsertSupplierItemSnapshot: overrides.upsertSupplierItemSnapshot ?? noop,
     getSupplierItemSnapshot:
       (overrides.getSupplierItemSnapshot as SupplierMirrorStore["getSupplierItemSnapshot"]) ??
@@ -195,14 +194,14 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        ]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -229,12 +228,12 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 5 });
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
+        ]),
       });
 
       const result = await supplierManagerDaemon({
@@ -254,11 +253,11 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-A-001", { sellerId: "seller-a", stock: 12 });
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-        ],
+        ]),
       });
 
       const result = await supplierManagerDaemon({
@@ -284,19 +283,19 @@ describe("supplierManagerDaemon", () => {
       const prevHour = new Date(Date.now() - 3_600_000).toISOString().slice(0, 13);
 
       // Seed a prior price record for the previous hour
-      const appendLedger = (async (r: Record<string, unknown>) => r) as never; // eslint-disable-line @typescript-eslint/require-await
+      const appendLedger = ((r: Record<string, unknown>) => Promise.resolve(r)) as never;
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([
+          
           defaultItem({ price: 1100 }), // current price → 1100
-        ],
-        listTargetMappings: async () => [], // eslint-disable-line @typescript-eslint/require-await
-        getLedgerByIdempotencyKey: async (key: string) => {
-           
+        ]),
+        listTargetMappings: () => Promise.resolve([]),
+        getLedgerByIdempotencyKey: (key: string) => {
+          
           // Return a prior record for the previous hour
           if (key.includes(prevHour)) {
-            return {
+            return Promise.resolve({
               id: `price-record-${prevHour}`,
               actionType: "skip",
               idempotencyKey: key,
@@ -308,9 +307,9 @@ describe("supplierManagerDaemon", () => {
               before: null,
               after: { price: 1000 }, // prior price → 1000
               createdAt: new Date(Date.now() - 3_600_000).toISOString(),
-            };
+            });
           }
-          return null; // no hourly record yet
+          return Promise.resolve(null); // no hourly record yet
         },
         appendLedger,
       });
@@ -339,15 +338,15 @@ describe("supplierManagerDaemon", () => {
       const prevHour = new Date(Date.now() - 3_600_000).toISOString().slice(0, 13);
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([
+          
           defaultItem({ price: 1020 }), // 2% increase from 1000
-        ],
-        listTargetMappings: async () => [], // eslint-disable-line @typescript-eslint/require-await
-        getLedgerByIdempotencyKey: async (key: string) => {
-           
+        ]),
+        listTargetMappings: () => Promise.resolve([]),
+        getLedgerByIdempotencyKey: (key: string) => {
+          
           if (key.includes(prevHour)) {
-            return {
+            return Promise.resolve({
               id: `price-record-${prevHour}`,
               actionType: "skip",
               idempotencyKey: key,
@@ -359,11 +358,11 @@ describe("supplierManagerDaemon", () => {
               before: null,
               after: { price: 1000 },
               createdAt: new Date(Date.now() - 3_600_000).toISOString(),
-            };
+            });
           }
-          return null;
+          return Promise.resolve(null);
         },
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -384,10 +383,10 @@ describe("supplierManagerDaemon", () => {
     it("single observation → no finding", async () => {
       // No prior ledger record → first time seeing this item
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem({ price: 1000 })], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [], // eslint-disable-line @typescript-eslint/require-await
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem({ price: 1000 })]),
+        listTargetMappings: () => Promise.resolve([]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -407,8 +406,8 @@ describe("supplierManagerDaemon", () => {
 
     it("item has no price → skipped", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem({ price: undefined })], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [], // eslint-disable-line @typescript-eslint/require-await
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem({ price: undefined })]),
+        listTargetMappings: () => Promise.resolve([]),
       });
 
       const result = await supplierManagerDaemon({
@@ -430,10 +429,10 @@ describe("supplierManagerDaemon", () => {
   describe("unfilled mirror detection (task 3.3)", () => {
     it("no mlItemId + no mappings → warning finding", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: undefined })], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [], // eslint-disable-line @typescript-eslint/require-await
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem({ mlItemId: undefined })]),
+        listTargetMappings: () => Promise.resolve([]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -453,8 +452,8 @@ describe("supplierManagerDaemon", () => {
 
     it("mlItemId set → no unfilled finding", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: "MLC-EXISTING-001" })], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [], // eslint-disable-line @typescript-eslint/require-await
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem({ mlItemId: "MLC-EXISTING-001" })]),
+        listTargetMappings: () => Promise.resolve([]),
       });
 
       const result = await supplierManagerDaemon({
@@ -472,8 +471,8 @@ describe("supplierManagerDaemon", () => {
 
     it("has mappings → no unfilled finding even without mlItemId", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: undefined })], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [defaultMapping()], // eslint-disable-line @typescript-eslint/require-await
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem({ mlItemId: undefined })]),
+        listTargetMappings: () => Promise.resolve([defaultMapping()]),
       });
 
       const result = await supplierManagerDaemon({
@@ -510,10 +509,7 @@ describe("supplierManagerDaemon", () => {
 
     it("store present but listEnabledSuppliers throws → graceful return", async () => {
       const store = mockStore({
-        listEnabledSuppliers: async () => {
-           
-          throw new Error("DB error");
-        },
+        listEnabledSuppliers: () => Promise.reject(new Error("DB error")),
       });
 
       const result = await supplierManagerDaemon({
@@ -531,10 +527,7 @@ describe("supplierManagerDaemon", () => {
 
     it("store present but listSupplierItemSnapshots throws → graceful per supplier", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => {
-           
-          throw new Error("Item error");
-        },
+        listSupplierItemSnapshots: () => Promise.reject(new Error("Item error")),
       });
 
       const result = await supplierManagerDaemon({
@@ -559,17 +552,17 @@ describe("supplierManagerDaemon", () => {
       const idempotencyKey = `stock-gap_su-1_ITM-1_${currentHour}`;
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
-        getLedgerByIdempotencyKey: async (key: string) => {
-           
+        ]),
+        getLedgerByIdempotencyKey: (key: string) => {
+          
           // Return existing record for the stock gap key
           if (key === idempotencyKey) {
-            return {
+            return Promise.resolve({
               id: idempotencyKey,
               actionType: "skip",
               idempotencyKey,
@@ -581,11 +574,11 @@ describe("supplierManagerDaemon", () => {
               before: null,
               after: null,
               createdAt: new Date().toISOString(),
-            };
+            });
           }
-          return null;
+          return Promise.resolve(null);
         },
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       seedListingNode(engine, "MLC-A-001", { sellerId: "seller-a", stock: 12 });
@@ -609,13 +602,13 @@ describe("supplierManagerDaemon", () => {
       let appended = false;
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem({ mlItemId: undefined })], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [], // eslint-disable-line @typescript-eslint/require-await
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => {
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem({ mlItemId: undefined })]),
+        listTargetMappings: () => Promise.resolve([]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => {
+          
           appended = true;
-          return r as never; // eslint-disable-line @typescript-eslint/no-unnecessary-type-assertion
+          return Promise.resolve(r as never);  
         },
       });
 
@@ -641,14 +634,14 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-A-001", { sellerId: "seller-a", stock: 12 });
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        ]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -672,12 +665,12 @@ describe("supplierManagerDaemon", () => {
       // No seedListingNode calls — Cortex is empty
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
+        ]),
       });
 
       const result = await supplierManagerDaemon({
@@ -702,14 +695,14 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        ]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -744,7 +737,7 @@ describe("supplierManagerDaemon", () => {
 
     it("no findings → proposalEnqueued: false", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [], // eslint-disable-line @typescript-eslint/require-await
+        listSupplierItemSnapshots: () => Promise.resolve([]),
       });
 
       const result = await supplierManagerDaemon({
@@ -770,8 +763,8 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 5 });
 
       const store = mockStore({
-        listEnabledSuppliers: async () => [
-           
+        listEnabledSuppliers: () => Promise.resolve([
+          
           {
             id: "su-1",
             name: "Supplier A",
@@ -790,26 +783,26 @@ describe("supplierManagerDaemon", () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           },
-        ],
-        listSupplierItemSnapshots: async (supplierId: string) => {
-           
+        ]),
+        listSupplierItemSnapshots: (supplierId: string) => {
+          
           if (supplierId === "su-1") {
-            return [defaultItem({ supplierItemId: "ITM-1", price: 1000 })];
+            return Promise.resolve([defaultItem({ supplierItemId: "ITM-1", price: 1000 })]);
           }
-          return [defaultItem({ supplierItemId: "ITM-2", price: 2000, mlItemId: "MLC-EXISTS" })];
+          return Promise.resolve([defaultItem({ supplierItemId: "ITM-2", price: 2000, mlItemId: "MLC-EXISTS" })]);
         },
-        listTargetMappings: async (_sid: string, itemId: string) => {
-           
+        listTargetMappings: (_sid: string, itemId: string) => {
+          
           if (itemId === "ITM-1") {
-            return [
+            return Promise.resolve([
               defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
               defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-            ];
+            ]);
           }
-          return [];
+          return Promise.resolve([]);
         },
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -836,8 +829,8 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
 
       const mockAdvisor = {
-        analyze: async () => ({
-           
+        analyze: () => Promise.resolve({
+          
           findings: [
             {
               kind: "stock-alert" as const,
@@ -857,14 +850,14 @@ describe("supplierManagerDaemon", () => {
       };
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        ]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -902,21 +895,18 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
 
       const failingAdvisor = {
-        analyze: async () => {
-           
-          throw new Error("DeepSeek API timeout");
-        },
+        analyze: () => Promise.reject(new Error("DeepSeek API timeout")),
       };
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        ]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({
@@ -951,14 +941,14 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
 
       const store = mockStore({
-        listSupplierItemSnapshots: async () => [defaultItem()], // eslint-disable-line @typescript-eslint/require-await
-        listTargetMappings: async () => [
-           
+        listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
+        listTargetMappings: () => Promise.resolve([
+          
           defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
           defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ],
-        getLedgerByIdempotencyKey: async () => null, // eslint-disable-line @typescript-eslint/require-await
-        appendLedger: async (r) => r, // eslint-disable-line @typescript-eslint/require-await
+        ]),
+        getLedgerByIdempotencyKey: () => Promise.resolve(null),
+        appendLedger: (r) => Promise.resolve(r),
       });
 
       const result = await supplierManagerDaemon({

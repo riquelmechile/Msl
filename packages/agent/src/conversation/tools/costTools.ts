@@ -7,8 +7,6 @@ import type { LaneId } from "../lanes.js";
 import type { ToolDefinition } from "./types.js";
 import {
   safeString,
-  normalizeCompanyAgentText,
-  truncateCompanyAgentText,
   summarizeWorkforceCostCacheLedgerEntry,
   validWorkforceCacheStatuses,
 } from "./types.js";

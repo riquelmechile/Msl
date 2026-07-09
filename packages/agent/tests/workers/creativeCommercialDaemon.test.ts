@@ -378,7 +378,7 @@ describe("creativeCommercialDaemon", () => {
   // ── Creative Studio delegation (Phase 5) ──────────────────────
 
   describe("creative-studio delegation", () => {
-    it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", async () => {
+    it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", () => {
        
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
@@ -462,7 +462,7 @@ describe("creativeCommercialDaemon", () => {
       delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
     });
 
-    it("does NOT enqueue social-pack to creative-studio when env gate is disabled", async () => {
+    it("does NOT enqueue social-pack to creative-studio when env gate is disabled", () => {
        
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);

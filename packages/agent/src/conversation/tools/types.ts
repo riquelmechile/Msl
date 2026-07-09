@@ -140,7 +140,7 @@ export function nonEmptyUniqueStrings(value: unknown): string[] {
 
 export function isWritableCompanyAgentRegistry(
   registry: CompanyAgentRegistry | undefined,
-): registry is CompanyAgentRegistry & { insertCompanyAgent: Function } {
+): registry is CompanyAgentRegistry & { insertCompanyAgent: Function } { // eslint-disable-line @typescript-eslint/no-unsafe-function-type
    
   return (
     typeof (registry as { insertCompanyAgent?: unknown } | undefined)?.insertCompanyAgent ===

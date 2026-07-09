@@ -674,7 +674,7 @@ describe("creativeAssetsDaemon", () => {
       }
     });
 
-    it("enqueues creative-studio delegation message when env gate is enabled and low image count detected", async () => {
+    it("enqueues creative-studio delegation message when env gate is enabled and low image count detected", () => {
        
       // Set env gate for creative-studio
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
@@ -709,7 +709,7 @@ describe("creativeAssetsDaemon", () => {
       delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
     });
 
-    it("does NOT enqueue creative-studio delegation when env gate is disabled", async () => {
+    it("does NOT enqueue creative-studio delegation when env gate is disabled", () => {
        
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
 

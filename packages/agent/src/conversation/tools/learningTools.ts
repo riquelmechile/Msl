@@ -9,7 +9,6 @@ import {
   safeString,
   normalizeCompanyAgentText,
   validateCompanyAgentText,
-  truncateCompanyAgentText,
   nonEmptyUniqueStrings,
   resolveCompanyAgent,
   summarizeAgentLesson,

@@ -122,13 +122,15 @@ describe("ceoProfitabilityHandler", () => {
       ["unit-economics", "review-campaign-structure", "info", false],
     ])(
       "maps signal '%s' to proposalType '%s' severity '%s' requiresApproval %s",
-      async (signal, expectedProposalType, _expectedSeverity, _requiresApproval) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      async (signal, _expectedProposalType, _expectedSeverity, _requiresApproval) => {
          
         const preparedActions: Array<Record<string, unknown>> = [];
         const ceoCtx = makeCeoContext({
-          prepareProductAdsAction: async (input) => {
+          prepareProductAdsAction: (input) => {
              
             preparedActions.push(input);
+            return Promise.resolve();
           },
         });
 
@@ -169,9 +171,10 @@ describe("ceoProfitabilityHandler", () => {
     it("calls prepareProductAdsAction for actionable signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: (input) => {
            
           preparedActions.push(input);
+          return Promise.resolve();
         },
       });
 
@@ -193,9 +196,10 @@ describe("ceoProfitabilityHandler", () => {
     it("does not call prepareProductAdsAction for unit-economics (info-only) signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: (input) => {
            
           preparedActions.push(input);
+          return Promise.resolve();
         },
       });
 
@@ -336,17 +340,19 @@ describe("ceoProfitabilityHandler", () => {
     it("sends proactive message when ceoContext.sendProactiveMessage is provided", async () => {
       const sentMessages: Array<{ chatId: number; text: string; threadId?: number }> = [];
       const ceoCtx = makeCeoContext({
-        sendProactiveMessage: async (chatId, text, threadId) => {
-           
+        sendProactiveMessage: (chatId, text, threadId) => {
+          
           sentMessages.push({ chatId, text, threadId } as {
             chatId: number;
             text: string;
             threadId?: number;
           });
+          return Promise.resolve();
         },
-        createForumTopic: async (_chatId, _name) => {
-           
-          return { message_thread_id: 42 };
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        createForumTopic: (_chatId, _name) => {
+          
+          return Promise.resolve({ message_thread_id: 42 });
         },
       });
 
@@ -568,12 +574,13 @@ describe("ceoProfitabilityHandler", () => {
     it("continues processing remaining findings when one fails", async () => {
       let callCount = 0;
       const ceoCtx = makeCeoContext({
-        sendProactiveMessage: async () => {
-           
+        sendProactiveMessage: () => {
+          
           callCount++;
           if (callCount === 1) {
-            throw new Error("Simulated Telegram failure");
+            return Promise.reject(new Error("Simulated Telegram failure"));
           }
+          return Promise.resolve();
         },
       });
 
@@ -641,9 +648,10 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
-           
+        prepareProductAdsAction: (input) => {
+          
           preparedActions.push(input);
+          return Promise.resolve();
         },
         workforceCostCacheLedgerStore: {
           insertEntry: vi.fn(),
@@ -680,9 +688,10 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
-           
+        prepareProductAdsAction: (input) => {
+          
           preparedActions.push(input);
+          return Promise.resolve();
         },
       });
 
@@ -708,9 +717,10 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
-           
+        prepareProductAdsAction: (input) => {
+          
           preparedActions.push(input);
+          return Promise.resolve();
         },
         workforceCostCacheLedgerStore: {
           insertEntry: vi.fn(),
@@ -750,9 +760,10 @@ describe("ceoProfitabilityHandler", () => {
       // No ledger in context → should skip LLM and use fallback
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
-           
+        prepareProductAdsAction: (input) => {
+          
           preparedActions.push(input);
+          return Promise.resolve();
         },
         // Note: no workforceCostCacheLedgerStore
       });
@@ -785,9 +796,10 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
-           
+        prepareProductAdsAction: (input) => {
+          
           preparedActions.push(input);
+          return Promise.resolve();
         },
         workforceCostCacheLedgerStore: {
           insertEntry: vi.fn(),

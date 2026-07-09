@@ -129,10 +129,10 @@ describe("MinimaxImageProvider", () => {
 
     it("uses correct aspect ratio for storefront channel", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -142,7 +142,7 @@ describe("MinimaxImageProvider", () => {
                 data: [{ image_url: "https://cdn.minimax.io/img/456.jpg" }],
               }),
             ),
-        } as Response;
+        } as Response);
       });
 
       await provider.execute(makeRequest({ channel: "storefront", kind: "storefront-hero" }));
@@ -154,10 +154,10 @@ describe("MinimaxImageProvider", () => {
 
     it("includes explicit 1200x1200 dimensions for mercadolibre channel", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -167,7 +167,7 @@ describe("MinimaxImageProvider", () => {
                 data: [{ image_url: "https://cdn.minimax.io/img/ml.jpg" }],
               }),
             ),
-        } as Response;
+        } as Response);
       });
 
       // Default is mercadolibre channel
@@ -184,10 +184,10 @@ describe("MinimaxImageProvider", () => {
 
     it("does NOT include explicit dimensions for non-ML channels", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -197,7 +197,7 @@ describe("MinimaxImageProvider", () => {
                 data: [{ image_url: "https://cdn.minimax.io/img/sf.jpg" }],
               }),
             ),
-        } as Response;
+        } as Response);
       });
 
       await provider.execute(makeRequest({ channel: "storefront", kind: "storefront-hero" }));
@@ -213,10 +213,10 @@ describe("MinimaxImageProvider", () => {
 
     it("includes subject_reference when references provided", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -226,7 +226,7 @@ describe("MinimaxImageProvider", () => {
                 data: [{ image_url: "https://cdn.minimax.io/img/789.jpg" }],
               }),
             ),
-        } as Response;
+        } as Response);
       });
 
       await provider.execute(makeRequest());
@@ -240,10 +240,10 @@ describe("MinimaxImageProvider", () => {
 
     it("handles empty references without subject_reference", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
-         
+      vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
+        
         capturedBody = opts?.body as string;
-        return {
+        return Promise.resolve({
           status: 200,
           ok: true,
           text: () =>
@@ -253,7 +253,7 @@ describe("MinimaxImageProvider", () => {
                 data: [{ image_url: "https://cdn.minimax.io/img/000.jpg" }],
               }),
             ),
-        } as Response;
+        } as Response);
       });
 
       await provider.execute(makeRequest({ references: [] }));

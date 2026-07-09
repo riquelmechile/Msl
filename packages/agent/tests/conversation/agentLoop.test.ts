@@ -2330,7 +2330,7 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) =>
+        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
            
           ({
             proposalId: "prop-001",
@@ -2353,7 +2353,7 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) =>
+        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
            
           ({
             proposalId: "prop-001",
@@ -2410,7 +2410,7 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) =>
+        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
            
           ({
             proposalId: "prop-002",
@@ -2468,7 +2468,7 @@ describe("createAgentLoop — consensus context integration", () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
       getConsensus: vi.fn(
-        (_proposalId: string) =>
+        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
            
           ({
             proposalId: "prop-001",
@@ -2557,7 +2557,7 @@ describe("createAgentLoop — consensus context integration", () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
       getConsensus: vi.fn(
-        (_proposalId: string) =>
+        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
            
           ({
             proposalId: "prop-pending",

@@ -2,8 +2,6 @@ import type { GraphEngine } from "@msl/memory";
 import type {
   MlAccountRoleConfig,
   MlcListingSummary,
-  MlcPricingAutomationHistorySnapshot,
-  MlcPricingAutomationRulesSnapshot,
   MlWriteSnapshot,
   NewItem,
   SyncResult,
@@ -21,26 +19,6 @@ export type SyncToolOptions = {
 };
 
 export const DEFAULT_SALE_PRICE_CONTEXT = "channel_marketplace,buyer_loyalty_3";
-
-type OptionalToolRead<T> = { data?: T; error?: { endpoint: string; message: string } };
-type PriceIntelligenceEndpointKey =
-  "salePrice" | "prices" | "priceToWin" | "automation" | "itemRules" | "productRules" | "history";
-
-type PriceIntelligenceEndpointResult = {
-  salePrice: OptionalToolRead<unknown>;
-  prices: OptionalToolRead<unknown>;
-  priceToWin: OptionalToolRead<unknown>;
-  automation: OptionalToolRead<unknown>;
-  itemRules: OptionalToolRead<MlcPricingAutomationRulesSnapshot>;
-  productRules: OptionalToolRead<MlcPricingAutomationRulesSnapshot>;
-  history: OptionalToolRead<MlcPricingAutomationHistorySnapshot>;
-};
-
-type PriceIntelligenceEndpointSpec<K extends PriceIntelligenceEndpointKey> = {
-   
-  key: K;
-  read: () => Promise<PriceIntelligenceEndpointResult[K]>;
-};
 
 // ---------------------------------------------------------------------------
 // Approval gating

@@ -11,7 +11,6 @@ import {
   safeString,
   normalizeCompanyAgentText,
   validateCompanyAgentText,
-  truncateCompanyAgentText,
   nonEmptyUniqueStrings,
   isWritableCompanyAgentRegistry,
   summarizeCompanyAgent,
@@ -187,8 +186,9 @@ export function createCreateCompanyAgentTool(
       ];
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
         const agent = registry.insertCompanyAgent({
-           
+          
           id: agentId,
           label,
           departmentId,
