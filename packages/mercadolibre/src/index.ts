@@ -1,16 +1,8 @@
-import {
-  evaluateFreshness,
-  isMlcCategoryId,
-  isMlcDomainId,
-  type CacheFreshness,
-  type ReadSnapshot,
-} from "@msl/domain";
+import { type CacheFreshness, type ReadSnapshot } from "@msl/domain";
 import type { OAuthManager } from "./oauth/oauthManager.js";
 import type {
-  MlCategory,
   MlCategoriesSnapshot,
   MlItem,
-  MlUserInfo,
   MlUserSnapshot,
   MlWriteSnapshot,
   NewItem,
@@ -24,7 +16,6 @@ import {
   asArray,
   stringValue,
   numberValue,
-  booleanValue,
   pushOptional,
   createFreshness,
 
@@ -83,7 +74,6 @@ import {
   normalizeCategories,
   normalizeUser,
   isRateLimitError,
-  rateLimitBlockedMetadata,
   normalizeRateLimitedClaimsSearch,
   degradedReturnSnapshot,
   findProductAdsAdvertiser,
@@ -436,14 +426,6 @@ export type MlcAnswerSummary = {
   noMutationExecuted: true;
   textLength: number;
 };
-
-const MLC_REPUTATION_RULES = {
-  establishedSellerCompletedTransactions: 40,
-  establishedSellerMetricPeriodDays: 60,
-  newSellerMetricPeriodDays: 365,
-} as const;
-
-const MLC_CONFIRMED_SITE_SUPPORT = "MLC-confirmed" as const;
 
 export type MlcCategoryAttributeSummary = {
   id: string;
