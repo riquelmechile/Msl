@@ -32,11 +32,7 @@ function metadataString(value: unknown, fallback = ""): string {
  * All findings are enqueued as CEO proposals with `noMutationExecuted: true`.
  * This daemon is proposal-only and never answers questions directly.
  */
-export const unansweredQuestionsDaemon: DaemonHandler = async ({
-  reader,
-  bus,
-  sellerIds,
-}) => {
+export const unansweredQuestionsDaemon: DaemonHandler = async ({ reader, bus, sellerIds }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 

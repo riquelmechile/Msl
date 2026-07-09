@@ -1,12 +1,12 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
-import type { AgentMessageBusStore, AgentMessage } from "../../src/conversation/agentMessageBusStore.js";
+import type {
+  AgentMessageBusStore,
+  AgentMessage,
+} from "../../src/conversation/agentMessageBusStore.js";
 import { createGraphEngine, type GraphEngine } from "@msl/memory";
-import {
-  runLearningPipeline,
-  scoreMessage,
-} from "../../src/conversation/learningPipeline.js";
+import { runLearningPipeline, scoreMessage } from "../../src/conversation/learningPipeline.js";
 
 let db: Database.Database;
 let bus: AgentMessageBusStore;
@@ -222,9 +222,7 @@ describe("runLearningPipeline", () => {
     bus.claimNext("operations-manager");
     bus.resolve(msg.messageId, {
       status: "completed",
-      findings: [
-        { type: "alert", severity: "medium", message: "Test finding" },
-      ],
+      findings: [{ type: "alert", severity: "medium", message: "Test finding" }],
       severity: "medium",
       description: "Resolved test message",
     });

@@ -222,10 +222,13 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
         if (inbox) {
           const severity = payload.severity;
           const riskLevel: "low" | "medium" | "high" | "critical" =
-            severity === "critical" ? "critical"
-            : severity === "high" ? "high"
-            : severity === "medium" ? "medium"
-            : "low";
+            severity === "critical"
+              ? "critical"
+              : severity === "high"
+                ? "high"
+                : severity === "medium"
+                  ? "medium"
+                  : "low";
 
           inbox.insert({
             sender_agent_id: claim.senderAgentId,

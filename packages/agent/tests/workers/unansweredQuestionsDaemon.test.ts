@@ -190,9 +190,7 @@ describe("unansweredQuestionsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const questionFindings = result.findings.filter(
-        (f) => f.summary.includes("buyer question"),
-      );
+      const questionFindings = result.findings.filter((f) => f.summary.includes("buyer question"));
       expect(questionFindings).toEqual([]);
       expect(result.proposalEnqueued).toBe(false);
     });
@@ -223,9 +221,7 @@ describe("unansweredQuestionsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const questionFindings = result.findings.filter(
-        (f) => f.summary.includes("buyer question"),
-      );
+      const questionFindings = result.findings.filter((f) => f.summary.includes("buyer question"));
       expect(questionFindings).toEqual([]);
       expect(result.proposalEnqueued).toBe(false);
     });

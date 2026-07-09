@@ -88,7 +88,10 @@ function scoreResolved(msg: AgentMessage): { score: number; summary: string } {
     parts.push("no result data");
   }
 
-  return { score: Math.min(score, 1.0), summary: parts.length > 0 ? `${summary} (${parts.join(", ")})` : summary };
+  return {
+    score: Math.min(score, 1.0),
+    summary: parts.length > 0 ? `${summary} (${parts.join(", ")})` : summary,
+  };
 }
 
 function scoreFailed(msg: AgentMessage): { score: number; summary: string } {
@@ -164,7 +167,9 @@ export async function runLearningPipeline(
     errors: [],
   };
 
-  const unscored = bus.getUnscoredMessages(since ? { since, limit: batchSize } : { limit: batchSize });
+  const unscored = bus.getUnscoredMessages(
+    since ? { since, limit: batchSize } : { limit: batchSize },
+  );
   if (unscored.length === 0) return result;
 
   const batch = unscored.slice(0, batchSize);

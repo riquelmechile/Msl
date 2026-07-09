@@ -78,10 +78,7 @@ export function createWebhookIngestor(
   let server: Server | null = null;
 
   // ── Handle a parsed body ─────────────────────────────────
-  const handle = (
-    body: unknown,
-    _headers?: Record<string, string>,
-  ): WebhookResponse => {
+  const handle = (body: unknown, _headers?: Record<string, string>): WebhookResponse => {
     // Validate JSON body is an object
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return {

@@ -166,7 +166,11 @@ export function createCeoInboxStore(db: Database.Database): CeoInboxStore {
     return getByStatusStmt.all(status) as AgentProposalRow[];
   };
 
-  const routeToTelegram = (proposalId: string, chatId: string, threadId?: string): AgentProposalRow => {
+  const routeToTelegram = (
+    proposalId: string,
+    chatId: string,
+    threadId?: string,
+  ): AgentProposalRow => {
     const routedTo = threadId ? `telegram:${chatId}:${threadId}` : `telegram:${chatId}`;
     const info = routeToTelegramStmt.run({ proposalId, routedTo });
     if (info.changes === 0) {

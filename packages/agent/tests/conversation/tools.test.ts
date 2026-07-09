@@ -1391,9 +1391,9 @@ describe("request_agent_evidence bus enqueue", () => {
     });
 
     // Bus message should be enqueued
-    const busMessages = db
-      .prepare("SELECT * FROM agent_message_bus")
-      .all() as Array<Record<string, unknown>>;
+    const busMessages = db.prepare("SELECT * FROM agent_message_bus").all() as Array<
+      Record<string, unknown>
+    >;
     expect(busMessages.length).toBe(1);
 
     const msg = busMessages[0]! as {

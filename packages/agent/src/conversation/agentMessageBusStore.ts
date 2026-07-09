@@ -379,7 +379,10 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     const info = failStmt.run({
       messageId,
       maxAttempts: MAX_ATTEMPTS,
-      error: error != null ? JSON.stringify({ message: error, timestamp: new Date().toISOString() }) : null,
+      error:
+        error != null
+          ? JSON.stringify({ message: error, timestamp: new Date().toISOString() })
+          : null,
     });
     if (info.changes === 0) {
       throw new Error(`AgentMessage "${messageId}" not found or not in processing state.`);

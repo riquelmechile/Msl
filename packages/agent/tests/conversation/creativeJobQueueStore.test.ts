@@ -155,15 +155,11 @@ describe("CreativeJobQueueStore", () => {
       store.updateStatus("cj_test_001", "prepared-for-publish");
       store.updateStatus("cj_test_001", "published");
 
-      expect(() => store.updateStatus("cj_test_001", "running")).toThrow(
-        "terminal status",
-      );
+      expect(() => store.updateStatus("cj_test_001", "running")).toThrow("terminal status");
     });
 
     it("throws on non-existent job", () => {
-      expect(() => store.updateStatus("cj_nonexistent", "running")).toThrow(
-        "not found",
-      );
+      expect(() => store.updateStatus("cj_nonexistent", "running")).toThrow("not found");
     });
   });
 
@@ -189,9 +185,7 @@ describe("CreativeJobQueueStore", () => {
     });
 
     it("throws on non-existent job", () => {
-      expect(() =>
-        store.completeJob("cj_nonexistent", {}),
-      ).toThrow("not found");
+      expect(() => store.completeJob("cj_nonexistent", {})).toThrow("not found");
     });
   });
 

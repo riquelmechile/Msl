@@ -30,11 +30,7 @@ function envVal(key: string, fallback: number): number {
  * All findings are enqueued as CEO proposals with `noMutationExecuted: true`.
  * This daemon is proposal-only and never executes mutations directly.
  */
-export const ownedEcommerceDaemon: DaemonHandler = async ({
-  reader,
-  bus,
-  sellerIds,
-}) => {
+export const ownedEcommerceDaemon: DaemonHandler = async ({ reader, bus, sellerIds }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
