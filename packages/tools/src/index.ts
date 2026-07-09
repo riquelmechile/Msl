@@ -388,6 +388,10 @@ export type ApprovalQueueRepository = {
   findApproval(actionId: PreparedActionId): Promise<ApprovalRecord | null>;
   saveAudit(audit: AuditRecord): Promise<void>;
   listAudits(actionId: PreparedActionId): Promise<ReadonlyArray<AuditRecord>>;
+  /** List pending entries scoped to a specific seller account. */
+  listPendingBySeller?(sellerId: string): Promise<ApprovalQueueEntry[]>;
+  /** Fetch a specific entry for a seller, verifying ownership. */
+  getEntryForSeller?(actionId: string, sellerId: string): Promise<ApprovalQueueEntry | null>;
 };
 
 export type CloseableApprovalQueueRepository = ApprovalQueueRepository & { close(): void };
@@ -464,12 +468,41 @@ type QueueEntryRow = {
 type ApprovalRow = { approval_json: string };
 type AuditRow = { audit_json: string };
 
+/**
+ * Check whether a column exists in a table (idempotent migration guard).
+ */
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return info.some((col) => col.name === column);
+}
+
 export function createSqliteApprovalQueueRepository(
   dbPath = ":memory:",
 ): CloseableApprovalQueueRepository {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.exec(APPROVAL_QUEUE_SCHEMA);
+
+  // ── Idempotent migration: add seller_id columns ─────────────
+  if (!columnExists(db, "approval_queue_entries", "seller_id")) {
+    db.exec(`ALTER TABLE approval_queue_entries ADD COLUMN seller_id TEXT DEFAULT ''`);
+  }
+  if (!columnExists(db, "approval_records", "seller_id")) {
+    db.exec(`ALTER TABLE approval_records ADD COLUMN seller_id TEXT DEFAULT ''`);
+  }
+  if (!columnExists(db, "audit_records", "seller_id")) {
+    db.exec(`ALTER TABLE audit_records ADD COLUMN seller_id TEXT DEFAULT ''`);
+  }
+
+  // Best-effort backfill: extract sellerId from existing JSON payloads.
+  db.exec(`
+    UPDATE approval_queue_entries
+    SET seller_id = COALESCE(
+      NULLIF(JSON_EXTRACT(action_json, '$.sellerId'), 'null'),
+      COALESCE(JSON_EXTRACT(action_json, '$.sellerId'), '')
+    )
+    WHERE seller_id = ''
+  `);
 
   const saveEntry = db.prepare(`
     INSERT OR REPLACE INTO approval_queue_entries
@@ -492,6 +525,19 @@ export function createSqliteApprovalQueueRepository(
   const listAudits = db.prepare(
     "SELECT audit_json FROM audit_records WHERE action_id = ? ORDER BY recorded_at ASC, id ASC",
   );
+
+  const listPendingBySellerStmt = db.prepare(`
+    SELECT action_id, action_json, requested_at, highlighted_risk, status
+    FROM approval_queue_entries
+    WHERE status = 'pending' AND seller_id = ?
+    ORDER BY requested_at ASC
+  `);
+
+  const getEntryForSellerStmt = db.prepare(`
+    SELECT action_id, action_json, requested_at, highlighted_risk, status
+    FROM approval_queue_entries
+    WHERE action_id = ? AND seller_id = ?
+  `);
 
   return {
     save: (entry) => {
@@ -545,6 +591,34 @@ export function createSqliteApprovalQueueRepository(
       return Promise.resolve(
         rows.map((row) => deserializeAuditRecord(JSON.parse(row.audit_json) as AuditRecord)),
       );
+    },
+    /**
+     * List all pending approval entries scoped to a specific seller account.
+     */
+    listPendingBySeller: (sellerId: string) => {
+      const rows = listPendingBySellerStmt.all(sellerId) as QueueEntryRow[];
+      return Promise.resolve(
+        rows.map((row) => ({
+          action: deserializePreparedAction(JSON.parse(row.action_json) as PreparedAction),
+          requestedAt: new Date(row.requested_at),
+          highlightedRisk: row.highlighted_risk,
+          status: row.status,
+        })),
+      );
+    },
+    /**
+     * Fetch a specific entry for a seller, verifying ownership.
+     * Returns null if the entry does not exist or belongs to another seller.
+     */
+    getEntryForSeller: (actionId: string, sellerId: string) => {
+      const row = getEntryForSellerStmt.get(actionId, sellerId) as QueueEntryRow | undefined;
+      if (row === undefined) return Promise.resolve(null);
+      return Promise.resolve({
+        action: deserializePreparedAction(JSON.parse(row.action_json) as PreparedAction),
+        requestedAt: new Date(row.requested_at),
+        highlightedRisk: row.highlighted_risk,
+        status: row.status,
+      });
     },
     close: () => db.close(),
   };
