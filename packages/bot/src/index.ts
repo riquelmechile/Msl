@@ -572,11 +572,11 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
       const sessions = sessionStore.listActive();
       return Promise.resolve(
         sessions
-          .map((s) => {
+          .map((s: { id: string }) => {
             const match = /^telegram:[^:]+:(\d+)$/.exec(s.id);
             return match ? parseInt(match[1]!, 10) : null;
           })
-          .filter((id): id is number => id !== null),
+          .filter((id: number | null): id is number => id !== null),
       );
     },
   };

@@ -5,6 +5,6 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "references": [{ "path": "../agent" }, { "path": "../memory" }],
+  "references": [{ "path": "../agent" }, { "path": "../memory" }, { "path": "../mercadolibre" }],
   "include": ["src/**/*.ts"]
 }
