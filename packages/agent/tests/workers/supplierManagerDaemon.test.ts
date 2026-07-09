@@ -104,7 +104,8 @@ function mockStore(
     resolveTargetPolicy:
       (overrides.resolveTargetPolicy as SupplierMirrorStore["resolveTargetPolicy"]) ?? nullResult,
     appendLedger:
-      (overrides.appendLedger as SupplierMirrorStore["appendLedger"]) ?? ((r) => Promise.resolve(r)),
+      (overrides.appendLedger as SupplierMirrorStore["appendLedger"]) ??
+      ((r) => Promise.resolve(r)),
     getLedgerByIdempotencyKey:
       (overrides.getLedgerByIdempotencyKey as SupplierMirrorStore["getLedgerByIdempotencyKey"]) ??
       nullResult,

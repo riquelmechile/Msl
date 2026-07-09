@@ -138,7 +138,6 @@ export function isWritableCompanyAgentRegistry(
   registry: CompanyAgentRegistry | undefined,
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 ): registry is CompanyAgentRegistry & { insertCompanyAgent: Function } {
-
   return (
     typeof (registry as { insertCompanyAgent?: unknown } | undefined)?.insertCompanyAgent ===
     "function"
