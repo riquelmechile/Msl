@@ -193,6 +193,30 @@ export type {
 } from "./conversation/costSupplierDeepSeekAdvisor.js";
 
 export {
+  createDaemonAdvisorsFromEnv,
+} from "./conversation/createDaemonAdvisors.js";
+export type {
+  DaemonAdvisors,
+  CreateDaemonAdvisorsExtra,
+} from "./conversation/createDaemonAdvisors.js";
+
+export {
+  createCreativeJobQueueStore,
+} from "./conversation/creativeJobQueueStore.js";
+export type {
+  CreativeJobQueueStore,
+  CreativeJobRow,
+  CreateCreativeJobInput,
+} from "./conversation/creativeJobQueueStore.js";
+
+export {
+  MinimaxRetryPolicy,
+} from "./workers/minimaxRetryPolicy.js";
+export type {
+  RetryPolicyConfig,
+} from "./workers/minimaxRetryPolicy.js";
+
+export {
   applySupplierPricingPolicy,
   createSupplierMirrorTools,
   parseSupplierPricingPolicyText,

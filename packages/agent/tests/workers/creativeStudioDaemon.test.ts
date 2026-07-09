@@ -367,3 +367,33 @@ describe("creativeStudioDaemon", () => {
     });
   });
 });
+
+// ── Env fallback tests (separate describe for clarity) ───────────────
+
+import { resolveMinimaxApiHost } from "../../src/workers/creativeStudioDaemon.js";
+
+describe("resolveMinimaxApiHost", () => {
+  it("uses MINIMAX_API_HOST when set", () => {
+    process.env.MINIMAX_API_HOST = "https://custom.api.com";
+    delete process.env.MINIMAX_BASE_URL;
+    expect(resolveMinimaxApiHost()).toBe("https://custom.api.com");
+  });
+
+  it("falls back to MINIMAX_BASE_URL when MINIMAX_API_HOST is not set", () => {
+    delete process.env.MINIMAX_API_HOST;
+    process.env.MINIMAX_BASE_URL = "https://fallback.minimax.io";
+    expect(resolveMinimaxApiHost()).toBe("https://fallback.minimax.io");
+  });
+
+  it("uses default when neither env var is set", () => {
+    delete process.env.MINIMAX_API_HOST;
+    delete process.env.MINIMAX_BASE_URL;
+    expect(resolveMinimaxApiHost()).toBe("https://api.minimax.io");
+  });
+
+  it("prefers MINIMAX_API_HOST over MINIMAX_BASE_URL", () => {
+    process.env.MINIMAX_API_HOST = "https://primary.api.com";
+    process.env.MINIMAX_BASE_URL = "https://fallback.minimax.io";
+    expect(resolveMinimaxApiHost()).toBe("https://primary.api.com");
+  });
+});

@@ -22,6 +22,15 @@ function env(name: string, fallback = ""): string {
     : fallback;
 }
 
+/**
+ * Resolve the MiniMax API host with fallback chain:
+ * MINIMAX_API_HOST → MINIMAX_BASE_URL → default.
+ * Exported for testing.
+ */
+export function resolveMinimaxApiHost(): string {
+  return env("MINIMAX_API_HOST") || env("MINIMAX_BASE_URL") || "https://api.minimax.io";
+}
+
 function envNumber(name: string, fallback: number): number {
   const raw = env(name);
   const parsed = Number(raw);
@@ -157,7 +166,7 @@ export const creativeStudioDaemon: DaemonHandler = async ({
   const maxJobUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_JOB_USD", 0.5);
   const ledger = new CostLedger({ maxDailyUsd, maxJobUsd });
 
-  const apiHost = env("MINIMAX_API_HOST", "https://api.minimax.io");
+  const apiHost = resolveMinimaxApiHost();
   const timeoutMs = envNumber("MINIMAX_REQUEST_TIMEOUT_MS", 120000);
   const client = new MinimaxClient({ apiKey, apiHost, timeoutMs });
 

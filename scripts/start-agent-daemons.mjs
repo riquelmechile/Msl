@@ -162,6 +162,12 @@ if (botToken && adminChatIds.length > 0) {
   };
 }
 
+// ── DeepSeek advisors from env ──────────────────────────────────
+const { createDaemonAdvisorsFromEnv } = await import("@msl/agent");
+const advisors = createDaemonAdvisorsFromEnv(env, {
+  supplierMirrorStore,
+});
+
 // ── Start daemon scheduler ─────────────────────────────────────
 console.log("[agent-daemons] Starting daemon scheduler...");
 
@@ -173,6 +179,7 @@ const handle = startDaemonScheduler({
   consensusStore,
   ceoContext,
   supplierMirrorStore,
+  ...advisors,
   intervalMs: 15 * 60 * 1000, // 15 minutes
 });
 

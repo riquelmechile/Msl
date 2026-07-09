@@ -58,14 +58,14 @@ Chain strategy: stacked-to-main
 
 ## PR5: Creative Pipeline + Config (~450 lines)
 
-- [ ] 5.1 Create `creativeJobQueueStore.ts` — SQLite + status machine + CRUD
-- [ ] 5.2 Create `minimaxRetryPolicy.ts` — exp backoff 1s→2s→4s, skip 401/400
-- [ ] 5.3 Create `createDaemonAdvisors.ts` — 5 DeepSeek advisor factory
-- [ ] 5.4 Replace `creativeTools.ts` stubs with real queue calls
-- [ ] 5.5 `MINIMAX_BASE_URL` fallback for `MINIMAX_API_HOST`
-- [ ] 5.6 Wire advisors in `start-agent-daemons.mjs`
-- [ ] 5.7 Add 7 missing vars to `.env.example`
-- [ ] 5.8 Tests: retry delays, queue CRUD, env fallback, advisors
+- [x] 5.1 Create `creativeJobQueueStore.ts` — SQLite + status machine + CRUD
+- [x] 5.2 Create `minimaxRetryPolicy.ts` — exp backoff 1s→2s→4s, skip 401/400
+- [x] 5.3 Create `createDaemonAdvisors.ts` — 5 DeepSeek advisor factory
+- [x] 5.4 Replace `creativeTools.ts` stubs with real queue calls
+- [x] 5.5 `MINIMAX_BASE_URL` fallback for `MINIMAX_API_HOST`
+- [x] 5.6 Wire advisors in `start-agent-daemons.mjs`
+- [x] 5.7 Add 7 missing vars to `.env.example`
+- [x] 5.8 Tests: retry delays, queue CRUD, env fallback, advisors
 
 ## PR6: Maturity + E2E (~350 lines)
 
