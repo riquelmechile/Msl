@@ -80,6 +80,8 @@ export type AgentEvidenceResponse = {
   missingInputs: readonly string[];
   boundaryWarnings: readonly string[];
   noMutationExecuted: true;
+  /** Correlation ID for traceability across bus messages (set when a durable evidence request is enqueued). */
+  correlationId?: string;
 };
 
 const laneDepartments: Record<LaneId, CompanyDepartmentId> = {

@@ -8,6 +8,7 @@ import type {
   SnapshotSearchResult,
 } from "@msl/memory";
 import type { LaneId } from "../conversation/lanes.js";
+import type { CeoInboxStore } from "../conversation/ceoInboxStore.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
 import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
@@ -64,6 +65,8 @@ export type DaemonSchedulerConfig = {
   /** Optional CreativeDeepSeekAdvisor for AI enrichment of creative asset and
    *  commercial signals in the creative-assets and creative-commercial daemons. */
   creativeAdvisor?: CreativeDeepSeekAdvisor;
+  /** Optional CeoInboxStore for persisting CEO proposals before bus resolution. */
+  ceoInboxStore?: CeoInboxStore;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -199,7 +202,8 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
 
     // ── CEO message consumption ────────────────────────────────────
     // Daemons enqueue proposals addressed to "ceo" — consume them so
-    // the bus doesn't accumulate pending messages forever.
+    // the bus doesn't accumulate pending messages forever. For each
+    // valid proposal, persist to CeoInboxStore before resolving.
     const ceoMessages = config.bus.claimNext("ceo", { limit: 10 });
     for (const claim of ceoMessages) {
       try {
@@ -212,6 +216,26 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
 
         const summary = typeof payload.summary === "string" ? payload.summary : "(no summary)";
         console.log(`[daemon-scheduler] CEO proposal from ${claim.senderAgentId}: ${summary}`);
+
+        // Persist to CeoInboxStore if available (PR4: Proposal Router & Durability)
+        const inbox = config.ceoInboxStore;
+        if (inbox) {
+          const severity = payload.severity;
+          const riskLevel: "low" | "medium" | "high" | "critical" =
+            severity === "critical" ? "critical"
+            : severity === "high" ? "high"
+            : severity === "medium" ? "medium"
+            : "low";
+
+          inbox.insert({
+            sender_agent_id: claim.senderAgentId,
+            proposal_type: (typeof payload.type === "string" ? payload.type : "proposal") as string,
+            payload_json: claim.payloadJson,
+            normalized_summary: summary,
+            risk_level: riskLevel,
+            seller_id: claim.sellerId ?? "unknown",
+          });
+        }
 
         // Auto-submit consensus review for high-risk proposals
         const consensusStore = config.consensusStore;

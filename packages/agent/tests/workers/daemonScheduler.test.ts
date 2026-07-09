@@ -5,6 +5,7 @@ import { createSqliteOperationalReadModel } from "@msl/memory";
 import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { startDaemonScheduler, enqueueDaemonTick } from "../../src/workers/daemonScheduler.js";
+import { createCeoInboxStore, type CeoInboxStore } from "../../src/conversation/ceoInboxStore.js";
 import { listCompanyAgents } from "../../src/conversation/companyAgents.js";
 
 // ── Scheduler Tests ─────────────────────────────────────────────────
@@ -272,6 +273,83 @@ describe("daemonScheduler", () => {
         .all() as Array<{ receiver_agent_id: string }>).length;
 
       expect(count.cnt).toBe(uniqueLaneCount);
+    });
+  });
+
+  // ── CEO proposal persistence ────────────────────────────────────
+
+  describe("CEO proposal persistence", () => {
+    it("saves proposal to CeoInboxStore when ceoInboxStore is configured", async () => {
+      // Create a separate store for inbox — shares the same DB as the bus
+      const inboxStore: CeoInboxStore = createCeoInboxStore(db);
+
+      // Enqueue a message addressed to "ceo"
+      bus.enqueue({
+        senderAgentId: "morning-report",
+        receiverAgentId: "ceo",
+        messageType: "proposal",
+        payloadJson: JSON.stringify({
+          type: "briefing",
+          summary: "Test CEO consumption",
+          severity: "high",
+          findings: [{ kind: "alert", severity: "high", summary: "Test" }],
+        }),
+      });
+
+      const scheduler = startDaemonScheduler({
+        bus,
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        sellerIds: ["seller-1"],
+        intervalMs: 60_000,
+        ceoInboxStore: inboxStore,
+      });
+
+      // Wait for the cycle to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      scheduler.stop();
+
+      // The proposal should have been saved to the inbox
+      const proposals = inboxStore.listByStatus("pending");
+      expect(proposals.length).toBeGreaterThanOrEqual(1);
+      const match = proposals.find(
+        (p) => p.sender_agent_id === "morning-report" && p.normalized_summary === "Test CEO consumption",
+      );
+      expect(match).toBeDefined();
+      expect(match!.risk_level).toBe("high");
+      expect(match!.proposal_type).toBe("briefing");
+    });
+
+    it("does not crash when ceoInboxStore is not configured", async () => {
+      bus.enqueue({
+        senderAgentId: "morning-report",
+        receiverAgentId: "ceo",
+        messageType: "proposal",
+        payloadJson: JSON.stringify({
+          type: "briefing",
+          summary: "No inbox test",
+        }),
+      });
+
+      const scheduler = startDaemonScheduler({
+        bus,
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        sellerIds: ["seller-1"],
+        intervalMs: 60_000,
+        // Intentionally no ceoInboxStore — should not crash
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      scheduler.stop();
+
+      // Message should still be resolved even without inbox
+      const ceoMessages = db
+        .prepare("SELECT status FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
+        .all() as Array<{ status: string }>;
+      for (const row of ceoMessages) {
+        expect(row.status).toBe("resolved");
+      }
     });
   });
 });

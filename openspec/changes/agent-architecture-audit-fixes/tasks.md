@@ -51,10 +51,10 @@ Chain strategy: stacked-to-main
 
 ## PR4: Proposal Router + Durability (~250 lines)
 
-- [ ] 4.1 Add `routeToTelegram()`, `listByStatus()`, `getBySellerId()` to store
-- [ ] 4.2 CEO: `insert()` + Telegram before resolve
-- [ ] 4.3 `request_agent_evidence` enqueues durable msg with correlation ID
-- [ ] 4.4 Tests: Telegram routing, evidence enqueue, correlation chain
+- [x] 4.1 Add `routeToTelegram()`, `listByStatus()`, `getByStatus()` to store
+- [x] 4.2 CEO: `insert()` + inbox before resolve
+- [x] 4.3 `request_agent_evidence` enqueues durable msg with correlation ID
+- [x] 4.4 Tests: Telegram routing, CEO proposal save, evidence enqueue, correlation chain
 
 ## PR5: Creative Pipeline + Config (~450 lines)
 

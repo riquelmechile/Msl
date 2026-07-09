@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type {
   CompanyAgentRegistry,
   CompanyDepartmentId,
@@ -7,6 +8,7 @@ import type {
 import type { CompanyAgentStore } from "../companyAgentStore.js";
 import { getCompanyAgent, listCompanyAgents } from "../companyAgents.js";
 import type { ToolDefinition } from "./types.js";
+import type { AgentMessageBusStore } from "../agentMessageBusStore.js";
 import {
   safeString,
   normalizeCompanyAgentText,
@@ -379,7 +381,10 @@ export function createUpdateCompanyAgentTool(
 
 // ── Request Agent Evidence ─────────────────────────────────────────────
 
-export function createRequestAgentEvidenceTool(registry?: CompanyAgentRegistry): ToolDefinition {
+export function createRequestAgentEvidenceTool(
+  registry?: CompanyAgentRegistry,
+  bus?: AgentMessageBusStore,
+): ToolDefinition {
   const targetAgentIds = Array.from(
     new Set([
       ...listCompanyAgents().map((agent) => agent.id),
@@ -483,6 +488,26 @@ export function createRequestAgentEvidenceTool(registry?: CompanyAgentRegistry):
         noMutationExecuted: true,
       };
       if (agent.profile.laneId) response.laneId = agent.profile.laneId;
+
+      // Enqueue a durable evidence request via the message bus (PR4: Proposal Router & Durability)
+      if (bus && agent.profile.laneId && response.status === "evidence-ready") {
+        const correlationId = crypto.randomUUID();
+        bus.enqueue({
+          senderAgentId: "ceo",
+          receiverAgentId: agent.profile.laneId,
+          messageType: "evidence_request",
+          payloadJson: JSON.stringify({
+            scope,
+            requestedEvidenceKinds,
+            ceoMessageId: correlationId,
+            originalArgs: args,
+          }),
+          dedupeKey: `evidence-request:${agent.id}:${Date.now()}`,
+          correlationId,
+        });
+        response.correlationId = correlationId;
+      }
+
       return response;
     },
   };

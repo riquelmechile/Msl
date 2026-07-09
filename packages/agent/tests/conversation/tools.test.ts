@@ -26,6 +26,10 @@ import { listCompanyAgents } from "../../src/conversation/companyAgents.js";
 import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
 import { createCompanyAgentLearningStore } from "../../src/conversation/companyAgentLearningStore.js";
 import { createWorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
+import {
+  createAgentMessageBusStore,
+  type AgentMessageBusStore,
+} from "../../src/conversation/agentMessageBusStore.js";
 
 describe("createGetBusinessContextTool", () => {
   let engine: GraphEngine;
@@ -427,6 +431,9 @@ describe("company agent registry and request_agent_evidence", () => {
       "product-ads-ceo-profitability",
       "product-ads-profitability",
       "supplier-manager",
+      "morning-report",
+      "eod-summary",
+      "unanswered-questions",
     ]);
     const marketCatalog = agents.find((agent) => agent.id === "market-catalog");
     expect(marketCatalog?.source).toBe("lane-contract");
@@ -1353,5 +1360,134 @@ describe("createProposeHoneyPotTool", () => {
     // Try active strategy.
     const result2 = tool.execute({ strategyId: 2 });
     expect(result2).not.toHaveProperty("error");
+  });
+});
+
+// ── request_agent_evidence bus enqueue ────────────────────────────────
+
+describe("request_agent_evidence bus enqueue", () => {
+  let db: Database.Database;
+  let bus: AgentMessageBusStore;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    bus = createAgentMessageBusStore(db);
+  });
+
+  it("enqueues a durable evidence request message when bus is provided", () => {
+    const tool = createRequestAgentEvidenceTool(undefined, bus);
+    const result = tool.execute({
+      targetAgent: "cost-supplier",
+      scope: "validate margin viability for listing MLC-42",
+      requestedEvidenceKinds: ["cost", "supplier", "margin"],
+    });
+
+    // Synchronous response should still be returned
+    expect(result).toMatchObject({
+      status: "evidence-ready",
+      targetAgent: "cost-supplier",
+      laneId: "cost-supplier",
+    });
+
+    // Bus message should be enqueued
+    const busMessages = db
+      .prepare("SELECT * FROM agent_message_bus")
+      .all() as Array<Record<string, unknown>>;
+    expect(busMessages.length).toBe(1);
+
+    const msg = busMessages[0]! as {
+      sender_agent_id: string;
+      receiver_agent_id: string;
+      message_type: string;
+      correlation_id: string | null;
+    };
+    expect(msg.sender_agent_id).toBe("ceo");
+    expect(msg.receiver_agent_id).toBe("cost-supplier");
+    expect(msg.message_type).toBe("evidence_request");
+    expect(msg.correlation_id).toBeTruthy();
+
+    // Correlation should be returned in response
+    expect(result.correlationId).toBe(msg.correlation_id);
+  });
+
+  it("does not enqueue when target agent is not active (suspended)", () => {
+    const db2 = new Database(":memory:");
+    const store = createCompanyAgentStore(db2);
+    store.insertCompanyAgent({
+      id: "agent:suspended",
+      label: "Suspended Agent",
+      departmentId: "commercial",
+      stablePrefix: "suspended-agent",
+      refreshableContextProvider: "suspended-agent-context",
+      inputs: [],
+      outputs: [],
+      requiredEvidenceKinds: ["commercial-context"],
+      boundaries: ["Suspended agent must not receive work."],
+    });
+    store.archiveCompanyAgent("agent:suspended"); // suspends it
+
+    const tool = createRequestAgentEvidenceTool(store, bus);
+    const result = tool.execute({
+      targetAgent: "agent:suspended",
+      scope: "review",
+      requestedEvidenceKinds: ["commercial-context"],
+    });
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      targetAgent: "agent:suspended",
+    });
+
+    // No bus message should be enqueued
+    const count = db.prepare("SELECT COUNT(*) as cnt FROM agent_message_bus").get() as {
+      cnt: number;
+    };
+    expect(count.cnt).toBe(0);
+  });
+
+  it("does not enqueue when bus is not provided (backward compat)", () => {
+    const tool = createRequestAgentEvidenceTool();
+    const result = tool.execute({
+      targetAgent: "cost-supplier",
+      scope: "validate margin viability for listing MLC-42",
+      requestedEvidenceKinds: ["cost", "supplier", "margin"],
+    });
+
+    expect(result).toMatchObject({
+      status: "evidence-ready",
+    });
+    expect(result).not.toHaveProperty("correlationId");
+  });
+});
+
+// ── Correlation chain ────────────────────────────────────────────────
+
+describe("evidence request correlation chain", () => {
+  let db: Database.Database;
+  let bus: AgentMessageBusStore;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("journal_mode = WAL");
+    bus = createAgentMessageBusStore(db);
+  });
+
+  it("creates traceable correlation across bus messages", () => {
+    const tool = createRequestAgentEvidenceTool(undefined, bus);
+    const result = tool.execute({
+      targetAgent: "cost-supplier",
+      scope: "validate margin viability for listing MLC-42",
+      requestedEvidenceKinds: ["cost", "supplier", "margin"],
+    });
+
+    expect(result).toMatchObject({ status: "evidence-ready" });
+
+    // Get the enqueued message
+    const messages = bus.getMessagesByCorrelationId(result.correlationId!);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.correlationId).toBe(result.correlationId);
+    expect(messages[0]!.senderAgentId).toBe("ceo");
+    expect(messages[0]!.messageType).toBe("evidence_request");
   });
 });

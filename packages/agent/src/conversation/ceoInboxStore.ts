@@ -57,6 +57,16 @@ export type CeoInboxStore = {
   insert(input: InsertAgentProposalInput): AgentProposalRow;
   listByStatus(status?: string): AgentProposalRow[];
   getBySellerId(sellerId: string): AgentProposalRow[];
+  /** Get proposals by status. Alias for listByStatus(status). */
+  getByStatus(status: string): AgentProposalRow[];
+  /**
+   * Mark a proposal as routed to Telegram and set its status to "routed".
+   * @param proposalId — the unique proposal ID
+   * @param chatId — Telegram chat ID
+   * @param threadId — optional Telegram forum thread ID
+   * @returns the updated proposal row
+   */
+  routeToTelegram(proposalId: string, chatId: string, threadId?: string): AgentProposalRow;
 };
 
 // ── Row mapper ───────────────────────────────────────────────────────
@@ -103,6 +113,18 @@ export function createCeoInboxStore(db: Database.Database): CeoInboxStore {
     ORDER BY created_at DESC
   `);
 
+  const getByStatusStmt = db.prepare(`
+    SELECT * FROM agent_proposals
+    WHERE status = ?
+    ORDER BY created_at DESC
+  `);
+
+  const routeToTelegramStmt = db.prepare(`
+    UPDATE agent_proposals
+    SET routed_to = @routedTo, status = 'routed', updated_at = datetime('now')
+    WHERE proposal_id = @proposalId
+  `);
+
   // ── API methods ────────────────────────────────────────────
 
   const insert = (input: InsertAgentProposalInput): AgentProposalRow => {
@@ -140,9 +162,25 @@ export function createCeoInboxStore(db: Database.Database): CeoInboxStore {
     return getBySellerIdStmt.all(sellerId) as AgentProposalRow[];
   };
 
+  const getByStatus = (status: string): AgentProposalRow[] => {
+    return getByStatusStmt.all(status) as AgentProposalRow[];
+  };
+
+  const routeToTelegram = (proposalId: string, chatId: string, threadId?: string): AgentProposalRow => {
+    const routedTo = threadId ? `telegram:${chatId}:${threadId}` : `telegram:${chatId}`;
+    const info = routeToTelegramStmt.run({ proposalId, routedTo });
+    if (info.changes === 0) {
+      throw new Error(`Proposal "${proposalId}" not found. Cannot route to Telegram.`);
+    }
+    const row = selectByProposalIdStmt.get(proposalId) as AgentProposalRow;
+    return rowToAgentProposal(row);
+  };
+
   return {
     insert,
     listByStatus,
     getBySellerId,
+    getByStatus,
+    routeToTelegram,
   };
 }
