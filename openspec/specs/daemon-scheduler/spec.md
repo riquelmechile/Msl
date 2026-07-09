@@ -8,14 +8,36 @@ A configurable poll-dispatch loop that wakes specialist agents on a schedule, cl
 
 ### Requirement: Agent Polling Loop
 
-The scheduler MUST poll `agentMessageBusStore.claimNext(agentId)` for each active company agent in rotation, with a configurable interval per agent defaulting to 15 minutes. The system SHALL invoke `listCompanyAgents()` once per polling cycle and skip agents not found in the daemon handler map.
+Scheduler MUST poll `claimNext(agentId)` on configured interval (default 15 min). Before polling, SHALL call `enqueueDaemonTick(agentId)` for agents with cron/tick schedule. Suspended agents excluded from polling and tick generation.
+(Previously: Reactive-only — claimed existing messages; no self-triggering.)
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
 | Normal poll | Agent has pending message | Scheduler polls for that agent | `claimNext` returns message, dispatched to daemon |
+| Tick triggers poll | Agent has matching cron schedule | Tick enqueued, then polled | Message claimed from tick; daemon investigates |
 | No pending | Agent has no pending messages | claimNext returns empty | Scheduler moves to next agent |
 | No handler | Agent exists but no matching daemon | Scheduler evaluates agent | Agent skipped, no error |
-| Suspended agent | Agent status is "suspended" | Scheduler executes cycle | Agent excluded from polling |
+| Suspended agent | Agent status is "suspended" | Scheduler executes cycle | Agent excluded from polling and tick generation |
+
+### Requirement: Autonomous Tick Generation
+
+`enqueueDaemonTick(laneId, opts?)` MUST enqueue self-triggering message with `senderAgentId="system"`, `receiverAgentId=laneId`, `messageType="daemon_tick"`, and lane-scoped `dedupe_key`. Scheduler SHALL call it before `claimNext()` for daemons with configured schedule.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Tick enqueues | market-catalog interval fires | enqueueDaemonTick("market-catalog") | Message enqueued; type="daemon_tick" |
+| Dedupe prevents double | Previous tick still pending | Interval fires again | No duplicate; dedupe key match |
+| Unregistered lane | Lane has no handler | enqueueDaemonTick("unknown") | Tick enqueued; scheduler skips if no handler |
+
+### Requirement: Per-Daemon Cron Schedules
+
+Each daemon lane MAY define `cronSchedule` or `tickIntervalMs`. Cron evaluated per polling cycle; tickInterval enqueues on elapsed interval. Daemons without schedule remain reactive-only.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Cron matches | market-catalog cronSchedule="0 */6 * * *" | Current time matches | Tick enqueued |
+| Tick interval | cost-supplier tickIntervalMs=900000 | 15 min elapsed | Tick enqueued |
+| No schedule | creative-studio has no config | Polling cycle runs | No tick; reactive-only |
 
 ### Requirement: Claim-Dispatch-Resolve Lifecycle
 
@@ -48,16 +70,36 @@ A daemon crash MUST NOT bring down the scheduler. The scheduler SHALL catch daem
 
 ### Requirement: Agent-to-Daemon Handler Map
 
-The scheduler MUST maintain a static mapping from `LaneId` to daemon handler functions. Only lanes `cost-supplier`, `market-catalog`, `creative-assets`, `creative-commercial`, `operations-manager`, `product-ads-monitor`, `product-ads-profitability`, `product-ads-ceo-profitability`, and `supplier-manager` SHALL have handlers. Unknown lanes MUST be skipped.
-(Previously: handler map did not include `product-ads-ceo-profitability` lane; `product-ads-profitability` lane already had a handler.)
+Handler map SHALL cover 13 lanes: cost-supplier, market-catalog, creative-assets, creative-commercial, operations-manager, product-ads-monitor, product-ads-profitability, product-ads-ceo-profitability, supplier-manager, morning-report, eod-summary, owned-ecommerce, unanswered-questions. Unknown lanes skipped.
+(Previously: 9 lanes mapped; morning-report, eod-summary, owned-ecommerce, unanswered-questions missing.)
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
 | Known lane | Agent with laneId "market-catalog" | Scheduler routes | Dispatched to marketCatalogDaemon |
-| Creative assets lane | Agent with laneId "creative-assets" | Scheduler routes | Dispatched to creativeAssetsDaemon |
-| Product Ads Monitor lane | Agent with laneId "product-ads-monitor" | Scheduler routes | Dispatched to productAdsMonitorDaemon |
-| Product Ads Profitability lane | Agent with laneId "product-ads-profitability" | Scheduler routes | Dispatched to productAdsProfitabilityDaemon |
-| CEO Profitability lane | Agent with laneId "product-ads-ceo-profitability" | Scheduler routes | Dispatched to ceoProfitabilityDaemon |
-| Supplier Manager lane | Agent with laneId "supplier-manager" | Scheduler routes | Dispatched to supplierManagerDaemon |
-| CEO lane | Agent with laneId "ceo" | Scheduler routes | Skipped — no daemon handler |
-| Unknown lane | Agent with unmapped laneId | Scheduler routes | Skipped — no error |
+| New lanes | morning-report, eod-summary, owned-ecommerce, unanswered-questions | Scheduler routes | Each dispatched to respective daemon |
+
+### Requirement: Extended Handler Map
+
+`daemonHandlerMap` MUST include: `morning-report`→morningReportDaemon, `eod-summary`→eodSummaryDaemon, `owned-ecommerce`→ownedEcommerceDaemon, `unanswered-questions`→unansweredQuestionsDaemon.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| New lanes dispatched | Claims for morning-report, eod-summary, owned-ecommerce, unanswered-questions | Scheduler routes | Each dispatched to respective daemon |
+
+### Requirement: Advisor Wiring via Factory
+
+`createDaemonAdvisorsFromEnv()` MUST read `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` and instantiate advisors for operations, catalog, cost-supplier, and creative lanes. Returns `undefined` per advisor when env vars missing.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| All vars set | DEEPSEEK_API_KEY + BASE_URL configured | Factory called | All advisors instantiated |
+| No env vars | No DeepSeek vars | Factory called | All undefined; rule-only mode (no error) |
+
+### Requirement: Supplier Adapter Wiring
+
+`startSupplierMirrorScheduler()` MUST accept `supplierAdapters` config. Startup SHALL construct real adapters from env instead of `new Map()`. Falls back to empty Map when unconfigured.
+
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| Adapters configured | Env defines adapter URLs | Scheduler starts | Real adapters passed |
+| No adapters | No env vars | Scheduler starts | Empty Map; internal mirror only (backward compatible) |
