@@ -658,6 +658,32 @@ export function createAgentLoop(config: AgentLoopConfig) {
 Actualmente te encuentro en nivel ${name}. ${levelDesc}`;
     }
 
+    // ── Account context injection ──────────────────────────────
+    // When per-account context is provided, inject the account name,
+    // capabilities, profit goal, and risk level into the system prompt
+    // so the agent scopes tool context and attribution to this seller.
+    if (config.accountContext?.asset) {
+      const a = config.accountContext.asset;
+      const capList = a.capabilities.map((c) => `- ${c.kind}: ${c.status}`).join("\n");
+      prompt = `${prompt}
+
+## Contexto de Cuenta: ${a.name}
+- **SellerId**: ${a.sellerId}
+- **Marketplace**: ${a.marketplace}
+- **Profit Goal**: ${a.profitGoal}%
+- **Riesgo**: ${a.riskLevel}
+- **Estado**: ${a.status}
+
+### Capacidades
+${capList}`;
+    } else if (config.accountContext) {
+      // Minimal context — sellerId only, no full asset loaded yet
+      prompt = `${prompt}
+
+## Contexto de Cuenta
+- **SellerId**: ${config.accountContext.sellerId}`;
+    }
+
     const strategies = getActiveStrategies();
     if (strategies.length === 0) {
       return prompt;

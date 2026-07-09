@@ -1,0 +1,38 @@
+{
+  "accounts": [
+    {
+      "sellerId": "${PLASTICOV_SELLER_ID}",
+      "name": "Plasticov",
+      "marketplace": "MLC",
+      "profitGoal": 40,
+      "riskLevel": "low",
+      "status": "active",
+      "capabilities": [
+        { "kind": "publish", "status": "active" },
+        { "kind": "answer", "status": "active" },
+        { "kind": "pricing", "status": "active" },
+        { "kind": "ads", "status": "active" },
+        { "kind": "claims", "status": "active" },
+        { "kind": "reputation", "status": "active" }
+      ]
+    },
+    {
+      "sellerId": "${MAUSTIAN_SELLER_ID}",
+      "name": "Maustian",
+      "marketplace": "MLC",
+      "profitGoal": 50,
+      "riskLevel": "medium",
+      "status": "active",
+      "capabilities": [
+        { "kind": "publish", "status": "active" },
+        { "kind": "answer", "status": "active" },
+        { "kind": "pricing", "status": "active" },
+        { "kind": "ads", "status": "active" },
+        { "kind": "claims", "status": "active" },
+        { "kind": "future-ecommerce", "status": "degraded" },
+        { "kind": "future-supplier", "status": "missing" }
+      ]
+    }
+  ],
+  "fallbackMode": "pending_configuration"
+}

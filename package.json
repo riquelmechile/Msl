@@ -20,6 +20,7 @@
     "smoke:deepseek:tool": "npm run build --workspace @msl/agent && node scripts/deepseek-tool-smoke.mjs",
     "check:production-secrets": "npm run build --workspace @msl/agent && node scripts/check-production-secrets.mjs",
     "supplier-mirror:jinpeng:dry-run": "npm run build --workspace @msl/workers && node scripts/supplier-mirror-jinpeng-bootstrap.mjs --dry-run",
+    "seed:account-assets": "node scripts/seed-account-assets.mjs",
     "lint": "TSESTREE_SINGLE_RUN=true eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

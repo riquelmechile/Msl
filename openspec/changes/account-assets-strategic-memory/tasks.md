@@ -47,13 +47,13 @@ Chain strategy: stacked-to-main
 
 ## PR 4 — AccountAssetStore + Validation + Documentation
 
-- [ ] 4.1 Create `packages/agent/src/conversation/accountAssetStore.ts` — 7 SQLite tables (all with `seller_id TEXT NOT NULL`). Idempotent `CREATE TABLE IF NOT EXISTS`. Factory returns `AccountAssetStore` with 15 methods. **Spec**: account-asset-store (all)
-- [ ] 4.2 Create `config/account-assets.seed.json` — Plasticov (MLC, goal 40%, low) + Maustian (MLC, goal 50%, medium) with capabilities. **Spec**: account-asset-store (per-account)
-- [ ] 4.3 Create `scripts/seed-account-assets.ts` — seed via `upsertAccountAsset()`
-- [ ] 4.4 Write integration tests — store CRUD, `compareAccounts()`, health history, global visibility, Cortex scoping, autonomy per-seller, "dale" ambiguity (12 spec scenarios). **Spec**: account-asset-store, neural-graph-memory, autonomy-engine, action-approval-safety
-- [ ] 4.5 Full suite: `npm test && npm run typecheck && npm run lint` — 2085 tests green
-- [ ] 4.6 Update `ARCHITECTURE.md` — AccountAsset model, column scoping, Cortex subgraph, daemon per-seller flow
-- [ ] 4.7 Create `docs/audits/account-assets-addendum.md` — migration audit, backfill rationale, rollback plan
+- [x] 4.1 Create `packages/agent/src/conversation/accountAssetStore.ts` — 7 SQLite tables (all with `seller_id TEXT NOT NULL`). Idempotent `CREATE TABLE IF NOT EXISTS`. Factory returns `AccountAssetStore` with 15 methods. **Spec**: account-asset-store (all)
+- [x] 4.2 Create `config/account-assets.seed.json` — Plasticov (MLC, goal 40%, low) + Maustian (MLC, goal 50%, medium) with capabilities. **Spec**: account-asset-store (per-account)
+- [x] 4.3 Create `scripts/seed-account-assets.mjs` — seed via `upsertAccountAsset()`
+- [x] 4.4 Write integration tests — store CRUD, `compareAccounts()`, health history, global visibility, Cortex scoping, autonomy per-seller, "dale" ambiguity (12 spec scenarios). **Spec**: account-asset-store, neural-graph-memory, autonomy-engine, action-approval-safety
+- [x] 4.5 Full suite: `npm test && npm run typecheck && npm run lint` — 2140 tests green
+- [x] 4.6 Update `ARCHITECTURE.md` — AccountAsset model, column scoping, Cortex subgraph, daemon per-seller flow
+- [x] 4.7 Create `docs/audits/account-assets-memory-addendum-2026-07.md` — migration audit, backfill rationale, rollback plan
 
 ## Deferred (No Migration Needed)
 

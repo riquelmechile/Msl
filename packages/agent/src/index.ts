@@ -307,6 +307,9 @@ export type {
   AgentProposalRow,
 } from "./conversation/ceoInboxStore.js";
 
+export { createAccountAssetStore } from "./conversation/accountAssetStore.js";
+export type { AccountAssetStore } from "./conversation/accountAssetStore.js";
+
 // ── Runtime env validation ───────────────────────────────────────────
 export { validateRuntimeEnv } from "./conversation/validateEnv.js";
 export type { EnvValidation } from "./conversation/validateEnv.js";

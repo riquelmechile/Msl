@@ -327,6 +327,63 @@ Telegram runtime around the CEO agent loop. Handles incoming Telegram messages, 
 
 `MSL_TELEGRAM_ACTIVE_COMPANY_AGENT_ID` selects internal company-agent context for lessons and delegation. It is not an admin flag. Admin-capable company-agent tools require `MSL_COMPANY_AGENT_ADMIN_ENABLED=true` plus an allowlisted Telegram chat or user id.
 
+### Account Asset Model — Multi-seller strategic scoping
+
+The `AccountAsset` domain model treats each MercadoLibre seller account as a strategic asset with its own capabilities, profit goal, risk level, and memory scoping.
+
+| Concept | Implementation |
+|---------|---------------|
+| Account record | `account_assets` table — one row per `seller_id`, with `name`, `marketplace`, `profit_goal`, `risk_level`, `status` |
+| Capabilities | `account_capabilities` table — per-account capabilities (`publish`, `pricing`, `claims`, `ads`, etc.) with health snapshots |
+| Health history | `account_health_snapshots` — time-series of health states with reputation, sales velocity, and risk level |
+| Profit goals | `account_profit_goals` — target margin percentage per seller |
+| Strategy notes | `account_strategy_notes` — strategic directives per seller or global (`seller_id = NULL`) |
+| Risks & opportunities | `account_risks`, `account_opportunities` — tracked business risks and opportunities per seller |
+
+#### Column scoping vs. file isolation
+
+Column-level `seller_id` scoping **complements** existing file-level bot isolation:
+
+```
+File-level (bot)          Column-level (daemons + strategic memory)
+┌─────────────────────┐   ┌──────────────────────────────────────────┐
+│ Bot A → db-A.sqlite  │   │ Daemon Scheduler                         │
+│ sellerId = plasticov │   │   └─ single strategic DB                 │
+│                       │   │        ├─ nodes.seller_id = (A|B|NULL)  │
+│ Bot B → db-B.sqlite  │   │        ├─ strategies.seller_id           │
+│ sellerId = maustian  │   │        └─ account_assets.seller_id       │
+└─────────────────────┘   └──────────────────────────────────────────┘
+```
+
+Bots stay file-isolated (one `sellerId` per `createTelegramBot`). Daemons share a single strategic DB with column-scoped queries so the CEO can compare accounts and the scheduler can dispatch per-seller evidence.
+
+#### Cortex subgraph
+
+Each seller's Cortex subgraph is rooted at `account_asset:{sellerId}` with edges to `listing`, `order`, `claim`, `strategy`, and `lesson` nodes. Hebbian reinforcement validates source/target nodes share `sellerId`. Darwinian pruning and spreading activation filter by `seller_id` in CTE queries. Global-scope nodes (`seller_id = NULL`) are visible to all sellers.
+
+#### Daemon per-seller flow
+
+```
+DaemonScheduler (interval tick)
+  ├─ build accountContexts from AccountAssetStore.listActive()
+  ├─ for each lane:
+  │    └─ handler({ sellerIds, accountContexts })
+  │         └─ for each sellerId:
+  │              ├─ scoped OperationalReadModel queries
+  │              ├─ scoped Cortex queries (getNodesBySeller)
+  │              └─ enqueue CEO proposal with sellerId in payload
+  └─ CEO inbox routes proposals to bot chats
+```
+
+#### Approval (dale) scoping
+
+The bot's "dale" flow resolves seller context by matching seller name from the message:
+- `dale la de Maustian` → resolves to Maustian's sellerId
+- `dale` with 1 account → auto-resolves
+- `dale` with 2+ accounts → prompts "¿Cuál cuenta?"
+
+**Bot limitation:** In single-bot-instance deployment, `knownSellers` maps both Plasticov and Maustian to the same `config.sellerId`. Multi-seller dale resolution with distinct sellerIds requires multi-bot deployment (one bot instance per seller). Current architecture supports this — the column-scoped stores are ready — but the single-instance bot resolves all accounts to its configured `sellerId`.
+
 ### `apps/web` — Demo console
 
 Next.js 15 + React 19. Deterministic demo that exercises the agent's business Q&A engine without requiring a real LLM API key. The `/api/chat` route creates in-memory demo strategy/autonomy stores per request and forces `mockClient: true`; it is not production chat persistence or real DeepSeek wiring. Spanish product copy throughout. Interactive console UI for testing conversation flows.
