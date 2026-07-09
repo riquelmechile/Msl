@@ -257,7 +257,7 @@ describe("MlDiagnosticAdapter", () => {
 
     it("sends correct request body", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return mockResponse({ action: "empty" }) as Response;
       });
@@ -268,10 +268,15 @@ describe("MlDiagnosticAdapter", () => {
         pictureType: "thumbnail",
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.picture_url).toBe("https://cdn.example.com/product.jpg");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.context.category_id).toBe("MLC1055");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.context.title).toBe("My Product");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.context.picture_type).toBe("thumbnail");
     });
   });

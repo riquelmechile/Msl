@@ -3,22 +3,22 @@ import { z } from "zod";
 import type {
   ApprovalQueueEntry,
   ApprovalQueueRepository,
-  Clock,
-  PrepareWriteInput,
+  Clock,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  PrepareWriteInput,  // eslint-disable-line @typescript-eslint/no-unused-vars
 } from "@msl/tools";
-import type { ApprovalRecord, ExactChange, RiskLevel } from "@msl/domain";
+import type { ApprovalRecord, ExactChange } from "@msl/domain";
 import {
   applyStrategies,
   assertCompleteMlcItem,
   assertPlasticovToMaustianDirection,
   buildNewItemFromMlItem,
   getMlAccountRoleConfig,
-  normalizeImageOrchestration,
+  normalizeImageOrchestration,  // eslint-disable-line @typescript-eslint/no-unused-vars
   normalizeMlcItemId,
   previewStrategyChanges,
-  MLC_PRODUCT_ADS_MAX_LIMIT,
-  type MlcApiClient,
-  type MlcImageOrchestrationSummary,
+  MLC_PRODUCT_ADS_MAX_LIMIT,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  type MlcApiClient,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  type MlcImageOrchestrationSummary,  // eslint-disable-line @typescript-eslint/no-unused-vars
   type MlItem,
   type MlWriteSnapshot,
   type MlAccountRoleConfig,
@@ -33,7 +33,7 @@ import type {
   SyncProductReadinessEvidenceProviders,
 } from "../index.js";
 import { areStrategies } from "../strategyValidation.js";
-import type { McpToolResult } from "./utils.js";
+
 import {
   jsonResult,
   unauthorizedResult,

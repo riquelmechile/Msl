@@ -306,7 +306,9 @@ describe("marketCatalogDaemon", () => {
         expect(row!.message_type).toBe("proposal");
 
         // Verify noMutationExecuted is set in payload
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const payload = JSON.parse(row!.payload_json as string);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(payload.noMutationExecuted).toBe(true);
       }
     });
@@ -337,7 +339,9 @@ describe("marketCatalogDaemon", () => {
           .get(msgId) as { payload_json: string } | undefined;
 
         expect(row).toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const payload = JSON.parse(row!.payload_json);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(payload.noMutationExecuted).toBe(true);
       }
     });

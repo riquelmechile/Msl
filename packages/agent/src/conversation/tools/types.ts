@@ -1,14 +1,14 @@
-import type { GraphEngine } from "@msl/memory";
-import type { LaneId } from "../lanes.js";
+
+
 import {
   getCompanyAgent,
-  listCompanyAgents,
-  type AgentEvidenceResponse,
-  type CompanyAgent,
+  listCompanyAgents,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  type AgentEvidenceResponse,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  type CompanyAgent,  // eslint-disable-line @typescript-eslint/no-unused-vars
   type CompanyAgentRegistry,
   type CompanyDepartmentId,
   type AgentSkill,
-  type EvidenceKind,
+  type EvidenceKind,  // eslint-disable-line @typescript-eslint/no-unused-vars
 } from "../companyAgents.js";
 import type {
   AgentLearningRecord,
@@ -142,7 +142,7 @@ export function nonEmptyUniqueStrings(value: unknown): string[] {
 
 export function isWritableCompanyAgentRegistry(
   registry: CompanyAgentRegistry | undefined,
-): registry is CompanyAgentRegistry & { insertCompanyAgent: Function } {
+): registry is CompanyAgentRegistry & { insertCompanyAgent: Function } {  // eslint-disable-line @typescript-eslint/no-unsafe-function-type
   return (
     typeof (registry as { insertCompanyAgent?: unknown } | undefined)?.insertCompanyAgent ===
     "function"

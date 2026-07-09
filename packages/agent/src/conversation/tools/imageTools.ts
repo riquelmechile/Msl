@@ -3,7 +3,7 @@ import { normalizeImageOrchestration } from "@msl/mercadolibre";
 
 import type { ToolDefinition } from "../tools.js";
 import { coerceSellerId } from "./_shared.js";
-import { sanitizeToolErrorText } from "../toolErrorSanitizer.js";
+
 
 // ---------------------------------------------------------------------------
 // diagnose_image tool

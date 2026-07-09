@@ -24,7 +24,7 @@ export type CreativeJobStatus =
   | "published"
   | "failed";
 
-export interface CreativeAssetRequest {
+export type CreativeAssetRequest = {
   requestId: string;
   requestedByAgent: string;
   sellerId: string;
@@ -66,7 +66,7 @@ export interface CreativeAssetRequest {
   };
 }
 
-export interface MlDiagnosticResult {
+export type MlDiagnosticResult = {
   passed: boolean;
   picture_type: string;
   detections: Array<{
@@ -75,7 +75,7 @@ export interface MlDiagnosticResult {
   }>;
 }
 
-export interface CreativeExecutionResult {
+export type CreativeExecutionResult = {
   jobId: string;
   requestId: string;
   status: CreativeJobStatus;
@@ -95,13 +95,13 @@ export interface CreativeExecutionResult {
   noMutationExecuted: true;
 }
 
-export interface CreativeProvider {
+export type CreativeProvider = {
   supports(kind: CreativeJobKind): boolean;
   estimate(request: CreativeAssetRequest): number;
   execute(request: CreativeAssetRequest): Promise<CreativeExecutionResult>;
 }
 
-export interface CreativeBudgetPolicy {
+export type CreativeBudgetPolicy = {
   maxDailyUsd: number;
   maxJobUsd: number;
   maxVariantsPerRequest: number;

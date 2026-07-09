@@ -29,6 +29,7 @@ describe("supplierMirrorTools", () => {
 
       expect(result).toMatchObject({
         status: "blocked",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reason: expect.stringContaining("not wired"),
         noMutationExecuted: true,
       });

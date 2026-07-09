@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createPreparedActionTool, PREPARED_WRITE_KINDS, type PrepareWriteInput } from "@msl/tools";
 import { ACTION_TARGET_FIELD_BY_TYPE } from "@msl/domain";
 import type { McpServerConfig } from "../index.js";
-import type { McpToolResult } from "./utils.js";
+
 import {
   jsonResult,
   unauthorizedResult,

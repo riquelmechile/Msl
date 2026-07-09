@@ -45,7 +45,7 @@ function makeMockLedger(): WorkforceCostCacheLedgerStore {
       byPeriod: [],
       cacheEfficiency: 0,
     }),
-  } as unknown as WorkforceCostCacheLedgerStore;
+  };
 }
 
 function makeMockAutonomy(allowed: boolean): AutonomyEngine {
@@ -56,7 +56,7 @@ function makeMockAutonomy(allowed: boolean): AutonomyEngine {
     recordKpi: vi.fn(),
     evaluateDegradation: vi.fn().mockReturnValue(null),
     evaluatePromotion: vi.fn().mockReturnValue({ recommend: false, to: 3 }),
-  } as unknown as AutonomyEngine;
+  };
 }
 
 function makeSuccessResponse(content: string, usageOverrides?: Record<string, unknown>) {
@@ -140,7 +140,7 @@ describe("DeepSeekReasoningGateway", () => {
       makeCall({
         stablePrefix: "STABLE",
         volatileInput: "VOLATILE",
-      } as Partial<ReasoningCall>),
+      }),
     );
 
     const callArgs = mockCreate.mock.calls[0]![0] as {
@@ -325,7 +325,7 @@ describe("DeepSeekReasoningGateway", () => {
     const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), ledger);
     await gateway.reason(makeCall());
 
-    expect(ledger.insertEntry).toHaveBeenCalledTimes(1);
+    expect(ledger.insertEntry).toHaveBeenCalledTimes(1);  // eslint-disable-line @typescript-eslint/unbound-method
     const entry = (ledger.insertEntry as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<
       string,
       unknown
@@ -347,8 +347,8 @@ describe("DeepSeekReasoningGateway", () => {
     await gateway.reason(makeCall(), overrideLedger);
 
     // override ledger should be used, not constructor ledger
-    expect(constructorLedger.insertEntry).not.toHaveBeenCalled();
-    expect(overrideLedger.insertEntry).toHaveBeenCalledTimes(1);
+    expect(constructorLedger.insertEntry).not.toHaveBeenCalled();  // eslint-disable-line @typescript-eslint/unbound-method
+    expect(overrideLedger.insertEntry).toHaveBeenCalledTimes(1);  // eslint-disable-line @typescript-eslint/unbound-method
   });
 
   it("does not throw when ledger insertEntry fails", async () => {
@@ -375,10 +375,15 @@ describe("DeepSeekReasoningGateway", () => {
     const result = await gateway.reason(makeCall());
 
     expect(result.costTelemetry).toMatchObject({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       inputTokens: expect.any(Number),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       outputTokens: expect.any(Number),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       cacheHitTokens: expect.any(Number),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       cacheMissTokens: expect.any(Number),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       estimatedCostMicros: expect.any(Number),
     });
     expect(result.costTelemetry.inputTokens).toBeGreaterThan(0);

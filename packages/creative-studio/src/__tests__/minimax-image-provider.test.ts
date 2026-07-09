@@ -129,7 +129,7 @@ describe("MinimaxImageProvider", () => {
 
     it("uses correct aspect ratio for storefront channel", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -145,13 +145,15 @@ describe("MinimaxImageProvider", () => {
       });
 
       await provider.execute(makeRequest({ channel: "storefront", kind: "storefront-hero" }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.aspect_ratio).toBe("16:9");
     });
 
     it("includes explicit 1200x1200 dimensions for mercadolibre channel", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -168,15 +170,19 @@ describe("MinimaxImageProvider", () => {
 
       // Default is mercadolibre channel
       await provider.execute(makeRequest({ channel: "mercadolibre" }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.width).toBe(1200);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.height).toBe(1200);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.aspect_ratio).toBe("1:1");
     });
 
     it("does NOT include explicit dimensions for non-ML channels", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -192,15 +198,19 @@ describe("MinimaxImageProvider", () => {
       });
 
       await provider.execute(makeRequest({ channel: "storefront", kind: "storefront-hero" }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.width).toBeUndefined();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.height).toBeUndefined();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.aspect_ratio).toBe("16:9");
     });
 
     it("includes subject_reference when references provided", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -216,14 +226,17 @@ describe("MinimaxImageProvider", () => {
       });
 
       await provider.execute(makeRequest());
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.subject_reference).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.subject_reference[0].image_file).toBe("https://example.com/product.jpg");
     });
 
     it("handles empty references without subject_reference", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -239,7 +252,9 @@ describe("MinimaxImageProvider", () => {
       });
 
       await provider.execute(makeRequest({ references: [] }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.subject_reference).toBeUndefined();
     });
   });

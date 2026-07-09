@@ -1,7 +1,7 @@
 import type { MlcApiClient } from "@msl/mercadolibre";
 
 import type { ToolDefinition } from "../tools.js";
-import { coerceSellerId, coerceItemId } from "./_shared.js";
+import { coerceSellerId } from "./_shared.js";
 
 // ---------------------------------------------------------------------------
 // read_my_orders tool

@@ -33,7 +33,7 @@ const DEFAULT_MAX_POLL_ATTEMPTS = 60;
 
 // ── Model selection ──────────────────────────────────────────────────
 
-interface VideoModelConfig {
+type VideoModelConfig = {
   model: string;
   costPerSecond: number;
   resolution: string;

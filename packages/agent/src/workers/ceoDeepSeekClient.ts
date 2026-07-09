@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+
 import { getDeepSeekClient } from "../conversation/deepseekClient.js";
 import {
   resolveDeepSeekRuntimeConfig,
@@ -34,6 +34,7 @@ export type CeoFinding = {
   evidenceIds: string[];
   capturedAt: string;
   recommendationIdentity: string;
+  dataGapDate?: string;
 };
 
 export type CeoDeepSeekClient = {

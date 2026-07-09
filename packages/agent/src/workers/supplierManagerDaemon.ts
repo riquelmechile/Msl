@@ -1,6 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { SupplierMirrorStore } from "@msl/memory";
-import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
+
 
 // ── Signal kind constants ───────────────────────────────────────────
 
@@ -53,11 +53,11 @@ function getPreviousHourKey(capturedAt: string): string {
  * empty findings without error.
  */
 export const supplierManagerDaemon: DaemonHandler = async ({
-  claim: _claim,
-  reader: _reader,
+  claim: _claim,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  reader: _reader,  // eslint-disable-line @typescript-eslint/no-unused-vars
   cortex,
   bus,
-  sellerIds: _sellerIds,
+  sellerIds: _sellerIds,  // eslint-disable-line @typescript-eslint/no-unused-vars
   supplierMirrorStore,
   advisor,
 }) => {

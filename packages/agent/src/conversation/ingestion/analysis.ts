@@ -1,7 +1,7 @@
-import type { GraphEngine } from "@msl/memory";
+
 import type { MlcListingSummary } from "@msl/mercadolibre";
 
-import { isRecord, metadataString, todayLabel, categoryBreakdownFromMetadata } from "./utils.js";
+import { metadataString, todayLabel, categoryBreakdownFromMetadata } from "./utils.js";
 import type { BackgroundIngestionConfig } from "./processors.js";
 
 // ── Constants ──────────────────────────────────────────────────────────

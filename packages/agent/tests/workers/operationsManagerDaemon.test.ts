@@ -380,7 +380,9 @@ describe("operationsManagerDaemon", () => {
       expect(row!.receiver_agent_id).toBe("ceo");
       expect(row!.message_type).toBe("proposal");
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(row!.payload_json as string);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(payload.noMutationExecuted).toBe(true);
     });
   });

@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpServerConfig } from "../index.js";
-import type { McpToolResult } from "./utils.js";
+
 import { jsonResult, unauthorizedResult } from "./utils.js";
 
 export function registerModerationTools(

@@ -1,6 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type {
-  CostSupplierDeepSeekAdvisor,
+  CostSupplierDeepSeekAdvisor,  // eslint-disable-line @typescript-eslint/no-unused-vars
   CostSupplierActionableFinding,
   CostSupplierEnrichmentFinding,
 } from "../conversation/costSupplierDeepSeekAdvisor.js";

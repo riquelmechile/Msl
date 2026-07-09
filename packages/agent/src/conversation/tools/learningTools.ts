@@ -1,4 +1,4 @@
-import type { CompanyAgentRegistry } from "../companyAgents.js";
+import type { CompanyAgentRegistry, CompanyDepartmentId } from "../companyAgents.js";
 import type {
   CompanyAgentLearningStore,
   AgentLessonScope,
@@ -9,7 +9,7 @@ import {
   safeString,
   normalizeCompanyAgentText,
   validateCompanyAgentText,
-  truncateCompanyAgentText,
+  truncateCompanyAgentText,  // eslint-disable-line @typescript-eslint/no-unused-vars
   nonEmptyUniqueStrings,
   resolveCompanyAgent,
   summarizeAgentLesson,
@@ -193,7 +193,7 @@ export function createListAgentLessonsTool(
         };
       }
 
-      const departmentId = normalizeCompanyAgentText(args.departmentId) as any;
+      const departmentId = normalizeCompanyAgentText(args.departmentId);
       const scope = normalizeCompanyAgentText(args.scope) as AgentLessonScope;
       const limit = typeof args.limit === "number" ? args.limit : 10;
       const filter = { limit: Math.max(1, Math.min(limit, 20)) };
@@ -202,9 +202,9 @@ export function createListAgentLessonsTool(
       const lessons = learningStore.listAgentLessons({
         ...filter,
         ...(targetAgentId ? { targetAgentId } : {}),
-        ...(validDepartmentIds.has(departmentId) ? { departmentId } : {}),
+        ...(validDepartmentIds.has(departmentId as CompanyDepartmentId) ? { departmentId: departmentId as CompanyDepartmentId } : {}),
         ...(validLessonScopes.has(scope) ? { scope } : {}),
-      } as any);
+      });
 
       return {
         lessons: lessons.map(summarizeAgentLesson),

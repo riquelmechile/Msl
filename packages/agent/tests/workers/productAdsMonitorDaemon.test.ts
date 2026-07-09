@@ -63,7 +63,7 @@ function seedProductAdsInsights(
 
   void store.upsertSnapshot<MlcProductAdsInsights>({
     sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
-    kind: "product-ads-insights" as never,
+    kind: "product-ads-insights",
     source: "mercadolibre-api",
     data: {
       advertiser: { id: "adv-1", siteId: "MLC", productId: "PADS" },
@@ -87,7 +87,7 @@ function seedProductAdsInsights(
     completeness: "complete",
     freshness: {
       source: "mercadolibre-api",
-      signalKind: "product-ads-insights" as never,
+      signalKind: "product-ads-insights",
       risk: "medium",
       capturedAt: new Date(now),
       maxAgeMs: 24 * 60 * 60 * 1000,
@@ -96,7 +96,7 @@ function seedProductAdsInsights(
     confidence: "high",
     evidence: {
       evidenceId: `orm:product-ads-insights:${overrides.sellerId ?? SELLER_IDS[0]!}:test:${now}`,
-      snapshotKind: "product-ads-insights" as never,
+      snapshotKind: "product-ads-insights",
       sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
       entityId: overrides.entityId ?? "test",
       capturedAt: new Date(now),
@@ -746,7 +746,9 @@ describe("productAdsMonitorDaemon", () => {
       expect(msgRow!.message_type).toBe("proposal");
 
       // Verify noMutationExecuted
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(msgRow!.payload_json as string);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(payload.noMutationExecuted).toBe(true);
     });
 
@@ -819,7 +821,9 @@ describe("productAdsMonitorDaemon", () => {
           .get(msgId) as { payload_json: string } | undefined;
 
         expect(row).toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const pl = JSON.parse(row!.payload_json);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(pl.noMutationExecuted).toBe(true);
       }
     });
@@ -886,7 +890,9 @@ describe("productAdsMonitorDaemon", () => {
         expect(row!.dedupe_key).toMatch(
           /^product-ads-(critical|warning|opportunity|info)-\d{4}-\d{2}-\d{2}T\d{2}$/,
         );
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const pl = JSON.parse(row!.payload_json);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(pl.noMutationExecuted).toBe(true);
       }
     });

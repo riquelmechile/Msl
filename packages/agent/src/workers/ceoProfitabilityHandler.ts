@@ -107,22 +107,22 @@ function parseFindings(payloadJson: string): {
   capturedAt: string;
 } | null {
   try {
-    const payload = JSON.parse(payloadJson);
+    const payload = JSON.parse(payloadJson) as Record<string, unknown>;
     if (payload.type !== "proposal") return null;
 
-    const reportedFindings = payload.findings ?? [];
+    const reportedFindings = payload.findings as unknown[] ?? [];   
     if (reportedFindings.length === 0) return null;
 
-    const capturedAt: string = payload.capturedAt ?? new Date().toISOString();
+    const capturedAt: string = payload.capturedAt as string ?? new Date().toISOString();   
 
     // Parse recommendation identity to extract sellerId, campaignId, itemId, signal
-    const findings: CeoFinding[] = reportedFindings.map((f: Record<string, unknown>) => {
+    const findings: CeoFinding[] = (reportedFindings as Record<string, unknown>[]).map((f) => {
       const identity: string = (f.recommendationIdentity as string) ?? "";
       const parts = identity.split(":");
       // prefix:sellerId:campaignId:itemId:signal
       const sellerId = parts[1] ?? "";
       const campaignId = parts[2] ?? "";
-      const itemId = parts[3] ?? "";
+      const itemId = parts[3] ?? "";      
       let signal: string;
       let dataGapDate: string | undefined;
 
@@ -138,14 +138,14 @@ function parseFindings(payloadJson: string): {
         sellerId,
         campaignId,
         itemId,
-        adId: (f.adId as string) ?? undefined,
         signal,
         severity: (f.severity as string) ?? "info",
         summary: (f.summary as string) ?? "(no summary)",
         evidenceIds: (f.evidenceIds as string[]) ?? [],
         capturedAt,
         recommendationIdentity: identity,
-        dataGapDate,
+        ...(dataGapDate !== undefined ? { dataGapDate } : {}),
+        ...(f.adId !== undefined ? { adId: f.adId as string } : {}),
       };
     });
 
@@ -399,7 +399,7 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
     }
   }
 
-  let proposalEnqueued = findings.length > 0;
+  const proposalEnqueued = findings.length > 0;
 
   return {
     findings,

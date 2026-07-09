@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createPreparedActionTool, type PrepareWriteInput } from "@msl/tools";
+import { type PrepareWriteInput } from "@msl/tools";
 import type { ExactChange, PreparedAction, RiskLevel } from "@msl/domain";
 import type { ApprovalQueueEntry } from "@msl/tools";
 import type { McpServerConfig } from "../index.js";
@@ -130,7 +130,7 @@ const CREDENTIAL_LIKE_KEY_PATTERN =
 
 // ── Product Ads helper functions ─────────────────────────────────────
 
-function isProductAdsPrepareWriteTarget(target: PrepareWriteInput["target"]): boolean {
+function isProductAdsPrepareWriteTarget(target: PrepareWriteInput["target"]): boolean {  // eslint-disable-line @typescript-eslint/no-unused-vars
   return target.type === "product-ads-campaign" || target.type === "product-ads-ad";
 }
 
@@ -349,7 +349,7 @@ export function registerProductAdsTools(
 
   if (!config.prepareWrite) return;
 
-  const prepareTool = createPreparedActionTool(config.prepareWrite);
+
 
   // ── prepare_product_ads_action ────────────────────────────────────
   server.registerTool(

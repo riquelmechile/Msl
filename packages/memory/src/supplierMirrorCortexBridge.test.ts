@@ -360,13 +360,13 @@ describe("supplierMirrorCortexBridge", () => {
       });
 
       // Spy: listSupplierItemSnapshots throws for supplier-b
-      const originalListItems = store.listSupplierItemSnapshots;
-      const spy = vi.spyOn(store as any, "listSupplierItemSnapshots");
+      const originalListItems = store.listSupplierItemSnapshots;  // eslint-disable-line @typescript-eslint/unbound-method
+      const spy = vi.spyOn(store as any, "listSupplierItemSnapshots");  // eslint-disable-line @typescript-eslint/no-explicit-any
       spy.mockImplementation((supplierId: unknown) => {
         if (supplierId === "supplier-b") {
           throw new Error("Simulated DB failure for supplier-b");
         }
-        return originalListItems!(supplierId as string);
+        return originalListItems(supplierId as string);
       });
 
       const results = await ingestAllSuppliersToCortex(store, engine);

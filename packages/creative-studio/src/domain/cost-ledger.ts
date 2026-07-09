@@ -1,4 +1,4 @@
-export interface CostLedgerConfig {
+export type CostLedgerConfig = {
   maxDailyUsd: number;
   maxJobUsd: number;
 }

@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createMlcReadTools, type MlcReadTools, type MlcCategoryReadTools } from "@msl/tools";
 import { MLC_PRODUCT_ADS_MAX_LIMIT } from "@msl/mercadolibre";
-import type { MlcApiClient } from "@msl/mercadolibre";
+
 import type { McpServerConfig } from "../index.js";
 import type { McpToolResult } from "./utils.js";
 import { jsonResult, unauthorizedResult } from "./utils.js";

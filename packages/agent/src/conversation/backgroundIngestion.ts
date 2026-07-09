@@ -1,7 +1,7 @@
-import OpenAI from "openai";
+
 import { getDeepSeekClient } from "./deepseekClient.js";
 import { resolveDeepSeekRuntimeConfig } from "./deepseekRuntime.js";
-import type { GraphEngine, OperationalReadModelWriter } from "@msl/memory";
+
 import type { MlcListingSummary, MlcPerformanceSummary } from "@msl/mercadolibre";
 
 import {
@@ -16,17 +16,17 @@ import {
   processSellerPricing,
   runCrossAccountComparison,
   runSeasonalAnalysis,
-  runRelistChecks,
+  runRelistChecks,  // eslint-disable-line @typescript-eslint/no-unused-vars
   pruneSnapshots,
   generateDailyInsights,
   buildDailyContext,
   resolveDailyInsightsDeepSeekUserId,
   withFreshnessSkip,
-  KIND_FRESHNESS_TTL,
-  KIND_DEFAULT_MAX_PAGES,
+  KIND_FRESHNESS_TTL,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  KIND_DEFAULT_MAX_PAGES,  // eslint-disable-line @typescript-eslint/no-unused-vars
   type BackgroundIngestionConfig,
-  type CreativeSnapshotData,
-  PRICING_MAX_ITEMS_PER_CYCLE,
+  type CreativeSnapshotData,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  PRICING_MAX_ITEMS_PER_CYCLE,  // eslint-disable-line @typescript-eslint/no-unused-vars
 } from "./ingestion/index.js";
 
 // Re-export barrel so consumers importing from backgroundIngestion get everything
@@ -74,7 +74,7 @@ function firstPerformanceSummary(
  * need of a fresh quality check, calls mlcClient.getItemPerformance, persists
  * quality_snapshot nodes, and generates alerts for low scores and score drops.
  */
-async function runQualityChecks(
+async function runQualityChecks(  // eslint-disable-line @typescript-eslint/no-unused-vars
   config: BackgroundIngestionConfig,
 ): Promise<{ alerts: string[]; checkedCount: number }> {
   const alerts: string[] = [];

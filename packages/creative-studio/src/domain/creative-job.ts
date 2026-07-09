@@ -5,7 +5,7 @@ import type {
   CreativeJobStatus,
 } from "../contracts/creative-requests.js";
 
-export interface CreativeJob {
+export type CreativeJob = {
   jobId: string;
   requestId: string;
   kind: CreativeJobKind;

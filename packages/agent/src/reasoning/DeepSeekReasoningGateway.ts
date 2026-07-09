@@ -13,7 +13,7 @@ import { selectModel } from "./modelRouter.js";
 import {
   getLevelRisk,
   getLevelTimeout,
-  isAutoExecuteLevel,
+  isAutoExecuteLevel,  // eslint-disable-line @typescript-eslint/no-unused-vars
   requiresApprovalByDefault,
 } from "./reasoningLevels.js";
 import type {
@@ -194,7 +194,7 @@ export class DeepSeekReasoningGateway {
       const entry: Record<string, unknown> = {
         entryId: `reasoning-gateway:${call.laneId}:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`,
         agentId: call.agentId,
-        laneId: call.laneId as import("../conversation/lanes.js").LaneId,
+        laneId: call.laneId,
         departmentId: call.departmentId,
         provider: "deepseek",
         model,

@@ -59,7 +59,7 @@ function seedOrmSnapshot(
 
 function seedCortexNode(engine: GraphEngine, metadata: Record<string, unknown>): number {
   const node = engine.getOrCreateNode(
-    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,  // eslint-disable-line @typescript-eslint/restrict-template-expressions
     metadata,
   );
   return node.id;
@@ -325,7 +325,9 @@ describe("costSupplierDaemon", () => {
       expect(row!.receiver_agent_id).toBe("ceo");
       expect(row!.message_type).toBe("proposal");
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(row!.payload_json as string);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(payload.noMutationExecuted).toBe(true);
     });
   });

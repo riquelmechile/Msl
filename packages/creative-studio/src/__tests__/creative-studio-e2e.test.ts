@@ -28,7 +28,6 @@ describe("creative-studio end-to-end (all mocked)", () => {
     nodes: Array<Record<string, unknown>>;
     getOrCreateNode: ReturnType<typeof vi.fn>;
   };
-  let mlApiCalls: number;
 
   const SELLER_ID = "e2e-test-seller";
   const CATEGORY_ID = "MLC1055";
@@ -74,7 +73,6 @@ describe("creative-studio end-to-end (all mocked)", () => {
   beforeEach(() => {
     policyEngine = new PolicyEngine();
     costLedger = new CostLedger({ maxDailyUsd: 5.0, maxJobUsd: 0.5 });
-    mlApiCalls = 0;
 
     cortexMock = {
       nodes: [],

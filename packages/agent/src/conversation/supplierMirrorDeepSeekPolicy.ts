@@ -34,7 +34,7 @@ export function estimateSupplierMirrorDeepSeekCostMicros(input: {
     costInput.cacheMissTokens = input.promptCacheMissTokens;
   if (input.outputTokens !== undefined) costInput.outputTokens = input.outputTokens;
 
-  return estimateCost(input.model, costInput as Parameters<typeof estimateCost>[1]) ?? undefined;
+  return estimateCost(input.model, costInput) ?? undefined;
 }
 
 export const SUPPLIER_MIRROR_DEEPSEEK_PROVIDER = "deepseek";

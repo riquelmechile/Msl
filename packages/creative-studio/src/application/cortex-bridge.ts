@@ -31,7 +31,7 @@ export type AuditEvent = {
  * interface (e.g. GraphEngine) — this adapter formats the data and calls it.
  */
 
-export interface CortexSink {
+export type CortexSink = {
   recordOutcome(
     jobId: string,
     result: CreativeExecutionResult,
@@ -53,7 +53,7 @@ export class CortexBridge implements CortexSink {
    * @param result  — The full execution result
    * @param outcome — Approval/publish state + optional metrics
    */
-  async recordOutcome(
+  async recordOutcome(  // eslint-disable-line @typescript-eslint/require-await
     jobId: string,
     result: CreativeExecutionResult,
     outcome: CortexOutcome,

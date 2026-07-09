@@ -17,7 +17,7 @@ const IMAGE_KINDS: CreativeJobKind[] = [
 
 // ── Model configuration ──────────────────────────────────────────────
 
-interface ImageModelConfig {
+type ImageModelConfig = {
   model: string;
   costPerCall: number;
 }
@@ -56,7 +56,7 @@ export class MinimaxImageProvider implements CreativeProvider {
     return IMAGE_KINDS.includes(kind);
   }
 
-  estimate(_request: CreativeAssetRequest): number {
+  estimate(_request: CreativeAssetRequest): number {  // eslint-disable-line @typescript-eslint/no-unused-vars
     return this.modelConfig.costPerCall;
   }
 

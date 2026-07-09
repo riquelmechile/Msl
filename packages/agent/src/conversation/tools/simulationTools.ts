@@ -1,12 +1,12 @@
-import type { ActorType, ProbeAlert, SimulationResult, Strategy } from "../types.js";
-import type { GuardResult } from "../guardrails.js";
-import type { DecoyProposal } from "../types.js";
+import type { ActorType, ProbeAlert, SimulationResult } from "../types.js";
+
+
 import { simulateActor as defaultSimulateActor } from "../actorSimulator.js";
 import {
   analyzeQuestions as defaultAnalyzeQuestions,
   detectViewAnomalies as defaultDetectViewAnomalies,
 } from "../probeDetector.js";
-import { proposeDecoy as defaultProposeDecoy } from "../honeyPotProposer.js";
+
 import type { ToolDefinition } from "./types.js";
 
 // ── Helper types ───────────────────────────────────────────────────────

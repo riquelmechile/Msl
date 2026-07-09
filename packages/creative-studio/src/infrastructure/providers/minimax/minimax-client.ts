@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+
 
 // ── MiniMax API error codes ──────────────────────────────────────────
 
@@ -18,18 +18,18 @@ export type MinimaxStatusCategory =
   | "content_blocked"
   | "provider_error";
 
-export interface MinimaxApiError {
+export type MinimaxApiError = {
   status_code: MinimaxErrorCode;
   status_message: string;
 }
 
-export interface MinimaxBaseResponse {
+export type MinimaxBaseResponse = {
   base_resp: MinimaxApiError;
 }
 
 // ── Client ───────────────────────────────────────────────────────────
 
-export interface MinimaxClientConfig {
+export type MinimaxClientConfig = {
   apiKey: string;
   apiHost: string;
   timeoutMs: number;
@@ -75,13 +75,13 @@ export class MinimaxClient {
       const bodyText = await response.text();
       let data: Record<string, unknown>;
       try {
-        data = JSON.parse(bodyText);
+        data = JSON.parse(bodyText);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
       } catch {
         // Non-JSON response
         throw classifyError(0, `Non-JSON response (${response.status}): ${bodyText.slice(0, 200)}`);
       }
 
-      const maybeBaseResp = (data as Record<string, unknown>)["base_resp"] as
+      const maybeBaseResp = (data)["base_resp"] as
         MinimaxApiError | undefined;
 
       // Check HTTP-level errors first

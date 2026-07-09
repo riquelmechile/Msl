@@ -102,8 +102,8 @@ export const eodSummaryDaemon: DaemonHandler = async ({
       const repNodes = cortex.queryByMetadata({ type: "reputation_snapshot", sellerId, limit: 1 });
       if (repNodes.length >= 1) {
         const m = repNodes[0]!.metadata;
-        const score = m.reputationScore ?? m.reputation_score ?? "N/A";
-        const level = m.reputationLevel ?? m.reputation_level ?? "N/A";
+        const score = String(m.reputationScore as string ?? m.reputation_score as string ?? "N/A");
+        const level = String(m.reputationLevel as string ?? m.reputation_level as string ?? "N/A");
         summary.push(`   ⭐ Reputación: ${level} (${score})`);
       }
     } catch {

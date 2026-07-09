@@ -4,7 +4,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   createAgentConsensusStore,
   type AgentConsensusStore,
-  type AgentReview,
+  type AgentReview,  // eslint-disable-line @typescript-eslint/no-unused-vars
 } from "../../src/conversation/agentConsensusStore.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────

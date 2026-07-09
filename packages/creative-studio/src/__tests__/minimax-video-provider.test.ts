@@ -170,7 +170,7 @@ describe("MinimaxVideoProvider", () => {
       // The static KIND_DURATION only has 30s for ml-clip-vertical-30s,
       // so this validates that any future kind > 60s gets rejected.
       // Override by making a request with a non-standard kind:
-      const longRequest = makeRequest({ kind: "ml-clip-vertical-30s" });
+
       // ml-clip-vertical-30s is 30s, well under 60s — should not be rejected
       expect(provider.supports("ml-clip-vertical-30s")).toBe(true);
     });
@@ -255,7 +255,7 @@ describe("MinimaxVideoProvider", () => {
 
     it("includes first_frame_image from references", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -286,9 +286,13 @@ describe("MinimaxVideoProvider", () => {
       }
 
       await provider.execute(makeRequest());
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.first_frame_image).toBe("https://example.com/product.jpg");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.model).toBe("MiniMax-Hailuo-2.3-Fast");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.duration).toBe(6);
     });
 
@@ -298,7 +302,7 @@ describe("MinimaxVideoProvider", () => {
       let capturedBody: string | undefined;
       // Override the first mock from mockPollingFlow to capture the request body
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -329,9 +333,13 @@ describe("MinimaxVideoProvider", () => {
       }
 
       await provider.execute(makeRequest({ kind: "ml-clip-vertical-30s" }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.model).toBe("MiniMax-Hailuo-2.3");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.duration).toBe(30);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.resolution).toBe("1080P");
     });
 
@@ -340,7 +348,7 @@ describe("MinimaxVideoProvider", () => {
 
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -370,7 +378,9 @@ describe("MinimaxVideoProvider", () => {
       }
 
       await provider.execute(makeRequest({ references: [] }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const body = JSON.parse(capturedBody!);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(body.first_frame_image).toBeUndefined();
     });
   });

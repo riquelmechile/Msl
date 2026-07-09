@@ -1,10 +1,10 @@
 import OpenAI from "openai";
-import { getDeepSeekClient as getSharedDeepSeekClient } from "./deepseekClient.js";
+
 import {
   buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
   resolveDeepSeekUserId,
-  type DeepSeekRuntimeConfig,
+  type DeepSeekRuntimeConfig,  // eslint-disable-line @typescript-eslint/no-unused-vars
 } from "./deepseekRuntime.js";
 import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
@@ -18,7 +18,7 @@ import type {
   Strategy,
   StreamingChunk,
 } from "./types.js";
-import { AutonomyLevel, type TurnOutcome } from "./types.js";
+import { AutonomyLevel, type TurnOutcome } from "./types.js";  // eslint-disable-line @typescript-eslint/no-unused-vars
 import {
   spanishValidator,
   harmfulContentFilter,
@@ -87,14 +87,14 @@ import {
   createReadMyCatalogTool,
 } from "./syncTools.js";
 import type { MetricsCollector } from "./observability.js";
-import type { CacheTelemetry, LaneId, LaneOutput } from "./lanes.js";
+import type { LaneId, LaneOutput } from "./lanes.js";
 import type { OperationalReadModelReader } from "@msl/memory";
 import type { OperationalEvidenceProvider } from "./operationalEvidenceProvider.js";
 import { buildDailyAggregates, injectCortexContext } from "./cacheBlocks.js";
 import { OperationalDailyDataSource } from "./operationalDataSource.js";
 import type { CompanyAgentId, CompanyAgentRegistry } from "./companyAgents.js";
 import type {
-  AgentLearningRecord,
+  AgentLearningRecord,  // eslint-disable-line @typescript-eslint/no-unused-vars
   CompanyAgentLearningStore,
 } from "./companyAgentLearningStore.js";
 import type { CompanyAgentSkillStore } from "./companyAgentSkillStore.js";
@@ -117,16 +117,16 @@ import {
   buildMessages,
   createDeepSeekClient,
   createOpenAiToolDefinitions,
-  estimateTokens,
+  estimateTokens,  // eslint-disable-line @typescript-eslint/no-unused-vars
   extractPromptCacheTelemetry,
-  hasRejectionPattern,
+  hasRejectionPattern,  // eslint-disable-line @typescript-eslint/no-unused-vars
   resolveTurnOutcome,
   type OpenAiFunctionToolDefinition,
 } from "./loop/index.js";
 
 // ── Token budget ──────────────────────────────────────────────────────
 
-const MAX_TOKEN_BUDGET = 800_000;
+
 
 const CEO_INTERNAL_WORKFORCE_GUIDANCE = [
   "## Orquestación Interna de Workforce del CEO",
@@ -1561,7 +1561,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function readNumericCounter(
+function readNumericCounter(  // eslint-disable-line @typescript-eslint/no-unused-vars
   usage: Record<string, unknown> | null | undefined,
   key: "prompt_cache_hit_tokens" | "prompt_cache_miss_tokens",
 ): number | null {

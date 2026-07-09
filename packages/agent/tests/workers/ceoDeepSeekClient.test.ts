@@ -1,9 +1,9 @@
-import crypto from "node:crypto";
+
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { GraphEngine } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
 import type { CeoFinding } from "../../src/workers/ceoDeepSeekClient.js";
-import type { DeepSeekRuntimeConfig } from "../../src/conversation/deepseekRuntime.js";
+
 import { createCeoDeepSeekClient } from "../../src/workers/ceoDeepSeekClient.js";
 
 // ── Mock OpenAI ─────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ function makeMockLedger(): WorkforceCostCacheLedgerStore {
       byPeriod: [],
       cacheEfficiency: 0,
     }),
-  } as unknown as WorkforceCostCacheLedgerStore;
+  };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ describe("createCeoDeepSeekClient", () => {
     const client = createCeoDeepSeekClient({
       baseURL: "https://api.deepseek.com",
       model: "deepseek-v4-flash",
-    } as DeepSeekRuntimeConfig);
+    });
     expect(client).toBeNull();
   });
 

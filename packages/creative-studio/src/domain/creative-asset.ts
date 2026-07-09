@@ -2,7 +2,7 @@ import type { MlDiagnosticResult } from "../contracts/creative-requests.js";
 
 export type CreativeAssetKind = "image" | "video" | "audio" | "music";
 
-export interface CreativeAsset {
+export type CreativeAsset = {
   assetId: string;
   jobId: string;
   kind: CreativeAssetKind;
@@ -12,7 +12,7 @@ export interface CreativeAsset {
   policyFlags: string[];
 }
 
-export interface CreateCreativeAssetParams {
+export type CreateCreativeAssetParams = {
   jobId: string;
   kind: CreativeAssetKind;
   storageUri: string;

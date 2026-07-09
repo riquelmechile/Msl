@@ -36,7 +36,7 @@ function seedOrmSnapshot(
 
 function seedCortexNode(engine: GraphEngine, metadata: Record<string, unknown>): number {
   const node = engine.getOrCreateNode(
-    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,  // eslint-disable-line @typescript-eslint/restrict-template-expressions
     metadata,
   );
   return node.id;
@@ -104,7 +104,9 @@ describe("daemon integration — scheduler + daemons + bus", () => {
       expect(proposal.sender_agent_id).toBe("market-catalog");
 
       // Verify noMutationExecuted
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(proposal.payload_json as string);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(payload.noMutationExecuted).toBe(true);
 
       // The original task message should be resolved
@@ -153,7 +155,9 @@ describe("daemon integration — scheduler + daemons + bus", () => {
         .all() as Array<Record<string, unknown>>;
 
       expect(proposals.length).toBeGreaterThan(0);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(proposals[0]!.payload_json as string);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(payload.noMutationExecuted).toBe(true);
     });
   });
@@ -190,7 +194,9 @@ describe("daemon integration — scheduler + daemons + bus", () => {
         .all() as Array<Record<string, unknown>>;
 
       expect(proposals.length).toBeGreaterThan(0);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(proposals[0]!.payload_json as string);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(payload.noMutationExecuted).toBe(true);
     });
   });
@@ -243,7 +249,9 @@ describe("daemon integration — scheduler + daemons + bus", () => {
         .all() as Array<Record<string, unknown>>;
 
       expect(proposals.length).toBeGreaterThan(0);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(proposals[0]!.payload_json as string);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(payload.noMutationExecuted).toBe(true);
     });
   });

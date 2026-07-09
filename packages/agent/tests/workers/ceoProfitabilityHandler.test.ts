@@ -9,7 +9,7 @@ import type {
   AgentMessage,
 } from "../../src/conversation/agentMessageBusStore.js";
 import { ceoProfitabilityHandler } from "../../src/workers/ceoProfitabilityHandler.js";
-import type { DaemonResult, CeoHandlerContext } from "../../src/workers/daemonTypes.js";
+import type { CeoHandlerContext } from "../../src/workers/daemonTypes.js";
 import type { CeoDeepSeekClient } from "../../src/workers/ceoDeepSeekClient.js";
 
 // Use vi.hoisted to create the mock function before the vi.mock factory runs
@@ -122,10 +122,10 @@ describe("ceoProfitabilityHandler", () => {
       ["unit-economics", "review-campaign-structure", "info", false],
     ])(
       "maps signal '%s' to proposalType '%s' severity '%s' requiresApproval %s",
-      async (signal, expectedProposalType, _expectedSeverity, _requiresApproval) => {
+      async (signal, expectedProposalType, _expectedSeverity, _requiresApproval) => {  // eslint-disable-line @typescript-eslint/no-unused-vars
         const preparedActions: Array<Record<string, unknown>> = [];
         const ceoCtx = makeCeoContext({
-          prepareProductAdsAction: async (input) => {
+          prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
             preparedActions.push(input);
           },
         });
@@ -167,7 +167,7 @@ describe("ceoProfitabilityHandler", () => {
     it("calls prepareProductAdsAction for actionable signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
           preparedActions.push(input);
         },
       });
@@ -190,7 +190,7 @@ describe("ceoProfitabilityHandler", () => {
     it("does not call prepareProductAdsAction for unit-economics (info-only) signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
           preparedActions.push(input);
         },
       });
@@ -230,7 +230,7 @@ describe("ceoProfitabilityHandler", () => {
         cortex: createGraphEngine(":memory:"),
         bus,
         sellerIds: SELLER_IDS,
-        ceoContext: makeCeoContext({} as Partial<CeoHandlerContext>),
+        ceoContext: makeCeoContext({}),
       });
 
       expect(result.proposalEnqueued).toBe(true);
@@ -332,14 +332,14 @@ describe("ceoProfitabilityHandler", () => {
     it("sends proactive message when ceoContext.sendProactiveMessage is provided", async () => {
       const sentMessages: Array<{ chatId: number; text: string; threadId?: number }> = [];
       const ceoCtx = makeCeoContext({
-        sendProactiveMessage: async (chatId, text, threadId) => {
+        sendProactiveMessage: async (chatId, text, threadId) => {  // eslint-disable-line @typescript-eslint/require-await
           sentMessages.push({ chatId, text, threadId } as {
             chatId: number;
             text: string;
             threadId?: number;
           });
         },
-        createForumTopic: async (_chatId, name) => {
+        createForumTopic: async (_chatId, _name) => {  // eslint-disable-line @typescript-eslint/require-await,@typescript-eslint/no-unused-vars
           return { message_thread_id: 42 };
         },
       });
@@ -376,7 +376,7 @@ describe("ceoProfitabilityHandler", () => {
     });
 
     it("handles partial ceoContext (no sendProactiveMessage)", async () => {
-      const ceoCtx = makeCeoContext({} as Partial<CeoHandlerContext>);
+      const ceoCtx = makeCeoContext({});
 
       const result = await ceoProfitabilityHandler({
         claim: claimFixture({ payloadJson: makeProposalPayload() }),
@@ -562,7 +562,7 @@ describe("ceoProfitabilityHandler", () => {
     it("continues processing remaining findings when one fails", async () => {
       let callCount = 0;
       const ceoCtx = makeCeoContext({
-        sendProactiveMessage: async () => {
+        sendProactiveMessage: async () => {  // eslint-disable-line @typescript-eslint/require-await
           callCount++;
           if (callCount === 1) {
             throw new Error("Simulated Telegram failure");
@@ -634,7 +634,7 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
           preparedActions.push(input);
         },
         workforceCostCacheLedgerStore: {
@@ -672,7 +672,7 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
           preparedActions.push(input);
         },
       });
@@ -695,11 +695,11 @@ describe("ceoProfitabilityHandler", () => {
     it("falls back to static map when client.reason throws", async () => {
       mockCreateCeoDeepSeekClient.mockReturnValue({
         reason: vi.fn().mockRejectedValue(new Error("API unreachable")),
-      } satisfies Partial<CeoDeepSeekClient> as CeoDeepSeekClient);
+      } satisfies Partial<CeoDeepSeekClient>);
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
           preparedActions.push(input);
         },
         workforceCostCacheLedgerStore: {
@@ -740,7 +740,7 @@ describe("ceoProfitabilityHandler", () => {
       // No ledger in context → should skip LLM and use fallback
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
           preparedActions.push(input);
         },
         // Note: no workforceCostCacheLedgerStore
@@ -774,7 +774,7 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {
+        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
           preparedActions.push(input);
         },
         workforceCostCacheLedgerStore: {
