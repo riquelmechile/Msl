@@ -1,9 +1,0 @@
-{
-  "sourceUri": "https://cdn.minimax.io/img/diag-test.jpg",
-  "jobId": "cj_1783566870855_w7yi5x7g",
-  "requestId": "cj_test_001",
-  "kind": "image",
-  "provider": "minimax",
-  "model": "image-01",
-  "capturedAt": "2026-07-09T03:14:30.855Z"
-}
