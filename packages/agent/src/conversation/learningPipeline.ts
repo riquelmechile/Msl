@@ -1,4 +1,4 @@
-import type { AgentMessageBusStore } from "./agentMessageBusStore.js";
+import type { AgentMessageBusStore, AgentMessage } from "./agentMessageBusStore.js";
 import type { GraphEngine } from "@msl/memory";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -88,7 +88,10 @@ function scoreResolved(msg: AgentMessage): { score: number; summary: string } {
     parts.push("no result data");
   }
 
-  return { score: Math.min(score, 1.0), summary: parts.length > 0 ? `${summary} (${parts.join(", ")})` : summary };
+  return {
+    score: Math.min(score, 1.0),
+    summary: parts.length > 0 ? `${summary} (${parts.join(", ")})` : summary,
+  };
 }
 
 function scoreFailed(msg: AgentMessage): { score: number; summary: string } {
@@ -149,7 +152,7 @@ function scoreCancelled(msg: AgentMessage): { score: number; summary: string } {
  * @param cortex - GraphEngine for persisting learning observations
  * @param options - Batch size, strategy, since date
  */
-export async function runLearningPipeline(
+export function runLearningPipeline(
   bus: AgentMessageBusStore,
   cortex: GraphEngine,
   options?: LearningPipelineOptions,
@@ -164,8 +167,10 @@ export async function runLearningPipeline(
     errors: [],
   };
 
-  const unscored = bus.getUnscoredMessages({ since, limit: batchSize });
-  if (unscored.length === 0) return result;
+  const unscored = bus.getUnscoredMessages(
+    since ? { since, limit: batchSize } : { limit: batchSize },
+  );
+  if (unscored.length === 0) return Promise.resolve(result);
 
   const batch = unscored.slice(0, batchSize);
   result.processed = batch.length;
@@ -208,5 +213,5 @@ export async function runLearningPipeline(
     }
   }
 
-  return result;
+  return Promise.resolve(result);
 }

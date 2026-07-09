@@ -29,6 +29,15 @@ function claimFixture(overrides: Partial<AgentMessage> = {}): AgentMessage {
     resolvedAt: overrides.resolvedAt ?? null,
     createdAt: overrides.createdAt ?? new Date().toISOString(),
     updatedAt: overrides.updatedAt ?? new Date().toISOString(),
+    resultJson: overrides.resultJson ?? null,
+    errorJson: overrides.errorJson ?? null,
+    cancelReason: overrides.cancelReason ?? null,
+    correlationId: overrides.correlationId ?? null,
+    parentMessageId: overrides.parentMessageId ?? null,
+    sellerId: overrides.sellerId ?? null,
+    learnedAt: overrides.learnedAt ?? null,
+    outcomeScore: overrides.outcomeScore ?? null,
+    actionId: overrides.actionId ?? null,
   };
 }
 
@@ -181,9 +190,7 @@ describe("unansweredQuestionsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const questionFindings = result.findings.filter(
-        (f) => f.summary.includes("buyer question"),
-      );
+      const questionFindings = result.findings.filter((f) => f.summary.includes("buyer question"));
       expect(questionFindings).toEqual([]);
       expect(result.proposalEnqueued).toBe(false);
     });
@@ -214,9 +221,7 @@ describe("unansweredQuestionsDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const questionFindings = result.findings.filter(
-        (f) => f.summary.includes("buyer question"),
-      );
+      const questionFindings = result.findings.filter((f) => f.summary.includes("buyer question"));
       expect(questionFindings).toEqual([]);
       expect(result.proposalEnqueued).toBe(false);
     });

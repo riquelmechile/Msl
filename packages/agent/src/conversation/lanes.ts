@@ -352,19 +352,14 @@ export const MORNING_REPORT_LANE: LaneContract = {
     "Prioritize alerts needing immediate attention and enqueue findings to the CEO.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider:
-    "overnight orders, claims, questions, and reputation delta evidence",
+  refreshableContextProvider: "overnight orders, claims, questions, and reputation delta evidence",
   inputs: [
     "overnight order snapshots",
     "open claim snapshots",
     "unanswered question snapshots",
     "reputation delta evidence",
   ],
-  outputs: [
-    "morning briefing summary",
-    "priority alerts",
-    "evidence IDs",
-  ],
+  outputs: ["morning briefing summary", "priority alerts", "evidence IDs"],
   boundaries: [
     "report-only: never respond to buyers, resolve claims, or execute mutations",
     phaseOneBoundary,
@@ -387,30 +382,19 @@ export const EOD_SUMMARY_LANE: LaneContract = {
     "Report total orders, sales value, claims resolved vs pending, questions answered vs unanswered, and action items for tomorrow.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider:
-    "day's orders, claims, questions, proposals, and resolution evidence",
+  refreshableContextProvider: "day's orders, claims, questions, proposals, and resolution evidence",
   inputs: [
     "today's order snapshots",
     "claim resolution evidence",
     "question status evidence",
     "proposal outcomes",
   ],
-  outputs: [
-    "end-of-day summary",
-    "completion rate",
-    "action items",
-    "evidence IDs",
-  ],
+  outputs: ["end-of-day summary", "completion rate", "action items", "evidence IDs"],
   boundaries: [
     "report-only: never respond to buyers, resolve claims, or execute mutations",
     phaseOneBoundary,
   ],
-  requiredEvidenceKinds: [
-    "order-snapshot",
-    "claim-snapshot",
-    "question-snapshot",
-    "resolution",
-  ],
+  requiredEvidenceKinds: ["order-snapshot", "claim-snapshot", "question-snapshot", "resolution"],
   credentialScope: "provider-default",
 };
 
@@ -424,12 +408,8 @@ export const UNANSWERED_QUESTIONS_LANE: LaneContract = {
     "Never answer questions directly — enqueue findings to the CEO for review.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider:
-    "unanswered question snapshots across sellers",
-  inputs: [
-    "unanswered question snapshots",
-    "seller response evidence",
-  ],
+  refreshableContextProvider: "unanswered question snapshots across sellers",
+  inputs: ["unanswered question snapshots", "seller response evidence"],
   outputs: [
     "per-seller unanswered question list",
     "aging analysis",
@@ -440,9 +420,7 @@ export const UNANSWERED_QUESTIONS_LANE: LaneContract = {
     "proposal-only: never answer questions or message buyers directly",
     phaseOneBoundary,
   ],
-  requiredEvidenceKinds: [
-    "question-snapshot",
-  ],
+  requiredEvidenceKinds: ["question-snapshot"],
   credentialScope: "provider-default",
 };
 

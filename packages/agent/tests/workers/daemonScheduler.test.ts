@@ -239,7 +239,9 @@ describe("daemonScheduler", () => {
 
       // Check that all known lanes have a daemon-tick message
       const tickRows = db
-        .prepare("SELECT receiver_agent_id, message_type FROM agent_message_bus WHERE message_type = 'daemon-tick'")
+        .prepare(
+          "SELECT receiver_agent_id, message_type FROM agent_message_bus WHERE message_type = 'daemon-tick'",
+        )
         .all() as Array<{ receiver_agent_id: string; message_type: string }>;
 
       // We have 14 lanes in daemonHandlerMap
@@ -268,9 +270,13 @@ describe("daemonScheduler", () => {
         .get() as { cnt: number };
 
       // Should have exactly one tick per lane (no duplicates)
-      const uniqueLaneCount = (db
-        .prepare("SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'")
-        .all() as Array<{ receiver_agent_id: string }>).length;
+      const uniqueLaneCount = (
+        db
+          .prepare(
+            "SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
+          )
+          .all() as Array<{ receiver_agent_id: string }>
+      ).length;
 
       expect(count.cnt).toBe(uniqueLaneCount);
     });
@@ -313,7 +319,8 @@ describe("daemonScheduler", () => {
       const proposals = inboxStore.listByStatus("pending");
       expect(proposals.length).toBeGreaterThanOrEqual(1);
       const match = proposals.find(
-        (p) => p.sender_agent_id === "morning-report" && p.normalized_summary === "Test CEO consumption",
+        (p) =>
+          p.sender_agent_id === "morning-report" && p.normalized_summary === "Test CEO consumption",
       );
       expect(match).toBeDefined();
       expect(match!.risk_level).toBe("high");

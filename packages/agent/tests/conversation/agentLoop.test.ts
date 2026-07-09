@@ -14,6 +14,7 @@ import {
   buildMessages,
   type LlmClient,
 } from "../../src/conversation/agentLoop.js";
+import { resetDeepSeekClient } from "../../src/conversation/deepseekClient.js";
 import { createStrategyStore } from "../../src/conversation/strategyStore.js";
 import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
 import { createCompanyAgentSkillStore } from "../../src/conversation/companyAgentSkillStore.js";
@@ -1658,6 +1659,7 @@ describe.skipIf(process.env.CI === "true")("createAgentLoop — DeepSeek runtime
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    resetDeepSeekClient();
     process.env = { ...originalEnv };
   });
 

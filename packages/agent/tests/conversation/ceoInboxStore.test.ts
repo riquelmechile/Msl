@@ -1,11 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it, beforeEach } from "vitest";
 
-import {
-  createCeoInboxStore,
-  type CeoInboxStore,
-  type AgentProposalRow,
-} from "../../src/conversation/ceoInboxStore.js";
+import { createCeoInboxStore, type CeoInboxStore } from "../../src/conversation/ceoInboxStore.js";
 
 // ── Setup ────────────────────────────────────────────────────────────
 

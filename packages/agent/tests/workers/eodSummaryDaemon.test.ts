@@ -33,6 +33,15 @@ describe("eodSummaryDaemon — time-gate", () => {
       resolvedAt: null,
       createdAt: "2026-07-09T17:00:00.000Z",
       updatedAt: "2026-07-09T17:00:00.000Z",
+      resultJson: null,
+      errorJson: null,
+      cancelReason: null,
+      correlationId: null,
+      parentMessageId: null,
+      sellerId: null,
+      learnedAt: null,
+      outcomeScore: null,
+      actionId: null,
     };
 
     const reader = createSqliteOperationalReadModel(db);
@@ -44,7 +53,6 @@ describe("eodSummaryDaemon — time-gate", () => {
       cortex,
       sellerIds: ["seller-1"],
       bus,
-      ceoContext: undefined,
     });
 
     expect(result.findings.length).toBe(0);
@@ -68,6 +76,15 @@ describe("eodSummaryDaemon — time-gate", () => {
       resolvedAt: null,
       createdAt: "2026-07-09T18:00:00.000Z",
       updatedAt: "2026-07-09T18:00:00.000Z",
+      resultJson: null,
+      errorJson: null,
+      cancelReason: null,
+      correlationId: null,
+      parentMessageId: null,
+      sellerId: null,
+      learnedAt: null,
+      outcomeScore: null,
+      actionId: null,
     };
 
     const reader = createSqliteOperationalReadModel(db);
@@ -79,7 +96,6 @@ describe("eodSummaryDaemon — time-gate", () => {
       cortex,
       sellerIds: ["seller-1"],
       bus,
-      ceoContext: undefined,
     });
 
     expect(result).toBeDefined();
@@ -103,6 +119,15 @@ describe("eodSummaryDaemon — time-gate", () => {
       resolvedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      resultJson: null,
+      errorJson: null,
+      cancelReason: null,
+      correlationId: null,
+      parentMessageId: null,
+      sellerId: null,
+      learnedAt: null,
+      outcomeScore: null,
+      actionId: null,
     };
 
     const reader = createSqliteOperationalReadModel(db);
@@ -114,7 +139,6 @@ describe("eodSummaryDaemon — time-gate", () => {
       cortex,
       sellerIds: ["seller-1"],
       bus,
-      ceoContext: undefined,
     });
 
     expect(result).toBeDefined();

@@ -34,6 +34,15 @@ describe("morningReportDaemon — time-gate", () => {
       resolvedAt: null,
       createdAt: "2026-07-09T08:30:00.000Z",
       updatedAt: "2026-07-09T08:30:00.000Z",
+      resultJson: null,
+      errorJson: null,
+      cancelReason: null,
+      correlationId: null,
+      parentMessageId: null,
+      sellerId: null,
+      learnedAt: null,
+      outcomeScore: null,
+      actionId: null,
     };
 
     const reader = createSqliteOperationalReadModel(db);
@@ -45,7 +54,6 @@ describe("morningReportDaemon — time-gate", () => {
       cortex,
       sellerIds: ["seller-1"],
       bus,
-      ceoContext: undefined,
     });
 
     // Should return early with empty findings, no proposal enqueued
@@ -70,6 +78,15 @@ describe("morningReportDaemon — time-gate", () => {
       resolvedAt: null,
       createdAt: "2026-07-09T09:00:00.000Z",
       updatedAt: "2026-07-09T09:00:00.000Z",
+      resultJson: null,
+      errorJson: null,
+      cancelReason: null,
+      correlationId: null,
+      parentMessageId: null,
+      sellerId: null,
+      learnedAt: null,
+      outcomeScore: null,
+      actionId: null,
     };
 
     const reader = createSqliteOperationalReadModel(db);
@@ -81,7 +98,6 @@ describe("morningReportDaemon — time-gate", () => {
       cortex,
       sellerIds: ["seller-1"],
       bus,
-      ceoContext: undefined,
     });
 
     // At 9am, the daemon should process (even if it finds nothing,
@@ -110,6 +126,15 @@ describe("morningReportDaemon — time-gate", () => {
       resolvedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      resultJson: null,
+      errorJson: null,
+      cancelReason: null,
+      correlationId: null,
+      parentMessageId: null,
+      sellerId: null,
+      learnedAt: null,
+      outcomeScore: null,
+      actionId: null,
     };
 
     const reader = createSqliteOperationalReadModel(db);
@@ -121,7 +146,6 @@ describe("morningReportDaemon — time-gate", () => {
       cortex,
       sellerIds: ["seller-1"],
       bus,
-      ceoContext: undefined,
     });
 
     // Should handle gracefully (no crash) and return a valid result

@@ -12,7 +12,7 @@ export type WebhookEvent = {
 
 export type WebhookIngestor = {
   /** Handle an incoming webhook POST request body. Returns HTTP status and optional Retry-After. */
-  handle(body: unknown, _headers?: Record<string, string>): WebhookResponse;
+  handle(body: unknown): WebhookResponse;
   /** Start an HTTP server on the configured port. */
   start(port: number): void;
   /** Stop the HTTP server. */
@@ -78,10 +78,7 @@ export function createWebhookIngestor(
   let server: Server | null = null;
 
   // ── Handle a parsed body ─────────────────────────────────
-  const handle = (
-    body: unknown,
-    _headers?: Record<string, string>,
-  ): WebhookResponse => {
+  const handle = (body: unknown): WebhookResponse => {
     // Validate JSON body is an object
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return {
@@ -131,7 +128,7 @@ export function createWebhookIngestor(
       // Duplicate within window — return 200, don't enqueue
       return {
         status: 200,
-        body: { status: "duplicate", messageId: recent[0].messageId },
+        body: { status: "duplicate", messageId: recent[0]!.messageId },
       };
     }
 

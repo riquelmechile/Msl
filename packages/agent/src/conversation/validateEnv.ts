@@ -32,8 +32,7 @@ export function validateRuntimeEnv(): EnvValidation {
 
   // ── Creative studio: conditional checks ─────────────────────
   const creativeEnabled = env("MSL_CREATIVE_STUDIO_ENABLED");
-  const isCreativeActive =
-    creativeEnabled === "true" || creativeEnabled === "1";
+  const isCreativeActive = creativeEnabled === "true" || creativeEnabled === "1";
 
   if (isCreativeActive) {
     const apiHost = env("MINIMAX_API_HOST");
@@ -50,9 +49,7 @@ export function validateRuntimeEnv(): EnvValidation {
     }
 
     if (!apiHost && baseUrl) {
-      warnings.push(
-        "MINIMAX_BASE_URL is deprecated; use MINIMAX_API_HOST instead",
-      );
+      warnings.push("MINIMAX_BASE_URL is deprecated; use MINIMAX_API_HOST instead");
     }
 
     const storagePath = env("MSL_CREATIVE_STUDIO_STORAGE_PATH");
@@ -65,9 +62,7 @@ export function validateRuntimeEnv(): EnvValidation {
 
   // ── Webhook port: non-critical warning ──────────────────────
   if (!env("MSL_WEBHOOK_PORT")) {
-    warnings.push(
-      "MSL_WEBHOOK_PORT: not set; webhook ingestor will not start",
-    );
+    warnings.push("MSL_WEBHOOK_PORT: not set; webhook ingestor will not start");
   }
 
   return { valid: errors.length === 0, errors, warnings };

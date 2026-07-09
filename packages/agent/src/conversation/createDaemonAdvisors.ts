@@ -1,6 +1,5 @@
-import OpenAI from "openai";
 import type { SupplierMirrorStore } from "@msl/memory";
-import { getDeepSeekClient, resetDeepSeekClient } from "./deepseekClient.js";
+import { getDeepSeekClient } from "./deepseekClient.js";
 import { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
 import { OperationsDeepSeekAdvisor } from "./operationsDeepSeekAdvisor.js";
 import { CatalogDeepSeekAdvisor } from "./catalogDeepSeekAdvisor.js";

@@ -295,8 +295,14 @@ describe("agentMessageBusStore", () => {
 
       // Re-fetch to verify
       const row = db
-        .prepare("SELECT status, resolved_at, result_json FROM agent_message_bus WHERE message_id = ?")
-        .get(claimed!.messageId) as { status: string; resolved_at: string | null; result_json: string | null };
+        .prepare(
+          "SELECT status, resolved_at, result_json FROM agent_message_bus WHERE message_id = ?",
+        )
+        .get(claimed!.messageId) as {
+        status: string;
+        resolved_at: string | null;
+        result_json: string | null;
+      };
       expect(row.status).toBe("resolved");
       expect(row.resolved_at).toBeTruthy();
       expect(row.result_json).toBe('{"outcome":"ok"}');
@@ -381,7 +387,7 @@ describe("agentMessageBusStore", () => {
       expect(row.locked_at).toBeNull();
       expect(row.error_json).toBeTruthy();
       // Validate the error_json is valid JSON with the expected shape
-      const parsed = JSON.parse(row.error_json!);
+      const parsed = JSON.parse(row.error_json!) as { message: string; timestamp: string };
       expect(parsed.message).toBe("something went wrong");
       expect(parsed.timestamp).toBeTruthy();
     });
@@ -476,10 +482,12 @@ describe("agentMessageBusStore", () => {
 
       // Insert legacy data before migration
       const legacyId = crypto.randomUUID();
-      db2.prepare(
-        `INSERT INTO agent_message_bus (message_id, sender_agent_id, receiver_agent_id, message_type, payload_json)
+      db2
+        .prepare(
+          `INSERT INTO agent_message_bus (message_id, sender_agent_id, receiver_agent_id, message_type, payload_json)
          VALUES (?, 'legacy', 'worker', 'test', '{}')`,
-      ).run(legacyId);
+        )
+        .run(legacyId);
 
       // Run migration
       migrateBusSchema(db2);
@@ -509,7 +517,9 @@ describe("agentMessageBusStore", () => {
 
       // New columns should be NULL for legacy rows
       const legacyRow = db2
-        .prepare("SELECT result_json, error_json, correlation_id FROM agent_message_bus WHERE message_id = ?")
+        .prepare(
+          "SELECT result_json, error_json, correlation_id FROM agent_message_bus WHERE message_id = ?",
+        )
         .get(legacyId) as { result_json: null; error_json: null; correlation_id: null };
       expect(legacyRow.result_json).toBeNull();
       expect(legacyRow.error_json).toBeNull();
