@@ -42,9 +42,9 @@ function seedCreativeSnapshot(
   overrides: Partial<CreativeSnapshotData> & { itemId: string },
 ): void {
   const now = new Date().toISOString();
-  const creativeData: CreativeSnapshotData = {
+  const creativeData = {
     itemId: overrides.itemId,
-    sellerId: overrides.sellerId ?? SELLER_IDS[0],
+    sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
     pictureCount: overrides.pictureCount ?? 5,
     variationPictureCount: overrides.variationPictureCount ?? 0,
     hasMainImage: overrides.hasMainImage ?? true,
@@ -54,10 +54,10 @@ function seedCreativeSnapshot(
     performancePicturesStatus: overrides.performancePicturesStatus,
     performancePicturesScore: overrides.performancePicturesScore,
     capturedAt: now,
-  };
+  } as CreativeSnapshotData;
 
   void store.upsertSnapshot<CreativeSnapshotData>({
-    sellerId: overrides.sellerId ?? SELLER_IDS[0],
+    sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
     kind: "creative-snapshot" as never,
     source: "mercadolibre-api",
     data: creativeData,
@@ -72,9 +72,9 @@ function seedCreativeSnapshot(
     },
     confidence: "high",
     evidence: {
-      evidenceId: `orm:creative-snapshot:${overrides.sellerId ?? SELLER_IDS[0]}:${overrides.itemId}:${now}`,
+      evidenceId: `orm:creative-snapshot:${overrides.sellerId ?? SELLER_IDS[0]!}:${overrides.itemId}:${now}`,
       snapshotKind: "creative-snapshot" as never,
-      sellerId: overrides.sellerId ?? SELLER_IDS[0],
+      sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
       entityId: overrides.itemId,
       capturedAt: new Date(now),
       freshnessStatus: "fresh",
@@ -97,7 +97,7 @@ function seedVisitNode(
       type: "visit_snapshot",
       itemId,
       totalVisits,
-      sellerId: sellerId ?? SELLER_IDS[0],
+      sellerId: sellerId ?? SELLER_IDS[0]!,
       capturedAt: capturedAt ?? new Date().toISOString(),
     },
   );
@@ -124,7 +124,7 @@ function seedProductAdsInsights(
 ): void {
   const now = new Date().toISOString();
   void store.upsertSnapshot({
-    sellerId: overrides.sellerId ?? SELLER_IDS[0],
+    sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
     kind: "product-ads-insights" as never,
     source: "mercadolibre-api",
     data: {
@@ -146,9 +146,9 @@ function seedProductAdsInsights(
     },
     confidence: "high",
     evidence: {
-      evidenceId: `orm:product-ads-insights:${overrides.sellerId ?? SELLER_IDS[0]}:test:${now}`,
+      evidenceId: `orm:product-ads-insights:${overrides.sellerId ?? SELLER_IDS[0]!}:test:${now}`,
       snapshotKind: "product-ads-insights" as never,
-      sellerId: overrides.sellerId ?? SELLER_IDS[0],
+      sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
       entityId: "test",
       capturedAt: new Date(now),
       freshnessStatus: "fresh",
@@ -341,10 +341,10 @@ describe("creativeAssetsDaemon", () => {
     });
 
     it("skips signal when PICTURES data is undefined", async () => {
+      // Omit performancePicturesStatus to test skipping
       seedCreativeSnapshot(operationalStore, {
         itemId: "MLC-PICT-003",
-        performancePicturesStatus: undefined,
-      });
+      } as Partial<CreativeSnapshotData> & { itemId: string });
 
       const result = await creativeAssetsDaemon({
         claim: claimFixture(),
@@ -365,7 +365,7 @@ describe("creativeAssetsDaemon", () => {
     it("flags warning when visits > avg AND pictureCount < 2", async () => {
       seedCreativeSnapshot(operationalStore, {
         itemId: "MLC-HIGH-TRAFFIC-001",
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         pictureCount: 1,
         hasMainImage: false,
         moderationStatus: "active",
@@ -398,7 +398,7 @@ describe("creativeAssetsDaemon", () => {
       // Item with high visits but good creative
       seedCreativeSnapshot(operationalStore, {
         itemId: "MLC-GOOD-CREATIVE",
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         pictureCount: 5,
         hasMainImage: true,
         moderationStatus: "active",
@@ -426,7 +426,7 @@ describe("creativeAssetsDaemon", () => {
     it("skips when visits <= avg even with poor creative", async () => {
       seedCreativeSnapshot(operationalStore, {
         itemId: "MLC-LOW-TRAFFIC",
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         pictureCount: 1,
         hasMainImage: false,
         moderationStatus: "blocked",

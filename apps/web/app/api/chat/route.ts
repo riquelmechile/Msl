@@ -357,9 +357,7 @@ export async function POST(req: NextRequest) {
   const durableSessionKey = durable ? createDurableSessionKey(sellerId, sessionId) : sessionId;
   const useRealDeepSeek = Boolean(durable && process.env.DEEPSEEK_API_KEY);
 
-  const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(
-    process.env as Record<string, string | undefined>,
-  );
+  const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(process.env);
 
   const loop = createAgentLoop({
     systemPrompt: buildSystemPrompt(sellerName),

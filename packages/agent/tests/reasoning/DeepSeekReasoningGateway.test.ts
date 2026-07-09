@@ -136,11 +136,11 @@ describe("DeepSeekReasoningGateway", () => {
 
     const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }));
     await gateway.reason(
+      // Omit cacheableContext to test 2-block prompt
       makeCall({
         stablePrefix: "STABLE",
-        cacheableContext: undefined,
         volatileInput: "VOLATILE",
-      }),
+      } as Partial<ReasoningCall>),
     );
 
     const callArgs = mockCreate.mock.calls[0]![0] as {

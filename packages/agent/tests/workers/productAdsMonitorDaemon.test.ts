@@ -62,23 +62,23 @@ function seedProductAdsInsights(
   const ads = overrides.ads ?? [];
 
   void store.upsertSnapshot<MlcProductAdsInsights>({
-    sellerId: overrides.sellerId ?? SELLER_IDS[0],
+    sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
     kind: "product-ads-insights" as never,
     source: "mercadolibre-api",
     data: {
       advertiser: { id: "adv-1", siteId: "MLC", productId: "PADS" },
       campaigns: campaigns.map((c) => ({
         id: c.id,
-        name: c.name,
-        metrics: c.metrics,
+        name: c.name!,
+        metrics: c.metrics!,
       })),
       ads: ads.map((a) => ({
         id: a.id,
-        name: a.name,
-        itemId: a.itemId,
-        campaignId: a.campaignId,
-        status: a.status,
-        metrics: a.metrics,
+        name: a.name!,
+        itemId: a.itemId!,
+        campaignId: a.campaignId!,
+        status: a.status!,
+        metrics: a.metrics!,
       })),
       noMutationExecuted: true as const,
       performanceMetric: "roas" as const,
@@ -95,9 +95,9 @@ function seedProductAdsInsights(
     },
     confidence: "high",
     evidence: {
-      evidenceId: `orm:product-ads-insights:${overrides.sellerId ?? SELLER_IDS[0]}:test:${now}`,
+      evidenceId: `orm:product-ads-insights:${overrides.sellerId ?? SELLER_IDS[0]!}:test:${now}`,
       snapshotKind: "product-ads-insights" as never,
-      sellerId: overrides.sellerId ?? SELLER_IDS[0],
+      sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
       entityId: overrides.entityId ?? "test",
       capturedAt: new Date(now),
       freshnessStatus: "fresh",
@@ -114,7 +114,7 @@ function seedCostNode(engine: GraphEngine, itemId: string, cost: number, sellerI
       type: "cost_snapshot",
       itemId,
       cost,
-      sellerId: sellerId ?? SELLER_IDS[0],
+      sellerId: sellerId ?? SELLER_IDS[0]!,
       capturedAt: new Date().toISOString(),
     },
   );
@@ -134,7 +134,7 @@ function seedListingNode(
     {
       type: "listing_snapshot",
       itemId,
-      sellerId: overrides.sellerId ?? SELLER_IDS[0],
+      sellerId: overrides.sellerId ?? SELLER_IDS[0]!,
       price: overrides.price ?? 10000,
       capturedAt: overrides.capturedAt ?? new Date().toISOString(),
     },
@@ -154,7 +154,7 @@ function seedVisitNode(
       type: "visit_snapshot",
       itemId,
       totalVisits,
-      sellerId: sellerId ?? SELLER_IDS[0],
+      sellerId: sellerId ?? SELLER_IDS[0]!,
       capturedAt,
     },
   );
@@ -211,7 +211,7 @@ describe("productAdsMonitorDaemon", () => {
       });
       // Price via listing snapshot (ORM)
       await operationalStore.upsertSnapshot({
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         kind: "listing_snapshot" as never,
         source: "mercadolibre-api",
         data: { price: 5000 },
@@ -228,7 +228,7 @@ describe("productAdsMonitorDaemon", () => {
         evidence: {
           evidenceId: "test:listing:MLC-PROFIT-001",
           snapshotKind: "listing_snapshot" as never,
-          sellerId: SELLER_IDS[0],
+          sellerId: SELLER_IDS[0]!,
           entityId: "MLC-PROFIT-001",
           capturedAt: new Date(),
           freshnessStatus: "fresh",
@@ -269,7 +269,7 @@ describe("productAdsMonitorDaemon", () => {
       });
       // Price exists but no cost node → skip
       await operationalStore.upsertSnapshot({
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         kind: "listing_snapshot" as never,
         source: "mercadolibre-api",
         data: { price: 5000 },
@@ -286,7 +286,7 @@ describe("productAdsMonitorDaemon", () => {
         evidence: {
           evidenceId: "test:listing:MLC-COST-UNKNOWN-001",
           snapshotKind: "listing_snapshot" as never,
-          sellerId: SELLER_IDS[0],
+          sellerId: SELLER_IDS[0]!,
           entityId: "MLC-COST-UNKNOWN-001",
           capturedAt: new Date(),
           freshnessStatus: "fresh",
@@ -410,7 +410,7 @@ describe("productAdsMonitorDaemon", () => {
 
       // Only on owned seller → monopoly
       seedListingNode(engine, "MLC-MON-001", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 10000,
       });
 
@@ -444,7 +444,7 @@ describe("productAdsMonitorDaemon", () => {
 
       // On owned seller
       seedListingNode(engine, "MLC-MON-002", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 10000,
       });
       // Also on external seller → suppress monopoly
@@ -550,7 +550,7 @@ describe("productAdsMonitorDaemon", () => {
 
       // Seed the profitable product (not in ads)
       await operationalStore.upsertSnapshot({
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         kind: "listing_snapshot" as never,
         source: "mercadolibre-api",
         data: { price: 10000 },
@@ -567,7 +567,7 @@ describe("productAdsMonitorDaemon", () => {
         evidence: {
           evidenceId: "test:listing:MLC-OPP-OPPORTUNITY",
           snapshotKind: "listing_snapshot" as never,
-          sellerId: SELLER_IDS[0],
+          sellerId: SELLER_IDS[0]!,
           entityId: "MLC-OPP-OPPORTUNITY",
           capturedAt: new Date(),
           freshnessStatus: "fresh",
@@ -579,11 +579,11 @@ describe("productAdsMonitorDaemon", () => {
 
       // Seed listing for monopoly check (Cortex)
       seedListingNode(engine, "MLC-OPP-OPPORTUNITY", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 10000,
       });
       seedListingNode(engine, "MLC-OPP-ADVERTISED", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 8000,
       });
 
@@ -623,7 +623,7 @@ describe("productAdsMonitorDaemon", () => {
 
       // Seed unprofitable product
       await operationalStore.upsertSnapshot({
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         kind: "listing_snapshot" as never,
         source: "mercadolibre-api",
         data: { price: 5000 },
@@ -640,7 +640,7 @@ describe("productAdsMonitorDaemon", () => {
         evidence: {
           evidenceId: "test:listing:MLC-OPP-UNPROFITABLE",
           snapshotKind: "listing_snapshot" as never,
-          sellerId: SELLER_IDS[0],
+          sellerId: SELLER_IDS[0]!,
           entityId: "MLC-OPP-UNPROFITABLE",
           capturedAt: new Date(),
           freshnessStatus: "fresh",
@@ -652,11 +652,11 @@ describe("productAdsMonitorDaemon", () => {
 
       // Seed listing for monopoly check
       seedListingNode(engine, "MLC-OPP-UNPROFITABLE", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 5000,
       });
       seedListingNode(engine, "MLC-OPP-ADVERTISED-2", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 8000,
       });
 
@@ -692,7 +692,7 @@ describe("productAdsMonitorDaemon", () => {
         ],
       });
       await operationalStore.upsertSnapshot({
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         kind: "listing_snapshot" as never,
         source: "mercadolibre-api",
         data: { price: 5000 },
@@ -709,7 +709,7 @@ describe("productAdsMonitorDaemon", () => {
         evidence: {
           evidenceId: "test:listing:MLC-ENQ-001",
           snapshotKind: "listing_snapshot" as never,
-          sellerId: SELLER_IDS[0],
+          sellerId: SELLER_IDS[0]!,
           entityId: "MLC-ENQ-001",
           capturedAt: new Date(),
           freshnessStatus: "fresh",
@@ -720,7 +720,7 @@ describe("productAdsMonitorDaemon", () => {
       seedCostNode(engine, "MLC-ENQ-001", 8000);
       // Also add listing node for Cortex (monopoly check runs too)
       seedListingNode(engine, "MLC-ENQ-001", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 5000,
       });
 
@@ -770,7 +770,7 @@ describe("productAdsMonitorDaemon", () => {
         ],
       });
       await operationalStore.upsertSnapshot({
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         kind: "listing_snapshot" as never,
         source: "mercadolibre-api",
         data: { price: 10000 },
@@ -787,7 +787,7 @@ describe("productAdsMonitorDaemon", () => {
         evidence: {
           evidenceId: "test:listing:MLC-ENQ-ROAS",
           snapshotKind: "listing_snapshot" as never,
-          sellerId: SELLER_IDS[0],
+          sellerId: SELLER_IDS[0]!,
           entityId: "MLC-ENQ-ROAS",
           capturedAt: new Date(),
           freshnessStatus: "fresh",
@@ -799,7 +799,7 @@ describe("productAdsMonitorDaemon", () => {
       // But we still get the ROAS warning
       seedCostNode(engine, "MLC-ENQ-ROAS", 8000);
       seedListingNode(engine, "MLC-ENQ-ROAS", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 10000,
       });
 
@@ -837,7 +837,7 @@ describe("productAdsMonitorDaemon", () => {
         ],
       });
       await operationalStore.upsertSnapshot({
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         kind: "listing_snapshot" as never,
         source: "mercadolibre-api",
         data: { price: 10000 },
@@ -854,7 +854,7 @@ describe("productAdsMonitorDaemon", () => {
         evidence: {
           evidenceId: "test:listing:MLC-ENQ-DEDUP",
           snapshotKind: "listing_snapshot" as never,
-          sellerId: SELLER_IDS[0],
+          sellerId: SELLER_IDS[0]!,
           entityId: "MLC-ENQ-DEDUP",
           capturedAt: new Date(),
           freshnessStatus: "fresh",
@@ -864,7 +864,7 @@ describe("productAdsMonitorDaemon", () => {
       });
       seedCostNode(engine, "MLC-ENQ-DEDUP", 8000);
       seedListingNode(engine, "MLC-ENQ-DEDUP", {
-        sellerId: SELLER_IDS[0],
+        sellerId: SELLER_IDS[0]!,
         price: 10000,
       });
 

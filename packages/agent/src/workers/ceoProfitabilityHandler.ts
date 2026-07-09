@@ -188,12 +188,11 @@ function buildActionPayload(
   const expiresAt = new Date(now);
   expiresAt.setDate(expiresAt.getDate() + 2); // 48h expiry
 
-  return {
+  const base = {
     sellerId: finding.sellerId,
     proposalType: action.proposalType,
     campaignId: finding.campaignId,
     itemId: finding.itemId,
-    adId: finding.adId,
     currentStatus: "active",
     metricsSnapshotSummary: finding.summary,
     rationale: `CFO signal: ${finding.signal} — ${finding.summary}`,
@@ -201,6 +200,7 @@ function buildActionPayload(
     observedAt: finding.capturedAt,
     expiresAt: expiresAt.toISOString(),
   };
+  return finding.adId !== undefined ? { ...base, adId: finding.adId } : base;
 }
 
 // ── Daemon handler ───────────────────────────────────────────────────
@@ -338,7 +338,7 @@ export const ceoProfitabilityHandler: DaemonHandler = async ({
         };
       } else {
         // Fallback to static map
-        action = SIGNAL_TO_ACTION[finding.signal] ?? SIGNAL_TO_ACTION["unit-economics"];
+        action = SIGNAL_TO_ACTION[finding.signal] ?? SIGNAL_TO_ACTION["unit-economics"]!;
       }
 
       // ── Add finding to results ────────────────────────────────────

@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { GraphEngine } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
 import type { CeoFinding } from "../../src/workers/ceoDeepSeekClient.js";
+import type { DeepSeekRuntimeConfig } from "../../src/conversation/deepseekRuntime.js";
 import { createCeoDeepSeekClient } from "../../src/workers/ceoDeepSeekClient.js";
 
 // ── Mock OpenAI ─────────────────────────────────────────────────────
@@ -71,10 +72,9 @@ describe("createCeoDeepSeekClient", () => {
 
   it("returns null when DEEPSEEK_API_KEY is not set", () => {
     const client = createCeoDeepSeekClient({
-      apiKey: undefined,
       baseURL: "https://api.deepseek.com",
       model: "deepseek-v4-flash",
-    });
+    } as DeepSeekRuntimeConfig);
     expect(client).toBeNull();
   });
 

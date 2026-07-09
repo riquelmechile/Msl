@@ -35,6 +35,7 @@ const signalLabels: Record<BusinessSignalKind, string> = {
   cancellation: "cancelaciones",
   "category-attributes": "category attributes",
   "category-technical-specs": "category technical specs",
+  "creative-snapshot": "creative snapshot",
   "business-signal": "señales de negocio",
   claim: "reclamos",
   "historical-summary": "resumen histórico",

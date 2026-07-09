@@ -230,7 +230,7 @@ describe("ceoProfitabilityHandler", () => {
         cortex: createGraphEngine(":memory:"),
         bus,
         sellerIds: SELLER_IDS,
-        ceoContext: makeCeoContext({ prepareProductAdsAction: undefined }),
+        ceoContext: makeCeoContext({} as Partial<CeoHandlerContext>),
       });
 
       expect(result.proposalEnqueued).toBe(true);
@@ -333,7 +333,11 @@ describe("ceoProfitabilityHandler", () => {
       const sentMessages: Array<{ chatId: number; text: string; threadId?: number }> = [];
       const ceoCtx = makeCeoContext({
         sendProactiveMessage: async (chatId, text, threadId) => {
-          sentMessages.push({ chatId, text, threadId });
+          sentMessages.push({ chatId, text, threadId } as {
+            chatId: number;
+            text: string;
+            threadId?: number;
+          });
         },
         createForumTopic: async (_chatId, name) => {
           return { message_thread_id: 42 };
@@ -372,7 +376,7 @@ describe("ceoProfitabilityHandler", () => {
     });
 
     it("handles partial ceoContext (no sendProactiveMessage)", async () => {
-      const ceoCtx = makeCeoContext({ sendProactiveMessage: undefined });
+      const ceoCtx = makeCeoContext({} as Partial<CeoHandlerContext>);
 
       const result = await ceoProfitabilityHandler({
         claim: claimFixture({ payloadJson: makeProposalPayload() }),

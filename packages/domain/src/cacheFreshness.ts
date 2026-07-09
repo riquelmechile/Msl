@@ -11,6 +11,7 @@ export type BusinessSignalKind =
   | "category-attributes"
   | "category-technical-specs"
   | "pricing"
+  | "creative-snapshot"
   | "historical-summary"
   | "business-signal"
   | "question";

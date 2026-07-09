@@ -1,6 +1,12 @@
 import type { AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { AgentConsensusStore } from "../conversation/agentConsensusStore.js";
-import type { OperationalReadModelReader, GraphEngine, SupplierMirrorStore } from "@msl/memory";
+import type {
+  OperationalReadModelReader,
+  GraphEngine,
+  SupplierMirrorStore,
+  SearchSnapshotsFilter,
+  SnapshotSearchResult,
+} from "@msl/memory";
 import type { LaneId } from "../conversation/lanes.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
 import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
@@ -90,13 +96,12 @@ function createCachingReader(reader: OperationalReadModelReader): OperationalRea
 
   return {
     ...reader,
-    searchSnapshots: async <T>(
-      filter: Parameters<OperationalReadModelReader["searchSnapshots"]>[0],
-    ) => {
+    searchSnapshots: async <TData>(
+      filter: SearchSnapshotsFilter,
+    ): Promise<SnapshotSearchResult<TData>[]> => {
       const key = JSON.stringify(filter);
-      if (cache.has(key))
-        return cache.get(key) as Awaited<ReturnType<OperationalReadModelReader["searchSnapshots"]>>;
-      const result = await reader.searchSnapshots<T>(filter);
+      if (cache.has(key)) return cache.get(key) as SnapshotSearchResult<TData>[];
+      const result = await reader.searchSnapshots<TData>(filter);
       cache.set(key, result);
       return result;
     },
@@ -151,7 +156,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               catalogAdvisor: config.catalogAdvisor,
               costSupplierAdvisor: config.costSupplierAdvisor,
               creativeAdvisor: config.creativeAdvisor,
-            });
+            } as Parameters<DaemonHandler>[0]);
             config.bus.resolve(claim.messageId, result);
           } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);

@@ -59,6 +59,9 @@ export type CreativeSnapshotData = {
   moderationWordings: Array<{ kind: string; value: string }>;
   performancePicturesStatus?: "COMPLETED" | "PENDING";
   performancePicturesScore?: number;
+  mainImageUrl?: string;
+  itemTitle?: string;
+  categoryId?: string;
   capturedAt: string;
 };
 

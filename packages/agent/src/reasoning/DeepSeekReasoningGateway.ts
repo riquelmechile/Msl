@@ -16,7 +16,12 @@ import {
   isAutoExecuteLevel,
   requiresApprovalByDefault,
 } from "./reasoningLevels.js";
-import type { ReasoningCall, ReasoningResult, CostTelemetry } from "./reasoningTypes.js";
+import type {
+  ReasoningCall,
+  ReasoningLevel,
+  ReasoningResult,
+  CostTelemetry,
+} from "./reasoningTypes.js";
 
 // ── Gateway ──────────────────────────────────────────────────────────
 
@@ -35,8 +40,8 @@ import type { ReasoningCall, ReasoningResult, CostTelemetry } from "./reasoningT
  */
 export class DeepSeekReasoningGateway {
   private client: OpenAI;
-  private ledger?: WorkforceCostCacheLedgerStore;
-  private autonomy?: AutonomyEngine;
+  private readonly ledger: WorkforceCostCacheLedgerStore | undefined;
+  private readonly autonomy: AutonomyEngine | undefined;
 
   constructor(client: OpenAI, ledger?: WorkforceCostCacheLedgerStore, autonomy?: AutonomyEngine) {
     this.client = client;
@@ -185,7 +190,8 @@ export class DeepSeekReasoningGateway {
             ? "miss"
             : ("unknown" as const);
 
-      ledger.insertEntry({
+      // Build entry, omitting undefined optional fields to satisfy exactOptionalPropertyTypes
+      const entry: Record<string, unknown> = {
         entryId: `reasoning-gateway:${call.laneId}:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`,
         agentId: call.agentId,
         laneId: call.laneId as import("../conversation/lanes.js").LaneId,
@@ -201,7 +207,8 @@ export class DeepSeekReasoningGateway {
         cacheStatus,
         metadata: { model, source: "reasoning-gateway" },
         measuredAt: new Date().toISOString(),
-      });
+      };
+      ledger.insertEntry(entry as Parameters<typeof ledger.insertEntry>[0]);
     } catch {
       // ledger is best-effort
     }

@@ -280,7 +280,7 @@ describe("supplierManagerDaemon", () => {
       const prevHour = new Date(Date.now() - 3_600_000).toISOString().slice(0, 13);
 
       // Seed a prior price record for the previous hour
-      const appendLedger = async (r: Record<string, unknown>) => r;
+      const appendLedger = (async (r: Record<string, unknown>) => r) as never;
 
       const store = mockStore({
         listSupplierItemSnapshots: async () => [
@@ -492,7 +492,7 @@ describe("supplierManagerDaemon", () => {
         cortex: engine,
         bus,
         sellerIds: SELLER_IDS,
-        supplierMirrorStore: undefined,
+        supplierMirrorStore: undefined as never,
       });
 
       expect(result.findings).toEqual([]);

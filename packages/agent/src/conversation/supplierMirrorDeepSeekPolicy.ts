@@ -26,13 +26,15 @@ export function estimateSupplierMirrorDeepSeekCostMicros(input: {
   promptCacheMissTokens?: number | undefined;
   outputTokens?: number | undefined;
 }): number | undefined {
-  return (
-    estimateCost(input.model, {
-      cacheHitTokens: input.promptCacheHitTokens,
-      cacheMissTokens: input.promptCacheMissTokens,
-      outputTokens: input.outputTokens,
-    }) ?? undefined
-  );
+  // Omit undefined fields to satisfy exactOptionalPropertyTypes
+  const costInput: Record<string, unknown> = {};
+  if (input.promptCacheHitTokens !== undefined)
+    costInput.cacheHitTokens = input.promptCacheHitTokens;
+  if (input.promptCacheMissTokens !== undefined)
+    costInput.cacheMissTokens = input.promptCacheMissTokens;
+  if (input.outputTokens !== undefined) costInput.outputTokens = input.outputTokens;
+
+  return estimateCost(input.model, costInput as Parameters<typeof estimateCost>[1]) ?? undefined;
 }
 
 export const SUPPLIER_MIRROR_DEEPSEEK_PROVIDER = "deepseek";

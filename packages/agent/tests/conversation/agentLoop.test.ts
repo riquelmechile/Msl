@@ -2280,10 +2280,11 @@ describe("buildMessages — blockC injection", () => {
 // Consensus context injection
 // ---------------------------------------------------------------------------
 
-import {
-  buildConsensusContext,
-  type AgentConsensusStore,
-} from "../../src/conversation/agentLoop.js";
+import { buildConsensusContext } from "../../src/conversation/agentLoop.js";
+import type {
+  AgentConsensusStore,
+  ConsensusResult,
+} from "../../src/conversation/agentConsensusStore.js";
 import type { AgentProposal } from "../../src/conversation/types.js";
 
 describe("buildConsensusContext", () => {
@@ -2328,14 +2329,17 @@ describe("buildConsensusContext", () => {
   it("returns empty string when no reviews exist for the proposal", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
-      getConsensus: vi.fn(() => ({
-        proposalId: "prop-001",
-        reviews: [],
-        verdicts: {},
-        recommendation: "insufficient_reviews",
-        minReviewsRequired: 2,
-        hasQuorum: false,
-      })),
+      getConsensus: vi.fn(
+        (_proposalId: string) =>
+          ({
+            proposalId: "prop-001",
+            reviews: [],
+            verdicts: {},
+            recommendation: "insufficient_reviews",
+            minReviewsRequired: 2,
+            hasQuorum: false,
+          }) as unknown as ConsensusResult,
+      ),
     });
     const proposal = makeProposal();
 
@@ -2347,42 +2351,45 @@ describe("buildConsensusContext", () => {
   it("returns formatted consensus string with verdict counts and reviewer rationales", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
-      getConsensus: vi.fn(() => ({
-        proposalId: "prop-001",
-        reviews: [
-          {
-            id: 1,
+      getConsensus: vi.fn(
+        (_proposalId: string) =>
+          ({
             proposalId: "prop-001",
-            reviewerAgentId: "market-catalog",
-            verdict: "approve",
-            rationale: "Price adjustment is within market range",
-            confidence: 0.85,
-            createdAt: "2026-07-06T10:00:00Z",
-          },
-          {
-            id: 2,
-            proposalId: "prop-001",
-            reviewerAgentId: "operations-manager",
-            verdict: "risk_warning",
-            rationale: "Check if this affects claim SLA",
-            confidence: 0.7,
-            createdAt: "2026-07-06T10:01:00Z",
-          },
-          {
-            id: 3,
-            proposalId: "prop-001",
-            reviewerAgentId: "cost-supplier",
-            verdict: "approve",
-            rationale: "Margin remains healthy at 28%",
-            confidence: 0.9,
-            createdAt: "2026-07-06T10:02:00Z",
-          },
-        ],
-        verdicts: { approve: 2, risk_warning: 1 },
-        recommendation: "approved",
-        minReviewsRequired: 2,
-        hasQuorum: true,
-      })),
+            reviews: [
+              {
+                id: 1,
+                proposalId: "prop-001",
+                reviewerAgentId: "market-catalog",
+                verdict: "approve",
+                rationale: "Price adjustment is within market range",
+                confidence: 0.85,
+                createdAt: "2026-07-06T10:00:00Z",
+              },
+              {
+                id: 2,
+                proposalId: "prop-001",
+                reviewerAgentId: "operations-manager",
+                verdict: "risk_warning",
+                rationale: "Check if this affects claim SLA",
+                confidence: 0.7,
+                createdAt: "2026-07-06T10:01:00Z",
+              },
+              {
+                id: 3,
+                proposalId: "prop-001",
+                reviewerAgentId: "cost-supplier",
+                verdict: "approve",
+                rationale: "Margin remains healthy at 28%",
+                confidence: 0.9,
+                createdAt: "2026-07-06T10:02:00Z",
+              },
+            ],
+            verdicts: { approve: 2, risk_warning: 1 },
+            recommendation: "approved",
+            minReviewsRequired: 2,
+            hasQuorum: true,
+          }) as unknown as ConsensusResult,
+      ),
     });
     const proposal = makeProposal();
 
@@ -2400,33 +2407,36 @@ describe("buildConsensusContext", () => {
   it("handles rejected proposals with verdict counts", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
-      getConsensus: vi.fn(() => ({
-        proposalId: "prop-002",
-        reviews: [
-          {
-            id: 4,
+      getConsensus: vi.fn(
+        (_proposalId: string) =>
+          ({
             proposalId: "prop-002",
-            reviewerAgentId: "creative-commercial",
-            verdict: "reject",
-            rationale: "Brand conflict detected",
-            confidence: 0.8,
-            createdAt: "2026-07-06T11:00:00Z",
-          },
-          {
-            id: 5,
-            proposalId: "prop-002",
-            reviewerAgentId: "cost-supplier",
-            verdict: "reject",
-            rationale: "Margin drops below threshold",
-            confidence: 0.85,
-            createdAt: "2026-07-06T11:01:00Z",
-          },
-        ],
-        verdicts: { reject: 2 },
-        recommendation: "rejected",
-        minReviewsRequired: 2,
-        hasQuorum: true,
-      })),
+            reviews: [
+              {
+                id: 4,
+                proposalId: "prop-002",
+                reviewerAgentId: "creative-commercial",
+                verdict: "reject",
+                rationale: "Brand conflict detected",
+                confidence: 0.8,
+                createdAt: "2026-07-06T11:00:00Z",
+              },
+              {
+                id: 5,
+                proposalId: "prop-002",
+                reviewerAgentId: "cost-supplier",
+                verdict: "reject",
+                rationale: "Margin drops below threshold",
+                confidence: 0.85,
+                createdAt: "2026-07-06T11:01:00Z",
+              },
+            ],
+            verdicts: { reject: 2 },
+            recommendation: "rejected",
+            minReviewsRequired: 2,
+            hasQuorum: true,
+          }) as unknown as ConsensusResult,
+      ),
     });
     const proposal = makeProposal({ action: { ...makeProposal().action, id: "prop-002" } });
 
@@ -2454,24 +2464,27 @@ describe("createAgentLoop — consensus context integration", () => {
   it("injects consensus context when consensus store is configured and kind requires it", async () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
-      getConsensus: vi.fn(() => ({
-        proposalId: "prop-001",
-        reviews: [
-          {
-            id: 1,
+      getConsensus: vi.fn(
+        (_proposalId: string) =>
+          ({
             proposalId: "prop-001",
-            reviewerAgentId: "market-catalog",
-            verdict: "approve",
-            rationale: "Looks good",
-            confidence: 0.85,
-            createdAt: "2026-07-06T10:00:00Z",
-          },
-        ],
-        verdicts: { approve: 1 },
-        recommendation: "insufficient_reviews",
-        minReviewsRequired: 2,
-        hasQuorum: false,
-      })),
+            reviews: [
+              {
+                id: 1,
+                proposalId: "prop-001",
+                reviewerAgentId: "market-catalog",
+                verdict: "approve",
+                rationale: "Looks good",
+                confidence: 0.85,
+                createdAt: "2026-07-06T10:00:00Z",
+              },
+            ],
+            verdicts: { approve: 1 },
+            recommendation: "insufficient_reviews",
+            minReviewsRequired: 2,
+            hasQuorum: false,
+          }) as unknown as ConsensusResult,
+      ),
       requiresConsensus: vi.fn((kind: string) => kind === "listing-edit"),
     };
     const agent = createAgentLoop({
@@ -2522,7 +2535,7 @@ describe("createAgentLoop — consensus context integration", () => {
   it("does not inject consensus context for kinds that do not require consensus", async () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
-      getConsensus: vi.fn(),
+      getConsensus: vi.fn() as (proposalId: string) => ConsensusResult,
       requiresConsensus: vi.fn(() => false),
     };
     const agent = createAgentLoop({
@@ -2540,24 +2553,27 @@ describe("createAgentLoop — consensus context integration", () => {
   it("does not inject consensus context on dale confirmation", async () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
-      getConsensus: vi.fn(() => ({
-        proposalId: "prop-pending",
-        reviews: [
-          {
-            id: 1,
+      getConsensus: vi.fn(
+        (_proposalId: string) =>
+          ({
             proposalId: "prop-pending",
-            reviewerAgentId: "market-catalog",
-            verdict: "approve",
-            rationale: "Looks good",
-            confidence: 0.85,
-            createdAt: "2026-07-06T10:00:00Z",
-          },
-        ],
-        verdicts: { approve: 1 },
-        recommendation: "insufficient_reviews",
-        minReviewsRequired: 2,
-        hasQuorum: false,
-      })),
+            reviews: [
+              {
+                id: 1,
+                proposalId: "prop-pending",
+                reviewerAgentId: "market-catalog",
+                verdict: "approve",
+                rationale: "Looks good",
+                confidence: 0.85,
+                createdAt: "2026-07-06T10:00:00Z",
+              },
+            ],
+            verdicts: { approve: 1 },
+            recommendation: "insufficient_reviews",
+            minReviewsRequired: 2,
+            hasQuorum: false,
+          }) as unknown as ConsensusResult,
+      ),
       requiresConsensus: vi.fn(() => true),
     };
     const agent = createAgentLoop({

@@ -331,7 +331,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
         status: listing?.status ?? "",
         visits,
         categoryId: listing?.categoryId ?? "",
-        categoryMedian: median,
+        ...(median !== undefined ? { categoryMedian: median } : {}),
         signalKind,
         severity,
       };

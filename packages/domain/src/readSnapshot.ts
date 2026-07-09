@@ -13,6 +13,7 @@ export type ReadSnapshotKind =
   | "question"
   | "category-attributes"
   | "category-technical-specs"
+  | "creative-snapshot"
   | "business-signal";
 
 export type MlCapabilitySiteSupport = "MLC-confirmed" | "unknown";
