@@ -1,0 +1,46 @@
+name: Production Readiness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - run: npm run format:check
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm test
+
+      - run: npm run build
+
+      - run: npm run test:e2e
+
+      - name: Check production secrets
+        run: npm run check:production-secrets
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MERCADOLIBRE_CLIENT_ID: ${{ secrets.MERCADOLIBRE_CLIENT_ID }}
+          MERCADOLIBRE_CLIENT_SECRET: ${{ secrets.MERCADOLIBRE_CLIENT_SECRET }}
+          MERCADOLIBRE_REDIRECT_URI: ${{ secrets.MERCADOLIBRE_REDIRECT_URI }}
+          MERCADOLIBRE_ACCESS_TOKEN: ${{ secrets.MERCADOLIBRE_ACCESS_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          MSL_TELEGRAM_ADMIN_CHAT_IDS: ${{ secrets.MSL_TELEGRAM_ADMIN_CHAT_IDS }}
+          MSL_APPROVAL_QUEUE_DB_PATH: ${{ secrets.MSL_APPROVAL_QUEUE_DB_PATH }}
+          MSL_CHAT_SQLITE_PATH: ${{ secrets.MSL_CHAT_SQLITE_PATH }}
+          MSL_CREATIVE_STUDIO_STORAGE_PATH: ${{ secrets.MSL_CREATIVE_STUDIO_STORAGE_PATH }}
+          MSL_RUNTIME_MODE: production
+          MSL_CREATIVE_STUDIO_ENABLED: true
