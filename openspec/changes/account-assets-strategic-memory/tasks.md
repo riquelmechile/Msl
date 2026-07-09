@@ -36,14 +36,14 @@ Chain strategy: stacked-to-main
 
 ## PR 3 — Daemon Iteration + Autonomy + Approval
 
-- [ ] 3.1 Add `AgentAccountContext { sellerId: SellerId, asset?: AccountAsset }` to `packages/agent/src/conversation/types.ts`. **Gate fix #3**. **Spec**: daemon-scheduler, conversational-business-agent (context types)
-- [ ] 3.2 Add `accountContexts: Map<string, AccountAsset>` to `DaemonHandler` input in `daemonTypes.ts`. **Spec**: daemon-scheduler (per-seller-dispatch)
-- [ ] 3.3 Update `daemonScheduler.ts` — build `accountContexts`; per-seller dedupe keys `(laneId, sellerId)`; dispatch handler per `sellerId`. **Spec**: daemon-scheduler (dispatch, dedupe)
-- [ ] 3.4 Update 14 daemon handlers in `packages/agent/src/workers/*.ts` — iterate `sellerIds`; scope `OperationalReadModel` queries per seller. **Spec**: daemon-scheduler (scoped-evidence)
-- [ ] 3.5 Rebuild `autonomyEngine.ts` — drop `CHECK(id=1)`; new schema `autonomy_state(seller_id TEXT PRIMARY KEY, current_level, updated_at)`; migrate existing data to `seller_id='default'`. `getCurrentLevel(sellerId)`, `setLevel(sellerId,...)`, `evaluateDegradation(sellerId)`. **Gate fix #4**. **Spec**: autonomy-engine (all)
-- [ ] 3.6 Wire `AgentLoopConfig.accountContext` in `agentLoop.ts` — inject into system prompt, tool context, outcome attribution, Escribano. **Spec**: conversational-business-agent (context, attribution)
-- [ ] 3.7 Update `systemPrompt.ts` — inject account name, capabilities, `profitGoal`, `riskLevel` into Block A when context present. **Spec**: conversational-business-agent (aware-prompt)
-- [ ] 3.8 Wire per-account "dale" in `packages/bot/src/index.ts` — `listPendingBySeller(botSellerId)`; multi-account ambiguity: "¿para cuál cuenta?". **Spec**: action-approval-safety (dale)
+- [x] 3.1 Add `AgentAccountContext { sellerId: SellerId, asset?: AccountAsset }` to `packages/agent/src/conversation/types.ts`. **Gate fix #3**. **Spec**: daemon-scheduler, conversational-business-agent (context types)
+- [x] 3.2 Add `accountContexts: Map<string, AccountAsset>` to `DaemonHandler` input in `daemonTypes.ts`. **Spec**: daemon-scheduler (per-seller-dispatch)
+- [x] 3.3 Update `daemonScheduler.ts` — build `accountContexts`; per-seller dedupe keys `(laneId, sellerId)`; dispatch handler per `sellerId`. **Spec**: daemon-scheduler (dispatch, dedupe)
+- [x] 3.4 Update 14 daemon handlers in `packages/agent/src/workers/*.ts` — iterate `sellerIds`; scope `OperationalReadModel` queries per seller. **Spec**: daemon-scheduler (scoped-evidence)
+- [x] 3.5 Rebuild `autonomyEngine.ts` — drop `CHECK(id=1)`; new schema `autonomy_state(seller_id TEXT PRIMARY KEY, current_level, updated_at)`; migrate existing data to `seller_id='default'`. `getCurrentLevel(sellerId)`, `setLevel(sellerId,...)`, `evaluateDegradation(sellerId)`. **Gate fix #4**. **Spec**: autonomy-engine (all)
+- [x] 3.6 Wire `AgentLoopConfig.accountContext` in `agentLoop.ts` — inject into system prompt, tool context, outcome attribution, Escribano. **Spec**: conversational-business-agent (context, attribution)
+- [x] 3.7 Update `systemPrompt.ts` — inject account name, capabilities, `profitGoal`, `riskLevel` into Block A when context present. **Spec**: conversational-business-agent (aware-prompt)
+- [x] 3.8 Wire per-account "dale" in `packages/bot/src/index.ts` — `listPendingBySeller(botSellerId)`; multi-account ambiguity: "¿para cuál cuenta?". **Spec**: action-approval-safety (dale)
 
 ## PR 4 — AccountAssetStore + Validation + Documentation
 

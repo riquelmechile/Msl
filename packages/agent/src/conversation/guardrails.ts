@@ -230,8 +230,12 @@ export function strategyValidator(proposal: AgentProposal, strategies: Strategy[
  * @param engine  The autonomy engine providing the current level.
  * @returns A {@link GuardResult} — always `passed: true`.
  */
-export function autonomyGate(action: { riskLevel: string }, engine: AutonomyEngine): GuardResult {
-  if (engine.canAutoApprove(action.riskLevel)) {
+export function autonomyGate(
+  action: { riskLevel: string },
+  engine: AutonomyEngine,
+  sellerId: string,
+): GuardResult {
+  if (engine.canAutoApprove(sellerId, action.riskLevel)) {
     return { passed: true };
   }
 

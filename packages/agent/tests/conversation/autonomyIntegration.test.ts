@@ -9,12 +9,14 @@ import type { ConversationState } from "../../src/conversation/types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+const SELLER_ID = "seller-1";
+
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
   return {
     messages: [],
     contextWindowLimit: 20,
     sessionMetadata: {
-      sellerId: "seller-1",
+      sellerId: SELLER_ID,
       startedAt: new Date("2026-06-26T10:00:00Z"),
       lastActivityAt: new Date("2026-06-26T10:00:00Z"),
     },
@@ -61,6 +63,7 @@ describe("autonomy engine — agent loop KPI recording", () => {
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 
@@ -96,6 +99,7 @@ describe("autonomy engine — agent loop KPI recording", () => {
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 
@@ -111,6 +115,7 @@ describe("autonomy engine — agent loop KPI recording", () => {
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 
@@ -175,8 +180,8 @@ describe("autonomy gate — level-to-risk mapping", () => {
   });
 
   it("blocks medium-risk action at SUGIERE level (requires dale)", () => {
-    engine.setLevel(AutonomyLevel.SUGIERE, "test setup");
-    const result = autonomyGate({ riskLevel: "medium" }, engine);
+    engine.setLevel(SELLER_ID, AutonomyLevel.SUGIERE, "test setup");
+    const result = autonomyGate({ riskLevel: "medium" }, engine, SELLER_ID);
 
     expect(result.passed).toBe(true);
     // Reason is present → NOT auto-approved, requires dale.
@@ -185,8 +190,8 @@ describe("autonomy gate — level-to-risk mapping", () => {
   });
 
   it("blocks high-risk action at SUGIERE level (requires dale)", () => {
-    engine.setLevel(AutonomyLevel.SUGIERE, "test setup");
-    const result = autonomyGate({ riskLevel: "high" }, engine);
+    engine.setLevel(SELLER_ID, AutonomyLevel.SUGIERE, "test setup");
+    const result = autonomyGate({ riskLevel: "high" }, engine, SELLER_ID);
 
     expect(result.passed).toBe(true);
     expect(result.reason).toBeDefined();
@@ -194,8 +199,8 @@ describe("autonomy gate — level-to-risk mapping", () => {
   });
 
   it("allows low-risk action at BAJO_RIESGO level (auto-approved)", () => {
-    engine.setLevel(AutonomyLevel.BAJO_RIESGO, "promoted by CEO");
-    const result = autonomyGate({ riskLevel: "low" }, engine);
+    engine.setLevel(SELLER_ID, AutonomyLevel.BAJO_RIESGO, "promoted by CEO");
+    const result = autonomyGate({ riskLevel: "low" }, engine, SELLER_ID);
 
     expect(result.passed).toBe(true);
     // No reason → auto-approved.
@@ -203,16 +208,16 @@ describe("autonomy gate — level-to-risk mapping", () => {
   });
 
   it("allows medium-risk action at MEDIO_RIESGO level (auto-approved)", () => {
-    engine.setLevel(AutonomyLevel.MEDIO_RIESGO, "promoted by CEO");
-    const result = autonomyGate({ riskLevel: "medium" }, engine);
+    engine.setLevel(SELLER_ID, AutonomyLevel.MEDIO_RIESGO, "promoted by CEO");
+    const result = autonomyGate({ riskLevel: "medium" }, engine, SELLER_ID);
 
     expect(result.passed).toBe(true);
     expect(result.reason).toBeUndefined();
   });
 
   it("blocks critical-risk action at FULL level (always requires dale)", () => {
-    engine.setLevel(AutonomyLevel.FULL, "promoted by CEO");
-    const result = autonomyGate({ riskLevel: "critical" }, engine);
+    engine.setLevel(SELLER_ID, AutonomyLevel.FULL, "promoted by CEO");
+    const result = autonomyGate({ riskLevel: "critical" }, engine, SELLER_ID);
 
     expect(result.passed).toBe(true);
     expect(result.reason).toBeDefined();
@@ -220,8 +225,8 @@ describe("autonomy gate — level-to-risk mapping", () => {
   });
 
   it("blocks everything at CONSULTA level", () => {
-    engine.setLevel(AutonomyLevel.CONSULTA, "degraded");
-    const result = autonomyGate({ riskLevel: "low" }, engine);
+    engine.setLevel(SELLER_ID, AutonomyLevel.CONSULTA, "degraded");
+    const result = autonomyGate({ riskLevel: "low" }, engine, SELLER_ID);
 
     expect(result.passed).toBe(true);
     expect(result.reason).toBeDefined();
@@ -262,6 +267,7 @@ describe("autonomy engine — degradation during agent loop", () => {
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 
@@ -269,7 +275,7 @@ describe("autonomy engine — degradation during agent loop", () => {
     await agent.converse("Hola", state);
 
     // After the turn, degradation should have run and dropped the level.
-    const level = engine.getCurrentLevel();
+    const level = engine.getCurrentLevel(SELLER_ID);
     expect(level).toBe(AutonomyLevel.CONSULTA);
   });
 
@@ -291,6 +297,7 @@ describe("autonomy engine — degradation during agent loop", () => {
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 
@@ -298,7 +305,7 @@ describe("autonomy engine — degradation during agent loop", () => {
     await agent.converse("Hola", state);
 
     // Level should remain unchanged.
-    expect(engine.getCurrentLevel()).toBe(AutonomyLevel.BAJO_RIESGO);
+    expect(engine.getCurrentLevel(SELLER_ID)).toBe(AutonomyLevel.BAJO_RIESGO);
   });
 
   it("records degradation event in database", async () => {
@@ -319,6 +326,7 @@ describe("autonomy engine — degradation during agent loop", () => {
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 
@@ -357,13 +365,17 @@ describe("autonomy engine — CEO level control", () => {
   });
 
   it("CEO can set level via engine.setLevel", () => {
-    engine.setLevel(AutonomyLevel.MEDIO_RIESGO, "CEO manual override después de revisar KPIs");
+    engine.setLevel(
+      SELLER_ID,
+      AutonomyLevel.MEDIO_RIESGO,
+      "CEO manual override después de revisar KPIs",
+    );
 
-    expect(engine.getCurrentLevel()).toBe(AutonomyLevel.MEDIO_RIESGO);
+    expect(engine.getCurrentLevel(SELLER_ID)).toBe(AutonomyLevel.MEDIO_RIESGO);
   });
 
   it("records setLevel as a degradation event in the database", () => {
-    engine.setLevel(AutonomyLevel.BAJO_RIESGO, "CEO promovió al agente");
+    engine.setLevel(SELLER_ID, AutonomyLevel.BAJO_RIESGO, "CEO promovió al agente");
 
     const rows = db
       .prepare("SELECT * FROM degradation_events ORDER BY id DESC LIMIT 1")
@@ -376,11 +388,12 @@ describe("autonomy engine — CEO level control", () => {
   });
 
   it("agent respects CEO-set level across multiple turns", async () => {
-    engine.setLevel(AutonomyLevel.FULL, "CEO confía plenamente");
+    engine.setLevel(SELLER_ID, AutonomyLevel.FULL, "CEO confía plenamente");
 
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 
@@ -392,7 +405,7 @@ describe("autonomy engine — CEO level control", () => {
       current = (await agent.converse("Hola", current)).updatedState;
     }
 
-    expect(engine.getCurrentLevel()).toBe(AutonomyLevel.FULL);
+    expect(engine.getCurrentLevel(SELLER_ID)).toBe(AutonomyLevel.FULL);
   });
 
   it("newly created engine starts at CONSULTA by default", () => {
@@ -400,7 +413,7 @@ describe("autonomy engine — CEO level control", () => {
     const db2 = new Database(":memory:");
     const engine2 = createAutonomyEngine(db2);
 
-    expect(engine2.getCurrentLevel()).toBe(AutonomyLevel.SUGIERE); // factory default
+    expect(engine2.getCurrentLevel(SELLER_ID)).toBe(AutonomyLevel.SUGIERE); // factory default
 
     db2.close();
   });
@@ -430,6 +443,7 @@ describe("autonomy engine — system prompt integration", () => {
     const agent = createAgentLoop({
       systemPrompt,
       mockClient: true,
+      sellerId: SELLER_ID,
       autonomyEngine: engine,
     });
 

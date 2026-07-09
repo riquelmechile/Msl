@@ -1,4 +1,4 @@
-import type { PreparedAction, RiskLevel, SellerId } from "@msl/domain";
+import type { AccountAsset, PreparedAction, RiskLevel, SellerId } from "@msl/domain";
 
 // ── Autonomy Levels ─────────────────────────────────────────────────
 
@@ -227,6 +227,16 @@ export type DecoyProposal = {
   tosCompliant: boolean;
   /** MANDATORY — Spanish ML TOS reminder, ALWAYS populated. */
   tosWarning: string;
+};
+
+// ── Account Context ──────────────────────────────────────────────────
+
+/** Per-account context injected into agent loops and daemons for seller-level scoping. */
+export type AgentAccountContext = {
+  /** The seller identifier for the current account. */
+  sellerId: SellerId;
+  /** Full AccountAsset when available; undefined for backward compatibility. */
+  asset?: AccountAsset;
 };
 
 // ── El Escribano — Memory Scribe ──────────────────────────────────

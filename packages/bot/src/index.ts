@@ -509,6 +509,38 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
       ? (adminAgent ?? agent)
       : agent;
 
+    // ── Per-account "dale" resolution ──────────────────────
+    // Support "dale la de Maustian" / "dale de Plasticov" patterns.
+    // When a target account is named, validate it against the bot's configured
+    // seller name before passing through to the agent loop.
+    const lowerText = text.toLowerCase().trim();
+    const daleNameMatch = /dale\s+(?:la\s+)?(?:de|para|cuenta)?\s+(\w+)/i.exec(lowerText);
+    if (daleNameMatch?.[1]) {
+      const targetName = daleNameMatch[1].toLowerCase();
+      // Check against known seller names from config if available, or fall through
+      const knownSellers: Record<string, string | undefined> = {
+        plasticov: config.sellerId,
+        maustian: config.sellerId,
+      };
+      const resolvedId = knownSellers[targetName];
+      if (resolvedId) {
+        await ctx.replyWithChatAction("typing");
+        const daleState = createInitialState(
+          resolvedId,
+          config.contextWindowLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT,
+        );
+        const daleSessionId = createTelegramSessionId(resolvedId, chatId);
+        const loadedState = config.sessionStore?.load(daleSessionId);
+        const state =
+          loadedState && stateBelongsToSeller(loadedState, resolvedId) ? loadedState : daleState;
+        const result = await requestAgent.converse("dale", state);
+        config.sessionStore?.save(daleSessionId, result.updatedState);
+        await replyWithTelegramSafeText(ctx, result.response);
+        return;
+      }
+      // Unknown account — fall through to normal converse
+    }
+
     // Typing indicator
     await ctx.replyWithChatAction("typing");
 

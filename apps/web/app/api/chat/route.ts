@@ -120,7 +120,12 @@ function createDemoAutonomyEngine(): AutonomyEngine {
 
   return {
     getCurrentLevel: () => level,
-    setLevel: (l: AutonomyLevel) => {
+    setLevel: (
+      _sellerId: string,
+      l: AutonomyLevel,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _reason: string,
+    ) => {
       level = l;
     },
     recordKpi: () => {
@@ -130,7 +135,7 @@ function createDemoAutonomyEngine(): AutonomyEngine {
     getDegradationEvents: () => [],
     evaluateDegradation: () => null,
     evaluatePromotion: () => ({ recommend: false, to: level }),
-    canAutoApprove: (riskLevel: string) => riskLevel === "low",
+    canAutoApprove: (_sellerId: string, riskLevel: string) => riskLevel === "low",
   };
 }
 
@@ -402,8 +407,8 @@ export async function POST(req: NextRequest) {
       // Send metadata after the text.
       const metadata: Record<string, unknown> = {
         type: "metadata",
-        autonomyLevel: AutonomyLevel[autonomyEngine.getCurrentLevel()],
-        autonomyLevelNumber: autonomyEngine.getCurrentLevel(),
+        autonomyLevel: AutonomyLevel[autonomyEngine.getCurrentLevel(sellerId)],
+        autonomyLevelNumber: autonomyEngine.getCurrentLevel(sellerId),
         hasProposal: !!result.proposal,
         strategiesActive: store.listActive().length,
         sessionId,

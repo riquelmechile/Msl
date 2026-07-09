@@ -24,7 +24,7 @@ export type {
 } from "./conversation/types.js";
 
 export { AutonomyLevel } from "./conversation/types.js";
-export type { KpiSnapshot, DegradationEvent } from "./conversation/types.js";
+export type { KpiSnapshot, DegradationEvent, AgentAccountContext } from "./conversation/types.js";
 
 export type {
   ConverseResult,
