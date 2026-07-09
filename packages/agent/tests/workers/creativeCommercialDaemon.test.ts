@@ -31,6 +31,15 @@ function claimFixture(overrides: Partial<AgentMessage> = {}): AgentMessage {
     resolvedAt: overrides.resolvedAt ?? null,
     createdAt: overrides.createdAt ?? new Date().toISOString(),
     updatedAt: overrides.updatedAt ?? new Date().toISOString(),
+    resultJson: overrides.resultJson ?? null,
+    errorJson: overrides.errorJson ?? null,
+    cancelReason: overrides.cancelReason ?? null,
+    correlationId: overrides.correlationId ?? null,
+    parentMessageId: overrides.parentMessageId ?? null,
+    sellerId: overrides.sellerId ?? null,
+    learnedAt: overrides.learnedAt ?? null,
+    outcomeScore: overrides.outcomeScore ?? null,
+    actionId: overrides.actionId ?? null,
   };
 }
 
@@ -378,7 +387,7 @@ describe("creativeCommercialDaemon", () => {
   // ── Creative Studio delegation (Phase 5) ──────────────────────
 
   describe.skipIf(process.env.CI === "true")("creative-studio delegation", () => {
-    it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", () => {
+    it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", async () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
 
@@ -440,6 +449,14 @@ describe("creativeCommercialDaemon", () => {
       // Enable creative-studio env gate
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
 
+      await creativeCommercialDaemon({
+        claim: claimFixture(),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+      });
+
       // CEO proposal should still be enqueued
       const ceoMessages = db
         .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
@@ -461,7 +478,7 @@ describe("creativeCommercialDaemon", () => {
       delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
     });
 
-    it("does NOT enqueue social-pack to creative-studio when env gate is disabled", () => {
+    it("does NOT enqueue social-pack to creative-studio when env gate is disabled", async () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
 
@@ -491,6 +508,14 @@ describe("creativeCommercialDaemon", () => {
       });
 
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
+
+      await creativeCommercialDaemon({
+        claim: claimFixture(),
+        reader: createSqliteOperationalReadModel(db),
+        cortex: engine,
+        bus,
+        sellerIds: SELLER_IDS,
+      });
 
       // CEO proposal still enqueued
       const ceoMessages = db

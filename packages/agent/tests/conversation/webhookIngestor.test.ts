@@ -116,7 +116,7 @@ describe("webhookIngestor", () => {
       // Verify the message was enqueued to CEO
       const ceoMessages = bus.claimNext("ceo");
       expect(ceoMessages.length).toBe(1);
-      expect(ceoMessages[0].messageType).toBe("ml-webhook:unknown-topic");
+      expect(ceoMessages[0]!.messageType).toBe("ml-webhook:unknown-topic");
     });
 
     it("deduplicates identical resource+topic within window", () => {
@@ -151,7 +151,7 @@ describe("webhookIngestor", () => {
       // Should go to market-catalog for items topic
       const catalogMsgs = bus.claimNext("market-catalog");
       expect(catalogMsgs.length).toBe(1);
-      expect(catalogMsgs[0].messageType).toBe("ml-webhook:items");
+      expect(catalogMsgs[0]!.messageType).toBe("ml-webhook:items");
     });
 
     it("allows different resources with same topic", () => {
@@ -236,7 +236,7 @@ describe("webhookIngestor", () => {
       // Should be in CEO lane per custom map
       const ceoMsgs = bus.claimNext("ceo");
       expect(ceoMsgs.length).toBe(1);
-      expect(ceoMsgs[0].messageType).toBe("ml-webhook:orders");
+      expect(ceoMsgs[0]!.messageType).toBe("ml-webhook:orders");
     });
 
     it("falls back to CEO for unmapped topics in custom map", () => {

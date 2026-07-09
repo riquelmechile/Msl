@@ -1,4 +1,4 @@
-import type { AgentMessageBusStore } from "./agentMessageBusStore.js";
+import type { AgentMessageBusStore, AgentMessage } from "./agentMessageBusStore.js";
 import type { GraphEngine } from "@msl/memory";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ export async function runLearningPipeline(
     errors: [],
   };
 
-  const unscored = bus.getUnscoredMessages({ since, limit: batchSize });
+  const unscored = bus.getUnscoredMessages(since ? { since, limit: batchSize } : { limit: batchSize });
   if (unscored.length === 0) return result;
 
   const batch = unscored.slice(0, batchSize);

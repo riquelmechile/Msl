@@ -1,0 +1,42 @@
+name: Provider Smoke Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Which provider to smoke test
+        required: true
+        type: choice
+        options:
+          - deepseek
+          - minimax
+          - both
+
+jobs:
+  deepseek-smoke:
+    if: inputs.provider == 'deepseek' || inputs.provider == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx vitest run tests/smoke/deepseek.smoke.test.ts
+        env:
+          RUN_DEEPSEEK_SMOKE: "true"
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+  minimax-smoke:
+    if: inputs.provider == 'minimax' || inputs.provider == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx vitest run tests/smoke/minimax.smoke.test.ts
+        env:
+          RUN_MINIMAX_SMOKE: "true"
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}

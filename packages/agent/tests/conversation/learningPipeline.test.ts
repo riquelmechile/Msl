@@ -21,15 +21,24 @@ function createMsg(
     dedupeKey: string;
   }>,
 ): AgentMessage {
-  return bus.enqueue({
+  const input: {
+    senderAgentId: string;
+    receiverAgentId: string;
+    messageType: string;
+    payloadJson: string;
+    dedupeKey: string;
+    correlationId?: string;
+    sellerId?: string;
+  } = {
     senderAgentId: "test",
     receiverAgentId: laneId,
     messageType: "test-message",
     payloadJson: JSON.stringify({ test: true }),
     dedupeKey: overrides?.dedupeKey ?? `test:${Date.now()}:${Math.random()}`,
-    correlationId: overrides?.correlationId,
-    sellerId: overrides?.sellerId,
-  });
+  };
+  if (overrides?.correlationId) input.correlationId = overrides.correlationId;
+  if (overrides?.sellerId) input.sellerId = overrides.sellerId;
+  return bus.enqueue(input);
 }
 
 /** Helper: fail a message repeatedly until it reaches 'failed' status (maxAttempts=3). */
@@ -38,7 +47,7 @@ function exhaustAndFail(bus: AgentMessageBusStore, msg: AgentMessage): void {
   for (let i = 0; i < 3; i++) {
     const next = bus.claimNext(current.receiverAgentId);
     if (next.length === 0) break;
-    current = next[0];
+    current = next[0]!;
     try {
       bus.fail(current.messageId, "test error");
     } catch {
@@ -279,7 +288,7 @@ describe("runLearningPipeline", () => {
 
     const result = await runLearningPipeline(bus, engine, { strategy: "passthrough" });
     expect(result.processed).toBeGreaterThanOrEqual(1);
-    expect(result.scored[0].outcomeScore).toBe(0.5); // default for passthrough
+    expect(result.scored[0]!.outcomeScore).toBe(0.5); // default for passthrough
   });
 });
 

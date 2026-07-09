@@ -131,7 +131,7 @@ export function createWebhookIngestor(
       // Duplicate within window — return 200, don't enqueue
       return {
         status: 200,
-        body: { status: "duplicate", messageId: recent[0].messageId },
+        body: { status: "duplicate", messageId: recent[0]!.messageId },
       };
     }
 

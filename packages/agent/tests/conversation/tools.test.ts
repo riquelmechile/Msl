@@ -1408,7 +1408,7 @@ describe("request_agent_evidence bus enqueue", () => {
     expect(msg.correlation_id).toBeTruthy();
 
     // Correlation should be returned in response
-    expect(result.correlationId).toBe(msg.correlation_id);
+    expect((result as Record<string, unknown>).correlationId).toBe(msg.correlation_id);
   });
 
   it("does not enqueue when target agent is not active (suspended)", () => {
@@ -1484,9 +1484,10 @@ describe("evidence request correlation chain", () => {
     expect(result).toMatchObject({ status: "evidence-ready" });
 
     // Get the enqueued message
-    const messages = bus.getMessagesByCorrelationId(result.correlationId!);
+    const correlationId = (result as Record<string, unknown>).correlationId as string;
+    const messages = bus.getMessagesByCorrelationId(correlationId);
     expect(messages).toHaveLength(1);
-    expect(messages[0]!.correlationId).toBe(result.correlationId);
+    expect(messages[0]!.correlationId).toBe(correlationId);
     expect(messages[0]!.senderAgentId).toBe("ceo");
     expect(messages[0]!.messageType).toBe("evidence_request");
   });
