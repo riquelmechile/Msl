@@ -1,436 +1,701 @@
-# Supplier Mirror → Cortex → Owned Ecommerce Bridge — Complete Analysis
+# Supplier-to-Owned Ecommerce Cortex Bridge
 
-> **Created:** 2026-07-08 | **Status:** Ready for implementation review
+## Resumen ejecutivo
 
----
+La siguiente evolución de MSL no debe ser un agente web aislado. Debe ser un puente operativo entre el agente de proveedores, Cortex, el bus de mensajes interno y el agente de ecommerce propio.
 
-## 1. Current State of Each System
+La idea central es:
 
-### 1.1 Supplier Mirror
+```text
+supplier-manager detecta stock/precio/producto
+  -> guarda/lee evidencia en SupplierMirrorStore, Cortex y operational read model
+  -> avisa al CEO
+  -> avisa también a owned-ecommerce
+  -> owned-ecommerce prepara publicación, pausa, ajuste o preview
+  -> CEO aprueba por Telegram
+  -> backend executor revalida y ejecuta
+  -> Cortex aprende el resultado
+```
 
-**What it does:** Mirrors supplier catalogs (currently Jinpeng/XKP) into MSL with auditable evidence, CEO-led policies, and safe target-account synchronization. It is a local-first system — all data lives in a dedicated SQLite database, separate from the operational read model.
-
-**Data Model (9 SQLite tables):**
-
-| Table                                 | Domain Type                       | Key Fields                                                                                                                                      |
-| ------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `suppliers`                           | `SupplierRegistryEntry`           | id, name, enabled, primarySource, metadata (JSON)                                                                                               |
-| `supplier_items`                      | `SupplierItemSnapshot`            | supplierId + supplierItemId (PK), mlItemId, title, sku, categoryId, price, currency, snapshot (JSON), source, confidence, freshness, evidenceId |
-| `stock_observations`                  | `SupplierStockObservation`        | id, supplierId, supplierItemId, source, authority, quantity, status (in-stock/low-stock/out-of-stock), confidence, evidenceId                   |
-| `item_mappings`                       | `SupplierTargetMapping`           | supplierId + supplierItemId + targetSellerId + targetItemId (PK), policyRef, state (proposed/approved/paused/rejected), evidenceIds (JSON)      |
-| `target_policies`                     | `SupplierTargetPolicy`            | scopeType+scopeId+supplierId (PK), targetSellerIds (JSON), lowStockThreshold, autoPauseAllowed, pricingPolicy (JSON)                            |
-| `sync_ledger`                         | `SupplierMirrorLedgerRecord`      | id, actionType (publish-proposal/price-proposal/pause-listing/skip/defer), idempotencyKey (UNIQUE), status, evidenceIds, before/after (JSON)    |
-| `notification_preferences`            | `SupplierNotificationPreference`  | scopeType+scopeId (PK), preference (JSON)                                                                                                       |
-| `supplier_mirror_notification_events` | `SupplierMirrorNotificationEvent` | id, type (stock-break-confirmed/pause-deferred/verification-inconclusive), status, supplierId, evidenceIds, metadata                            |
-| `learned_fallback_policies`           | `SupplierLearnedFallbackPolicy`   | id, policyType (pricing/targeting/stock/notification/error-outcome), scope (JSON), decision (JSON), confidence, status                          |
-
-**Runtime Boundaries:**
-
-- **Env gate:** `MSL_SUPPLIER_MIRROR_DB_PATH` — when set, the singleton store is auto-injected into bot, daemons, and web
-- **Worker gate:** `MSL_SUPPLIER_MIRROR_WORKER_ENABLED=true` + CEO readiness approval
-- **Runtime singleton:** `getSupplierMirrorRuntimeFromEnv()` in `supplierMirrorRuntime.ts` — caches the SQLite connection
-- **Adapter pattern:** `SupplierSourceAdapter` with `collect()` method — currently only `mercadolibre-api` and `unsupported` adapters exist
-- **Staged autonomy:** Evidence (Stage 1), Proposals (Stage 2), Verified Pause (Stage 3), Learned Policy (Stage 4) — currently at Stage 1/2
-
-**APIs:**
-
-- **Store interface:** `SupplierMirrorStore` — 21 methods (CRUD for each entity type)
-- **CEO tools (7):** `review_supplier_mirror_readiness`, `review_supplier_mirror_opportunities`, `review_supplier_mirror_notifications`, `propose_supplier_mirror_pricing_policy`, `record_supplier_mirror_fallback_lesson`, `plan_supplier_mirror_deepseek_usage`, `analyze_supplier_mirror_evidence`
-- **Worker:** Scheduler (10-min poll), Stock-break monitor, Jinpeng bootstrap
-
-**What flows in/out:** Data enters via source adapters (MercadoLibre API calls), persists to the local SQLite store. Data leaves via CEO-facing tools (read-only summaries to the LLM). **No data flows to Cortex or Owned Ecommerce today.**
-
-### 1.2 Owned Ecommerce (Medusa)
-
-**What it does:** Creates and manages owned storefront surfaces (Medusa.js) under CEO governance. Currently all write paths are fail-closed — it's a preparation-only system.
-
-**Data Model (packages/domain/src/ownedEcommerce.ts):**
-
-- `StorefrontProjection` — Complete storefront spec with catalog, content, media, readiness checks, evidence chain
-- `StorefrontCandidate` — A product candidate for the storefront, with provenance (`CandidateProvenance`), evidence state, stock authority, margin, guardrail results
-- `MedusaCatalogProjection` — Medusa-specific catalog shape (collectionHandle, products with variants)
-- `GuardrailResult` — Deterministic checks with severity (block/approval-required/warning)
-- `EvidenceClaim` — Marketing claims with evidence binding
-- `CandidateProvenance` — **Already has `source: CandidateSourceKind` (includes `"supplier-mirror"`), `supplierId?: string`, `cortexNodeIds?: string[]`, `snapshotIds: string[]`**
-
-**Package: `@msl/ecommerce-medusa`:**
-
-- Only dependency: `@msl/domain` (zero runtime deps)
-- `MedusaWriteBoundary` — `publish()` and `activateCheckout()` methods, always fail-closed unless explicitly configured with `liveWriter`
-- `createFailClosedMedusaWriteBoundary()` — default, rejects all writes
-- `createConfiguredMedusaWriteBoundary()` — gated by `MEDUSA_RUNTIME_WRITE_ENABLED`, `MEDUSA_BACKEND_URL`, `MEDUSA_ADMIN_API_TOKEN`
-- `createMedusaPreviewAdapter()` — builds preview refs but rejects actual publishes
-- `buildMedusaStorefrontPreview()` — transforms `StorefrontProjection` → `MedusaStorefrontPreview`
-
-**Runtime Boundaries:**
-
-- **Env gates:** `MEDUSA_RUNTIME_WRITE_ENABLED=true`, `MEDUSA_BACKEND_URL`, `MEDUSA_ADMIN_API_TOKEN`
-- **Write boundary:** Always fail-closed by default; live writer requires explicit injection
-- **CEO gating:** All operations need explicit approval + fresh readiness + idempotency + audit trail
-
-**What flows in/out:** Candidates enter via agent tooling (currently not implemented from supplier mirror). Projections are built and stored locally. Writes are always blocked in the LLM-facing path.
-
-### 1.3 Cortex Neural Memory
-
-**What it does:** SQLite-backed directed weighted graph with Hebbian learning, spreading activation, Darwinian pruning, and convergence detection. Stores learned relationships, business patterns, and distilled lessons — NOT operational snapshots.
-
-**Data Model (5 SQLite tables):**
-
-| Table               | Type              | Key Fields                                                                                             |
-| ------------------- | ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `nodes`             | `GraphNode`       | id (int), label (string), activation (real), metadata (JSON string)                                    |
-| `edges`             | `GraphEdge`       | id, source, target (FK→nodes), weight (0.0-1.0), last_activated, co_occurrence_count, distilled_lesson |
-| `darwinian_lessons` | `DarwinianLesson` | id, source_node, target_node, lesson, archived_at, reason                                              |
-| `actor_simulations` | —                 | actor_type, query, result, created_at                                                                  |
-| `probe_results`     | —                 | proposal_id, probe_type, outcome, created_at                                                           |
-
-**APIs:**
-
-- `createNode(label, metadata)` / `getNode(id)` — CRUD for nodes
-- `createEdge(source, target)` — weight defaults to 0.5, rejects duplicates
-- `reinforceEdge(source, target)` / `penalizeEdge(source, target)` — +0.1 / -0.15, clamped [0,1]
-- `spreadActivation(nodeIds, options?)` — Recursive CTE, depth limit (default 3), threshold (0.01), decay (0.5)
-- `findOrCreateConceptNode(label, metadata)` — Idempotent concept node
-- `getOrCreateNode(label, metadata)` — Idempotent node with metadata update
-- `queryByMetadata(filters)` — Query nodes by metadata fields (type, itemId, sellerId, status, categoryId, date range)
-- `traverse()` — Returns activated nodes, traversed edges, lessons, flat LLM context
-- `detectConvergence(snapshot)` — Cosine similarity between activation snapshots
-- `prune(options?)` — Darwinian pruning of edges < 0.05, node cap archival
-- `seedActorNodes(profiles)` / `reinforceActorOutcome(actorType, success)`
-- `storeProbeResult(proposal)` — Honey-pot probe results with Hebbian update
-
-**Runtime Boundaries:**
-
-- **Env gate:** `MSL_CORTEX_SQLITE_PATH` or `MSL_TELEGRAM_CORTEX_SQLITE_PATH`
-- **Instance:** `createGraphEngine(path?)` factory — returns `GraphEngine` wrapping a `better-sqlite3` Database
-- **Integration pattern:** `GraphEngine` is passed to daemons via `DaemonContext`, used by Escribano observer, sync tools, and various daemons
-
-**What flows in/out:** Cortex receives distilled signals via `getOrCreateNode()` from daemons. The Escribano observer applies Hebbian learning based on conversation outcomes. **No data flows from Supplier Mirror into Cortex today.**
+El objetivo es que MSL use señales reales de proveedores para operar las tiendas propias sin vender sin stock, sin publicar productos sin margen, sin romper SEO, y sin saltarse aprobación humana.
 
 ---
 
-## 2. Integration Points
+## Estado real del proyecto
 
-### 2.1 Where the systems already touch (shared types)
+MSL ya tiene piezas importantes implementadas:
 
-The domain model already defines the bridge interfaces in `packages/domain/src/ownedEcommerce.ts`:
+- `supplier-manager` existe como lane y daemon.
+- `owned-ecommerce` existe como lane interno.
+- `Agent Message Bus` existe como cola SQLite deduplicada.
+- `Cortex` y el operational read model existen como memoria/evidencia local.
+- `SupplierMirrorStore` existe como base de proveedores, items, mappings y ledger.
+- El ecommerce propio ya tiene una spec que exige selección basada en evidencia desde Plasticov, Maustian, Supplier Mirror/Jinpeng, proveedores futuros, operational read model y Cortex.
+- El ecommerce propio ya tiene boundary de preview/proposal-only para el LLM y ejecución backend-only con aprobación.
 
-```typescript
-// CandidateSourceKind already includes "supplier-mirror"
-export type CandidateSourceKind =
-  | "plasticov"
-  | "maustian"
-  | "supplier-mirror" // ← already defined
-  | "future-supplier"
-  | "read-model"
-  | "cortex"; // ← already defined
+La brecha principal es que el `supplier-manager` hoy encola propuestas al CEO, pero no despierta directamente al agente `owned-ecommerce`. Además, el scheduler tiene lane `owned-ecommerce` definido, pero necesita un handler/daemon que procese mensajes dirigidos a ese lane.
 
-// CandidateProvenance already has the bridge fields
-export type CandidateProvenance = {
-  source: CandidateSourceKind;
-  sourceId: string;
-  accountId?: string;
-  supplierId?: string; // ← defined but never populated
-  snapshotIds: string[];
-  cortexNodeIds?: string[]; // ← defined but never populated
-  evidenceIds: EvidenceId[];
+---
+
+## Principio de diseño
+
+```text
+El agente web puede mirar, medir, comparar, preparar y proponer.
+No puede publicar, cambiar checkout, tocar precios, borrar páginas, ocultar productos o purgar cache sin aprobación exacta.
+```
+
+Toda operación que afecte el negocio debe mantener:
+
+- `requiresApproval: true`
+- `noMutationExecuted: true` en herramientas LLM-facing
+- ejecución real solo por backend runtime
+- revalidación de stock/margen/readiness antes de ejecutar
+- rollback/audit trail
+- outcome registrado en Cortex
+
+---
+
+## Arquitectura propuesta
+
+```text
+Supplier Manager Daemon
+  ├─ lee SupplierMirrorStore
+  ├─ lee Cortex listing_snapshot
+  ├─ detecta stock-gap / price-change / unfilled-mirror / publish opportunity
+  ├─ encola propuesta al CEO
+  └─ NUEVO: encola señal al owned-ecommerce
+
+Agent Message Bus
+  ├─ receiverAgentId: "ceo"
+  └─ receiverAgentId: "owned-ecommerce"
+
+Owned Ecommerce / Website Manager
+  ├─ reclama señales del bus
+  ├─ consulta Cortex + Operational Read Model + SupplierMirror
+  ├─ calcula candidato web
+  ├─ bloquea si falta evidencia crítica
+  ├─ prepara storefront projection
+  ├─ prepara pausa/ocultamiento/stock/check-out guard
+  ├─ pide asset al Creative Studio si faltan imágenes
+  └─ devuelve propuesta al CEO
+
+CEO Agent / Telegram
+  └─ humano aprueba, rechaza o redirige
+
+Backend Executor
+  ├─ revalida aprobación exacta
+  ├─ revalida stock/freshness/readiness
+  ├─ ejecuta Medusa/tienda
+  ├─ purga cache si corresponde
+  ├─ registra rollback
+  └─ guarda outcome en Cortex
+```
+
+---
+
+## Señales que debe emitir Supplier Manager hacia Owned Ecommerce
+
+### 1. Producto nuevo de proveedor no publicado
+
+Cuando un item de proveedor no tiene `ml_item_id` ni mappings, hoy se detecta como `unfilled-mirror`. Para ecommerce propio, esa señal debe despertar al agente web para preparar una página candidata.
+
+```json
+{
+  "type": "supplier-web-signal",
+  "signalKind": "new-supplier-product",
+  "supplierId": "jinpeng",
+  "supplierItemId": "S001",
+  "recommendedAction": "prepare-storefront-candidate",
+  "receiverAgentId": "owned-ecommerce",
+  "evidenceIds": ["supplier-item:S001"],
+  "severity": "warning",
+  "noMutationExecuted": true
+}
+```
+
+### 2. Diferencia de stock entre sellers o canales
+
+Cuando un seller/canal tiene stock y otro está en cero, el agente web debe revisar páginas afectadas y preparar disponibilidad segura.
+
+```json
+{
+  "type": "supplier-web-signal",
+  "signalKind": "stock-gap",
+  "supplierId": "jinpeng",
+  "supplierItemId": "S001",
+  "affectedSellerIds": ["maustian", "plasticov"],
+  "recommendedAction": "review-storefront-availability",
+  "severity": "critical",
+  "noMutationExecuted": true
+}
+```
+
+### 3. Cambio de precio del proveedor
+
+Cuando el proveedor sube o baja precio sobre el umbral configurado, el agente web debe preparar revisión de margen y precio visible.
+
+```json
+{
+  "type": "supplier-web-signal",
+  "signalKind": "supplier-price-change",
+  "supplierId": "jinpeng",
+  "supplierItemId": "S001",
+  "priceDeltaPct": 8.5,
+  "recommendedAction": "prepare-price-review",
+  "severity": "warning",
+  "noMutationExecuted": true
+}
+```
+
+### 4. Stock restaurado
+
+Cuando vuelve stock en proveedor y la página estaba pausada/sin checkout, se prepara reactivación controlada.
+
+```json
+{
+  "type": "supplier-web-signal",
+  "signalKind": "supplier-stock-restored",
+  "supplierId": "jinpeng",
+  "supplierItemId": "S001",
+  "recommendedAction": "prepare-reactivation-review",
+  "severity": "info",
+  "noMutationExecuted": true
+}
+```
+
+### 5. Oportunidad de publicación
+
+Cuando hay stock, margen, producto razonable e imágenes suficientes, el agente web prepara publicación/preview.
+
+```json
+{
+  "type": "supplier-web-signal",
+  "signalKind": "publish-opportunity",
+  "supplierId": "jinpeng",
+  "supplierItemId": "S001",
+  "recommendedAction": "prepare-product-page",
+  "requiresEvidence": ["supplier-stock", "supplier-cost", "margin", "category", "image", "seo"],
+  "severity": "info",
+  "noMutationExecuted": true
+}
+```
+
+---
+
+## Contrato TypeScript sugerido
+
+```ts
+export type SupplierWebSignalKind =
+  | "new-supplier-product"
+  | "stock-gap"
+  | "supplier-price-change"
+  | "supplier-stock-restored"
+  | "supplier-stock-out"
+  | "publish-opportunity";
+
+export type SupplierWebRecommendedAction =
+  | "prepare-product-page"
+  | "prepare-storefront-candidate"
+  | "review-storefront-availability"
+  | "prepare-availability-pause"
+  | "prepare-price-review"
+  | "prepare-reactivation-review"
+  | "request-creative-assets";
+
+export type SupplierWebSignalPayload = {
+  type: "supplier-web-signal";
+  signalKind: SupplierWebSignalKind;
+  supplierId: string;
+  supplierItemId: string;
+  affectedSellerIds?: string[];
+  evidenceIds: string[];
+  recommendedAction: SupplierWebRecommendedAction;
+  severity: "info" | "warning" | "critical";
+  capturedAt: string;
+  noMutationExecuted: true;
 };
 ```
 
-**The types are ready. The implementation is missing.**
+---
 
-### 2.2 Supplier Mirror → Cortex integration points
+## Cambios concretos en el repo
 
-**What should be mirrored from Supplier Mirror into Cortex:**
+### 1. Modificar `supplierManagerDaemon.ts`
 
-| Supplier Mirror Entity | Cortex Node Type        | Metadata                                                                      | Why                                        |
-| ---------------------- | ----------------------- | ----------------------------------------------------------------------------- | ------------------------------------------ |
-| Supplier               | `supplier_profile`      | { type, supplierId, name, primarySource, enabled }                            | Track supplier relationships               |
-| Supplier Item          | `supplier_item`         | { type, supplierId, supplierItemId, categoryId, mlItemId, snapshot }          | Catalog knowledge for spreading activation |
-| Stock Observation      | `supplier_stock`        | { type, supplierId, supplierItemId, status, quantity, authority, confidence } | Stock patterns over time                   |
-| Approved Mapping       | `supplier_mapping`      | { type, supplierId, supplierItemId, targetSellerId, targetItemId }            | Cross-account relationship graph           |
-| Target Policy          | `supplier_policy`       | { type, supplierId, scopeType, scopeId, pricingPolicy }                       | Pricing knowledge                          |
-| Fallback Lesson        | `supplier_lesson`       | { type, supplierId, policyType, decision }                                    | Learned patterns                           |
-| Notification Event     | `supplier_notification` | { type, supplierId, eventType, reason }                                       | Alert patterns                             |
+Mantener el envío actual al CEO, pero agregar envío paralelo al lane `owned-ecommerce` cuando corresponda.
 
-**Cortex edges that should be created:**
+Ejemplo para producto no publicado:
 
-| Source Node                       | Target Node                 | Weight |
-| --------------------------------- | --------------------------- | ------ |
-| Supplier → Supplier Item          | item belongs to supplier    | 0.8    |
-| Supplier Item → Stock Observation | latest stock status         | 0.7    |
-| Supplier Item → Mapping           | item is mapped to target    | 0.9    |
-| Mapping → Target Seller           | mapping targets account     | 0.8    |
-| Policy → Supplier                 | policy applies to supplier  | 0.7    |
-| Fallback Lesson → Supplier        | lesson learned for supplier | 0.5    |
-| Supplier Item → Category node     | item's category             | 0.5    |
-
-### 2.3 Supplier Mirror → Owned Ecommerce integration points
-
-When building `StorefrontCandidates` for owned ecommerce:
-
-```
-SupplierMirrorStore.listApprovedItemMappings()
-  → populate CandidateProvenance.source = "supplier-mirror"
-  → populate supplierId, snapshotIds, evidenceIds
-```
-
-### 2.4 Cortex → Owned Ecommerce integration points
-
-The `cortexNodeIds` field in `CandidateProvenance` should be populated by querying Cortex for supplier-related nodes:
-
-```typescript
-const nodes = cortex.queryByMetadata({
-  type: "supplier_item",
-  supplierId: supplier.id,
-  status: "in-stock",
-  limit: 50,
+```ts
+bus.enqueue({
+  senderAgentId: "supplier-manager",
+  receiverAgentId: "owned-ecommerce",
+  messageType: "supplier-web-signal",
+  payloadJson: JSON.stringify({
+    type: "supplier-web-signal",
+    signalKind: "new-supplier-product",
+    supplierId: supplier.id,
+    supplierItemId: item.supplierItemId,
+    severity: "warning",
+    recommendedAction: "prepare-storefront-candidate",
+    evidenceIds: [`supplier-item:${item.supplierItemId}`],
+    capturedAt,
+    noMutationExecuted: true,
+  }),
+  dedupeKey: `supplier-web-unfilled-${supplier.id}-${item.supplierItemId}-${hourKey}`,
 });
 ```
 
----
+Ejemplo para stock gap:
 
-## 3. Gap Analysis
+```ts
+bus.enqueue({
+  senderAgentId: "supplier-manager",
+  receiverAgentId: "owned-ecommerce",
+  messageType: "supplier-web-signal",
+  payloadJson: JSON.stringify({
+    type: "supplier-web-signal",
+    signalKind: "stock-gap",
+    supplierId: supplier.id,
+    supplierItemId: item.supplierItemId,
+    severity: "critical",
+    recommendedAction: "prepare-availability-pause",
+    evidenceIds: [
+      `supplier-item:${item.supplierItemId}`,
+      ...entries.map(([sellerId]) => `listing_snapshot:${sellerId}`),
+    ],
+    capturedAt,
+    noMutationExecuted: true,
+  }),
+  dedupeKey: `supplier-web-stock-gap-${supplier.id}-${item.supplierItemId}-${hourKey}`,
+});
+```
 
-### 3.1 Critical Gaps (blocks the bridge)
+Ejemplo para cambio de precio:
 
-| #   | Gap                                                   | System | Details                                                                 |
-| --- | ----------------------------------------------------- | ------ | ----------------------------------------------------------------------- |
-| 1   | No Supplier Mirror → Cortex bridge                    | SM→CX  | New module needed: `supplierMirrorCortexBridge.ts`                      |
-| 2   | No Supplier Mirror data in Owned Ecommerce candidates | SM→OE  | `listApprovedItemMappings()` never feeds `StorefrontCandidate` pipeline |
-| 3   | No Cortex node IDs in Owned Ecommerce candidates      | CX→OE  | `cortexNodeIds` field exists but never populated                        |
-| 4   | Fallback lessons are SQLite-only                      | SM→CX  | `SupplierLearnedFallbackPolicy` never reaches the graph                 |
+```ts
+bus.enqueue({
+  senderAgentId: "supplier-manager",
+  receiverAgentId: "owned-ecommerce",
+  messageType: "supplier-web-signal",
+  payloadJson: JSON.stringify({
+    type: "supplier-web-signal",
+    signalKind: "supplier-price-change",
+    supplierId: supplier.id,
+    supplierItemId: item.supplierItemId,
+    severity: "warning",
+    recommendedAction: "prepare-price-review",
+    evidenceIds: [`supplier-item:${item.supplierItemId}`],
+    capturedAt,
+    noMutationExecuted: true,
+  }),
+  dedupeKey: `supplier-web-price-change-${supplier.id}-${item.supplierItemId}-${hourKey}`,
+});
+```
 
-### 3.2 Moderate Gaps
+### 2. Crear `ownedEcommerceDaemon.ts`
 
-| #   | Gap                                                  | Details                                                                           |
-| --- | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
-| 5   | No concept node labels defined for supplier entities | Need naming convention: `supplier_${id}`, `supplier_item_${supplierId}_${itemId}` |
-| 6   | No edge type taxonomy for supplier relationships     | Edges are just weights — metadata holds meaning                                   |
-| 7   | Supplier Mirror store is separate SQLite DB          | Cannot span transactions across `SupplierMirrorStore` and `GraphEngine` DBs       |
-| 8   | No idempotency in Cortex node creation               | Must use `getOrCreateNode()` to avoid duplicates                                  |
+Nuevo archivo sugerido:
 
-### 3.3 Env Vars and Runtime Configuration
+```text
+packages/agent/src/workers/ownedEcommerceDaemon.ts
+```
 
-| Env Var                        | Current Status | Needed For Bridge                              |
-| ------------------------------ | -------------- | ---------------------------------------------- |
-| `MSL_SUPPLIER_MIRROR_DB_PATH`  | ✅ Wired       | Already injected — store available at startup  |
-| `MSL_CORTEX_SQLITE_PATH`       | ✅ Wired       | Already injected — engine available at startup |
-| `MEDUSA_RUNTIME_WRITE_ENABLED` | ✅ Wired       | Not needed for bridge (read-only for SM→OE)    |
+Responsabilidad:
 
-### 3.4 Domain Types to Add
+```text
+supplier-web-signal
+  -> parse payload
+  -> validate evidence
+  -> query SupplierMirrorStore
+  -> query Cortex
+  -> query OperationalReadModel.searchSnapshots()
+  -> apply WebsiteAvailabilityPolicy
+  -> build candidate or block reason
+  -> enqueue CEO proposal
+```
 
-Minimal — most types already exist. Suggested addition in `packages/domain/src/supplierMirror.ts`:
+El daemon debe operar con `noMutationExecuted: true` siempre.
 
-```typescript
-export type SupplierMirrorCortexIngestion = {
-  supplierId: SupplierId;
-  nodes: Array<{ label: string; type: string; metadata: Record<string, unknown> }>;
-  edges: Array<{ source: string; target: string; weight: number; label: string }>;
-  ingestedAt: string;
+### 3. Modificar `daemonScheduler.ts`
+
+Agregar el handler:
+
+```ts
+import { ownedEcommerceDaemon } from "./ownedEcommerceDaemon.js";
+
+const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
+  ...,
+  "owned-ecommerce": ownedEcommerceDaemon,
 };
 ```
 
-**Node label conventions (standardize):**
+### 4. Crear `websiteAvailabilityPolicy.ts`
 
-- Suppliers: `supplier_${supplierId}`
-- Items: `supplier_item_${supplierId}_${supplierItemId}`
-- Categories: `supplier_category_${categoryId}`
-- Policies: `supplier_policy_${supplierId}_${scopeType}_${scopeId}`
-- Lessons: `supplier_lesson_${policyId}`
-- Observations: `supplier_stock_${supplierId}_${supplierItemId}_${timestamp}`
+Nuevo archivo sugerido:
 
----
-
-## 4. Implementation Plan
-
-### Phase 1: Supplier Mirror → Cortex Bridge
-
-**Goal:** Write supplier data into the Cortex graph so that spreading activation and query-by-metadata can discover supplier patterns.
-
-**Files to create:**
-
-| File                                                | Purpose           |
-| --------------------------------------------------- | ----------------- |
-| `packages/memory/src/supplierMirrorCortexBridge.ts` | Core bridge logic |
-
-**Key functions:**
-
-```typescript
-import type { GraphEngine } from "./cortex/engine.js";
-import type { SupplierMirrorStore } from "./supplierMirrorStore.js";
-
-export type SupplierCortexIngestionResult = {
-  supplierNodeId: number;
-  itemNodeIds: number[];
-  stockNodeIds: number[];
-  mappingNodeIds: number[];
-  lessonNodeIds: number[];
-  edgesCreated: number;
-};
-
-export async function ingestSupplierToCortex(
-  store: SupplierMirrorStore,
-  cortex: GraphEngine,
-  supplierId: string,
-): Promise<SupplierCortexIngestionResult> { ... }
-
-export async function ingestAllSuppliersToCortex(
-  store: SupplierMirrorStore,
-  cortex: GraphEngine,
-): Promise<SupplierCortexIngestionResult[]> { ... }
-
-export async function ingestFallbackLessonToCortex(
-  cortex: GraphEngine,
-  lesson: SupplierLearnedFallbackPolicy,
-): Promise<number> { ... }
+```text
+packages/agent/src/workers/websiteAvailabilityPolicy.ts
 ```
 
-**Key logic:**
+Reglas principales:
 
-1. `getSupplier()` → create/update `supplier_${id}` node (type: "supplier_profile")
-2. `listSupplierItemSnapshots()` → create nodes (type: "supplier_item")
-3. Create edges: supplier → item (weight 0.8)
-4. `listStockObservations()` → latest only → create nodes (type: "supplier_stock")
-5. Create edges: item → stock (weight 0.7)
-6. `listApprovedItemMappings()` → create nodes (type: "supplier_mapping")
-7. Create edges: item → mapping (weight 0.9)
-8. `listLearnedFallbackPolicies()` → create nodes (type: "supplier_lesson") + edge to supplier
+```text
+Si proveedor stock = 0 y no hay stock propio:
+  -> prepare-disable-checkout
 
-**Files to modify:**
+Si proveedor stock = 0 pero página tiene valor SEO:
+  -> mantener indexable, desactivar compra, mostrar sin stock
 
-| File                                                     | Change                                                             |
-| -------------------------------------------------------- | ------------------------------------------------------------------ |
-| `packages/memory/src/index.ts`                           | Re-export new bridge types and functions                           |
-| `packages/agent/src/conversation/supplierMirrorTools.ts` | Wire `ingestFallbackLessonToCortex` into `recordFallbackLesson`    |
-| `packages/bot/src/index.ts`                              | Optional startup seed: `ingestAllSuppliersToCortex(store, engine)` |
+Si precio proveedor sube y margen queda bajo:
+  -> prepare-price-review o prepare-hide-product
 
-**Testing:**
+Si producto nuevo tiene stock, margen e imagen:
+  -> prepare-product-page
 
-- Unit test `ingestSupplierToCortex` with in-memory `SupplierMirrorStore` and `GraphEngine`
-- Verify nodes created with correct labels and metadata
-- Verify edges created with expected weights
-- Verify idempotency (re-ingesting same supplier doesn't duplicate nodes)
-
-### Phase 2: Supplier Mirror → Owned Ecommerce Candidate Bridge
-
-**Goal:** Populate `StorefrontCandidate.provenance.supplierId` and evidence IDs from Supplier Mirror.
-
-**Files to create:**
-
-| File                                                               | Purpose                                     |
-| ------------------------------------------------------------------ | ------------------------------------------- |
-| `packages/agent/src/conversation/supplierMirrorEcommerceBridge.ts` | Bridge from SM data to ecommerce candidates |
-
-**Key functions:**
-
-```typescript
-export type SupplierEcommerceCandidateInput = {
-  supplierId: string;
-  minStockStatus?: "in-stock" | "low-stock" | "out-of-stock" | "unknown";
-};
-
-export async function buildEcommerceCandidatesFromSupplierMirror(
-  store: SupplierMirrorStore,
-  input: SupplierEcommerceCandidateInput,
-): Promise<StorefrontCandidate[]> { ... }
+Si producto nuevo no tiene imagen suficiente:
+  -> request-creative-assets
 ```
 
-**Key logic:**
+### 5. Crear candidate builder
 
-1. `store.getSupplier(supplierId)` for metadata
-2. `store.listApprovedItemMappings(supplierId)` — only approved mappings
-3. For each mapping, `store.listStockObservations(mapping.supplierId, mapping.supplierItemId)` for latest stock
-4. Filter by `minStockStatus` (default `in-stock`)
-5. Build `StorefrontCandidate` with `provenance.source: "supplier-mirror"`, `supplierId`, `snapshotIds`, `evidenceIds`
+Nuevo archivo sugerido:
 
-### Phase 3: Cortex → Owned Ecommerce bridge
+```text
+packages/agent/src/conversation/ownedEcommerceCandidateBuilder.ts
+```
 
-**Goal:** Populate `CandidateProvenance.cortexNodeIds` with related cortex nodes.
+Responsabilidad:
 
-**Key function (add to `supplierMirrorCortexBridge.ts`):**
+```text
+supplier item + stock + cost + margin + category + images
+  -> storefront candidate
+  -> readiness checks
+  -> SEO/GEO Chile draft
+  -> evidence IDs
+  -> block reasons si falta algo
+```
 
-```typescript
-export function getCortexNodeIdsForSupplierCandidate(
-  cortex: GraphEngine | undefined,
-  supplierId: string,
-  supplierItemId: string,
-): number[] {
-  if (!cortex) return [];
-  const nodes = cortex.queryByMetadata({
-    type: "supplier_item",
-    itemId: `${supplierId}_${supplierItemId}`,
-  });
-  return nodes.map((n) => n.id);
+### 6. Conectar Creative Studio
+
+Cuando `owned-ecommerce` detecte oportunidad pero falten imágenes, debe enviar un mensaje al lane creativo o al futuro `creative-studio`:
+
+```json
+{
+  "type": "creative-asset-request",
+  "requestedByAgent": "owned-ecommerce",
+  "supplierItemId": "S001",
+  "channel": "storefront",
+  "kind": "product-cover-i2i",
+  "objective": "conversion",
+  "noMutationExecuted": true
 }
 ```
 
-### Phase 4: Wiring in Bot Startup
+---
 
-In `packages/bot/src/index.ts`, after both `engine` and `store` are available:
+## Flujo operativo final
 
-```typescript
-if (engine && store) {
-  ingestAllSuppliersToCortex(store, engine).catch((err) => {
-    console.error("Supplier Mirror → Cortex seed failed:", err);
-  });
-}
-```
-
-And a periodic sync in the daemon scheduler (every hour):
-
-```typescript
-const supplierCortexSync = setInterval(
-  async () => {
-    const store = getSupplierMirrorRuntimeFromEnv()?.store;
-    if (engine && store) {
-      await ingestAllSuppliersToCortex(store, engine);
-    }
-  },
-  60 * 60 * 1000,
-);
+```text
+Proveedor actualiza stock/precio/productos
+        ↓
+supplier-manager detecta cambio
+        ↓
+supplier-manager registra evidencia/ledger
+        ↓
+supplier-manager manda:
+   1) propuesta al CEO
+   2) supplier-web-signal a owned-ecommerce
+        ↓
+owned-ecommerce consulta Cortex + SupplierMirror + read model
+        ↓
+si falta imagen -> pide Creative Studio
+si falta margen -> consulta Cost/Supplier
+si falta demanda -> consulta Market/Catalog
+        ↓
+genera storefront projection / pause proposal / price review
+        ↓
+CEO recibe en Telegram
+        ↓
+CEO dice "dale", rechaza o redirige
+        ↓
+backend runtime revalida y ejecuta
+        ↓
+Cortex registra outcome
 ```
 
 ---
 
-## 5. Risk Assessment
+## Ejemplos de propuestas al CEO
 
-### 5.1 What Could Go Wrong
+### Publicación de oportunidad
 
-| Risk                                               | Likelihood | Impact | Mitigation                                                                                           |
-| -------------------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| **Cortex node explosion** from repeated ingestion  | Medium     | High   | Use `getOrCreateNode()` for stable entities. Only latest stock observation. Periodic `prune()`.      |
-| **Cross-DB transaction inconsistency**             | High       | Medium | SM is source of truth. Cortex is secondary index for pattern detection. Accept eventual consistency. |
-| **Bridge creates noise in spreading activation**   | Medium     | Medium | Conservative initial weights (0.5-0.7). `activationThreshold` filters weak paths.                    |
-| **Duplicate CEO notifications** from bridge errors | Low        | Low    | Bridge is silent on failures (catch and log). CEO tools remain primary workflow.                     |
-| **Edge weight decay from stale data**              | Low        | Low    | Update `last_activated` on periodic sync. `prune()` handles old edges.                               |
+```text
+Encontré una oportunidad web desde proveedor Jinpeng.
 
-### 5.2 Safety Boundaries to Preserve
+Producto: Esquiladora inalámbrica 21V
+Origen: supplier-item:JINPENG-443
+Stock proveedor: disponible
+Margen estimado: 42%
+Riesgo: falta validar imagen principal para SEO/CTR
 
-| Rule                                         | How to Preserve                                    |
-| -------------------------------------------- | -------------------------------------------------- |
-| No mutations from bridge                     | Never call ML write/execute tools from bridge code |
-| Cortex is NOT source of truth for SM data    | Always read fresh SM data for decisions            |
-| Supplier Mirror source authority rules apply | Preserve `authority` flag in cortex metadata       |
-| No CEO approval bypass                       | Bridge is infrastructure, not agent workflow       |
-| Bridge does not expose worker selection      | Workers stay internal                              |
+Acción propuesta:
+1. Crear página preview en maustian.cl.
+2. Mantener checkout desactivado hasta validar stock final.
+3. Pedir 3 portadas al Creative Studio.
+4. Indexar solo cuando schema Product + imagen + precio estén validados.
 
-### 5.3 Rollback Strategy
+¿Dale para preparar preview?
+```
 
-| Phase         | Rollback Action                                                                                   |
-| ------------- | ------------------------------------------------------------------------------------------------- |
-| 1 (SM→Cortex) | Remove periodic sync. Remove `ingestFallbackLessonToCortex()` call. Prune cortex nodes if needed. |
-| 2 (SM→OE)     | Remove bridge function from ecommerce candidate pipeline. Existing projections unaffected.        |
-| 3 (CX→OE)     | Same as Phase 2. `cortexNodeIds` is optional — no data dependency risk.                           |
-| All           | No SM or OE data is mutated by the bridge. Rollback = cease writing to Cortex.                    |
+### Pausa controlada por stock
 
-### 5.4 Ready for Implementation
+```text
+Alerta web: proveedor sin stock para producto publicado.
 
-**Yes.** The plan is actionable. Proceed in phases:
+Producto: X
+Página afectada: maustian.cl/producto/x
+Riesgo: venta sin stock / mala experiencia / reclamos
 
-1. **Phase 1 — Highest Priority:** SM→Cortex bridge (~200 lines, 1 new file, 2 modified)
-2. **Phase 2:** SM→OE candidate bridge (~100 lines, 1 new file)
-3. **Phase 3:** CX→OE wiring (~50 lines, same file as Phase 1)
-4. **Phase 4:** Bot startup wiring (~20 lines in `bot/src/index.ts`)
+Acción propuesta:
+1. Desactivar compra.
+2. Mantener página indexable como "sin stock temporal".
+3. Sacar de colecciones principales.
+4. Revalidar stock cada 6 horas.
 
-Total estimated: ~370 lines across 2 new files, 4 modified files.
+¿Dale para aplicar pausa controlada?
+```
+
+### Revisión de precio
+
+```text
+Proveedor subió el costo de un producto publicado.
+
+Producto: X
+Costo anterior: CLP 4.200
+Costo nuevo: CLP 4.850
+Delta: +15,4%
+Margen actual estimado: bajo el mínimo objetivo
+
+Acción propuesta:
+1. Preparar nuevo precio.
+2. Comparar contra MercadoLibre/catalog competitors.
+3. Mantener página visible pero bloquear checkout si el margen queda negativo.
+4. Pedir aprobación antes de aplicar.
+
+¿Dale para preparar revisión de precio?
+```
+
+---
+
+## OpenSpec sugerido
+
+```text
+openspec/changes/supplier-to-owned-ecommerce-cortex-bridge/
+  proposal.md
+  design.md
+  tasks.md
+  specs/
+    supplier-manager-daemon/spec.md
+    owned-ecommerce-agent/spec.md
+    agent-message-bus/spec.md
+    website-availability-policy/spec.md
+```
+
+### Requirements iniciales
+
+```markdown
+### Requirement: Supplier-to-owned-ecommerce signal forwarding
+
+When supplier-manager detects stock gap, supplier price change, unfilled mirror item, restored stock, or publish opportunity, it SHALL enqueue a deduplicated `supplier-web-signal` message to `owned-ecommerce` in addition to any CEO proposal.
+
+### Requirement: Owned ecommerce signal handling
+
+The owned-ecommerce daemon SHALL claim `supplier-web-signal` messages, collect SupplierMirrorStore, Cortex, and operational read model evidence, and prepare a proposal-only storefront action.
+
+### Requirement: Website availability policy
+
+The system SHALL decide between prepare-publish, disable-checkout, hide-from-collections, mark-out-of-stock, price-review, or block-candidate using deterministic stock, cost, margin, freshness, and SEO-risk checks.
+
+### Requirement: No mutation from supplier/web signals
+
+Supplier-to-web signal processing SHALL NOT publish pages, activate checkout, change prices, change stock, purge cache, or call external write APIs. All outputs SHALL keep `noMutationExecuted: true` until backend runtime execution receives exact CEO approval and fresh readiness.
+
+### Requirement: Cortex outcome feedback
+
+The system SHALL record CEO approvals, rejections, publish outcomes, stock incidents, SEO outcomes, and conversion outcomes as Cortex learning evidence for future supplier/web routing.
+```
+
+---
+
+## Implementación por fases
+
+### Fase 1 — Signal bridge
+
+```text
+feat(supplier): forward supplier web signals to owned ecommerce
+```
+
+Archivos:
+
+```text
+packages/agent/src/workers/supplierManagerDaemon.ts
+packages/agent/src/workers/daemonTypes.ts
+packages/agent/tests/workers/supplierManagerDaemon.test.ts
+```
+
+Objetivo:
+
+```text
+supplier-manager -> owned-ecommerce por Agent Message Bus
+```
+
+### Fase 2 — Owned ecommerce daemon
+
+```text
+feat(ecommerce): add owned ecommerce signal daemon
+```
+
+Archivos:
+
+```text
+packages/agent/src/workers/ownedEcommerceDaemon.ts
+packages/agent/src/workers/daemonScheduler.ts
+packages/agent/tests/workers/ownedEcommerceDaemon.test.ts
+```
+
+Objetivo:
+
+```text
+owned-ecommerce reclama mensajes y prepara CEO proposals
+```
+
+### Fase 3 — Website availability policy
+
+```text
+feat(ecommerce): add website availability policy
+```
+
+Archivos:
+
+```text
+packages/agent/src/workers/websiteAvailabilityPolicy.ts
+packages/domain/src/ownedEcommerce.ts
+```
+
+Objetivo:
+
+```text
+pause / hide / disable-checkout / prepare-publish / price-review
+```
+
+### Fase 4 — Storefront candidate builder
+
+```text
+feat(ecommerce): build supplier-backed storefront candidates
+```
+
+Archivos:
+
+```text
+packages/agent/src/conversation/ownedEcommerceCandidateBuilder.ts
+packages/memory/src/ownedEcommerceStore.ts
+```
+
+Objetivo:
+
+```text
+supplier item -> candidato web con evidencia
+```
+
+### Fase 5 — Creative handoff
+
+```text
+feat(ecommerce): request creative assets for supplier storefront candidates
+```
+
+Objetivo:
+
+```text
+owned-ecommerce -> creative-assets / creative-studio cuando falten imágenes
+```
+
+### Fase 6 — Backend executor
+
+```text
+feat(ecommerce): execute approved website actions through backend runtime
+```
+
+Archivos:
+
+```text
+packages/ecommerce-medusa
+scripts/start-website-runtime.mjs
+ecosystem.config.cjs
+```
+
+Objetivo:
+
+```text
+ejecución real solo con aprobación, readiness fresco y rollback
+```
+
+---
+
+## Guardrails duros
+
+```text
+1. No publicar productos sin stock fresco.
+2. No afirmar disponibilidad si depende de proveedor y la evidencia está stale.
+3. No mantener checkout activo si no hay stock propio ni proveedor confiable.
+4. No cambiar precio sin recalcular margen.
+5. No usar claims SEO/GEO no respaldados por evidencia.
+6. No eliminar páginas que tengan valor SEO sin preparar redirect o estado sin stock.
+7. No publicar páginas con imágenes insuficientes o engañosas.
+8. No activar checkout/pagos sin aprobación separada.
+9. No entregar credenciales al LLM.
+10. Toda ejecución real debe pasar por backend runtime con rollback.
+```
+
+---
+
+## Estado de credenciales y operación
+
+Mientras las credenciales reales de MercadoLibre, Medusa, proveedor y publicación web no estén configuradas, este puente debe operar en modo:
+
+```text
+read-only
+prepare-only
+preview-only
+noMutationExecuted: true
+```
+
+No debe activar automatización viva hasta que:
+
+- OAuth MercadoLibre esté listo por seller.
+- Supplier Mirror dry-run haya pasado.
+- Medusa esté configurado.
+- El backend executor tenga credenciales de runtime.
+- El CEO haya aprobado la política de operación.
+
+---
+
+## Decisión final
+
+El siguiente paso lógico para MSL es crear un puente Supplier-to-Web sobre Cortex y Agent Message Bus.
+
+No se debe duplicar inteligencia. El agente web debe ser consumidor de señales del Supplier Manager y de Cortex.
+
+La empresa agente quedaría así:
+
+```text
+supplier-manager detecta
+owned-ecommerce recibe
+website policy decide
+creative-studio complementa
+CEO aprueba
+backend executor aplica
+Cortex aprende
+```
+
+Esto convierte MSL en una operación comercial multicanal: MercadoLibre sigue siendo el primer canal, pero las tiendas propias empiezan a reaccionar a proveedores, stock, margen, imágenes, SEO y resultados reales bajo control humano.
