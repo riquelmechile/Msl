@@ -1,0 +1,1061 @@
+{
+  "$schema": "https://raw.githubusercontent.com/riquelmechile/Msl/main/docs/audits/schemas/agent-brain-runtime-checklist.schema.json",
+  "audit": {
+    "id": "agent-brain-runtime-audit-2026-07",
+    "branch": "audit/agent-brain-runtime-map",
+    "date": "2026-07-09",
+    "baseCommit": "b5a211c",
+    "baseCommitMessage": "feat(runtime): wire production providers and secrets readiness (#122)",
+    "overallStatus": "PARTIAL"
+  },
+  "agents": [
+    {
+      "laneId": "ceo",
+      "name": "CEO/Socio",
+      "handlerFile": null,
+      "inScheduler": false,
+      "status": "COMPLETO",
+      "note": "Intentionally no handler — proposal sink"
+    },
+    {
+      "laneId": "cost-supplier",
+      "name": "Cost/Supplier",
+      "handlerFile": "packages/agent/src/workers/costSupplierDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": true,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "market-catalog",
+      "name": "Market/Catalog",
+      "handlerFile": "packages/agent/src/workers/marketCatalogDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": true,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "creative-assets",
+      "name": "Creative Assets",
+      "handlerFile": "packages/agent/src/workers/creativeAssetsDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": true,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "creative-commercial",
+      "name": "Creative Commercial",
+      "handlerFile": "packages/agent/src/workers/creativeCommercialDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": true,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "creative-studio",
+      "name": "Creative Studio",
+      "handlerFile": "packages/agent/src/workers/creativeStudioDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": false,
+      "generatesProposals": true,
+      "executesWrites": true,
+      "hasTests": true,
+      "status": "PARCIAL",
+      "note": "Message-driven only; no dedicated tick"
+    },
+    {
+      "laneId": "operations-manager",
+      "name": "Operations Manager",
+      "handlerFile": "packages/agent/src/workers/operationsManagerDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": true,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "owned-ecommerce",
+      "name": "Owned Ecommerce",
+      "handlerFile": "packages/agent/src/workers/ownedEcommerceDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": false,
+      "usesDeepSeek": false,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": false,
+      "status": "PARCIAL",
+      "note": "Missing dedicated daemon test file"
+    },
+    {
+      "laneId": "product-ads-monitor",
+      "name": "Product Ads Monitor",
+      "handlerFile": "packages/agent/src/workers/productAdsMonitorDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": false,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "product-ads-ceo-profitability",
+      "name": "Product Ads CEO Profitability",
+      "handlerFile": "packages/agent/src/workers/ceoProfitabilityHandler.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": true,
+      "generatesProposals": true,
+      "executesWrites": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "product-ads-profitability",
+      "name": "Product Ads Profitability",
+      "handlerFile": "packages/agent/src/workers/productAdsProfitabilityDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": false,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "supplier-manager",
+      "name": "Supplier Manager",
+      "handlerFile": "packages/agent/src/workers/supplierManagerDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": true,
+      "generatesProposals": true,
+      "executesWrites": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "morning-report",
+      "name": "Morning Report",
+      "handlerFile": "packages/agent/src/workers/morningReportDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": false,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "eod-summary",
+      "name": "EOD Summary",
+      "handlerFile": "packages/agent/src/workers/eodSummaryDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": true,
+      "usesDeepSeek": false,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "unanswered-questions",
+      "name": "Unanswered Questions",
+      "handlerFile": "packages/agent/src/workers/unansweredQuestionsDaemon.ts",
+      "inScheduler": true,
+      "usesCortex": false,
+      "usesDeepSeek": false,
+      "generatesProposals": true,
+      "executesWrites": false,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "laneId": "system-health",
+      "name": "System Health",
+      "handlerFile": "packages/agent/src/workers/systemHealthDaemon.ts",
+      "inScheduler": false,
+      "status": "COMPLETO",
+      "note": "Standalone monitor; not in daemonHandlerMap; no dedicated test"
+    },
+    {
+      "laneId": "dlq-monitor",
+      "name": "DLQ Monitor",
+      "handlerFile": "packages/agent/src/workers/dlqMonitorDaemon.ts",
+      "inScheduler": false,
+      "status": "COMPLETO",
+      "note": "Standalone monitor; not in daemonHandlerMap; no dedicated test"
+    }
+  ],
+  "connections": [
+    {
+      "step": "Tick → Bus",
+      "from": "daemonScheduler.ts:155",
+      "to": "agentMessageBusStore.ts:320",
+      "data": "{cycleTimestamp} per lane, hourly dedupe",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "Bus → Handler",
+      "from": "agentMessageBusStore.ts:347",
+      "to": "daemonScheduler.ts:172",
+      "data": "AgentMessage[] (pending/stale → processing)",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "Handler → Proposal",
+      "from": "unansweredQuestionsDaemon.ts:136",
+      "to": "agentMessageBusStore.ts:320",
+      "data": "{messageType: proposal, receiver: ceo, noMutationExecuted:true}",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "Proposal → Inbox",
+      "from": "daemonScheduler.ts:207",
+      "to": "ceoInboxStore.ts:130",
+      "data": "{sender_agent_id, payload_json, risk_level, seller_id}",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "Inbox → Approval",
+      "from": "ceoInboxStore.ts:169",
+      "to": "writeTools.ts:76",
+      "data": "PreparedAction (id, sellerId, kind, target, exactChange)",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "Approval → Execution",
+      "from": "tools/src/index.ts:681",
+      "to": "approval.ts:54",
+      "data": "{allowed: boolean} gate → executor.execute(action)",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "Execution → Outcome",
+      "from": "agentLoop.ts:965",
+      "to": "escribano.ts:72 → engine.ts:115",
+      "data": "Hebbian reinforce +0.1 / penalize -0.15",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "Outcome → Learning",
+      "from": "learningPipeline.ts:155",
+      "to": "agentMessageBusStore.ts:443 + engine.ts:572",
+      "data": "outcomeScore, learning_outcome Cortex node",
+      "status": "VERIFIED"
+    },
+    {
+      "step": "DLQ Recovery",
+      "from": "dlqMonitorDaemon.ts:23",
+      "to": "agentMessageBusStore.ts:412",
+      "data": "Failed → pending, attempts=0",
+      "status": "VERIFIED"
+    }
+  ],
+  "memoryStores": [
+    {
+      "name": "Cortex/GraphEngine",
+      "file": "memory/src/cortex/engine.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "HIGH"
+    },
+    {
+      "name": "SupplierMirrorStore",
+      "file": "memory/src/supplierMirrorStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "CRITICAL"
+    },
+    {
+      "name": "OperationalReadModel",
+      "file": "memory/src/operationalReadModel.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "HIGH"
+    },
+    {
+      "name": "OwnedEcommerceStore",
+      "file": "memory/src/ownedEcommerceStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": false,
+      "sellerScoped": true,
+      "risk": "HIGH"
+    },
+    {
+      "name": "AgentMessageBusStore",
+      "file": "agent/src/conversation/agentMessageBusStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "CRITICAL"
+    },
+    {
+      "name": "CeoInboxStore",
+      "file": "agent/src/conversation/ceoInboxStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "CreativeJobQueueStore",
+      "file": "agent/src/conversation/creativeJobQueueStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "WorkforceCostCacheLedgerStore",
+      "file": "agent/src/conversation/workforceCostCacheLedgerStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "AgentConsensusStore",
+      "file": "agent/src/conversation/agentConsensusStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "LOW"
+    },
+    {
+      "name": "SessionStore",
+      "file": "agent/src/conversation/sessionStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "LOW"
+    },
+    {
+      "name": "StrategyStore",
+      "file": "agent/src/conversation/strategyStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "AutonomyEngine",
+      "file": "agent/src/conversation/autonomyEngine.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "CompanyAgentStore",
+      "file": "agent/src/conversation/companyAgentStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": false,
+      "sellerScoped": false,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "CompanyAgentLearningStore",
+      "file": "agent/src/conversation/companyAgentLearningStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": false,
+      "sellerScoped": false,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "CompanyAgentSkillStore",
+      "file": "agent/src/conversation/companyAgentSkillStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": false,
+      "sellerScoped": false,
+      "risk": "LOW"
+    },
+    {
+      "name": "TokenStore (OAuth)",
+      "file": "mercadolibre/src/oauth/tokenStore.ts",
+      "type": "SQLite (AES-256-GCM)",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "HIGH"
+    },
+    {
+      "name": "SyncStore",
+      "file": "mercadolibre/src/sync/syncStore.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": true,
+      "risk": "MEDIUM"
+    },
+    {
+      "name": "ApprovalQueueRepository",
+      "file": "tools/src/index.ts",
+      "type": "SQLite",
+      "persistent": true,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "HIGH"
+    },
+    {
+      "name": "CostLedger (creative)",
+      "file": "creative-studio/src/domain/cost-ledger.ts",
+      "type": "In-memory",
+      "persistent": false,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "LOW"
+    },
+    {
+      "name": "LearningPipeline",
+      "file": "agent/src/conversation/learningPipeline.ts",
+      "type": "Pass-through",
+      "persistent": false,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "LOW"
+    },
+    {
+      "name": "CortexBridge (creative)",
+      "file": "creative-studio/src/application/cortex-bridge.ts",
+      "type": "Adapter",
+      "persistent": false,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "LOW"
+    },
+    {
+      "name": "DemoStrategyStore",
+      "file": "apps/web/app/api/chat/route.ts",
+      "type": "In-memory array",
+      "persistent": false,
+      "hasTests": true,
+      "sellerScoped": false,
+      "risk": "LOW"
+    }
+  ],
+  "databases": [
+    {
+      "logicalName": "Cortex",
+      "envVar": "MSL_CORTEX_SQLITE_PATH",
+      "tables": [
+        "nodes",
+        "edges",
+        "darwinian_lessons",
+        "actor_simulations",
+        "probe_results",
+        "schema_version"
+      ],
+      "indexes": 3,
+      "owner": "GraphEngine",
+      "schemaDriftRisk": "LOW",
+      "hasTests": true
+    },
+    {
+      "logicalName": "Chat/Telegram (shared)",
+      "envVar": "MSL_TELEGRAM_SQLITE_PATH / MSL_CHAT_SQLITE_PATH",
+      "tables": [
+        "ceo_strategies",
+        "sessions",
+        "autonomy_state",
+        "kpi_history",
+        "degradation_events",
+        "company_agents",
+        "agent_skills",
+        "company_agent_lessons",
+        "agent_reviews",
+        "agent_proposals",
+        "agent_message_bus",
+        "workforce_cost_cache_ledger_entries",
+        "workforce_cost_cache_ledger_rollups",
+        "chat_seller_namespace"
+      ],
+      "indexes": 9,
+      "owner": "Multiple (Strategy, Session, Autonomy, CompanyAgent, CeoInbox, AgentMessageBus, WorkforceCostCache, AgentConsensus)",
+      "schemaDriftRisk": "HIGH",
+      "hasTests": true
+    },
+    {
+      "logicalName": "Supplier Mirror",
+      "envVar": "MSL_SUPPLIER_MIRROR_DB_PATH",
+      "tables": [
+        "suppliers",
+        "supplier_items",
+        "stock_observations",
+        "item_mappings",
+        "target_policies",
+        "sync_ledger",
+        "notification_preferences",
+        "supplier_mirror_notification_events",
+        "learned_fallback_policies"
+      ],
+      "indexes": 5,
+      "owner": "SupplierMirrorStore",
+      "schemaDriftRisk": "MEDIUM",
+      "hasTests": true
+    },
+    {
+      "logicalName": "Operational",
+      "envVar": "Shared DB",
+      "tables": ["operational_snapshots", "ingestion_checkpoints"],
+      "indexes": 7,
+      "owner": "OperationalReadModel",
+      "schemaDriftRisk": "MEDIUM",
+      "hasTests": true
+    },
+    {
+      "logicalName": "Owned Ecommerce",
+      "envVar": "Shared DB",
+      "tables": [
+        "owned_ecommerce_candidates",
+        "owned_ecommerce_projections",
+        "owned_ecommerce_validation_results",
+        "owned_ecommerce_approvals",
+        "owned_ecommerce_execution_idempotency",
+        "owned_ecommerce_executions",
+        "owned_ecommerce_execution_audits",
+        "owned_ecommerce_rollback_refs"
+      ],
+      "indexes": 3,
+      "owner": "OwnedEcommerceStore",
+      "schemaDriftRisk": "HIGH",
+      "hasTests": false
+    },
+    {
+      "logicalName": "OAuth",
+      "envVar": "MSL_MERCADOLIBRE_OAUTH_DB_PATH",
+      "tables": ["oauth_tokens (encrypted)"],
+      "indexes": 0,
+      "owner": "TokenStore",
+      "schemaDriftRisk": "LOW",
+      "hasTests": true
+    },
+    {
+      "logicalName": "Sync",
+      "envVar": "Shared DB",
+      "tables": ["product_sync_state"],
+      "indexes": 0,
+      "owner": "SyncStore",
+      "schemaDriftRisk": "LOW",
+      "hasTests": true
+    },
+    {
+      "logicalName": "Approval Queue",
+      "envVar": "MSL_APPROVAL_QUEUE_DB_PATH",
+      "tables": ["approval_queue_entries", "approval_records", "audit_records"],
+      "indexes": 0,
+      "owner": "ApprovalQueueRepository",
+      "schemaDriftRisk": "LOW",
+      "hasTests": true
+    },
+    {
+      "logicalName": "Creative Jobs",
+      "envVar": "MSL_CREATIVE_STUDIO_DB_PATH",
+      "tables": ["creative_jobs"],
+      "indexes": 2,
+      "owner": "CreativeJobQueueStore",
+      "schemaDriftRisk": "LOW",
+      "hasTests": true
+    }
+  ],
+  "cortex": {
+    "status": "ACTIVE_PARCIAL",
+    "description": "Cortex is active for Hebbian propagation and outcome logging. Partial for agent learning feedback loop (agents don't auto-read their own lessons before proposing).",
+    "features": {
+      "hebbianLearning": true,
+      "darwinianPruning": true,
+      "outcomeScoring": true,
+      "actorSimulations": true,
+      "probeDetection": true,
+      "sellerScoping": false,
+      "manualDeletion": false,
+      "agentLessonFeedback": false
+    }
+  },
+  "routines": [
+    {
+      "name": "market-catalog",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "operations-manager",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "cost-supplier",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "creative-assets",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "creative-commercial",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "creative-studio",
+      "trigger": "message-driven",
+      "frequency": "on-demand",
+      "dedupeKey": "{requestId}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "PARCIAL"
+    },
+    {
+      "name": "product-ads-monitor",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "product-ads-profitability",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "cfo:{seller}:{campaign}:{item}:{signal}:{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "product-ads-ceo-profit",
+      "trigger": "message-driven",
+      "frequency": "on-demand",
+      "dedupeKey": "cfo:{seller}:{campaign}:{item}:{signal} (7-day)",
+      "hasDLQ": false,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "supplier-manager",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "morning-report",
+      "trigger": "daemon-tick (9am gate)",
+      "frequency": "15 min",
+      "dedupeKey": null,
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "eod-summary",
+      "trigger": "daemon-tick (6pm gate)",
+      "frequency": "15 min",
+      "dedupeKey": null,
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "owned-ecommerce",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{kind}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": false,
+      "status": "PARCIAL"
+    },
+    {
+      "name": "unanswered-questions",
+      "trigger": "daemon-tick",
+      "frequency": "15 min",
+      "dedupeKey": "{sellerId}-{hour}",
+      "hasDLQ": true,
+      "generatesCEOProposal": true,
+      "learnsOutcome": true,
+      "hasTests": true,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "system-health",
+      "trigger": "setInterval",
+      "frequency": "30 min",
+      "dedupeKey": null,
+      "hasDLQ": false,
+      "generatesCEOProposal": false,
+      "learnsOutcome": false,
+      "hasTests": false,
+      "status": "COMPLETO"
+    },
+    {
+      "name": "dlq-monitor",
+      "trigger": "setInterval",
+      "frequency": "15 min",
+      "dedupeKey": null,
+      "hasDLQ": false,
+      "generatesCEOProposal": false,
+      "learnsOutcome": false,
+      "hasTests": false,
+      "status": "COMPLETO"
+    }
+  ],
+  "mercadoLibreActions": [
+    {
+      "action": "Responder pregunta",
+      "tool": "msl_prepare_answer",
+      "type": "WRITE",
+      "requiresApproval": true,
+      "hasPreparedAction": true,
+      "hasTestFixture": true,
+      "executesRealInTests": false,
+      "requiresSellerId": true,
+      "hasAuditLog": false,
+      "hasOutcome": false
+    },
+    {
+      "action": "Cambio precio/stock/listing",
+      "tool": "msl_prepare_mercadolibre_write",
+      "type": "WRITE",
+      "requiresApproval": true,
+      "hasPreparedAction": true,
+      "hasTestFixture": true,
+      "executesRealInTests": false,
+      "requiresSellerId": true,
+      "hasAuditLog": true,
+      "hasOutcome": false
+    },
+    {
+      "action": "Product Ads actions",
+      "tool": "msl_prepare_product_ads_action",
+      "type": "WRITE",
+      "requiresApproval": true,
+      "hasPreparedAction": true,
+      "hasTestFixture": true,
+      "executesRealInTests": false,
+      "requiresSellerId": true,
+      "hasAuditLog": true,
+      "hasOutcome": false
+    },
+    {
+      "action": "Subir imagen",
+      "tool": "msl_prepare_image_orchestration",
+      "type": "WRITE",
+      "requiresApproval": true,
+      "hasPreparedAction": true,
+      "hasTestFixture": false,
+      "executesRealInTests": false,
+      "requiresSellerId": true,
+      "hasAuditLog": false,
+      "hasOutcome": false
+    },
+    {
+      "action": "Sync producto",
+      "tool": "msl_sync_product",
+      "type": "WRITE",
+      "requiresApproval": true,
+      "hasPreparedAction": true,
+      "hasTestFixture": true,
+      "executesRealInTests": false,
+      "requiresSellerId": true,
+      "hasAuditLog": true,
+      "hasOutcome": false
+    },
+    {
+      "action": "Ejecutar sync",
+      "tool": "msl_execute_sync_product",
+      "type": "WRITE",
+      "requiresApproval": true,
+      "hasPreparedAction": true,
+      "hasTestFixture": true,
+      "executesRealInTests": false,
+      "requiresSellerId": true,
+      "hasAuditLog": true,
+      "hasOutcome": false
+    },
+    {
+      "action": "Aprobar sync",
+      "tool": "msl_approve_sync_product_proposal",
+      "type": "WRITE",
+      "requiresApproval": true,
+      "hasPreparedAction": true,
+      "hasTestFixture": false,
+      "executesRealInTests": false,
+      "requiresSellerId": true,
+      "hasAuditLog": false,
+      "hasOutcome": false
+    }
+  ],
+  "integrationTests": [
+    {
+      "scenario": 1,
+      "description": "daemon tick → specialist → CEO proposal",
+      "status": "EXISTS",
+      "files": [
+        "tests/e2e/agent-pipeline.e2e.test.ts:52-68",
+        "packages/agent/tests/workers/daemonIntegration.test.ts:67-121"
+      ]
+    },
+    {
+      "scenario": 2,
+      "description": "CEO proposal → CeoInboxStore",
+      "status": "EXISTS",
+      "files": [
+        "tests/e2e/agent-pipeline.e2e.test.ts:101-125",
+        "packages/agent/tests/conversation/ceoInboxStore.test.ts:1-246"
+      ]
+    },
+    {
+      "scenario": 3,
+      "description": "approval queue → prepared action",
+      "status": "EXISTS",
+      "files": ["packages/tools/src/index.test.ts:306-386"]
+    },
+    {
+      "scenario": 4,
+      "description": "prepared action → fake executor → outcome",
+      "status": "MISSING",
+      "files": [],
+      "note": "No end-to-end test from approval entry through execution to outcome recording"
+    },
+    {
+      "scenario": 5,
+      "description": "outcome → learning pipeline",
+      "status": "EXISTS",
+      "files": [
+        "tests/e2e/agent-pipeline.e2e.test.ts:127-170",
+        "packages/agent/tests/conversation/learningPipeline.test.ts:1-327"
+      ]
+    },
+    {
+      "scenario": 6,
+      "description": "learning pipeline → Cortex",
+      "status": "EXISTS",
+      "files": ["tests/e2e/agent-pipeline.e2e.test.ts:200-212"]
+    },
+    {
+      "scenario": 7,
+      "description": "agent bus resolve/fail/cancel persists metadata",
+      "status": "EXISTS",
+      "files": ["packages/agent/tests/conversation/agentMessageBusStore.test.ts:288-362"]
+    },
+    {
+      "scenario": 8,
+      "description": "duplicate tick does not duplicate proposal",
+      "status": "EXISTS",
+      "files": ["packages/agent/tests/workers/daemonScheduler.test.ts:261-283"]
+    },
+    {
+      "scenario": 9,
+      "description": "sellerId does not get lost",
+      "status": "EXISTS",
+      "files": [
+        "packages/agent/tests/conversation/agentMessageBusStore.test.ts:168-176",
+        "packages/memory/tests/operationalReadModel.test.ts:356-399"
+      ]
+    },
+    {
+      "scenario": 10,
+      "description": "Plasticov and Maustian do not mix",
+      "status": "EXISTS",
+      "files": [
+        "packages/memory/tests/operationalReadModel.test.ts:356-399",
+        "packages/agent/tests/conversation/syncTools.test.ts:659-672"
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "id": "GAP-01",
+      "severity": "CRITICAL",
+      "title": "Strategic stores lack seller_id scoping",
+      "affectedTables": [
+        "nodes",
+        "edges",
+        "ceo_strategies",
+        "autonomy_state",
+        "agent_reviews",
+        "company_agent_lessons",
+        "approval_queue_entries",
+        "approval_records",
+        "audit_records"
+      ],
+      "impact": "Plasticov and Maustian share strategic memory — cross-contamination in strategic decisions"
+    },
+    {
+      "id": "GAP-02",
+      "severity": "HIGH",
+      "title": "OwnedEcommerceStore risky migration",
+      "file": "memory/src/ownedEcommerceStore.ts",
+      "lines": "628-718",
+      "impact": "DROP+CREATE+RENAME without explicit transaction — potential data loss on migration failure"
+    },
+    {
+      "id": "GAP-03",
+      "severity": "MEDIUM",
+      "title": "evidence_request has no messageType routing",
+      "file": "agent/src/workers/daemonScheduler.ts",
+      "impact": "evidence_request messages sent to daemon handlers expecting daemon-tick messages"
+    },
+    {
+      "id": "GAP-04",
+      "severity": "MEDIUM",
+      "title": "delegate_to_subagent is conversation-only",
+      "file": "agent/src/conversation/tools/businessTools.ts",
+      "lines": "429-483",
+      "impact": "CEO delegation returns static lane contracts but does not trigger daemon work"
+    },
+    {
+      "id": "GAP-05",
+      "severity": "MEDIUM",
+      "title": "No manual Cortex cleanup",
+      "file": "memory/src/cortex/engine.ts",
+      "impact": "No deleteNode/deleteEdge exposed — bad nodes persist forever"
+    },
+    {
+      "id": "GAP-06",
+      "severity": "MEDIUM",
+      "title": "ownedEcommerceDaemon lacks unit tests",
+      "file": "packages/agent/src/workers/ownedEcommerceDaemon.ts",
+      "impact": "195-line daemon handler with detection logic has no unit test file"
+    },
+    {
+      "id": "GAP-07",
+      "severity": "LOW",
+      "title": "systemHealthDaemon lacks unit tests",
+      "file": "packages/agent/src/workers/systemHealthDaemon.ts",
+      "impact": "No dedicated test for runSystemHealthCheck()"
+    },
+    {
+      "id": "GAP-08",
+      "severity": "LOW",
+      "title": "dlqMonitorDaemon lacks unit tests",
+      "file": "packages/agent/src/workers/dlqMonitorDaemon.ts",
+      "impact": "No dedicated test for runDlqMonitor()"
+    },
+    {
+      "id": "GAP-09",
+      "severity": "MEDIUM",
+      "title": "Scenario #4 e2e test missing",
+      "impact": "No test chains: approval entry → executor → outcome recording"
+    },
+    {
+      "id": "GAP-10",
+      "severity": "LOW",
+      "title": "Specialists don't auto-read lessons",
+      "impact": "listAgentLessons() exists but isn't called by DeepSeekAdvisors before proposing"
+    }
+  ],
+  "recommendedPRs": [
+    {
+      "priority": 1,
+      "title": "feat(memory): add seller_id scoping to strategic stores",
+      "description": "Add seller_id column to nodes, edges, ceo_strategies, autonomy_state, agent_reviews, company_agent_lessons, approval_queue_*. Migration with backfill from operational data."
+    },
+    {
+      "priority": 2,
+      "title": "fix(memory): wrap owned-ecommerce migration in explicit transaction",
+      "description": "Wrap DROP+CREATE+RENAME in ownedEcommerceStore.ts lines 628-718 in BEGIN/COMMIT."
+    },
+    {
+      "priority": 3,
+      "title": "test(agent): add missing daemon tests + approval-to-outcome e2e",
+      "description": "Add ownedEcommerceDaemon.test.ts, systemHealthDaemon.test.ts, dlqMonitorDaemon.test.ts, and scenario #4 e2e test."
+    },
+    {
+      "priority": 4,
+      "title": "feat(scheduler): messageType routing + wire delegate_to_subagent",
+      "description": "Add messageType filtering in daemon dispatch; wire delegate_to_subagent to bus enqueue."
+    },
+    {
+      "priority": 5,
+      "title": "feat(cortex): manual memory management + specialist lesson injection",
+      "description": "Expose deleteNode/deleteEdge; inject listAgentLessons() into specialist advisors."
+    }
+  ]
+}
