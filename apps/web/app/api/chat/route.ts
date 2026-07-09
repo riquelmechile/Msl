@@ -79,8 +79,13 @@ function createDemoStrategyStore(): StrategyStore {
   let nextId = strategies.length + 1;
 
   return {
-    listActive(): Strategy[] {
-      return strategies.filter((s) => s.status === "active");
+    listActive(sellerId?: string): Strategy[] {
+      return strategies.filter(
+        (s) => s.status === "active" && (!sellerId || !s.sellerId || s.sellerId === sellerId),
+      );
+    },
+    listActiveBySeller(sellerId: string): Strategy[] {
+      return strategies.filter((s) => s.status === "active" && s.sellerId === sellerId);
     },
     insertStrategy(ruleText: string, parsedRule: ParsedRule, confidence: number): Strategy {
       const s: Strategy = {
@@ -121,6 +126,8 @@ function createDemoAutonomyEngine(): AutonomyEngine {
     recordKpi: () => {
       /* no-op for demo */
     },
+    getKpiHistory: () => [],
+    getDegradationEvents: () => [],
     evaluateDegradation: () => null,
     evaluatePromotion: () => ({ recommend: false, to: level }),
     canAutoApprove: (riskLevel: string) => riskLevel === "low",

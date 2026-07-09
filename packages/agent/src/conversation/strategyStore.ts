@@ -78,9 +78,7 @@ export function createStrategyStore(db: Database.Database) {
 
   // ── Idempotent migration: add seller_id column ──────────────
   if (!columnExists(db, "ceo_strategies", "seller_id")) {
-    db.exec(
-      `ALTER TABLE ceo_strategies ADD COLUMN seller_id TEXT NOT NULL DEFAULT 'unknown'`,
-    );
+    db.exec(`ALTER TABLE ceo_strategies ADD COLUMN seller_id TEXT NOT NULL DEFAULT 'unknown'`);
   }
 
   // ── Prepared statements ──────────────────────────────────────

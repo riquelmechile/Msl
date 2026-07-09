@@ -245,10 +245,7 @@ export function createCompanyAgentLearningStore(db: Database.Database): CompanyA
   /**
    * Return all lessons scoped to a specific seller account.
    */
-  const getLessonsBySeller = (
-    sellerId: string,
-    limit = 50,
-  ): readonly AgentLearningRecord[] => {
+  const getLessonsBySeller = (sellerId: string, limit = 50): readonly AgentLearningRecord[] => {
     const rows = listBySellerStmt.all({
       sellerId,
       limit: Math.max(1, Math.min(limit, 50)),

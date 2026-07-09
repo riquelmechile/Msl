@@ -256,10 +256,7 @@ export function createAutonomyEngine(
    * @param sellerId Optional seller filter. When omitted, returns all rows.
    * @param limit    Maximum rows to return (default 50).
    */
-  const getDegradationEvents = (
-    sellerId?: string,
-    limit = 50,
-  ): DegradationEvent[] => {
+  const getDegradationEvents = (sellerId?: string, limit = 50): DegradationEvent[] => {
     const rows = getDegradationEventsStmt.all({
       sellerId: sellerId ?? null,
       limit: Math.max(1, Math.min(limit, 500)),

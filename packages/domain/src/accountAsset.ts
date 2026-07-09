@@ -100,5 +100,4 @@ export type AccountOpportunity = {
  * - `{ kind: "account"; sellerId; accountId? }` → visible only to the specified account.
  */
 export type MemoryScope =
-  | { kind: "global" }
-  | { kind: "account"; sellerId: SellerId; accountId?: string };
+  { kind: "global" } | { kind: "account"; sellerId: SellerId; accountId?: string };

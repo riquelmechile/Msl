@@ -77,7 +77,7 @@ describe("agentConsensusStore", () => {
         type: string;
       }>;
       const columnNames = columns.map((c) => c.name);
-      expect(columns.length).toBe(7);
+      expect(columns.length).toBe(8);
 
       const expected = [
         "id",
@@ -87,6 +87,7 @@ describe("agentConsensusStore", () => {
         "rationale",
         "confidence",
         "created_at",
+        "seller_id",
       ];
       expect(columnNames).toEqual(expected);
     });
