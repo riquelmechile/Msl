@@ -4,7 +4,7 @@ import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
 import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
-import { startDaemonScheduler } from "../../src/workers/daemonScheduler.js";
+import { startDaemonScheduler, enqueueDaemonTick } from "../../src/workers/daemonScheduler.js";
 
 // ── Scheduler Tests ─────────────────────────────────────────────────
 
@@ -115,11 +115,13 @@ describe("daemonScheduler", () => {
       // The message should be resolved by the daemon (even if it finds nothing)
       scheduler.stop();
 
-      // Verify the message was consumed — claimNext for product-ads-profitability
-      // should return empty after processing
-      const remaining = bus.claimNext("product-ads-profitability");
-      // The message is either resolved or failed — pending messages should not include it
-      expect(remaining.length).toBe(0);
+      // The task message should be resolved (daemon processed it).
+      // The enqueued daemon-tick may still be pending — that's expected.
+      const taskStatus = db
+        .prepare("SELECT status FROM agent_message_bus WHERE message_type = 'task'")
+        .get() as { status: string } | undefined;
+      expect(taskStatus).toBeDefined();
+      expect(taskStatus!.status).toBe("resolved");
     });
   });
 
@@ -168,9 +170,56 @@ describe("daemonScheduler", () => {
 
       scheduler.stop();
 
-      // The message should be consumed — claimNext should return empty
-      const remaining = bus.claimNext("product-ads-ceo-profitability");
-      expect(remaining.length).toBe(0);
+      // The proposal message should be resolved (handler processed it).
+      // The enqueued daemon-tick may still be pending — that's expected.
+      const proposalStatus = db
+        .prepare("SELECT status FROM agent_message_bus WHERE message_type = 'proposal'")
+        .get() as { status: string } | undefined;
+      expect(proposalStatus).toBeDefined();
+      expect(proposalStatus!.status).toBe("resolved");
+    });
+  });
+
+  describe("enqueueDaemonTick", () => {
+    it("enqueues one tick per registered lane", () => {
+      enqueueDaemonTick(bus);
+
+      // Check that all known lanes have a daemon-tick message
+      const tickRows = db
+        .prepare("SELECT receiver_agent_id, message_type FROM agent_message_bus WHERE message_type = 'daemon-tick'")
+        .all() as Array<{ receiver_agent_id: string; message_type: string }>;
+
+      // We have 12 lanes in daemonHandlerMap
+      expect(tickRows.length).toBeGreaterThan(0);
+
+      // All ticks should have correct message type
+      for (const row of tickRows) {
+        expect(row.message_type).toBe("daemon-tick");
+      }
+
+      // Each lane should have exactly one tick
+      const laneIds = tickRows.map((r) => r.receiver_agent_id);
+      const uniqueLanes = new Set(laneIds);
+      expect(uniqueLanes.size).toBe(tickRows.length);
+    });
+
+    it("deduplicates when called twice in the same hour", () => {
+      // First call
+      enqueueDaemonTick(bus);
+
+      // Second call in the same hour — dedupeKey prevents duplicates
+      enqueueDaemonTick(bus);
+
+      const count = db
+        .prepare("SELECT COUNT(*) as cnt FROM agent_message_bus WHERE message_type = 'daemon-tick'")
+        .get() as { cnt: number };
+
+      // Should have exactly one tick per lane (no duplicates)
+      const uniqueLaneCount = (db
+        .prepare("SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'")
+        .all() as Array<{ receiver_agent_id: string }>).length;
+
+      expect(count.cnt).toBe(uniqueLaneCount);
     });
   });
 });

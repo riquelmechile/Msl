@@ -7,12 +7,28 @@ import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
  * midnight and sends a Telegram briefing + enqueues CEO alerts.
  */
 export const morningReportDaemon: DaemonHandler = async ({
+  claim,
   reader,
   cortex,
   sellerIds,
   bus,
   ceoContext,
 }) => {
+  // ── Hour-gate: only run at 9am ──
+  const cycleTimestamp = (() => {
+    try {
+      const parsed = JSON.parse(claim.payloadJson) as Record<string, unknown>;
+      if (typeof parsed.cycleTimestamp === "string") return parsed.cycleTimestamp;
+    } catch {
+      /* ignore */
+    }
+    return new Date().toISOString();
+  })();
+  const hour = new Date(cycleTimestamp).getHours();
+  if (hour !== 9) {
+    return { findings: [], proposalEnqueued: false, messageIds: [] };
+  }
+
   const findings: DaemonFinding[] = [];
   const now = new Date();
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();

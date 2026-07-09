@@ -7,12 +7,28 @@ import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
  * top categories, and action items for tomorrow.
  */
 export const eodSummaryDaemon: DaemonHandler = async ({
+  claim,
   reader,
   cortex,
   sellerIds,
   bus,
   ceoContext,
 }) => {
+  // ── Hour-gate: only run at 6pm ──
+  const cycleTimestamp = (() => {
+    try {
+      const parsed = JSON.parse(claim.payloadJson) as Record<string, unknown>;
+      if (typeof parsed.cycleTimestamp === "string") return parsed.cycleTimestamp;
+    } catch {
+      /* ignore */
+    }
+    return new Date().toISOString();
+  })();
+  const hour = new Date(cycleTimestamp).getHours();
+  if (hour !== 18) {
+    return { findings: [], proposalEnqueued: false, messageIds: [] };
+  }
+
   const findings: DaemonFinding[] = [];
   const now = new Date();
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();

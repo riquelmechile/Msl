@@ -108,6 +108,27 @@ function createCachingReader(reader: OperationalReadModelReader): OperationalRea
   };
 }
 
+// ── Tick Generation ─────────────────────────────────────────────────
+
+/**
+ * Enqueue a self-triggering daemon tick for each registered lane.
+ * Each tick carries an ISO-8601 `cycleTimestamp` so daemons can check
+ * hour gates. The dedupeKey prevents more than one tick per lane per hour.
+ */
+export function enqueueDaemonTick(bus: AgentMessageBusStore): void {
+  const now = new Date();
+  const hourKey = now.toISOString().slice(0, 13); // "2026-07-09T14"
+  for (const laneId of Object.keys(daemonHandlerMap)) {
+    bus.enqueue({
+      senderAgentId: "system",
+      receiverAgentId: laneId,
+      messageType: "daemon-tick",
+      payloadJson: JSON.stringify({ cycleTimestamp: now.toISOString() }),
+      dedupeKey: `${laneId}:tick:${hourKey}`,
+    });
+  }
+}
+
 // ── Scheduler ───────────────────────────────────────────────────────
 
 /**
@@ -123,6 +144,9 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
   const intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
 
   const run = async () => {
+    // ── Enqueue autonomous ticks before claim loop ──
+    enqueueDaemonTick(config.bus);
+
     const agents = listCompanyAgents();
     const activeAgents = agents.filter(
       (agent) =>
