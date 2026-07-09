@@ -117,7 +117,14 @@ export function selectRotatedPricingListings(
 // ── Freshness skip-gate ───────────────────────────────────────────────
 
 export async function withFreshnessSkip<T>(
-  config: { operationalStore?: { getCheckpoint: (sellerId: string, kind: string) => Promise<{ last_captured_at: string } | null> } },
+  config: {
+    operationalStore?: {
+      getCheckpoint: (
+        sellerId: string,
+        kind: string,
+      ) => Promise<{ last_captured_at: string } | null>;
+    };
+  },
   sellerId: string,
   kind: keyof typeof KIND_FRESHNESS_TTL,
   processor: () => Promise<T>,

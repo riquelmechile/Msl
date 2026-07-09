@@ -1,13 +1,8 @@
 import OpenAI from "openai";
 import { getDeepSeekClient } from "./deepseekClient.js";
-import {
-  resolveDeepSeekRuntimeConfig,
-} from "./deepseekRuntime.js";
+import { resolveDeepSeekRuntimeConfig } from "./deepseekRuntime.js";
 import type { GraphEngine, OperationalReadModelWriter } from "@msl/memory";
-import type {
-  MlcListingSummary,
-  MlcPerformanceSummary,
-} from "@msl/mercadolibre";
+import type { MlcListingSummary, MlcPerformanceSummary } from "@msl/mercadolibre";
 
 import {
   processSellerListings,
@@ -284,32 +279,54 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
         alerts.push(...result.alerts);
 
         // ── Parallel independent phases (each wrapped with freshness gate) ──
-        const [, orderResult, claimsResult, questionsResult, messagesResult, reputationResult] = await Promise.all([
-          withFreshnessSkip(config, sellerId, "pricing",
-            () => processSellerPricing(config, sellerId, result.listings).then(() => ({ alerts: [] as string[] })),
-            { alerts: [] as string[] },
-          ),
-          withFreshnessSkip(config, sellerId, "order",
-            () => processSellerOrders(config, sellerId, sellerName),
-            { alerts: [], orderCount: 0, totalAmount: 0 },
-          ),
-          withFreshnessSkip(config, sellerId, "claim",
-            () => processSellerClaims(config, sellerId, sellerName),
-            { alerts: [], claimCount: 0 },
-          ),
-          withFreshnessSkip(config, sellerId, "question",
-            () => processSellerQuestions(config, sellerId, sellerName),
-            { alerts: [], questionCount: 0 },
-          ),
-          withFreshnessSkip(config, sellerId, "message",
-            () => processSellerMessages(config, sellerId, sellerName),
-            { alerts: [], messageCount: 0 },
-          ),
-          withFreshnessSkip(config, sellerId, "reputation",
-            () => processSellerReputation(config, sellerId, sellerName),
-            { alerts: [] },
-          ),
-        ]);
+        const [, orderResult, claimsResult, questionsResult, messagesResult, reputationResult] =
+          await Promise.all([
+            withFreshnessSkip(
+              config,
+              sellerId,
+              "pricing",
+              () =>
+                processSellerPricing(config, sellerId, result.listings).then(() => ({
+                  alerts: [] as string[],
+                })),
+              { alerts: [] as string[] },
+            ),
+            withFreshnessSkip(
+              config,
+              sellerId,
+              "order",
+              () => processSellerOrders(config, sellerId, sellerName),
+              { alerts: [], orderCount: 0, totalAmount: 0 },
+            ),
+            withFreshnessSkip(
+              config,
+              sellerId,
+              "claim",
+              () => processSellerClaims(config, sellerId, sellerName),
+              { alerts: [], claimCount: 0 },
+            ),
+            withFreshnessSkip(
+              config,
+              sellerId,
+              "question",
+              () => processSellerQuestions(config, sellerId, sellerName),
+              { alerts: [], questionCount: 0 },
+            ),
+            withFreshnessSkip(
+              config,
+              sellerId,
+              "message",
+              () => processSellerMessages(config, sellerId, sellerName),
+              { alerts: [], messageCount: 0 },
+            ),
+            withFreshnessSkip(
+              config,
+              sellerId,
+              "reputation",
+              () => processSellerReputation(config, sellerId, sellerName),
+              { alerts: [] },
+            ),
+          ]);
 
         totalOrders += orderResult.orderCount;
         alerts.push(...orderResult.alerts);
@@ -320,11 +337,17 @@ export function startBackgroundIngestion(config: BackgroundIngestionConfig): { s
 
         // ── Product Ads + Creative Assets (freshness-gated) ──
         await Promise.all([
-          withFreshnessSkip(config, sellerId, "product-ads-insights",
+          withFreshnessSkip(
+            config,
+            sellerId,
+            "product-ads-insights",
             () => processSellerProductAds(config, sellerId),
             { persisted: false },
           ),
-          withFreshnessSkip(config, sellerId, "creative-snapshot",
+          withFreshnessSkip(
+            config,
+            sellerId,
+            "creative-snapshot",
             () => processSellerCreativeAssets(config, sellerId),
             { persisted: 0 },
           ),

@@ -705,8 +705,7 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
       for (const [scopeType, scopeId] of candidates) {
         if (scopeId === undefined) continue;
         const row = getPolicyStmt.get(scopeType, scopeId, input.supplierId) as
-          | PolicyRow
-          | undefined;
+          PolicyRow | undefined;
         if (row) return policyFromRow(row);
       }
 
@@ -732,8 +731,7 @@ export function createSqliteSupplierMirrorStore(db: Database.Database): Supplier
       if (insertResult.changes > 0) return record;
 
       const existingByKey = getLedgerByIdempotencyStmt.get(record.idempotencyKey) as
-        | LedgerRow
-        | undefined;
+        LedgerRow | undefined;
       if (existingByKey) return ledgerFromRow(existingByKey);
 
       const existingById = getLedgerByIdStmt.get(record.id) as LedgerRow | undefined;

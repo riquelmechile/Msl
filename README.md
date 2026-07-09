@@ -22,6 +22,7 @@
 MSL is a proactive conversational AI agent for MercadoLibre Chile. It ingests your business data (listings, orders, ads, pricing, claims, reputation), builds durable operational evidence in a local SQLite read model, runs a neural graph memory (Cortex) for learning, coordinates 5 cache-resident CEO specialist lanes powered by DeepSeek, and proposes concrete profit-maximizing actions — all through natural Spanish conversation. Every action requires your explicit "dale" before execution.
 
 **Agent company infrastructure (2026-07-07):**
+
 - **Agent Message Bus** — SQLite-backed async message queue with claim/resolve/fail lifecycle
 - **4 Specialist Daemons** — marketCatalog, operationsManager, costSupplier, creativeCommercial (autonomous, 15-min cycles, never mutate)
 - **Deep Evidence** — `searchSnapshots()` with 10 SQL-level filters (status, price, dates, categories)

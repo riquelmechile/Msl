@@ -350,7 +350,11 @@ export function createAgentLoop(config: AgentLoopConfig) {
         ledger: config.workforceCostCacheLedgerStore,
       });
     }
-    for (const tool of createSupplierMirrorTools(config.supplierMirrorStore, advisor)) {
+    for (const tool of createSupplierMirrorTools(
+      config.supplierMirrorStore,
+      advisor,
+      config.engine,
+    )) {
       if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
     }
   }
@@ -657,7 +661,10 @@ ${strategyLines.join("\n")}`;
     if (_blockB !== null && now - _blockBFetchedAt < DAILY_TTL_MS) return _blockB;
     try {
       if (config.operationalReader && config.sellerId) {
-        const ds = await OperationalDailyDataSource.create(config.operationalReader, config.sellerId);
+        const ds = await OperationalDailyDataSource.create(
+          config.operationalReader,
+          config.sellerId,
+        );
         _blockB = buildDailyAggregates(ds);
       } else {
         _blockB = buildDailyAggregates();
@@ -952,7 +959,10 @@ ${strategyLines.join("\n")}`;
         const promotion = config.autonomyEngine.evaluatePromotion();
         if (promotion.recommend) {
           config.autonomyEngine.setLevel(promotion.to, "KPI thresholds met — auto-promotion");
-          metrics?.record("autonomy.promotion", 1, { from: String(promotion.to - 1), to: String(promotion.to) });
+          metrics?.record("autonomy.promotion", 1, {
+            from: String(promotion.to - 1),
+            to: String(promotion.to),
+          });
         }
       }
 

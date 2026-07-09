@@ -473,8 +473,7 @@ function readPersistedApprovalJson(dbPath: string): string {
   const db = new Database(dbPath, { readonly: true });
   try {
     const row = db.prepare("SELECT approval_json FROM approval_records").get() as
-      | { approval_json: string }
-      | undefined;
+      { approval_json: string } | undefined;
     return row?.approval_json ?? "";
   } finally {
     db.close();

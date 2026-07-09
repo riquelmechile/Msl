@@ -1,6 +1,11 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CreativeSnapshotData } from "../conversation/backgroundIngestion.js";
-import type { CreativeDeepSeekAdvisor, CreativeActionableFinding, CreativeEnrichmentFinding } from "../conversation/creativeDeepSeekAdvisor.js";
+import type {
+  CreativeDeepSeekAdvisor,
+  CreativeActionableFinding,
+  CreativeEnrichmentFinding,
+} from "../conversation/creativeDeepSeekAdvisor.js";
+import type { CreativeAssetRequest } from "@msl/creative-studio";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -122,10 +127,7 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
       limit: 1,
     });
     if (itemNodes.length > 0) {
-      itemLatestVisits.set(
-        snap.itemId,
-        Number(itemNodes[0]!.metadata.totalVisits ?? 0),
-      );
+      itemLatestVisits.set(snap.itemId, Number(itemNodes[0]!.metadata.totalVisits ?? 0));
     }
   }
 
@@ -237,10 +239,7 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
           kind: "alert",
           severity: "warning",
           summary: `High-traffic poor creative: ${snap.itemId} has ${itemVisits} visits (avg ${Math.round(avg)}) with poor creative quality`,
-          evidenceIds: [
-            `creative-snapshot:${snap.itemId}`,
-            `visit_snapshot:${snap.itemId}`,
-          ],
+          evidenceIds: [`creative-snapshot:${snap.itemId}`, `visit_snapshot:${snap.itemId}`],
         });
       }
     }
@@ -259,10 +258,7 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
           kind: "alert",
           severity: "critical",
           summary: `Moderated-in-campaign: ${snap.itemId} is blocked AND in active Product Ads campaign — immediate review needed`,
-          evidenceIds: [
-            `creative-snapshot:${snap.itemId}`,
-            `product-ads-insights:${snap.itemId}`,
-          ],
+          evidenceIds: [`creative-snapshot:${snap.itemId}`, `product-ads-insights:${snap.itemId}`],
         });
       }
     }
@@ -272,25 +268,35 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
 
   // ── 2.7 AI Enrichment (critical + warning only) ──────────────
 
-  let aiEnrichment: {
-    findings: CreativeEnrichmentFinding[];
-    summary: string;
-    modelUsed: string;
-    enrichedAt: string;
-  } | undefined;
+  let aiEnrichment:
+    | {
+        findings: CreativeEnrichmentFinding[];
+        summary: string;
+        modelUsed: string;
+        enrichedAt: string;
+      }
+    | undefined;
 
   const actionableFindings: CreativeActionableFinding[] = [];
   for (const f of findings) {
     if (f.severity === "info") continue;
-    const itemId = f.evidenceIds.find((id) => id.startsWith("creative-snapshot:"))?.replace("creative-snapshot:", "") ?? "";
+    const itemId =
+      f.evidenceIds
+        .find((id) => id.startsWith("creative-snapshot:"))
+        ?.replace("creative-snapshot:", "") ?? "";
     actionableFindings.push({
       itemId,
-      signalKind: f.summary.includes("Low image count") ? "low-image-count"
-        : f.summary.includes("Moderation blocked") ? "moderation-blocked"
-        : f.summary.includes("Poor PICTURES") ? "poor-pictures-score"
-        : f.summary.includes("High-traffic poor") ? "high-traffic-poor-creative"
-        : f.summary.includes("Moderated-in-campaign") ? "moderated-in-campaign"
-        : "low-image-count",
+      signalKind: f.summary.includes("Low image count")
+        ? "low-image-count"
+        : f.summary.includes("Moderation blocked")
+          ? "moderation-blocked"
+          : f.summary.includes("Poor PICTURES")
+            ? "poor-pictures-score"
+            : f.summary.includes("High-traffic poor")
+              ? "high-traffic-poor-creative"
+              : f.summary.includes("Moderated-in-campaign")
+                ? "moderated-in-campaign"
+                : "low-image-count",
       severity: f.severity === "critical" ? "critical" : "warning",
     });
   }
@@ -364,6 +370,67 @@ export const creativeAssetsDaemon: DaemonHandler = async ({
     enqueueGroup(criticals, "critical");
     enqueueGroup(warnings, "warning");
     proposalEnqueued = true;
+
+    // ── 2.9 Creative Studio delegation (additive) ────────────
+    const creativeStudioEnabled = process.env.MSL_CREATIVE_STUDIO_ENABLED === "true";
+    if (creativeStudioEnabled) {
+      for (const f of findings) {
+        const hasSignal =
+          f.summary.includes("Low image count") ||
+          f.summary.includes("Moderation blocked") ||
+          f.summary.includes("High-traffic poor");
+        if (!hasSignal) continue;
+
+        const itemId = f.evidenceIds
+          .find((id) => id.startsWith("creative-snapshot:"))
+          ?.replace("creative-snapshot:", "");
+
+        if (!itemId) continue;
+
+        // Build a remediation request for creative-studio
+        const snap = allSnapshots.find((s) => s.itemId === itemId);
+        const referenceUri = snap?.mainImageUrl ?? "";
+        const references: CreativeAssetRequest["references"] = referenceUri
+          ? [{ type: "product-image" as const, uri: referenceUri }]
+          : [];
+
+        const request: CreativeAssetRequest = {
+          requestId: `cj_${now.getTime()}_${itemId}`,
+          requestedByAgent: "creative-assets-daemon",
+          sellerId: snap?.sellerId ?? sellerIds[0] ?? "unknown",
+          channel: "mercadolibre",
+          kind: f.summary.includes("Low image count") ? "product-cover-i2i" : "product-gallery-i2i",
+          objective: "moderation-fix",
+          budgetTier: "low",
+          references,
+          productContext: {
+            itemId,
+            title: snap?.itemTitle ?? "",
+            categoryId: snap?.categoryId ?? "",
+          },
+          constraints: {
+            preserveProductTruth: true,
+            noBrandInfringement: true,
+            requiresHumanApproval: true,
+            channelFormat: {
+              ml: {
+                pictureType: "thumbnail",
+                expectedCategoryId: snap?.categoryId ?? "",
+              },
+            },
+          },
+        };
+
+        const studioMsg = bus.enqueue({
+          senderAgentId: "creative-assets",
+          receiverAgentId: "creative-studio",
+          messageType: "proposal",
+          payloadJson: JSON.stringify(request),
+          dedupeKey: `creative-remediation-${itemId}-${capturedAt.slice(0, 13)}`,
+        });
+        messageIds.push(studioMsg.messageId);
+      }
+    }
   }
 
   return {

@@ -7,10 +7,7 @@ let sharedDb: Database.Database | null = null;
 let sharedPath: string | null = null;
 
 export function getSupplierMirrorRuntimeFromEnv(
-  env: Record<string, string | undefined> = process.env as Record<
-    string,
-    string | undefined
-  >,
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
 ): {
   store: SupplierMirrorStore;
   close: () => void;

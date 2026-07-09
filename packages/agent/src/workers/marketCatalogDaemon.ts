@@ -1,5 +1,8 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
-import type { CatalogActionableFinding, CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
+import type {
+  CatalogActionableFinding,
+  CatalogDeepSeekAdvisor,
+} from "../conversation/catalogDeepSeekAdvisor.js";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 
@@ -106,7 +109,15 @@ export const marketCatalogDaemon: DaemonHandler = async ({
   // Group newest snapshot per itemId
   const newestPerItem = new Map<
     string,
-    { itemId: string; sellerId: string; title: string; status: string; price: number; categoryId: string; capturedAt: string }
+    {
+      itemId: string;
+      sellerId: string;
+      title: string;
+      status: string;
+      price: number;
+      categoryId: string;
+      capturedAt: string;
+    }
   >();
   for (const listing of allListings) {
     const existing = newestPerItem.get(listing.itemId);
@@ -116,9 +127,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
   }
 
   // ── 1. Low-visit active listings ────────────────────────────
-  const activeListings = [...newestPerItem.values()].filter(
-    (l) => l.status === "active",
-  );
+  const activeListings = [...newestPerItem.values()].filter((l) => l.status === "active");
 
   // Get visit data from Cortex
   const visitsPerItem = new Map<string, number>();
@@ -145,10 +154,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
         kind: "alert",
         severity: "warning",
         summary: `Low-visit listing: ${listing.title} (${listing.itemId}) has only ${visits} visits`,
-        evidenceIds: [
-          `listing_snapshot:${listing.itemId}`,
-          `visit_snapshot:${listing.itemId}`,
-        ],
+        evidenceIds: [`listing_snapshot:${listing.itemId}`, `visit_snapshot:${listing.itemId}`],
       });
     }
   }
@@ -171,10 +177,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
   for (const [cat, prices] of categoryPrices) {
     const sorted = [...prices].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
-    const median =
-      sorted.length % 2 === 0
-        ? (sorted[mid - 1]! + sorted[mid]!) / 2
-        : sorted[mid]!;
+    const median = sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
     categoryMedians.set(cat, median);
   }
 
@@ -187,18 +190,13 @@ export const marketCatalogDaemon: DaemonHandler = async ({
         kind: "opportunity",
         severity: "warning",
         summary: `Above-market price: ${listing.title} (${listing.itemId}) at $${listing.price} vs median $${median.toFixed(0)}`,
-        evidenceIds: [
-          `listing_snapshot:${listing.itemId}`,
-          `category:${cat}`,
-        ],
+        evidenceIds: [`listing_snapshot:${listing.itemId}`, `category:${cat}`],
       });
     }
   }
 
   // ── 3. Relist candidates (paused with sales history) ────────
-  const pausedListings = [...newestPerItem.values()].filter(
-    (l) => l.status === "paused",
-  );
+  const pausedListings = [...newestPerItem.values()].filter((l) => l.status === "paused");
 
   for (const listing of pausedListings) {
     const visits = visitsPerItem.get(listing.itemId) ?? 0;
@@ -207,10 +205,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
         kind: "opportunity",
         severity: "info",
         summary: `Paused listing with sales history: ${listing.title} (${listing.itemId}), ${visits} visits — relist candidate`,
-        evidenceIds: [
-          `listing_snapshot:${listing.itemId}`,
-          `visit_snapshot:${listing.itemId}`,
-        ],
+        evidenceIds: [`listing_snapshot:${listing.itemId}`, `visit_snapshot:${listing.itemId}`],
       });
     }
   }
@@ -382,11 +377,7 @@ export const marketCatalogDaemon: DaemonHandler = async ({
     if (catalogAdvisor && warnings.length > 0) {
       const actionableFindings: CatalogActionableFinding[] = warnings.map((f) => {
         const isLowVisit = f.summary.startsWith("Low-visit");
-        return buildActionableFinding(
-          f,
-          isLowVisit ? "low-visit" : "above-market",
-          "warning",
-        );
+        return buildActionableFinding(f, isLowVisit ? "low-visit" : "above-market", "warning");
       });
       try {
         const analysis = await catalogAdvisor.analyze({ actionableFindings });

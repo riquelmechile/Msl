@@ -19,9 +19,7 @@ function isoWeekKey(dateStr: string): string {
   const dayNum = d.getDay() || 7;
   d.setDate(d.getDate() + 4 - dayNum);
   const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNum = Math.ceil(
-    ((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
-  );
+  const weekNum = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
   return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
@@ -79,8 +77,7 @@ export const productAdsMonitorDaemon: DaemonHandler = async ({
 
   const threeWeeksAgo = new Date(now);
   threeWeeksAgo.setDate(threeWeeksAgo.getDate() - 21);
-  const visits: { itemId: string; visits: number; capturedAt: string }[] =
-    [];
+  const visits: { itemId: string; visits: number; capturedAt: string }[] = [];
 
   for (const sid of sellerIds) {
     const nodes = cortex.queryByMetadata({
@@ -149,10 +146,7 @@ export const productAdsMonitorDaemon: DaemonHandler = async ({
           kind: "alert",
           severity: "critical",
           summary: `Unprofitable ad: ${ad.name} (${ad.itemId}) — price $${price} vs cost $${cost}`,
-          evidenceIds: [
-            `cost_snapshot:${ad.itemId}`,
-            `listing_snapshot:${ad.itemId}`,
-          ],
+          evidenceIds: [`cost_snapshot:${ad.itemId}`, `listing_snapshot:${ad.itemId}`],
         });
       }
     }
@@ -168,9 +162,7 @@ export const productAdsMonitorDaemon: DaemonHandler = async ({
       const wm = visitWeekMap.get(ad.itemId);
       if (!wm || wm.size < 3) continue; // need 3+ weeks
 
-      const sorted = [...wm.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([, v]) => v);
+      const sorted = [...wm.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
       const w1 = sorted.at(-3)!;
       const w2 = sorted.at(-2)!;
       const w3 = sorted.at(-1)!;
@@ -260,16 +252,12 @@ export const productAdsMonitorDaemon: DaemonHandler = async ({
       for (const itemId of profitableItems) {
         if (!camp.advertisedItemIds.has(itemId)) {
           // Find the ad name for this item (if any ad references it)
-          const adName =
-            allAds.find((a) => a.itemId === itemId)?.name ?? itemId;
+          const adName = allAds.find((a) => a.itemId === itemId)?.name ?? itemId;
           findings.push({
             kind: "opportunity",
             severity: "info",
             summary: `Opportunity: ${adName} (${itemId}) — profitable, not advertised in campaign ${camp.name}`,
-            evidenceIds: [
-              `listing_snapshot:${itemId}`,
-              `cost_snapshot:${itemId}`,
-            ],
+            evidenceIds: [`listing_snapshot:${itemId}`, `cost_snapshot:${itemId}`],
           });
         }
       }
@@ -285,12 +273,8 @@ export const productAdsMonitorDaemon: DaemonHandler = async ({
   if (findings.length > 0) {
     const criticals = findings.filter((f) => f.severity === "critical");
     const warnings = findings.filter((f) => f.severity === "warning");
-    const opportunities = findings.filter(
-      (f) => f.kind === "opportunity",
-    );
-    const infos = findings.filter(
-      (f) => f.kind === "info" && f.severity === "info",
-    );
+    const opportunities = findings.filter((f) => f.kind === "opportunity");
+    const infos = findings.filter((f) => f.kind === "info" && f.severity === "info");
 
     const enqueueGroup = (group: DaemonFinding[], kind: string) => {
       if (group.length === 0) return;

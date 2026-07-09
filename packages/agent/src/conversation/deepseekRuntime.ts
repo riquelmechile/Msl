@@ -21,7 +21,9 @@ export type DeepSeekRoutingInput = {
   agentId?: string;
 };
 
-export function resolveDeepSeekRuntimeConfig(env: DeepSeekEnv = process.env): DeepSeekRuntimeConfig {
+export function resolveDeepSeekRuntimeConfig(
+  env: DeepSeekEnv = process.env,
+): DeepSeekRuntimeConfig {
   const apiKey = env.DEEPSEEK_API_KEY?.trim();
   const baseURL = env.DEEPSEEK_BASE_URL?.trim() || DEFAULT_DEEPSEEK_BASE_URL;
   const model = env.DEEPSEEK_MODEL?.trim() || DEFAULT_DEEPSEEK_MODEL;
@@ -49,7 +51,9 @@ export function resolveDeepSeekUserId(input: DeepSeekRoutingInput = {}): string 
   return truncateStableUserId(`msl-lane-${lane}-seller-${seller}${agent}`);
 }
 
-export function deepSeekChatCompletionExtraBody(userId?: string): Record<string, string> | undefined {
+export function deepSeekChatCompletionExtraBody(
+  userId?: string,
+): Record<string, string> | undefined {
   const normalized = userId?.trim();
   return normalized ? { user_id: normalized } : undefined;
 }
@@ -59,7 +63,9 @@ export function buildDeepSeekChatCompletionRequest<T extends Record<string, unkn
 ): T & { extra_body?: Record<string, string> } {
   const { userId, ...request } = input;
   const extraBody = deepSeekChatCompletionExtraBody(userId);
-  return extraBody ? ({ ...request, extra_body: extraBody } as T & { extra_body: Record<string, string> }) : (request as T);
+  return extraBody
+    ? ({ ...request, extra_body: extraBody } as T & { extra_body: Record<string, string> })
+    : (request as T);
 }
 
 function sanitizeDeepSeekUserIdPart(value: string): string {

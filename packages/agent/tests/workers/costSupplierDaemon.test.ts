@@ -57,10 +57,7 @@ function seedOrmSnapshot(
   );
 }
 
-function seedCortexNode(
-  engine: GraphEngine,
-  metadata: Record<string, unknown>,
-): number {
+function seedCortexNode(engine: GraphEngine, metadata: Record<string, unknown>): number {
   const node = engine.getOrCreateNode(
     `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     metadata,
@@ -132,9 +129,7 @@ describe("costSupplierDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const marginFindings = result.findings.filter(
-        (f) => f.summary.includes("margin"),
-      );
+      const marginFindings = result.findings.filter((f) => f.summary.includes("margin"));
       // MLC-002 should trigger warning (22.5% < 30%)
       expect(marginFindings.length).toBeGreaterThanOrEqual(1);
       expect(marginFindings[0]!.severity).toBe("warning");
@@ -177,9 +172,7 @@ describe("costSupplierDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const marginFindings = result.findings.filter(
-        (f) => f.summary.includes("margin"),
-      );
+      const marginFindings = result.findings.filter((f) => f.summary.includes("margin"));
       expect(marginFindings).toEqual([]);
     });
   });
@@ -210,9 +203,7 @@ describe("costSupplierDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const costFindings = result.findings.filter(
-        (f) => f.summary.includes("below cost"),
-      );
+      const costFindings = result.findings.filter((f) => f.summary.includes("below cost"));
       expect(costFindings.length).toBeGreaterThanOrEqual(1);
       expect(costFindings[0]!.severity).toBe("critical");
     });
@@ -239,9 +230,7 @@ describe("costSupplierDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const costFindings = result.findings.filter(
-        (f) => f.summary.includes("below cost"),
-      );
+      const costFindings = result.findings.filter((f) => f.summary.includes("below cost"));
       expect(costFindings).toEqual([]);
     });
   });
@@ -273,9 +262,7 @@ describe("costSupplierDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const restockFindings = result.findings.filter(
-        (f) => f.summary.includes("Restock"),
-      );
+      const restockFindings = result.findings.filter((f) => f.summary.includes("Restock"));
       expect(restockFindings.length).toBeGreaterThanOrEqual(1);
       expect(restockFindings[0]!.severity).toBe("info");
     });
@@ -303,9 +290,7 @@ describe("costSupplierDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const restockFindings = result.findings.filter(
-        (f) => f.summary.includes("Restock"),
-      );
+      const restockFindings = result.findings.filter((f) => f.summary.includes("Restock"));
       expect(restockFindings).toEqual([]);
     });
   });
@@ -332,9 +317,8 @@ describe("costSupplierDaemon", () => {
       expect(result.messageIds.length).toBeGreaterThan(0);
 
       const msgId = result.messageIds[0]!;
-      const row = db
-        .prepare("SELECT * FROM agent_message_bus WHERE message_id = ?")
-        .get(msgId) as Record<string, unknown> | undefined;
+      const row = db.prepare("SELECT * FROM agent_message_bus WHERE message_id = ?").get(msgId) as
+        Record<string, unknown> | undefined;
 
       expect(row).toBeDefined();
       expect(row!.sender_agent_id).toBe("cost-supplier");
@@ -395,9 +379,7 @@ describe("costSupplierDaemon", () => {
       });
 
       // No findings should be produced for the paused listing
-      const findings = result.findings.filter(
-        (f) => f.summary.includes("MLC-CRX-002"),
-      );
+      const findings = result.findings.filter((f) => f.summary.includes("MLC-CRX-002"));
       expect(findings).toEqual([]);
       expect(result.proposalEnqueued).toBe(false);
     });

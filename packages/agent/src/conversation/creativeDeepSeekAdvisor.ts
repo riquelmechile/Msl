@@ -83,16 +83,14 @@ export class CreativeDeepSeekAdvisor {
     // ── Build prompt blocks ──────────────────────────────────
     const findingsSummary = actionableFindings
       .map((f) => {
-        const parts = [
-          `- ${f.signalKind} (${f.severity})`,
-          `item: ${f.itemId}`,
-        ];
+        const parts = [`- ${f.signalKind} (${f.severity})`, `item: ${f.itemId}`];
         if (f.title) parts.push(`"${f.title}"`);
         if (f.pictureCount !== undefined) parts.push(`pictures: ${f.pictureCount}`);
         if (f.visits !== undefined) parts.push(`visits: ${f.visits}`);
         if (f.avgVisits !== undefined) parts.push(`avg_visits: ${f.avgVisits}`);
         if (f.orders !== undefined) parts.push(`orders: ${f.orders}`);
-        if (f.conversionRate !== undefined) parts.push(`conversion: ${(f.conversionRate * 100).toFixed(1)}%`);
+        if (f.conversionRate !== undefined)
+          parts.push(`conversion: ${(f.conversionRate * 100).toFixed(1)}%`);
         return parts.join(" | ");
       })
       .join("\n");

@@ -174,14 +174,7 @@ Cuando hay stock, margen, producto razonable e imágenes suficientes, el agente 
   "supplierId": "jinpeng",
   "supplierItemId": "S001",
   "recommendedAction": "prepare-product-page",
-  "requiresEvidence": [
-    "supplier-stock",
-    "supplier-cost",
-    "margin",
-    "category",
-    "image",
-    "seo"
-  ],
+  "requiresEvidence": ["supplier-stock", "supplier-cost", "margin", "category", "image", "seo"],
   "severity": "info",
   "noMutationExecuted": true
 }

@@ -16,9 +16,7 @@ export type SupplierSourceType =
 export type SupplierMirrorConfidence = "low" | "medium" | "high";
 export type SupplierMirrorFreshness = "fresh" | "stale";
 export type SupplierMirrorAuthority =
-  | "stock-authoritative"
-  | "catalog-enrichment"
-  | "fallback-evidence";
+  "stock-authoritative" | "catalog-enrichment" | "fallback-evidence";
 
 export type SupplierRegistryEntry = {
   id: SupplierId;
@@ -99,11 +97,7 @@ export type SupplierTargetPolicy = {
 };
 
 export type SupplierMirrorLedgerActionType =
-  | "publish-proposal"
-  | "price-proposal"
-  | "pause-listing"
-  | "skip"
-  | "defer";
+  "publish-proposal" | "price-proposal" | "pause-listing" | "skip" | "defer";
 
 export type SupplierMirrorLedgerStatus = "planned" | "executed" | "skipped" | "deferred" | "failed";
 
@@ -124,9 +118,7 @@ export type SupplierMirrorLedgerRecord = {
 };
 
 export type SupplierMirrorNotificationEventType =
-  | "stock-break-confirmed"
-  | "pause-deferred"
-  | "verification-inconclusive";
+  "stock-break-confirmed" | "pause-deferred" | "verification-inconclusive";
 
 export type SupplierMirrorNotificationEvent = {
   id: string;

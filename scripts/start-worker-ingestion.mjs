@@ -34,17 +34,13 @@ const env = process.env;
 // ── Validate required env ──────────────────────────────────────
 const oauthDbPath = env.MSL_MERCADOLIBRE_OAUTH_DB_PATH?.trim();
 if (!oauthDbPath) {
-  console.error(
-    "Cannot start ingestion worker: MSL_MERCADOLIBRE_OAUTH_DB_PATH is not set.",
-  );
+  console.error("Cannot start ingestion worker: MSL_MERCADOLIBRE_OAUTH_DB_PATH is not set.");
   process.exit(1);
 }
 
 const cortexPath = env.MSL_CORTEX_SQLITE_PATH?.trim();
 if (!cortexPath) {
-  console.error(
-    "Cannot start ingestion worker: MSL_CORTEX_SQLITE_PATH is not set.",
-  );
+  console.error("Cannot start ingestion worker: MSL_CORTEX_SQLITE_PATH is not set.");
   process.exit(1);
 }
 
@@ -81,10 +77,8 @@ const operationalReadModel = createSqliteOperationalReadModel(operationalDb);
 // ── Seller config ──────────────────────────────────────────────
 const sellerIds = [roleConfig.sourceSellerId, roleConfig.targetSellerId];
 const sellerNames = {
-  [roleConfig.sourceSellerId]:
-    env.MERCADOLIBRE_SOURCE_SELLER_NAME?.trim() || "Plasticov",
-  [roleConfig.targetSellerId]:
-    env.MERCADOLIBRE_TARGET_SELLER_NAME?.trim() || "Maustian",
+  [roleConfig.sourceSellerId]: env.MERCADOLIBRE_SOURCE_SELLER_NAME?.trim() || "Plasticov",
+  [roleConfig.targetSellerId]: env.MERCADOLIBRE_TARGET_SELLER_NAME?.trim() || "Maustian",
 };
 
 const deepseekApiKey = env.DEEPSEEK_API_KEY?.trim();
@@ -98,7 +92,9 @@ let listActiveChats = async () => [];
 
 const botToken = env.BOT_TOKEN?.trim();
 const adminChatIds = env.MSL_TELEGRAM_ADMIN_CHAT_IDS?.trim()
-  ? env.MSL_TELEGRAM_ADMIN_CHAT_IDS.split(",").map(id => id.trim()).filter(Boolean)
+  ? env.MSL_TELEGRAM_ADMIN_CHAT_IDS.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
   : [];
 
 if (botToken && adminChatIds.length > 0) {
@@ -109,7 +105,9 @@ if (botToken && adminChatIds.length > 0) {
     await bot.api.sendMessage(chatId, text, { parse_mode: "HTML" });
   };
   listActiveChats = async () => adminChatIds.map(Number);
-  console.log(`[worker-ingestion] Telegram alerts enabled for ${adminChatIds.length} admin chat(s)`);
+  console.log(
+    `[worker-ingestion] Telegram alerts enabled for ${adminChatIds.length} admin chat(s)`,
+  );
 }
 
 const baseConfig = {

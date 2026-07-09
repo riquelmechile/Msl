@@ -34,18 +34,14 @@ export type PricingRuleStrategy = {
 };
 
 export type Strategy =
-  | MarginStrategy
-  | CategoryFilterStrategy
-  | StockStrategy
-  | PricingRuleStrategy;
+  MarginStrategy | CategoryFilterStrategy | StockStrategy | PricingRuleStrategy;
 
 // ---------------------------------------------------------------------------
 // Application
 // ---------------------------------------------------------------------------
 
 export type StrategyApplicationResult =
-  | { applied: true; item: NewItem }
-  | { applied: false; reason: "category_excluded" };
+  { applied: true; item: NewItem } | { applied: false; reason: "category_excluded" };
 
 export type StrategyPreviewResult =
   | { status: "available"; fieldChanges: ExactChange[] }

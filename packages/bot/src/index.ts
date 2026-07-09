@@ -18,7 +18,13 @@ import {
   type ConversationState,
   type SessionStore,
 } from "@msl/agent";
-import { createDatabase, createGraphEngine, createSqliteOperationalReadModel, getSupplierMirrorRuntimeFromEnv } from "@msl/memory";
+import {
+  createDatabase,
+  createGraphEngine,
+  createSqliteOperationalReadModel,
+  getSupplierMirrorRuntimeFromEnv,
+  ingestAllSuppliersToCortex,
+} from "@msl/memory";
 import {
   createMercadoLibreApiFetchTransport,
   createMlClient,
@@ -265,6 +271,27 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   );
   if (supplierMirrorRuntime) {
     console.log("[bot] Supplier Mirror store connected");
+  }
+
+  // ── Seed Supplier Mirror data into Cortex ─────────────────────────
+  if (engine && supplierMirrorRuntime) {
+    ingestAllSuppliersToCortex(supplierMirrorRuntime.store, engine)
+      .then(() => console.log("[bot] Supplier Mirror → Cortex seed complete"))
+      .catch((err: unknown) => console.error("Supplier Mirror → Cortex seed failed:", err));
+
+    // Hourly periodic sync — keeps Cortex in sync with SM store
+    const syncInterval = setInterval(
+      async () => {
+        try {
+          await ingestAllSuppliersToCortex(supplierMirrorRuntime.store, engine!);
+          console.log("[bot] Supplier Mirror → Cortex hourly sync complete");
+        } catch (err) {
+          console.error("Supplier Mirror → Cortex hourly sync failed:", err);
+        }
+      },
+      60 * 60 * 1000,
+    );
+    syncInterval.unref();
   }
 
   // ── Multi-seller OAuth clients (reads + writes) ──────

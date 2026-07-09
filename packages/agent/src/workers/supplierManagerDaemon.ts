@@ -69,12 +69,20 @@ export const supplierManagerDaemon: DaemonHandler = async ({
   const prevHourKey = getPreviousHourKey(capturedAt);
 
   // Store the latest aiEnrichment from a stock-gap advisor call
-  let aiEnrichment: {
-    findings: Array<{ kind: string; severity: string; summary: string; detail: string; evidenceIds: string[] }>;
-    summary: string;
-    modelUsed: string;
-    enrichedAt: string;
-  } | undefined;
+  let aiEnrichment:
+    | {
+        findings: Array<{
+          kind: string;
+          severity: string;
+          summary: string;
+          detail: string;
+          evidenceIds: string[];
+        }>;
+        summary: string;
+        modelUsed: string;
+        enrichedAt: string;
+      }
+    | undefined;
 
   // ── Graceful degrade ─────────────────────────────────────────
   if (!supplierMirrorStore) {
@@ -94,10 +102,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
   }
 
   // ── 2. Cross-reference: pre-fetch Cortex listing snapshots ───
-  const listingByItemSeller = new Map<
-    string,
-    { sellerId: string; stock: number; price: number }
-  >();
+  const listingByItemSeller = new Map<string, { sellerId: string; stock: number; price: number }>();
   try {
     const nodes = cortex.queryByMetadata({
       type: "listing_snapshot",
@@ -106,11 +111,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
     for (const node of nodes) {
       const m = node.metadata;
       const itemId =
-        typeof m.itemId === "string"
-          ? m.itemId
-          : typeof m.item_id === "string"
-            ? m.item_id
-            : "";
+        typeof m.itemId === "string" ? m.itemId : typeof m.item_id === "string" ? m.item_id : "";
       const sellerId =
         typeof m.sellerId === "string"
           ? m.sellerId
@@ -130,9 +131,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
 
   // ── Iterate suppliers ─────────────────────────────────────────
   for (const supplier of suppliers) {
-    let items: Awaited<
-      ReturnType<SupplierMirrorStore["listSupplierItemSnapshots"]>
-    >;
+    let items: Awaited<ReturnType<SupplierMirrorStore["listSupplierItemSnapshots"]>>;
     try {
       items = await supplierMirrorStore.listSupplierItemSnapshots(supplier.id);
     } catch {
@@ -149,10 +148,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
 
         if (mappings.length >= 2) {
           // Group by seller — find stock for each mapped listing
-          const sellerStock = new Map<
-            string,
-            { targetItemId: string; stock: number }
-          >();
+          const sellerStock = new Map<string, { targetItemId: string; stock: number }>();
 
           for (const mapping of mappings) {
             const snapKey = `${mapping.targetItemId}::${mapping.targetSellerId}`;
@@ -181,8 +177,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
                 hourKey,
               );
 
-              const existing =
-                await supplierMirrorStore.getLedgerByIdempotencyKey(key);
+              const existing = await supplierMirrorStore.getLedgerByIdempotencyKey(key);
               if (!existing) {
                 // ── [NEW] AI enrichment (stock-gap only, best-effort) ──
                 if (advisor) {
@@ -193,7 +188,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
                       question: `Stock discrepancy detected: ${item.title} (${item.supplierItemId}). In stock on: ${inStock.map(([s]) => s).join(", ")}. Out of stock on: ${outOfStock.map(([s]) => s).join(", ")}. Analyze the situation and provide actionable findings.`,
                     });
                     aiEnrichment = {
-                      findings: analysis.findings.map(f => ({
+                      findings: analysis.findings.map((f) => ({
                         kind: f.kind,
                         severity: f.severity,
                         summary: f.summary,
@@ -205,7 +200,10 @@ export const supplierManagerDaemon: DaemonHandler = async ({
                       enrichedAt: capturedAt,
                     };
                   } catch (err) {
-                    console.warn(`[supplier-manager] Advisor enrichment failed for ${supplier.id}/${item.supplierItemId}:`, err);
+                    console.warn(
+                      `[supplier-manager] Advisor enrichment failed for ${supplier.id}/${item.supplierItemId}:`,
+                      err,
+                    );
                     // Fall through — enrichment is best-effort; rule-only proposal still enqueued
                   }
                 }
@@ -253,8 +251,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
           item.supplierItemId,
           hourKey,
         );
-        const alreadyChecked =
-          await supplierMirrorStore.getLedgerByIdempotencyKey(hourlyKey);
+        const alreadyChecked = await supplierMirrorStore.getLedgerByIdempotencyKey(hourlyKey);
         if (alreadyChecked) continue;
 
         // Look for the previous hour's record to get the prior price
@@ -264,17 +261,14 @@ export const supplierManagerDaemon: DaemonHandler = async ({
           item.supplierItemId,
           prevHourKey,
         );
-        const prevRecord =
-          await supplierMirrorStore.getLedgerByIdempotencyKey(prevKey);
+        const prevRecord = await supplierMirrorStore.getLedgerByIdempotencyKey(prevKey);
 
         if (prevRecord && prevRecord.after) {
           const priorPrice = prevRecord.after.price;
           if (typeof priorPrice === "number" && priorPrice > 0) {
-            const delta =
-              Math.abs(currentPrice - priorPrice) / priorPrice;
+            const delta = Math.abs(currentPrice - priorPrice) / priorPrice;
             if (delta > PRICE_CHANGE_THRESHOLD) {
-              const direction =
-                currentPrice > priorPrice ? "increase" : "decrease";
+              const direction = currentPrice > priorPrice ? "increase" : "decrease";
               findings.push({
                 kind: "alert",
                 severity: "warning",
@@ -293,8 +287,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
           status: "skipped",
           reason: prevRecord
             ? `Price check: current ${currentPrice}${
-                prevRecord.after &&
-                typeof prevRecord.after.price === "number"
+                prevRecord.after && typeof prevRecord.after.price === "number"
                   ? `, prior ${prevRecord.after.price}`
                   : ""
               }`
@@ -327,8 +320,7 @@ export const supplierManagerDaemon: DaemonHandler = async ({
           hourKey,
         );
 
-        const existing =
-          await supplierMirrorStore.getLedgerByIdempotencyKey(key);
+        const existing = await supplierMirrorStore.getLedgerByIdempotencyKey(key);
         if (!existing) {
           findings.push({
             kind: "alert",

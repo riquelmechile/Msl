@@ -30,10 +30,7 @@ import type {
 } from "@msl/mercadolibre";
 
 export type ToolSource =
-  | "local-cache"
-  | "mercadolibre-api"
-  | "seller-input"
-  | "official-mercadolibre-mcp-docs";
+  "local-cache" | "mercadolibre-api" | "seller-input" | "official-mercadolibre-mcp-docs";
 
 export type ConfidenceLevel = "low" | "medium" | "high";
 

@@ -6,11 +6,7 @@ import {
 } from "../deepseekRuntime.js";
 import type { GraphEngine } from "@msl/memory";
 
-import {
-  isRecord,
-  metadataString,
-  categoryBreakdownFromMetadata,
-} from "./utils.js";
+import { isRecord, metadataString, categoryBreakdownFromMetadata } from "./utils.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 

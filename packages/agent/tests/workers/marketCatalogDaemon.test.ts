@@ -47,32 +47,34 @@ function seedListingNode(
     capturedAt?: string;
   } = {},
 ): number {
-  const node = engine.getOrCreateNode(`listing_snapshot_${itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`, {
-    type: "listing_snapshot",
-    itemId,
-    status: overrides.status ?? "active",
-    price: overrides.price ?? 10000,
-    title: overrides.title ?? `Test Product ${itemId}`,
-    sellerId: overrides.sellerId ?? SELLER_IDS[0],
-    categoryId: overrides.categoryId ?? "MLC1234",
-    capturedAt: overrides.capturedAt ?? new Date().toISOString(),
-  });
+  const node = engine.getOrCreateNode(
+    `listing_snapshot_${itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    {
+      type: "listing_snapshot",
+      itemId,
+      status: overrides.status ?? "active",
+      price: overrides.price ?? 10000,
+      title: overrides.title ?? `Test Product ${itemId}`,
+      sellerId: overrides.sellerId ?? SELLER_IDS[0],
+      categoryId: overrides.categoryId ?? "MLC1234",
+      capturedAt: overrides.capturedAt ?? new Date().toISOString(),
+    },
+  );
   return node.id;
 }
 
 /** Seed a visit node in Cortex. */
-function seedVisitNode(
-  engine: GraphEngine,
-  itemId: string,
-  totalVisits: number,
-): number {
-  const node = engine.getOrCreateNode(`visit_snapshot_${itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`, {
-    type: "visit_snapshot",
-    itemId,
-    totalVisits,
-    sellerId: SELLER_IDS[0],
-    capturedAt: new Date().toISOString(),
-  });
+function seedVisitNode(engine: GraphEngine, itemId: string, totalVisits: number): number {
+  const node = engine.getOrCreateNode(
+    `visit_snapshot_${itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    {
+      type: "visit_snapshot",
+      itemId,
+      totalVisits,
+      sellerId: SELLER_IDS[0],
+      capturedAt: new Date().toISOString(),
+    },
+  );
   return node.id;
 }
 
@@ -216,9 +218,7 @@ describe("marketCatalogDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const relistFindings = result.findings.filter(
-        (f) => f.summary.includes("Paused listing"),
-      );
+      const relistFindings = result.findings.filter((f) => f.summary.includes("Paused listing"));
       expect(relistFindings).toEqual([]);
     });
   });

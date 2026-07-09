@@ -75,8 +75,7 @@ export function createSessionStore(db: Database.Database) {
    */
   function load(sessionId: string): ConversationState | null {
     const row = loadStmt.get(sessionId) as
-      | { state_json: string; last_active_at: string }
-      | undefined;
+      { state_json: string; last_active_at: string } | undefined;
     if (!row) return null;
 
     try {

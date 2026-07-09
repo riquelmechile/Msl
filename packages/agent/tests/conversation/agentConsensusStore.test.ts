@@ -110,48 +110,43 @@ describe("agentConsensusStore", () => {
     });
 
     it("rejects invalid verdict", () => {
-      expect(() =>
-        store.submitReview(validReview({ verdict: "maybe" as never })),
-      ).toThrow(/Invalid verdict.*maybe/);
+      expect(() => store.submitReview(validReview({ verdict: "maybe" as never }))).toThrow(
+        /Invalid verdict.*maybe/,
+      );
     });
 
     it("rejects confidence below 0", () => {
-      expect(() =>
-        store.submitReview(validReview({ confidence: -0.1 })),
-      ).toThrow(/Confidence must be a number between 0.0 and 1.0/);
+      expect(() => store.submitReview(validReview({ confidence: -0.1 }))).toThrow(
+        /Confidence must be a number between 0.0 and 1.0/,
+      );
     });
 
     it("rejects confidence above 1", () => {
-      expect(() =>
-        store.submitReview(validReview({ confidence: 1.5 })),
-      ).toThrow(/Confidence must be a number between 0.0 and 1.0/);
+      expect(() => store.submitReview(validReview({ confidence: 1.5 }))).toThrow(
+        /Confidence must be a number between 0.0 and 1.0/,
+      );
     });
 
     it("rejects NaN confidence", () => {
-      expect(() =>
-        store.submitReview(validReview({ confidence: Number.NaN })),
-      ).toThrow(/Confidence must be a number between 0.0 and 1.0/);
+      expect(() => store.submitReview(validReview({ confidence: Number.NaN }))).toThrow(
+        /Confidence must be a number between 0.0 and 1.0/,
+      );
     });
 
     it("rejects empty rationale", () => {
-      expect(() =>
-        store.submitReview(validReview({ rationale: "" })),
-      ).toThrow(/Rationale is required/);
+      expect(() => store.submitReview(validReview({ rationale: "" }))).toThrow(
+        /Rationale is required/,
+      );
     });
 
     it("rejects whitespace-only rationale", () => {
-      expect(() =>
-        store.submitReview(validReview({ rationale: "   " })),
-      ).toThrow(/Rationale is required/);
+      expect(() => store.submitReview(validReview({ rationale: "   " }))).toThrow(
+        /Rationale is required/,
+      );
     });
 
     it("accepts all valid verdicts", () => {
-      const verdicts = [
-        "approve",
-        "reject",
-        "needs_more_evidence",
-        "risk_warning",
-      ] as const;
+      const verdicts = ["approve", "reject", "needs_more_evidence", "risk_warning"] as const;
 
       for (let i = 0; i < verdicts.length; i++) {
         const verdict = verdicts[i]!;
@@ -212,15 +207,9 @@ describe("agentConsensusStore", () => {
     });
 
     it("computes verdict counts correctly", () => {
-      store.submitReview(
-        validReview({ verdict: "approve", reviewerAgentId: "a" }),
-      );
-      store.submitReview(
-        validReview({ verdict: "reject", reviewerAgentId: "b" }),
-      );
-      store.submitReview(
-        validReview({ verdict: "approve", reviewerAgentId: "c" }),
-      );
+      store.submitReview(validReview({ verdict: "approve", reviewerAgentId: "a" }));
+      store.submitReview(validReview({ verdict: "reject", reviewerAgentId: "b" }));
+      store.submitReview(validReview({ verdict: "approve", reviewerAgentId: "c" }));
 
       const consensus = store.getConsensus("prop-1");
 
@@ -237,9 +226,7 @@ describe("agentConsensusStore", () => {
       store.submitReview(
         validReview({ proposalId: "q", verdict: "approve", reviewerAgentId: "b" }),
       );
-      store.submitReview(
-        validReview({ proposalId: "q", verdict: "reject", reviewerAgentId: "c" }),
-      );
+      store.submitReview(validReview({ proposalId: "q", verdict: "reject", reviewerAgentId: "c" }));
 
       const consensus = store.getConsensus("q");
 
@@ -279,9 +266,7 @@ describe("agentConsensusStore", () => {
     });
 
     it("recommends insufficient_reviews without quorum", () => {
-      store.submitReview(
-        validReview({ proposalId: "q4", reviewerAgentId: "a" }),
-      );
+      store.submitReview(validReview({ proposalId: "q4", reviewerAgentId: "a" }));
 
       const consensus = store.getConsensus("q4");
 

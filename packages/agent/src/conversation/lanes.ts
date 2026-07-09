@@ -4,6 +4,7 @@ export type LaneId =
   | "market-catalog"
   | "creative-assets"
   | "creative-commercial"
+  | "creative-studio"
   | "operations-manager"
   | "owned-ecommerce"
   | "product-ads-monitor"
@@ -145,8 +146,7 @@ export const OPERATIONS_MANAGER_LANE: LaneContract = {
     "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider:
-    "claims, questions, messages, orders, and reputation evidence",
+  refreshableContextProvider: "claims, questions, messages, orders, and reputation evidence",
   inputs: ["claim evidence", "question evidence", "order evidence", "reputation evidence"],
   outputs: ["operational alerts", "risk priority", "evidence IDs"],
   boundaries: [
@@ -210,11 +210,13 @@ export const PRODUCT_ADS_MONITOR_LANE: LaneContract = {
     "product-ads insights, cost snapshots, visit trends, and listing snapshots",
   inputs: ["product-ads-insights", "cost-snapshot", "visit-snapshot", "listing-snapshot"],
   outputs: ["ad performance alerts", "risk priority", "opportunity gaps", "evidence IDs"],
-  boundaries: [
-    "proposal-only; never execute mutations",
-    phaseOneBoundary,
+  boundaries: ["proposal-only; never execute mutations", phaseOneBoundary],
+  requiredEvidenceKinds: [
+    "product-ads-insights",
+    "cost-snapshot",
+    "visit-snapshot",
+    "listing-snapshot",
   ],
-  requiredEvidenceKinds: ["product-ads-insights", "cost-snapshot", "visit-snapshot", "listing-snapshot"],
   credentialScope: "provider-default",
 };
 
@@ -228,14 +230,15 @@ export const SUPPLIER_MANAGER_LANE: LaneContract = {
     "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider:
-    "supplier mirror store, Cortex listing snapshots, sync ledger",
+  refreshableContextProvider: "supplier mirror store, Cortex listing snapshots, sync ledger",
   inputs: ["supplier-mirror-evidence", "listing-snapshot", "sync-ledger"],
-  outputs: ["supplier alerts", "stock discrepancy warnings", "price change warnings", "evidence IDs"],
-  boundaries: [
-    "proposal-only; never execute mutations",
-    phaseOneBoundary,
+  outputs: [
+    "supplier alerts",
+    "stock discrepancy warnings",
+    "price change warnings",
+    "evidence IDs",
   ],
+  boundaries: ["proposal-only; never execute mutations", phaseOneBoundary],
   requiredEvidenceKinds: ["supplier-mirror-evidence", "listing-snapshot", "sync-ledger"],
   credentialScope: "provider-default",
 };
@@ -251,10 +254,14 @@ export const PRODUCT_ADS_PROFITABILITY_LANE: LaneContract = {
     "Output proposal-only: enqueue findings to the CEO for review; never execute mutations.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider:
-    "product-ads insights, Cortex cost snapshots, listing snapshots",
+  refreshableContextProvider: "product-ads insights, Cortex cost snapshots, listing snapshots",
   inputs: ["product-ads-insights", "cost-snapshot", "listing-snapshot"],
-  outputs: ["cfo profitability signals", "data completeness findings", "scale/risk recommendations", "evidence IDs"],
+  outputs: [
+    "cfo profitability signals",
+    "data completeness findings",
+    "scale/risk recommendations",
+    "evidence IDs",
+  ],
   boundaries: [
     "proposal-only; never execute mutations",
     "no profitability claims without cost evidence",
@@ -278,12 +285,41 @@ export const CREATIVE_ASSETS_LANE: LaneContract = {
     "creative snapshots, visit snapshots, product-ads-insights, and moderation evidence",
   inputs: ["creative-snapshot", "visit-snapshot", "product-ads-insights"],
   outputs: ["creative asset alerts", "risk priority", "evidence IDs"],
-  boundaries: [
-    "proposal-only; never execute mutations",
-    phaseOneBoundary,
-  ],
+  boundaries: ["proposal-only; never execute mutations", phaseOneBoundary],
   requiredEvidenceKinds: ["creative-snapshot", "visit-snapshot", "product-ads-insights"],
   credentialScope: "provider-default",
+};
+
+export const CREATIVE_STUDIO_LANE: LaneContract = {
+  laneId: "creative-studio",
+  label: "Creative Studio",
+  stablePrefix: [
+    "You are the Creative Studio lane.",
+    "Generate or edit product images, short clips, and creative assets on demand.",
+    "Receive creative requests via the agent message bus from any authorized agent.",
+    "Apply image policies, MercadoLibre diagnostic pre-checks, and cost controls.",
+    "Return candidate assets with cost, provider, and policy metadata.",
+    "Never publish directly to any channel. Always require CEO (or channel agent) approval.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "creative job queue, MiniMax API, Cortex outcome history, style profiles",
+  inputs: ["creative-asset-request", "product-context", "reference-images", "channel-constraints"],
+  outputs: [
+    "creative-execution-result",
+    "candidate-assets",
+    "policy-flags",
+    "cost-report",
+    "evidence-ids",
+  ],
+  boundaries: [
+    "prepare-only; never publish, upload, or mutate external channels",
+    "never generate without product truth constraints",
+    "never exceed budget without approval",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product", "reference-image", "channel-constraint"],
+  credentialScope: "api-key",
 };
 
 export const PRODUCT_ADS_CEO_PROFITABILITY_LANE: LaneContract = {
@@ -312,6 +348,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   MARKET_CATALOG_LANE,
   CREATIVE_ASSETS_LANE,
   CREATIVE_COMMERCIAL_LANE,
+  CREATIVE_STUDIO_LANE,
   OPERATIONS_MANAGER_LANE,
   OWNED_ECOMMERCE_LANE,
   PRODUCT_ADS_MONITOR_LANE,

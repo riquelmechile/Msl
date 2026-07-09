@@ -10,14 +10,8 @@ import type {
   StorefrontCandidate,
   StorefrontProjection,
 } from "@msl/domain";
-import {
-  DEFAULT_DEEPSEEK_MODEL,
-  resolveDeepSeekCredentialRef,
-} from "@msl/agent";
-import {
-  guardrailsForCandidateEvidence,
-  summarizeProjectionReadiness,
-} from "@msl/domain";
+import { DEFAULT_DEEPSEEK_MODEL, resolveDeepSeekCredentialRef } from "@msl/agent";
+import { guardrailsForCandidateEvidence, summarizeProjectionReadiness } from "@msl/domain";
 import type { OwnedEcommerceStore } from "@msl/memory";
 
 export const OWNED_ECOMMERCE_DEEPSEEK_PROVIDER = "deepseek";
@@ -36,14 +30,10 @@ const MAX_LEDGER_TOKEN_COUNT = 10_000_000;
 const MAX_LEDGER_ESTIMATED_MICROS = 100_000_000_000;
 
 export type OwnedEcommerceDeepSeekModel =
-  | typeof OWNED_ECOMMERCE_DEEPSEEK_V4_FLASH
-  | typeof OWNED_ECOMMERCE_DEEPSEEK_V4_PRO;
+  typeof OWNED_ECOMMERCE_DEEPSEEK_V4_FLASH | typeof OWNED_ECOMMERCE_DEEPSEEK_V4_PRO;
 
 export type OwnedEcommerceDeepSeekOperation =
-  | "storefront-ranking"
-  | "seo-geo-copy"
-  | "policy-conflict"
-  | "publish-checkout-prep";
+  "storefront-ranking" | "seo-geo-copy" | "policy-conflict" | "publish-checkout-prep";
 
 export type OwnedEcommerceDeepSeekPricing = {
   model: OwnedEcommerceDeepSeekModel;
@@ -119,11 +109,7 @@ export type OwnedEcommerceClaimInput = {
 };
 
 export type OwnedEcommerceRequestedOperation =
-  | "checkout"
-  | "payment"
-  | "publish"
-  | "price"
-  | "stock";
+  "checkout" | "payment" | "publish" | "price" | "stock";
 
 export type OwnedEcommerceEvidenceInput = {
   mlAccounts?: readonly OwnedEcommerceSourceRecord[];

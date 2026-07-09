@@ -9,9 +9,7 @@ import type {
   AgentMessage,
 } from "../../src/conversation/agentMessageBusStore.js";
 import { productAdsProfitabilityDaemon } from "../../src/workers/productAdsProfitabilityDaemon.js";
-import {
-  enrichWithEconomics,
-} from "../../src/workers/productAdsShared.js";
+import { enrichWithEconomics } from "../../src/workers/productAdsShared.js";
 import type { DaemonResult } from "../../src/workers/daemonTypes.js";
 import type { MlcProductAdsInsights } from "@msl/mercadolibre";
 
@@ -96,12 +94,7 @@ function seedProductAdsInsights(
   });
 }
 
-function seedCostNode(
-  engine: GraphEngine,
-  itemId: string,
-  cost: number,
-  sellerId?: string,
-): void {
+function seedCostNode(engine: GraphEngine, itemId: string, cost: number, sellerId?: string): void {
   engine.getOrCreateNode(
     `cost_snapshot_${itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     {
@@ -212,8 +205,8 @@ describe("productAdsProfitabilityDaemon", () => {
       });
 
       // Should have data-quality notice, not seller-impacting
-      const dataQuality = result.findings.filter(
-        (f) => f.summary.includes("Insufficient cost data"),
+      const dataQuality = result.findings.filter((f) =>
+        f.summary.includes("Insufficient cost data"),
       );
       expect(dataQuality.length).toBeGreaterThanOrEqual(1);
     });
@@ -248,8 +241,8 @@ describe("productAdsProfitabilityDaemon", () => {
       });
 
       // Should have unit economics signal (info), not insufficient data
-      const insufficient = result.findings.filter(
-        (f) => f.summary.includes("Insufficient cost data"),
+      const insufficient = result.findings.filter((f) =>
+        f.summary.includes("Insufficient cost data"),
       );
       expect(insufficient.length).toBe(0);
     });
@@ -328,9 +321,7 @@ describe("productAdsProfitabilityDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const opportunities = result.findings.filter(
-        (f) => f.kind === "opportunity",
-      );
+      const opportunities = result.findings.filter((f) => f.kind === "opportunity");
       expect(opportunities.length).toBeGreaterThanOrEqual(1);
       expect(opportunities[0]!.summary).toContain("Scale candidate");
       expect(opportunities[0]!.summary).toContain("MLC-SCALE-001");
@@ -367,9 +358,7 @@ describe("productAdsProfitabilityDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const warnings = result.findings.filter(
-        (f) => f.severity === "warning",
-      );
+      const warnings = result.findings.filter((f) => f.severity === "warning");
       expect(warnings.length).toBeGreaterThanOrEqual(1);
       expect(warnings[0]!.summary).toContain("Budget waste");
     });
@@ -406,9 +395,7 @@ describe("productAdsProfitabilityDaemon", () => {
         sellerIds: SELLER_IDS,
       });
 
-      const underinvested = result.findings.filter(
-        (f) => f.summary.includes("Underinvested"),
-      );
+      const underinvested = result.findings.filter((f) => f.summary.includes("Underinvested"));
       expect(underinvested.length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -460,12 +447,8 @@ describe("productAdsProfitabilityDaemon", () => {
       });
 
       // Should have both: a scale opportunity and a margin-consuming alert
-      const opportunities = result.findings.filter(
-        (f) => f.kind === "opportunity",
-      );
-      const criticals = result.findings.filter(
-        (f) => f.severity === "critical",
-      );
+      const opportunities = result.findings.filter((f) => f.kind === "opportunity");
+      const criticals = result.findings.filter((f) => f.severity === "critical");
 
       expect(opportunities.length).toBeGreaterThanOrEqual(1);
       expect(criticals.length).toBeGreaterThanOrEqual(1);
@@ -512,9 +495,7 @@ describe("productAdsProfitabilityDaemon", () => {
       });
 
       // Product X should still be flagged based on its own economics
-      const findingsForWeak = result.findings.filter(
-        (f) => f.summary.includes("MLC-WEAK"),
-      );
+      const findingsForWeak = result.findings.filter((f) => f.summary.includes("MLC-WEAK"));
       expect(findingsForWeak.length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -548,7 +529,8 @@ describe("productAdsProfitabilityDaemon", () => {
         receiverAgentId: "ceo",
         messageType: "proposal",
         payloadJson: "{}",
-        dedupeKey: "product-ads-cfo:seller-plasticov:camp-1:MLC-CADENCE-001:margin-consuming:2026-07-05",
+        dedupeKey:
+          "product-ads-cfo:seller-plasticov:camp-1:MLC-CADENCE-001:margin-consuming:2026-07-05",
       });
 
       const result = await productAdsProfitabilityDaemon({

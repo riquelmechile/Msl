@@ -95,7 +95,11 @@ export const MOCK_ITEM_PAYLOAD = {
   domain_id: "MLC-TEST",
 };
 
-export function mockResponse(path: string, _method: "GET" | "POST" | "PUT", body?: unknown): unknown {
+export function mockResponse(
+  path: string,
+  _method: "GET" | "POST" | "PUT",
+  body?: unknown,
+): unknown {
   // POST /items
   if (_method === "POST" && path === "/items") {
     const newItem = body as NewItem | undefined;

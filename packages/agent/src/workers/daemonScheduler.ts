@@ -16,6 +16,7 @@ import { creativeCommercialDaemon } from "./creativeCommercialDaemon.js";
 import { productAdsMonitorDaemon } from "./productAdsMonitorDaemon.js";
 import { productAdsProfitabilityDaemon } from "./productAdsProfitabilityDaemon.js";
 import { creativeAssetsDaemon } from "./creativeAssetsDaemon.js";
+import { creativeStudioDaemon } from "./creativeStudioDaemon.js";
 import { ceoProfitabilityHandler } from "./ceoProfitabilityHandler.js";
 import { supplierManagerDaemon } from "./supplierManagerDaemon.js";
 import { morningReportDaemon } from "./morningReportDaemon.js";
@@ -68,6 +69,7 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "cost-supplier": costSupplierDaemon,
   "creative-assets": creativeAssetsDaemon,
   "creative-commercial": creativeCommercialDaemon,
+  "creative-studio": creativeStudioDaemon,
   "product-ads-monitor": productAdsMonitorDaemon,
   "product-ads-ceo-profitability": ceoProfitabilityHandler,
   "product-ads-profitability": productAdsProfitabilityDaemon,
@@ -92,9 +94,8 @@ function createCachingReader(reader: OperationalReadModelReader): OperationalRea
       filter: Parameters<OperationalReadModelReader["searchSnapshots"]>[0],
     ) => {
       const key = JSON.stringify(filter);
-      if (cache.has(key)) return cache.get(key) as Awaited<
-        ReturnType<OperationalReadModelReader["searchSnapshots"]>
-      >;
+      if (cache.has(key))
+        return cache.get(key) as Awaited<ReturnType<OperationalReadModelReader["searchSnapshots"]>>;
       const result = await reader.searchSnapshots<T>(filter);
       cache.set(key, result);
       return result;
@@ -119,9 +120,8 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
   const run = async () => {
     const agents = listCompanyAgents();
     const activeAgents = agents.filter(
-      (agent) => agent.profile.laneId &&
-                daemonHandlerMap[agent.profile.laneId] &&
-                agent.status === "active"
+      (agent) =>
+        agent.profile.laneId && daemonHandlerMap[agent.profile.laneId] && agent.status === "active",
     );
 
     // ── Wrap reader with per-cycle cache to avoid redundant data reads ──
@@ -154,8 +154,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
             });
             config.bus.resolve(claim.messageId, result);
           } catch (err) {
-            const errorMessage =
-              err instanceof Error ? err.message : String(err);
+            const errorMessage = err instanceof Error ? err.message : String(err);
             console.error(
               `[daemon-scheduler] Daemon ${laneId} failed for message ${claim.messageId}: ${errorMessage}`,
             );
@@ -178,26 +177,17 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
           // non-JSON payloads are still consumed but skipped for review
         }
 
-        const summary =
-          typeof payload.summary === "string"
-            ? payload.summary
-            : "(no summary)";
-        console.log(
-          `[daemon-scheduler] CEO proposal from ${claim.senderAgentId}: ${summary}`,
-        );
+        const summary = typeof payload.summary === "string" ? payload.summary : "(no summary)";
+        console.log(`[daemon-scheduler] CEO proposal from ${claim.senderAgentId}: ${summary}`);
 
         // Auto-submit consensus review for high-risk proposals
         const consensusStore = config.consensusStore;
         if (consensusStore) {
-          const action = payload.action as
-            | Record<string, unknown>
-            | undefined;
-          const actionKind =
-            typeof action?.kind === "string" ? action.kind : undefined;
+          const action = payload.action as Record<string, unknown> | undefined;
+          const actionKind = typeof action?.kind === "string" ? action.kind : undefined;
           if (actionKind && consensusStore.requiresConsensus(actionKind)) {
             const proposalId =
-              (typeof action?.id === "string" ? action.id : undefined) ??
-              claim.messageId;
+              (typeof action?.id === "string" ? action.id : undefined) ?? claim.messageId;
             consensusStore.submitReview({
               proposalId,
               reviewerAgentId: "ceo-scheduler",
@@ -210,8 +200,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
 
         config.bus.resolve(claim.messageId, { consumed: true });
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : String(err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
         console.error(
           `[daemon-scheduler] CEO consumption failed for message ${claim.messageId}: ${errorMessage}`,
         );

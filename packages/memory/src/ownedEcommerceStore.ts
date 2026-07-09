@@ -770,8 +770,7 @@ export function createSqliteOwnedEcommerceStore(db: Database.Database): OwnedEco
 
     getCandidate(id) {
       const row = db.prepare("SELECT * FROM owned_ecommerce_candidates WHERE id = ?").get(id) as
-        | CandidateRow
-        | undefined;
+        CandidateRow | undefined;
       return Promise.resolve(row ? parseJson<StorefrontCandidate>(row.candidate_json) : null);
     },
 
@@ -894,8 +893,7 @@ export function createSqliteOwnedEcommerceStore(db: Database.Database): OwnedEco
           "SELECT * FROM owned_ecommerce_approvals WHERE projection_id = ? AND projection_version = ? AND action_id = ?",
         )
         .get(record.projectionId, record.projectionVersion, record.actionId) as
-        | ApprovalRow
-        | undefined;
+        ApprovalRow | undefined;
       if (existingActionRow) {
         const existing = approvalFromRow(existingActionRow);
         if (approvalRecordsMatch(existing, record)) {
@@ -928,8 +926,7 @@ export function createSqliteOwnedEcommerceStore(db: Database.Database): OwnedEco
 
     getApproval(id) {
       const row = db.prepare("SELECT * FROM owned_ecommerce_approvals WHERE id = ?").get(id) as
-        | ApprovalRow
-        | undefined;
+        ApprovalRow | undefined;
       try {
         return Promise.resolve(row ? approvalFromRow(row) : null);
       } catch (error) {

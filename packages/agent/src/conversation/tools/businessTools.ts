@@ -124,8 +124,7 @@ function summarizeOrderHistory(nodes: MetadataNode[]): Record<string, unknown> {
     totalAmount += Number(node.metadata.totalAmount ?? 0);
 
     const catBreakdown = node.metadata.categoryBreakdown as
-      | Array<{ categoryId: string; orderCount: number; totalAmount: number }>
-      | undefined;
+      Array<{ categoryId: string; orderCount: number; totalAmount: number }> | undefined;
     if (catBreakdown) {
       for (const cat of catBreakdown) {
         const existing = byCategory[cat.categoryId];
@@ -438,7 +437,13 @@ export function createDelegateToSubagentTool(): ToolDefinition {
       properties: {
         laneId: {
           type: "string",
-          enum: ["cost-supplier", "market-catalog", "creative-commercial", "operations-manager", "owned-ecommerce"],
+          enum: [
+            "cost-supplier",
+            "market-catalog",
+            "creative-commercial",
+            "operations-manager",
+            "owned-ecommerce",
+          ],
         },
         scope: { type: "string" },
         requestedAction: { type: "string" },

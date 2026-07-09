@@ -7,7 +7,11 @@ import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
  * top categories, and action items for tomorrow.
  */
 export const eodSummaryDaemon: DaemonHandler = async ({
-  reader, cortex, sellerIds, bus, ceoContext,
+  reader,
+  cortex,
+  sellerIds,
+  bus,
+  ceoContext,
 }) => {
   const findings: DaemonFinding[] = [];
   const now = new Date();
@@ -24,52 +28,74 @@ export const eodSummaryDaemon: DaemonHandler = async ({
     // Orders today
     try {
       const orderSnaps = await reader.searchSnapshots<{ status?: string }>({
-        sellerId, kind: "order_snapshot", capturedAfter: midnight, limit: 200,
+        sellerId,
+        kind: "order_snapshot",
+        capturedAfter: midnight,
+        limit: 200,
       });
-      const paid = orderSnaps.filter(o => o.data.status === "paid");
+      const paid = orderSnaps.filter((o) => o.data.status === "paid");
       summary.push(`   🛒 ${orderSnaps.length} órdenes (${paid.length} pagadas)`);
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
 
     // Claims today
     try {
       const claimSnaps = await reader.searchSnapshots<{ status?: string; reason?: string }>({
-        sellerId, kind: "claim_snapshot", capturedAfter: midnight, limit: 100,
+        sellerId,
+        kind: "claim_snapshot",
+        capturedAfter: midnight,
+        limit: 100,
       });
-      const openClaims = claimSnaps.filter(c => c.data.status !== "closed");
+      const openClaims = claimSnaps.filter((c) => c.data.status !== "closed");
       if (openClaims.length > 0) {
         summary.push(`   ⚠️ ${openClaims.length} claims abiertos hoy`);
         actionItems.push(`🔴 Resolver ${openClaims.length} claims abiertos en ${sellerName}`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
 
     // Unanswered questions
     try {
       const qSnaps = await reader.searchSnapshots<{ status?: string }>({
-        sellerId, kind: "question_snapshot", status: "UNANSWERED", limit: 100,
+        sellerId,
+        kind: "question_snapshot",
+        status: "UNANSWERED",
+        limit: 100,
       });
       if (qSnaps.length > 0) {
         summary.push(`   ❓ ${qSnaps.length} preguntas sin responder`);
         actionItems.push(`🟡 Responder ${qSnaps.length} preguntas pendientes en ${sellerName}`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
 
     // Top categories by listing count
     try {
-      const listingSnaps = await reader.searchSnapshots<{ status?: string; category_id?: string; price?: number }>({
-        sellerId, kind: "listing_snapshot", capturedAfter: midnight, limit: 500,
+      const listingSnaps = await reader.searchSnapshots<{
+        status?: string;
+        category_id?: string;
+        price?: number;
+      }>({
+        sellerId,
+        kind: "listing_snapshot",
+        capturedAfter: midnight,
+        limit: 500,
       });
       const categoryCount = new Map<string, number>();
       for (const snap of listingSnaps) {
         const cat = snap.data.category_id ?? "unknown";
         categoryCount.set(cat, (categoryCount.get(cat) ?? 0) + 1);
       }
-      const topCats = [...categoryCount.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
+      const topCats = [...categoryCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
       if (topCats.length > 0) {
         summary.push(`   📊 Top categorías: ${topCats.map(([c, n]) => `${c} (${n})`).join(", ")}`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
 
     // Reputation
     try {
@@ -80,13 +106,16 @@ export const eodSummaryDaemon: DaemonHandler = async ({
         const level = m.reputationLevel ?? m.reputation_level ?? "N/A";
         summary.push(`   ⭐ Reputación: ${level} (${score})`);
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
 
   // ── Send to Telegram if wired ─────────────────────
-  const actionText = actionItems.length > 0
-    ? `\n\n📋 <b>Acciones para mañana:</b>\n${actionItems.map(a => `• ${a}`).join("\n")}`
-    : "";
+  const actionText =
+    actionItems.length > 0
+      ? `\n\n📋 <b>Acciones para mañana:</b>\n${actionItems.map((a) => `• ${a}`).join("\n")}`
+      : "";
 
   const reportText = `🌙 <b>End-of-Day Summary — ${now.toLocaleDateString("es-CL")}</b>\n${summary.join("\n")}${actionText}`;
 
@@ -94,7 +123,9 @@ export const eodSummaryDaemon: DaemonHandler = async ({
     for (const chatId of ceoContext.adminChatIds) {
       try {
         await ceoContext.sendProactiveMessage(Number(chatId), reportText);
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
   }
 
@@ -105,17 +136,26 @@ export const eodSummaryDaemon: DaemonHandler = async ({
       receiverAgentId: "ceo",
       messageType: "eod_summary",
       payloadJson: JSON.stringify({
-        summary: reportText, actionItems, generatedAt: now.toISOString(),
+        summary: reportText,
+        actionItems,
+        generatedAt: now.toISOString(),
       }),
       priority: 3,
     });
     findings.push({
-      kind: "info", summary: "EOD summary with action items generated",
-      evidenceIds: [], severity: "info",
+      kind: "info",
+      summary: "EOD summary with action items generated",
+      evidenceIds: [],
+      severity: "info",
     });
     return { findings, proposalEnqueued: true, messageIds: [messageId.messageId] };
   }
 
-  findings.push({ kind: "info", summary: "EOD summary: all clear", evidenceIds: [], severity: "info" });
+  findings.push({
+    kind: "info",
+    summary: "EOD summary: all clear",
+    evidenceIds: [],
+    severity: "info",
+  });
   return { findings, proposalEnqueued: false, messageIds: [] };
 };

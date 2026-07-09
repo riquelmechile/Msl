@@ -1,4 +1,7 @@
-import type { WorkforceCostCacheLedgerStore, WorkforceCacheStatus } from "../workforceCostCacheLedgerStore.js";
+import type {
+  WorkforceCostCacheLedgerStore,
+  WorkforceCacheStatus,
+} from "../workforceCostCacheLedgerStore.js";
 import { LEDGER_LIMITS as workforceCostCacheLedgerLimits } from "../workforceCostCacheLedgerStore.js";
 import type { LaneId } from "../lanes.js";
 import type { ToolDefinition } from "./types.js";

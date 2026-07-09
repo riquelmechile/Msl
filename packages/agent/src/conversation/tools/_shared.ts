@@ -8,9 +8,7 @@ import type {
   NewItem,
   SyncResult,
 } from "@msl/mercadolibre";
-import {
-  assertPlasticovToMaustianDirection,
-} from "@msl/mercadolibre";
+import { assertPlasticovToMaustianDirection } from "@msl/mercadolibre";
 import type { Strategy as SyncStrategy } from "@msl/mercadolibre";
 
 import type { ToolDefinition } from "../tools.js";
@@ -28,13 +26,7 @@ export const DEFAULT_SALE_PRICE_CONTEXT = "channel_marketplace,buyer_loyalty_3";
 
 type OptionalToolRead<T> = { data?: T; error?: { endpoint: string; message: string } };
 type PriceIntelligenceEndpointKey =
-  | "salePrice"
-  | "prices"
-  | "priceToWin"
-  | "automation"
-  | "itemRules"
-  | "productRules"
-  | "history";
+  "salePrice" | "prices" | "priceToWin" | "automation" | "itemRules" | "productRules" | "history";
 
 type PriceIntelligenceEndpointResult = {
   salePrice: OptionalToolRead<unknown>;
@@ -181,7 +173,10 @@ export function storeSyncOutcome(
   }
 }
 
-export function ensureSellerNode(cortex: GraphEngine, sellerId: string): { id: number; label: string } {
+export function ensureSellerNode(
+  cortex: GraphEngine,
+  sellerId: string,
+): { id: number; label: string } {
   const existing = cortex.db
     .prepare("SELECT id, label FROM nodes WHERE metadata LIKE ?")
     .get(`%"sellerId":"${sellerId}"%`) as { id: number; label: string } | undefined;

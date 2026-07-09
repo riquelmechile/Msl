@@ -811,7 +811,13 @@ export async function processSellerCreativeAssets(
   const BATCH_SIZE = 50;
 
   try {
-      const listingSnaps: Array<{ itemId: string; data: Record<string, unknown>; capturedAt: string; freshness: string; evidenceId: string }> = await (config.operationalStore as any).searchSnapshots({
+    const listingSnaps: Array<{
+      itemId: string;
+      data: Record<string, unknown>;
+      capturedAt: string;
+      freshness: string;
+      evidenceId: string;
+    }> = await (config.operationalStore as any).searchSnapshots({
       sellerId,
       kind: "listing_snapshot",
       limit: BATCH_SIZE,
@@ -882,8 +888,7 @@ export async function processSellerCreativeAssets(
           const score = Number(meta.score ?? 0);
 
           const buckets = (meta.buckets ?? meta.variables) as
-            | Array<Record<string, unknown>>
-            | undefined;
+            Array<Record<string, unknown>> | undefined;
 
           if (Array.isArray(buckets)) {
             for (const bucket of buckets) {
@@ -963,7 +968,11 @@ export async function processSellerCreativeAssets(
       persisted++;
     }
 
-    await config.operationalStore.upsertCheckpoint(sellerId, "creative-snapshot", new Date().toISOString());
+    await config.operationalStore.upsertCheckpoint(
+      sellerId,
+      "creative-snapshot",
+      new Date().toISOString(),
+    );
 
     return { persisted };
   } catch (err) {

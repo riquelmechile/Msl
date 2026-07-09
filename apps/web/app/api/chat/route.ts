@@ -175,8 +175,7 @@ function assertDurableSellerNamespace(db: Database.Database, sellerId: string): 
   `);
 
   const existing = db.prepare("SELECT seller_id FROM chat_seller_namespace WHERE id = 1").get() as
-    | { seller_id: string }
-    | undefined;
+    { seller_id: string } | undefined;
 
   if (!existing) {
     assertNoPreNamespaceDurableState(db);

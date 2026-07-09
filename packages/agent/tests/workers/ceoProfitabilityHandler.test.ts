@@ -62,10 +62,16 @@ function makeProposalPayload(overrides?: {
       {
         kind: "alert",
         severity: "critical",
-        summary: "Margin-consuming ad: product MLC-TEST-001 in campaign camp-1 — net contribution -8000 CLP",
-        evidenceIds: ["listing_snapshot:MLC-TEST-001", "cost_snapshot:MLC-TEST-001", "product-ads-insights:ad-1"],
+        summary:
+          "Margin-consuming ad: product MLC-TEST-001 in campaign camp-1 — net contribution -8000 CLP",
+        evidenceIds: [
+          "listing_snapshot:MLC-TEST-001",
+          "cost_snapshot:MLC-TEST-001",
+          "product-ads-insights:ad-1",
+        ],
         actionability: "seller-impacting",
-        recommendationIdentity: "product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming",
+        recommendationIdentity:
+          "product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming",
       },
     ],
     recommendedAction: "Review margin-consuming ad immediately",
@@ -114,47 +120,56 @@ describe("ceoProfitabilityHandler", () => {
       ["budget-waste", "review-campaign-structure", "warning", true],
       ["underinvested", "adjust-campaign-budget", "info", true],
       ["unit-economics", "review-campaign-structure", "info", false],
-    ])("maps signal '%s' to proposalType '%s' severity '%s' requiresApproval %s", async (signal, expectedProposalType, _expectedSeverity, _requiresApproval) => {
-      const preparedActions: Array<Record<string, unknown>> = [];
-      const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
-      });
+    ])(
+      "maps signal '%s' to proposalType '%s' severity '%s' requiresApproval %s",
+      async (signal, expectedProposalType, _expectedSeverity, _requiresApproval) => {
+        const preparedActions: Array<Record<string, unknown>> = [];
+        const ceoCtx = makeCeoContext({
+          prepareProductAdsAction: async (input) => {
+            preparedActions.push(input);
+          },
+        });
 
-      const payload = makeProposalPayload({
-        findings: [{
-          kind: "info",
-          severity: "info",
-          summary: `Test finding for ${signal}`,
-          evidenceIds: ["listing_snapshot:MLC-001"],
-          actionability: "seller-impacting",
-          recommendationIdentity: `product-ads-cfo:seller-plasticov:camp-1:MLC-001:${signal}`,
-        }],
-        tier: signal,
-      });
+        const payload = makeProposalPayload({
+          findings: [
+            {
+              kind: "info",
+              severity: "info",
+              summary: `Test finding for ${signal}`,
+              evidenceIds: ["listing_snapshot:MLC-001"],
+              actionability: "seller-impacting",
+              recommendationIdentity: `product-ads-cfo:seller-plasticov:camp-1:MLC-001:${signal}`,
+            },
+          ],
+          tier: signal,
+        });
 
-      const claim = claimFixture({ payloadJson: payload });
+        const claim = claimFixture({ payloadJson: payload });
 
-      const result = await ceoProfitabilityHandler({
-        claim,
-        reader: createSqliteOperationalReadModel(db),
-        cortex: createGraphEngine(":memory:"),
-        bus,
-        sellerIds: SELLER_IDS,
-        ceoContext: ceoCtx,
-      });
+        const result = await ceoProfitabilityHandler({
+          claim,
+          reader: createSqliteOperationalReadModel(db),
+          cortex: createGraphEngine(":memory:"),
+          bus,
+          sellerIds: SELLER_IDS,
+          ceoContext: ceoCtx,
+        });
 
-      // Should produce a finding
-      const findingForSignal = result.findings.find(f => f.summary.includes(signal));
-      expect(findingForSignal).toBeDefined();
-      expect(findingForSignal!.summary).toContain(signal);
-    });
+        // Should produce a finding
+        const findingForSignal = result.findings.find((f) => f.summary.includes(signal));
+        expect(findingForSignal).toBeDefined();
+        expect(findingForSignal!.summary).toContain(signal);
+      },
+    );
   });
 
   describe("prepareProductAdsAction callback", () => {
     it("calls prepareProductAdsAction for actionable signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        prepareProductAdsAction: async (input) => {
+          preparedActions.push(input);
+        },
       });
 
       const result = await ceoProfitabilityHandler({
@@ -175,18 +190,23 @@ describe("ceoProfitabilityHandler", () => {
     it("does not call prepareProductAdsAction for unit-economics (info-only) signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        prepareProductAdsAction: async (input) => {
+          preparedActions.push(input);
+        },
       });
 
       const payload = makeProposalPayload({
-        findings: [{
-          kind: "info",
-          severity: "info",
-          summary: "Unit economics info finding",
-          evidenceIds: ["listing_snapshot:MLC-001"],
-          actionability: "seller-impacting",
-          recommendationIdentity: "product-ads-cfo:seller-plasticov:camp-1:MLC-001:unit-economics",
-        }],
+        findings: [
+          {
+            kind: "info",
+            severity: "info",
+            summary: "Unit economics info finding",
+            evidenceIds: ["listing_snapshot:MLC-001"],
+            actionability: "seller-impacting",
+            recommendationIdentity:
+              "product-ads-cfo:seller-plasticov:camp-1:MLC-001:unit-economics",
+          },
+        ],
       });
 
       const result = await ceoProfitabilityHandler({
@@ -251,12 +271,14 @@ describe("ceoProfitabilityHandler", () => {
       const oldTimestamp = eightDaysAgo.toISOString();
 
       // Insert directly into the DB to control the created_at timestamp
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO agent_message_bus
           (message_id, sender_agent_id, receiver_agent_id, message_type,
            payload_json, status, dedupe_key, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'resolved', ?, ?, ?)
-      `).run(
+      `,
+      ).run(
         crypto.randomUUID(),
         "product-ads-ceo-profitability",
         "product-ads-ceo-profitability",
@@ -489,7 +511,8 @@ describe("ceoProfitabilityHandler", () => {
             summary: "Margin-consuming ad: item MLC-M1",
             evidenceIds: ["listing_snapshot:MLC-M1"],
             actionability: "seller-impacting",
-            recommendationIdentity: "product-ads-cfo:seller-plasticov:camp-1:MLC-M1:margin-consuming",
+            recommendationIdentity:
+              "product-ads-cfo:seller-plasticov:camp-1:MLC-M1:margin-consuming",
           },
           {
             kind: "opportunity",
@@ -497,7 +520,8 @@ describe("ceoProfitabilityHandler", () => {
             summary: "Scale candidate: item MLC-S1",
             evidenceIds: ["listing_snapshot:MLC-S1"],
             actionability: "seller-impacting",
-            recommendationIdentity: "product-ads-cfo:seller-plasticov:camp-1:MLC-S1:scale-candidate",
+            recommendationIdentity:
+              "product-ads-cfo:seller-plasticov:camp-1:MLC-S1:scale-candidate",
           },
           {
             kind: "info",
@@ -554,7 +578,8 @@ describe("ceoProfitabilityHandler", () => {
             summary: "First finding",
             evidenceIds: [],
             actionability: "seller-impacting",
-            recommendationIdentity: "product-ads-cfo:seller-plasticov:camp-1:MLC-E1:margin-consuming",
+            recommendationIdentity:
+              "product-ads-cfo:seller-plasticov:camp-1:MLC-E1:margin-consuming",
           },
           {
             kind: "info",
@@ -589,19 +614,35 @@ describe("ceoProfitabilityHandler", () => {
 
   describe("DeepSeek delegation", () => {
     it("delegates to CeoDeepSeekClient when available and uses LLM recommendation", async () => {
-      const mockReason = vi.fn().mockResolvedValue(
-        new Map([["product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming", "pause-campaign"]]),
-      );
-      mockCreateCeoDeepSeekClient.mockReturnValue({ reason: mockReason } satisfies CeoDeepSeekClient);
+      const mockReason = vi
+        .fn()
+        .mockResolvedValue(
+          new Map([
+            [
+              "product-ads-cfo:seller-plasticov:camp-1:MLC-TEST-001:margin-consuming",
+              "pause-campaign",
+            ],
+          ]),
+        );
+      mockCreateCeoDeepSeekClient.mockReturnValue({
+        reason: mockReason,
+      } satisfies CeoDeepSeekClient);
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        prepareProductAdsAction: async (input) => {
+          preparedActions.push(input);
+        },
         workforceCostCacheLedgerStore: {
           insertEntry: vi.fn(),
           listEntries: vi.fn().mockReturnValue([]),
           count: vi.fn().mockReturnValue(0),
-          aggregateCosts: vi.fn().mockReturnValue({ byAgent: new Map(), byDepartment: new Map(), byPeriod: [], cacheEfficiency: 0 }),
+          aggregateCosts: vi.fn().mockReturnValue({
+            byAgent: new Map(),
+            byDepartment: new Map(),
+            byPeriod: [],
+            cacheEfficiency: 0,
+          }),
         },
       });
 
@@ -627,7 +668,9 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        prepareProductAdsAction: async (input) => {
+          preparedActions.push(input);
+        },
       });
 
       const result = await ceoProfitabilityHandler({
@@ -652,12 +695,19 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        prepareProductAdsAction: async (input) => {
+          preparedActions.push(input);
+        },
         workforceCostCacheLedgerStore: {
           insertEntry: vi.fn(),
           listEntries: vi.fn().mockReturnValue([]),
           count: vi.fn().mockReturnValue(0),
-          aggregateCosts: vi.fn().mockReturnValue({ byAgent: new Map(), byDepartment: new Map(), byPeriod: [], cacheEfficiency: 0 }),
+          aggregateCosts: vi.fn().mockReturnValue({
+            byAgent: new Map(),
+            byDepartment: new Map(),
+            byPeriod: [],
+            cacheEfficiency: 0,
+          }),
         },
       });
 
@@ -679,12 +729,16 @@ describe("ceoProfitabilityHandler", () => {
 
     it("skips LLM reasoning when workforceCostCacheLedgerStore is missing", async () => {
       const mockReason = vi.fn();
-      mockCreateCeoDeepSeekClient.mockReturnValue({ reason: mockReason } satisfies CeoDeepSeekClient);
+      mockCreateCeoDeepSeekClient.mockReturnValue({
+        reason: mockReason,
+      } satisfies CeoDeepSeekClient);
 
       // No ledger in context → should skip LLM and use fallback
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        prepareProductAdsAction: async (input) => {
+          preparedActions.push(input);
+        },
         // Note: no workforceCostCacheLedgerStore
       });
 
@@ -707,31 +761,42 @@ describe("ceoProfitabilityHandler", () => {
 
     it("produces info-report for unit-economics finding via LLM path", async () => {
       const identity = "product-ads-cfo:seller-plasticov:camp-1:MLC-U1:unit-economics";
-      const mockReason = vi.fn().mockResolvedValue(
-        new Map([[identity, "review-campaign-structure"]]),
-      );
-      mockCreateCeoDeepSeekClient.mockReturnValue({ reason: mockReason } satisfies CeoDeepSeekClient);
+      const mockReason = vi
+        .fn()
+        .mockResolvedValue(new Map([[identity, "review-campaign-structure"]]));
+      mockCreateCeoDeepSeekClient.mockReturnValue({
+        reason: mockReason,
+      } satisfies CeoDeepSeekClient);
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => { preparedActions.push(input); },
+        prepareProductAdsAction: async (input) => {
+          preparedActions.push(input);
+        },
         workforceCostCacheLedgerStore: {
           insertEntry: vi.fn(),
           listEntries: vi.fn().mockReturnValue([]),
           count: vi.fn().mockReturnValue(0),
-          aggregateCosts: vi.fn().mockReturnValue({ byAgent: new Map(), byDepartment: new Map(), byPeriod: [], cacheEfficiency: 0 }),
+          aggregateCosts: vi.fn().mockReturnValue({
+            byAgent: new Map(),
+            byDepartment: new Map(),
+            byPeriod: [],
+            cacheEfficiency: 0,
+          }),
         },
       });
 
       const payload = makeProposalPayload({
-        findings: [{
-          kind: "info",
-          severity: "info",
-          summary: "Unit economics info finding",
-          evidenceIds: ["listing_snapshot:MLC-U1"],
-          actionability: "seller-impacting",
-          recommendationIdentity: identity,
-        }],
+        findings: [
+          {
+            kind: "info",
+            severity: "info",
+            summary: "Unit economics info finding",
+            evidenceIds: ["listing_snapshot:MLC-U1"],
+            actionability: "seller-impacting",
+            recommendationIdentity: identity,
+          },
+        ],
       });
 
       const result = await ceoProfitabilityHandler({

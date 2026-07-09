@@ -558,9 +558,7 @@ describe("createAgentLoop — mock client", () => {
         cacheStatus: "partial",
       });
       expect(entries[0]?.metadata.source).toBe("agent_loop");
-      expect(entries[0]?.metadata.deepSeekRoutingRef).toBe(
-        "msl-lane-market-catalog-seller-global",
-      );
+      expect(entries[0]?.metadata.deepSeekRoutingRef).toBe("msl-lane-market-catalog-seller-global");
       expect(entries[0]?.metadata).not.toHaveProperty("credentialRef");
     });
   });
@@ -1717,9 +1715,7 @@ describe("createAgentLoop — DeepSeek runtime routing", () => {
           "cache-control": "no-cache",
           connection: "keep-alive",
         });
-        response.write(
-          `data: ${JSON.stringify({ choices: [{ delta: { content: "Re" } }] })}\n\n`,
-        );
+        response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Re" } }] })}\n\n`);
         response.write(
           `data: ${JSON.stringify({ choices: [{ delta: { content: "cibido" } }] })}\n\n`,
         );
@@ -2308,9 +2304,7 @@ describe("buildConsensusContext", () => {
     };
   }
 
-  function makeConsensusStore(
-    overrides: Partial<AgentConsensusStore> = {},
-  ): AgentConsensusStore {
+  function makeConsensusStore(overrides: Partial<AgentConsensusStore> = {}): AgentConsensusStore {
     return {
       submitReview: vi.fn(),
       getConsensus: vi.fn(),
@@ -2500,8 +2494,7 @@ describe("createAgentLoop — consensus context integration", () => {
         },
         {
           role: "assistant",
-          content:
-            "Te preparo una propuesta de ajuste para el listing MLC-42.",
+          content: "Te preparo una propuesta de ajuste para el listing MLC-42.",
           timestamp: new Date("2026-07-06T10:00:01Z"),
         },
       ],

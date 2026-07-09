@@ -16,7 +16,7 @@ export type DaemonFinding = {
   /** Evidence identifiers (snapshot evidence IDs, Cortex node labels, etc.). */
   evidenceIds: string[];
   severity: "info" | "warning" | "critical";
-}
+};
 
 // ── Daemon Result ───────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ export type DaemonResult = {
   proposalEnqueued: boolean;
   /** Message IDs of enqueued proposals on the bus. */
   messageIds: string[];
-}
+};
 
 // ── Daemon Handler ──────────────────────────────────────────────────
 

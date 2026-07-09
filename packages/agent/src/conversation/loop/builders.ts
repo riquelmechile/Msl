@@ -278,15 +278,10 @@ export function buildConsensusContext(
   const summaryLine = `🤝 Consenso: ${verdictParts}`;
 
   const detailLines = consensus.reviews.map(
-    (review) =>
-      `- ${review.reviewerAgentId}: ${review.verdict} — "${review.rationale}"`,
+    (review) => `- ${review.reviewerAgentId}: ${review.verdict} — "${review.rationale}"`,
   );
 
-  return [
-    "",
-    summaryLine,
-    ...detailLines,
-  ].join("\n");
+  return ["", summaryLine, ...detailLines].join("\n");
 }
 
 export function buildMessages(

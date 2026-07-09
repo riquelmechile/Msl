@@ -1,10 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import {
-  createMlcReadTools,
-  type MlcReadTools,
-  type MlcCategoryReadTools,
-} from "@msl/tools";
+import { createMlcReadTools, type MlcReadTools, type MlcCategoryReadTools } from "@msl/tools";
 import { MLC_PRODUCT_ADS_MAX_LIMIT } from "@msl/mercadolibre";
 import type { MlcApiClient } from "@msl/mercadolibre";
 import type { McpServerConfig } from "../index.js";
@@ -190,9 +186,7 @@ export function registerReadTools(
 ): void {
   const { validateApiKey, config } = deps;
 
-  const readTools = config.mlcClient
-    ? createMlcReadTools({ client: config.mlcClient })
-    : undefined;
+  const readTools = config.mlcClient ? createMlcReadTools({ client: config.mlcClient }) : undefined;
 
   // ── check_account ─────────────────────────────────────────────────
   server.registerTool(

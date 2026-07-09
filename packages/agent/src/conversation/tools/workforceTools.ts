@@ -1,4 +1,9 @@
-import type { CompanyAgentRegistry, CompanyDepartmentId, CompanyAgent, EvidenceKind } from "../companyAgents.js";
+import type {
+  CompanyAgentRegistry,
+  CompanyDepartmentId,
+  CompanyAgent,
+  EvidenceKind,
+} from "../companyAgents.js";
 import type { CompanyAgentStore } from "../companyAgentStore.js";
 import { getCompanyAgent, listCompanyAgents } from "../companyAgents.js";
 import type { ToolDefinition } from "./types.js";

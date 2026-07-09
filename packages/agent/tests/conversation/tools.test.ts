@@ -379,7 +379,13 @@ describe("createDelegateToSubagentTool", () => {
     const properties = schema?.function.parameters.properties as Record<string, unknown>;
     expect(properties.laneId).toMatchObject({
       type: "string",
-      enum: ["cost-supplier", "market-catalog", "creative-commercial", "operations-manager", "owned-ecommerce"],
+      enum: [
+        "cost-supplier",
+        "market-catalog",
+        "creative-commercial",
+        "operations-manager",
+        "owned-ecommerce",
+      ],
     });
   });
 
@@ -414,6 +420,7 @@ describe("company agent registry and request_agent_evidence", () => {
       "market-catalog",
       "creative-assets",
       "creative-commercial",
+      "creative-studio",
       "operations-manager",
       "owned-ecommerce",
       "product-ads-monitor",

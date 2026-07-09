@@ -82,18 +82,12 @@ export type EnqueueAgentMessageInput = {
 
 export type AgentMessageBusStore = {
   enqueue(input: EnqueueAgentMessageInput): AgentMessage;
-  claimNext(
-    receiverAgentId: string,
-    options?: { limit?: number },
-  ): AgentMessage[];
+  claimNext(receiverAgentId: string, options?: { limit?: number }): AgentMessage[];
   resolve(messageId: string, result: unknown): void;
   fail(messageId: string, error: string): void;
   cancel(messageId: string, reason?: string): void;
   /** Look up recent messages whose dedupe_key starts with `prefix` and were created after `since` (ISO date string). */
-  lookupRecentByDedupePrefix(
-    prefix: string,
-    since: string,
-  ): AgentMessage[];
+  lookupRecentByDedupePrefix(prefix: string, since: string): AgentMessage[];
   /** Retrieve messages that have reached max attempts and are in `failed` status. */
   getFailedMessages(limit?: number): AgentMessage[];
   /** Reset a failed message back to `pending` with 0 attempts so it can be retried. */
@@ -127,9 +121,7 @@ function rowToAgentMessage(row: AgentMessageBusRow): AgentMessage {
 
 // ── Factory ──────────────────────────────────────────────────────────
 
-export function createAgentMessageBusStore(
-  db: Database.Database,
-): AgentMessageBusStore {
+export function createAgentMessageBusStore(db: Database.Database): AgentMessageBusStore {
   db.exec(SCHEMA_SQL);
 
   // ── Prepared statements ────────────────────────────────────
@@ -228,9 +220,7 @@ export function createAgentMessageBusStore(
 
   const enqueue = (input: EnqueueAgentMessageInput): AgentMessage => {
     if (input.dedupeKey != null) {
-      const existing = selectByDedupeKeyStmt.get(
-        input.dedupeKey,
-      ) as AgentMessageBusRow | undefined;
+      const existing = selectByDedupeKeyStmt.get(input.dedupeKey) as AgentMessageBusRow | undefined;
       if (existing) {
         return rowToAgentMessage(existing);
       }
@@ -251,26 +241,19 @@ export function createAgentMessageBusStore(
     return rowToAgentMessage(row);
   };
 
-  const claimNext = (
-    receiverAgentId: string,
-    options?: { limit?: number },
-  ): AgentMessage[] => {
+  const claimNext = (receiverAgentId: string, options?: { limit?: number }): AgentMessage[] => {
     const limit = options?.limit ?? 1;
     const results: AgentMessage[] = [];
     const staleThreshold = `-${CLAIM_TIMEOUT_MINUTES} minutes`;
 
     const transaction = db.transaction(() => {
       for (let i = 0; i < limit; i++) {
-        const candidate = selectPendingForClaimStmt.get(
-          receiverAgentId,
-          { staleThreshold },
-        ) as { id: number; message_id: string } | undefined;
+        const candidate = selectPendingForClaimStmt.get(receiverAgentId, { staleThreshold }) as
+          { id: number; message_id: string } | undefined;
         if (!candidate) break;
 
         updateClaimStmt.run(candidate.id);
-        const row = selectByMessageIdStmt.get(
-          candidate.message_id,
-        ) as AgentMessageBusRow;
+        const row = selectByMessageIdStmt.get(candidate.message_id) as AgentMessageBusRow;
         results.push(rowToAgentMessage(row));
       }
     });
@@ -303,14 +286,8 @@ export function createAgentMessageBusStore(
     }
   };
 
-  const lookupRecentByDedupePrefix = (
-    prefix: string,
-    since: string,
-  ): AgentMessage[] => {
-    const rows = lookupRecentByDedupePrefixStmt.all(
-      `${prefix}%`,
-      since,
-    ) as AgentMessageBusRow[];
+  const lookupRecentByDedupePrefix = (prefix: string, since: string): AgentMessage[] => {
+    const rows = lookupRecentByDedupePrefixStmt.all(`${prefix}%`, since) as AgentMessageBusRow[];
     return rows.map(rowToAgentMessage);
   };
 
@@ -322,9 +299,7 @@ export function createAgentMessageBusStore(
   const reenqueueFailed = (messageId: string): void => {
     const info = reenqueueFailedStmt.run(messageId);
     if (info.changes === 0) {
-      throw new Error(
-        `AgentMessage "${messageId}" not found or not in failed state.`,
-      );
+      throw new Error(`AgentMessage "${messageId}" not found or not in failed state.`);
     }
   };
 
@@ -339,5 +314,16 @@ export function createAgentMessageBusStore(
     return row?.cnt ?? 0;
   };
 
-  return { enqueue, claimNext, resolve, fail, cancel, lookupRecentByDedupePrefix, getFailedMessages, reenqueueFailed, getProcessingStuck, getPendingCount };
+  return {
+    enqueue,
+    claimNext,
+    resolve,
+    fail,
+    cancel,
+    lookupRecentByDedupePrefix,
+    getFailedMessages,
+    reenqueueFailed,
+    getProcessingStuck,
+    getPendingCount,
+  };
 }

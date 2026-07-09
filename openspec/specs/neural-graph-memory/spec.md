@@ -39,7 +39,7 @@ The system MUST adjust edge weights: +0.1 on reinforcement, −0.15 on penalty, 
 
 ### Requirement: Spreading Activation
 
-The system MUST propagate activation from seed nodes via recursive CTE, bounded by depth (default 3) and activation threshold.
+The system MUST propagate activation from seed nodes via recursive CTE, bounded by depth (default 3) and activation threshold. When seed nodes are supplier-typed, spreading activation SHALL discover niche patterns by traversing edges between supplier concepts and storefront or category concepts.
 
 #### Scenario: Activation propagates to neighbors
 
@@ -59,6 +59,13 @@ The system MUST propagate activation from seed nodes via recursive CTE, bounded 
 - GIVEN an edge traversed during activation
 - WHEN the edge is visited
 - THEN co_occurrence_count MUST increment by 1
+
+#### Scenario: Supplier node activation discovers niche patterns
+
+- GIVEN a `supplier_item` seed node connected to category and margin concept nodes
+- WHEN spreading activation runs with depth 3
+- THEN activated nodes SHALL include category, margin, and strategy concepts reachable from the supplier node
+- AND the agent MAY use these activated paths to reason about niche storefront opportunities
 
 ### Requirement: Darwinian Pruning
 
@@ -121,6 +128,45 @@ The system MUST provide an idempotent concept node lookup: `findOrCreateConceptN
 - THEN a new node is created with activation 0.0
 - AND the metadata includes `{source: "escribano"}`
 - AND the returned id is the new node's id
+
+### Requirement: Supplier Concept Node Types
+
+The graph SHALL support supplier-typed concept node labels with producer-prefix conventions: `supplier_profile`, `supplier_item`, `supplier_stock`, `supplier_mapping`, `supplier_policy`, and `supplier_lesson`. Node metadata MUST store type-specific fields (e.g., `supplierId`, `supplierItemId`, `targetListingId`, `confidence`). These node types SHALL use the existing `findOrCreateConceptNode()` primitive for idempotent creation.
+
+#### Scenario: Supplier node types created
+
+- GIVEN the supplier-cortex-integration bridge calls `findOrCreateConceptNode`
+- WHEN label is `supplier_profile` or `supplier_item` or `supplier_stock` or `supplier_mapping` or `supplier_policy` or `supplier_lesson`
+- THEN a node is created with activation 0.0 and the supplied metadata
+- AND the node SHALL be queryable by its label
+
+#### Scenario: Duplicate supplier node prevented
+
+- GIVEN a `supplier_item` node exists with `supplierItemId: "SKU-123"` in metadata
+- WHEN `findOrCreateConceptNode` is called with the same label and metadata key
+- THEN the existing node MUST be returned without creating a duplicate
+
+### Requirement: Supplier Metadata Query Support
+
+The graph engine SHALL support `queryByMetadata(key, value)` returning all nodes whose `metadata` JSON contains the given key-value pair. This enables filtering nodes by `type = "supplier_item"`, `supplierId = "jinpeng"`, or any supplier-domain metadata field.
+
+#### Scenario: Query all supplier_item nodes
+
+- GIVEN supplier_item nodes exist in the graph with `metadata.type = "supplier_item"`
+- WHEN `queryByMetadata("type", "supplier_item")` is called
+- THEN all supplier_item nodes MUST be returned with their ids, labels, activation, and metadata
+
+#### Scenario: Query by supplierId
+
+- GIVEN nodes exist with `metadata.supplierId = "jinpeng"`
+- WHEN `queryByMetadata("supplierId", "jinpeng")` is called
+- THEN only nodes for that supplier MUST be returned
+
+#### Scenario: No matching nodes
+
+- GIVEN no nodes match the queried key-value pair
+- WHEN `queryByMetadata("type", "nonexistent")` is called
+- THEN an empty result set MUST be returned (not an error)
 
 ### Requirement: Automatic Hebbian Learning from Conversation Outcomes
 

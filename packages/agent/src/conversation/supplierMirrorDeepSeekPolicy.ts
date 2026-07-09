@@ -13,10 +13,7 @@ export { REASONING_PRICING as SUPPLIER_MIRROR_DEEPSEEK_PRICING } from "../reason
 
 import { estimateCost } from "../reasoning/costEstimator.js";
 
-import {
-  DEEPSEEK_V4_FLASH,
-  DEEPSEEK_V4_PRO,
-} from "../reasoning/modelRouter.js";
+import { DEEPSEEK_V4_FLASH, DEEPSEEK_V4_PRO } from "../reasoning/modelRouter.js";
 
 /**
  * Backward-compatible cost estimation wrapper.
@@ -29,23 +26,21 @@ export function estimateSupplierMirrorDeepSeekCostMicros(input: {
   promptCacheMissTokens?: number | undefined;
   outputTokens?: number | undefined;
 }): number | undefined {
-  return estimateCost(input.model, {
-    cacheHitTokens: input.promptCacheHitTokens,
-    cacheMissTokens: input.promptCacheMissTokens,
-    outputTokens: input.outputTokens,
-  }) ?? undefined;
+  return (
+    estimateCost(input.model, {
+      cacheHitTokens: input.promptCacheHitTokens,
+      cacheMissTokens: input.promptCacheMissTokens,
+      outputTokens: input.outputTokens,
+    }) ?? undefined
+  );
 }
 
 export const SUPPLIER_MIRROR_DEEPSEEK_PROVIDER = "deepseek";
 
-export type SupplierMirrorDeepSeekModel =
-  | typeof DEEPSEEK_V4_FLASH
-  | typeof DEEPSEEK_V4_PRO;
+export type SupplierMirrorDeepSeekModel = typeof DEEPSEEK_V4_FLASH | typeof DEEPSEEK_V4_PRO;
 
 export type SupplierMirrorDeepSeekOperation =
-  | "supplier-extraction"
-  | "supplier-classification"
-  | "policy-conflict";
+  "supplier-extraction" | "supplier-classification" | "policy-conflict";
 
 // ── Backward Compat Wrapper ──────────────────────────────────────────
 

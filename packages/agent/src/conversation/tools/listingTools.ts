@@ -368,13 +368,7 @@ export function createCheckListingVisitsTool(mlcClient: MlcApiClient): ToolDefin
 
 type OptionalToolRead<T> = { data?: T; error?: { endpoint: string; message: string } };
 type PriceIntelligenceEndpointKey =
-  | "salePrice"
-  | "prices"
-  | "priceToWin"
-  | "automation"
-  | "itemRules"
-  | "productRules"
-  | "history";
+  "salePrice" | "prices" | "priceToWin" | "automation" | "itemRules" | "productRules" | "history";
 
 type PriceIntelligenceEndpointResult = {
   salePrice: OptionalToolRead<unknown>;

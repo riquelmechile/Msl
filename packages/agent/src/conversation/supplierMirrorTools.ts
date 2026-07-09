@@ -10,6 +10,8 @@ import type {
   SupplierTargetPolicy,
 } from "@msl/domain";
 import type { SupplierMirrorStore } from "@msl/memory";
+import type { GraphEngine } from "@msl/memory";
+import { ingestFallbackLessonToCortex } from "@msl/memory";
 
 import type { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
 import type { ToolDefinition } from "./tools.js";
@@ -240,6 +242,7 @@ function buildJinpengReadinessLedgerKeys(): readonly string[] {
 export function createSupplierMirrorTools(
   store: SupplierMirrorStore,
   advisor?: SupplierMirrorDeepSeekAdvisor,
+  engine?: GraphEngine,
 ): ToolDefinition[] {
   const reviewReadiness: ToolDefinition = {
     name: "review_supplier_mirror_readiness",
@@ -515,6 +518,36 @@ export function createSupplierMirrorTools(
         status: suppressNotifications || lessonType !== "notification" ? "active" : "proposed",
       });
 
+      // Ingest fallback lesson into Cortex for pattern discovery
+      if (engine) {
+        try {
+          const lessonRecord: SupplierLearnedFallbackPolicy = {
+            id: policyId,
+            policyType: lessonType,
+            scope: {
+              supplierId,
+              scopeType,
+              scopeId,
+              ...(supplierItemId ? { supplierItemId } : {}),
+              ...(categoryId ? { categoryId } : {}),
+              ...(alertType ? { alertType } : {}),
+            },
+            decision: {
+              decisionText,
+              suppressNotifications,
+              recordedFrom: "ceo-workflow",
+            },
+            confidence: "medium",
+            evidenceIds,
+            status: suppressNotifications || lessonType !== "notification" ? "active" : "proposed",
+          };
+          await ingestFallbackLessonToCortex(engine, lessonRecord);
+        } catch (err) {
+          console.error("Failed to ingest fallback lesson to Cortex:", err);
+          // Non-blocking — lesson is already in SM store
+        }
+      }
+
       if (suppressNotifications) {
         await store.saveNotificationPreference({
           scopeType,
@@ -663,6 +696,102 @@ export function createSupplierMirrorTools(
       }
     : null;
 
+  const queryCortexPatterns: ToolDefinition = {
+    name: "query_supplier_cortex_patterns",
+    description:
+      "Queries Cortex neural graph for supplier items, mappings, and niche patterns via spreading activation. Read-only; no mutations. Requires Cortex to be wired.",
+    parameters: {
+      type: "object",
+      properties: {
+        supplierId: { type: "string", description: "Supplier ID to query in Cortex" },
+        queryType: {
+          type: "string",
+          enum: ["items", "mappings", "patterns", "all"],
+          description: "Type of query: items, mappings, patterns (spread activation), or all",
+        },
+        depth: {
+          type: "number",
+          minimum: 1,
+          maximum: 5,
+          description: "Max depth for spreading activation (default: 2)",
+        },
+      },
+      required: ["supplierId"],
+    },
+    execute: async (args) => {
+      const supplierId = readString(args.supplierId);
+      const queryType = readString(args.queryType) ?? "all";
+      const depth = readNumber(args.depth) ?? 2;
+
+      if (!supplierId) {
+        return { status: "blocked", missingInputs: ["supplierId"], noMutationExecuted: true };
+      }
+
+      if (!engine) {
+        return {
+          status: "blocked",
+          reason: "Cortex graph engine is not wired. Cannot query supplier patterns.",
+          noMutationExecuted: true,
+        };
+      }
+
+      const results: Record<string, unknown> = {
+        supplierId,
+        queryType,
+        noMutationExecuted: true,
+        workerSelectionExposed: false,
+      };
+
+      // Query supplier profile node
+      if (queryType === "all" || queryType === "items" || queryType === "patterns") {
+        const profileLabel = `supplier_${supplierId}`;
+        const profileNodes = engine.queryByMetadata({
+          type: "supplier_profile",
+          labelPrefix: `supplier_${supplierId}`,
+        });
+        results.profileNodes = profileNodes;
+      }
+
+      // Query supplier items
+      if (queryType === "all" || queryType === "items" || queryType === "patterns") {
+        const itemNodes = engine.queryByMetadata({
+          type: "supplier_item",
+          labelPrefix: `supplier_item_${supplierId}`,
+          limit: 20,
+        });
+        results.itemNodes = itemNodes;
+      }
+
+      // Query supplier mappings
+      if (queryType === "all" || queryType === "mappings" || queryType === "patterns") {
+        const mappingNodes = engine.queryByMetadata({
+          type: "supplier_mapping",
+          labelPrefix: `supplier_mapping_${supplierId}`,
+          limit: 20,
+        });
+        results.mappingNodes = mappingNodes;
+      }
+
+      // Spreading activation to discover niche patterns
+      if (queryType === "all" || queryType === "patterns") {
+        const supplierNode = engine.db
+          .prepare("SELECT id FROM nodes WHERE label = ?")
+          .get(`supplier_${supplierId}`) as { id: number } | undefined;
+
+        if (supplierNode) {
+          const spreadResult = engine.spreadActivation([supplierNode.id], {
+            maxDepth: depth,
+            activationThreshold: 0.01,
+            decayFactor: 0.5,
+          });
+          results.spreadActivation = spreadResult;
+        }
+      }
+
+      return results;
+    },
+  };
+
   const tools: ToolDefinition[] = [
     reviewReadiness,
     reviewOpportunities,
@@ -670,6 +799,7 @@ export function createSupplierMirrorTools(
     proposePricingPolicy,
     recordFallbackLesson,
     planDeepSeekUsage,
+    queryCortexPatterns,
   ];
   if (analyzeEvidence) tools.push(analyzeEvidence);
   return tools;

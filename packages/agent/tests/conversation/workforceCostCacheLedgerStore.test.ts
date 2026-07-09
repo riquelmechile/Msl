@@ -294,8 +294,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
           `SELECT * FROM workforce_cost_cache_ledger_rollups WHERE day = ? AND agent_id = ? AND model = ?`,
         )
         .get("2026-07-03", "agent:pricing", "deepseek-v4-flash") as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
 
       expect(rollupRow).toBeDefined();
       expect((rollupRow as Record<string, number>).input_tokens_agg).toBe(50);
@@ -335,8 +334,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
           `SELECT * FROM workforce_cost_cache_ledger_rollups WHERE day = ? AND agent_id = ? AND model = ?`,
         )
         .get("2026-07-03", "agent:pricing", "deepseek-v4-flash") as
-        | Record<string, number>
-        | undefined;
+        Record<string, number> | undefined;
 
       expect(rollupRow).toBeDefined();
       expect(rollupRow!.input_tokens_agg).toBe(100);

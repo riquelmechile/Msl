@@ -9,6 +9,7 @@
     { "path": "./packages/tools" },
     { "path": "./packages/agent" },
     { "path": "./packages/bot" },
-    { "path": "./packages/mcp" }
+    { "path": "./packages/mcp" },
+    { "path": "./packages/creative-studio" }
   ]
 }
