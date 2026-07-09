@@ -77,7 +77,7 @@ function check(
  * In development mode, missing secrets produce `valid: true` with warnings.
  */
 export function validateProductionSecrets(
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+  env: Record<string, string | undefined> = process.env,
 ): ProductionValidation {
   const runtimeMode = (env.MSL_RUNTIME_MODE ?? "development").trim().toLowerCase();
   const isProduction = runtimeMode === "production";
@@ -256,7 +256,6 @@ export function formatProductionValidation(
 ): string {
   const lines: string[] = [];
   const mode = validation.runtimeMode.toUpperCase();
-  const icon = validation.valid ? "✅" : "❌";
 
   lines.push("");
   lines.push(`🔐 Production Secrets Check — MSL_RUNTIME_MODE=${mode}`);

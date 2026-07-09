@@ -1,5 +1,4 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import OpenAI from "openai";
 import { DeepSeekReasoningGateway } from "../../src/reasoning/DeepSeekReasoningGateway.js";
 import { DeepSeekRealTransport } from "../../src/conversation/transports/deepseekTransport.js";
 import { ReasoningLevel } from "../../src/reasoning/reasoningTypes.js";

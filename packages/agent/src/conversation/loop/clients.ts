@@ -113,7 +113,7 @@ export function createLlmClientFromTransport(
         result.usage = {
           provider: "deepseek",
           model,
-          usage: response.usage as unknown as Record<string, unknown>,
+          usage: response.usage,
         };
       }
       return result;
