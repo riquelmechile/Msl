@@ -140,7 +140,8 @@ export * from "./loop/index.js";
 // ── Strategy Store Interface ─────────────────────────────────────────
 
 export type StrategyStore = {
-  listActive(): Strategy[];
+  listActive(sellerId?: string): Strategy[];
+  listActiveBySeller(sellerId: string): Strategy[];
   insertStrategy(ruleText: string, parsedRule: ParsedRule, confidence: number): Strategy;
   archiveStrategy(id: number): void;
   supersedeStrategy(oldId: number, newId: number): void;

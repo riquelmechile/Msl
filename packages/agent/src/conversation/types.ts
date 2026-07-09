@@ -156,6 +156,8 @@ export type Strategy = {
   /** Extraction confidence 0.0-1.0. */
   confidence: number;
   status: "active" | "archived" | "superseded";
+  /** Optional seller scoping — NULL means global. */
+  sellerId?: string;
   createdAt: string;
   updatedAt: string;
 };

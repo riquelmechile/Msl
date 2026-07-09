@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS ceo_strategies (
 // ── Row mapping ──────────────────────────────────────────────────────
 
 /**
+ * Check whether a column exists in a table (idempotent migration guard).
+ */
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return info.some((col) => col.name === column);
+}
+
+/**
  * Raw row shape returned by SQLite queries.
  * Column names use snake_case; the public Strategy interface uses camelCase.
  */
@@ -32,12 +40,14 @@ type StrategyRow = {
   confidence: number;
   status: "active" | "archived" | "superseded";
   replaced_by: number | null;
+  seller_id: string | null;
   created_at: string;
   updated_at: string;
 };
 
 /** Map a database row to the public {@link Strategy} interface. */
 function rowToStrategy(row: StrategyRow): Strategy {
+  const sellerId = row.seller_id && row.seller_id !== "unknown" ? row.seller_id : undefined;
   return {
     id: row.id,
     ruleType: row.rule_type as Strategy["ruleType"],
@@ -45,6 +55,7 @@ function rowToStrategy(row: StrategyRow): Strategy {
     parsedRule: JSON.parse(row.parsed_rule) as ParsedRule,
     confidence: row.confidence,
     status: row.status,
+    ...(sellerId ? { sellerId } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -65,6 +76,13 @@ export function createStrategyStore(db: Database.Database) {
   // Apply the ceo_strategies schema if it doesn't exist yet.
   db.exec(SCHEMA_SQL);
 
+  // ── Idempotent migration: add seller_id column ──────────────
+  if (!columnExists(db, "ceo_strategies", "seller_id")) {
+    db.exec(
+      `ALTER TABLE ceo_strategies ADD COLUMN seller_id TEXT NOT NULL DEFAULT 'unknown'`,
+    );
+  }
+
   // ── Prepared statements ──────────────────────────────────────
 
   const insertStmt = db.prepare(`
@@ -79,6 +97,14 @@ export function createStrategyStore(db: Database.Database) {
   const listActiveStmt = db.prepare(`
     SELECT * FROM ceo_strategies
     WHERE status = 'active'
+      AND (@sellerId IS NULL OR seller_id = @sellerId OR seller_id = 'unknown')
+    ORDER BY JSON_EXTRACT(parsed_rule, '$.priority') DESC, created_at DESC
+  `);
+
+  const listActiveBySellerStmt = db.prepare(`
+    SELECT * FROM ceo_strategies
+    WHERE status = 'active'
+      AND (seller_id = @sellerId OR seller_id = 'unknown')
     ORDER BY JSON_EXTRACT(parsed_rule, '$.priority') DESC, created_at DESC
   `);
 
@@ -132,11 +158,22 @@ export function createStrategyStore(db: Database.Database) {
   /**
    * Return all strategies whose status is `'active'`.
    *
+   * When `sellerId` is provided, results are filtered to strategies
+   * matching that seller or the global `'unknown'` default.
+   *
    * Results are ordered by {@link ParsedRule.priority} descending,
    * then by creation date descending.
    */
-  const listActive = (): Strategy[] => {
-    const rows = listActiveStmt.all() as StrategyRow[];
+  const listActive = (sellerId?: string): Strategy[] => {
+    const rows = listActiveStmt.all({ sellerId: sellerId ?? null }) as StrategyRow[];
+    return rows.map(rowToStrategy);
+  };
+
+  /**
+   * Return active strategies scoped to a specific seller plus global strategies.
+   */
+  const listActiveBySeller = (sellerId: string): Strategy[] => {
+    const rows = listActiveBySellerStmt.all({ sellerId }) as StrategyRow[];
     return rows.map(rowToStrategy);
   };
 
@@ -204,6 +241,7 @@ export function createStrategyStore(db: Database.Database) {
   return {
     insertStrategy,
     listActive,
+    listActiveBySeller,
     getStrategy,
     archiveStrategy,
     supersedeStrategy,
