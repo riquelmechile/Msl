@@ -3,6 +3,8 @@ export type GraphNode = {
   label: string;
   activation: number;
   metadata: string;
+  /** Optional seller scoping — NULL means global visibility. */
+  sellerId?: string;
 };
 
 export type GraphEdge = {
@@ -13,6 +15,8 @@ export type GraphEdge = {
   last_activated: string | null;
   co_occurrence_count: number;
   distilled_lesson: string | null;
+  /** Optional seller scoping — NULL means global visibility. */
+  sellerId?: string;
 };
 
 export type DarwinianLesson = {
@@ -22,6 +26,8 @@ export type DarwinianLesson = {
   lesson: string;
   archived_at: string;
   reason: string;
+  /** Optional seller scoping — NULL means global visibility. */
+  sellerId?: string;
 };
 
 /** Node ID → activation value */
