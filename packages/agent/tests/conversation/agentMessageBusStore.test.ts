@@ -387,7 +387,7 @@ describe("agentMessageBusStore", () => {
       expect(row.locked_at).toBeNull();
       expect(row.error_json).toBeTruthy();
       // Validate the error_json is valid JSON with the expected shape
-      const parsed = JSON.parse(row.error_json!);
+      const parsed = JSON.parse(row.error_json!) as { message: string; timestamp: string };
       expect(parsed.message).toBe("something went wrong");
       expect(parsed.timestamp).toBeTruthy();
     });

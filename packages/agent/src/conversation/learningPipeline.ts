@@ -152,7 +152,7 @@ function scoreCancelled(msg: AgentMessage): { score: number; summary: string } {
  * @param cortex - GraphEngine for persisting learning observations
  * @param options - Batch size, strategy, since date
  */
-export async function runLearningPipeline(
+export function runLearningPipeline(
   bus: AgentMessageBusStore,
   cortex: GraphEngine,
   options?: LearningPipelineOptions,
@@ -170,7 +170,7 @@ export async function runLearningPipeline(
   const unscored = bus.getUnscoredMessages(
     since ? { since, limit: batchSize } : { limit: batchSize },
   );
-  if (unscored.length === 0) return result;
+  if (unscored.length === 0) return Promise.resolve(result);
 
   const batch = unscored.slice(0, batchSize);
   result.processed = batch.length;
@@ -213,5 +213,5 @@ export async function runLearningPipeline(
     }
   }
 
-  return result;
+  return Promise.resolve(result);
 }

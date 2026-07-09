@@ -3,7 +3,6 @@ import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 // ── Thresholds ──────────────────────────────────────────────────────
 
 const LOW_STOCK_THRESHOLD = 5;
-const MISSING_IMAGES_LIMIT = 0; // items with 0 images
 const PRICE_DEVIATION_THRESHOLD = 0.2; // 20% above/below average
 
 // ── Helpers ─────────────────────────────────────────────────────────

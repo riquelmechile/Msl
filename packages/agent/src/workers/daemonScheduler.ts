@@ -232,7 +232,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
 
           inbox.insert({
             sender_agent_id: claim.senderAgentId,
-            proposal_type: (typeof payload.type === "string" ? payload.type : "proposal") as string,
+            proposal_type: typeof payload.type === "string" ? payload.type : "proposal",
             payload_json: claim.payloadJson,
             normalized_summary: summary,
             risk_level: riskLevel,
