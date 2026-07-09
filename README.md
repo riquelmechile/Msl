@@ -21,10 +21,12 @@
 
 MSL is a proactive conversational AI agent for MercadoLibre Chile. It ingests your business data (listings, orders, ads, pricing, claims, reputation), builds durable operational evidence in a local SQLite read model, runs a neural graph memory (Cortex) for learning, coordinates 5 cache-resident CEO specialist lanes powered by DeepSeek, and proposes concrete profit-maximizing actions — all through natural Spanish conversation. Every action requires your explicit "dale" before execution.
 
-**Agent company infrastructure (2026-07-07):**
+**Agent company infrastructure (2026-07-09):**
 
 - **Agent Message Bus** — SQLite-backed async message queue with claim/resolve/fail lifecycle
-- **4 Specialist Daemons** — marketCatalog, operationsManager, costSupplier, creativeCommercial (autonomous, 15-min cycles, never mutate)
+- **12 Autonomous Daemons** — marketCatalog, operationsManager, costSupplier, creativeAssets, creativeCommercial, creativeStudio (MiniMax image/video generation), productAdsMonitor, productAdsProfitability, ceoProfitabilityHandler, supplierManager, morningReport, eodSummary (autonomous, 15-min cycles, never mutate)
+- **Creative Studio Agent** — AI-powered content generation lane via MiniMax API (images, video clips), integrated through agent message bus with explicit CEO approval gates
+- **Supplier → Cortex → Owned Ecommerce Bridge** — ingests supplier mirror data into Cortex neural graph, discovers niche storefront candidates, prepares Medusa-oriented storefront projections
 - **Deep Evidence** — `searchSnapshots()` with 10 SQL-level filters (status, price, dates, categories)
 - **Consensus Review** — Multi-agent quorum for high-risk proposals (approve/reject/needs_more_evidence/risk_warning)
 - **Process Separation** — 4 PM2 processes (bot, web, worker-ingestion, agent-daemons)
@@ -109,7 +111,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | Owned ecommerce    | Preview foundation is implemented: the worker builds deterministic Medusa-oriented storefront projections, stores static preview JSON, validates local/data preview media, and serves the static `/storefront/[projectionId]` route without request-time LLM calls. Runtime approval execution (domain/store contracts, Medusa runtime executor, regression verification) is merged and gated behind approvals + env credentials. | Live Medusa deployment, checkout/payment activation, public publish, price/stock mutation, or stored production credentials. |
 | MCP tools          | MCP exposes 40 tools for compatible clients (listings, prices, orders, sync, approval, decisions, listing_prices, claims, returns, moderation, notices, shipping, image orchestration, workforce, cost ledger).                                                                                                                                                                                                                   | Production business-operation execution through MCP.                                                                         |
 | ML Business Data   | Background worker ingests listing/visit/order snapshots into Cortex. DeepSeek generates daily insights. Proactive alerts via Telegram.                                                                                                                                                                                                                                                                                            | Real-time MercadoLibre data without OAuth tokens for every role.                                                             |
-| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E.                                                                                                                                                                                                                                                                                                                                                      | Secrets in CI; use GitHub Secrets/platform secrets.                                                                          |
+| CI                 | Pull requests and `main` run format, typecheck, lint, tests, build, and E2E. All gates green on main (2026-07-09).                                                                                                                                                                                                                                                                        | Secrets in CI; use GitHub Secrets/platform secrets.                                                                          |
 
 ## Architecture
 
@@ -139,10 +141,10 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  │  read_moderation_status · read_notices · read_claims · questions │ │
 │  └──────────────────────────┬─────────────────────────────────────┘ │
 │          ┌──────────────────┴──────────────────┐                     │
-│          │  Background Ingestion Worker (6h)   │  DeepSeek Inference │
-│          │  Listings, ads, pricing, claims,    │  Daily insights     │
-│          │  questions, orders, messages,       │                     │
-│          │  reputation, returns snapshots      │                     │
+│          │  Background Ingestion Worker (multi-cycle) │  DeepSeek Inference │
+│          │  Listings, ads, pricing, claims,         │  Daily insights     │
+│          │  questions, orders, messages,            │                     │
+│          │  reputation, returns, creative snapshots │                     │
 │          └─────────────────────────────────────┘                     │
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │              Cache Strategy (3-block prefix-anchored)           │ │
@@ -152,19 +154,21 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 └──────────┬───────────────┬───────────────┬──────────────────────────┘
             │               │               │
             ▼               ▼               ▼
-┌────────────────┐  ┌──────────────┐  ┌───────────────────────────┐
-│  @msl/memory   │  │  @msl/tools  │  │  @msl/mercadolibre         │
-│  Cortex (SQLite)│  │  Approval Q  │  │  ML API (OAuth+HTTP)       │
-│  · Hebbian      │  │  Audit trail │  │  · Product sync            │
-│  · CTE spread   │  │  Risk gates  │  │  · Orders/messages         │
-│  · Darwinian    │  │  Execute     │  │  · Reputation              │
-│  · Business node│  │              │  │  · Listing prices (fees)   │
-│    protection   │  │              │  │  · Visits API              │
-│  · queryBy      │  │              │  │  · Status-filtered search  │
-│    Metadata     │  │              │  │                            │
-│  · Historical   │  │              │  │                            │
-│    snapshots    │  │              │  │                            │
-└────────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘
+┌────────────────┐  ┌──────────────┐  ┌───────────────────────────┐  ┌──────────────────────┐
+│  @msl/memory   │  │  @msl/tools  │  │  @msl/mercadolibre         │  │  @msl/creative-studio │
+│  Cortex (SQLite)│  │  Approval Q  │  │  ML API (OAuth+HTTP)       │  │  MiniMax (image/video) │
+│  · Hebbian      │  │  Audit trail │  │  · Product sync            │  │  · Policy engine       │
+│  · CTE spread   │  │  Risk gates  │  │  · Orders/messages         │  │  · Cost ledger         │
+│  · Darwinian    │  │  Execute     │  │  · Reputation              │  │  · CreativeJob pipeline│
+│  · Business node│  │              │  │  · Listing prices (fees)   │  │  · Human-approval gate │
+│    protection   │  │              │  │  · Visits API              │  │  · Cortex bridge       │
+│  · queryBy      │  │              │  │  · Status-filtered search  │  │                        │
+│    Metadata     │  │              │  │                            │  │                        │
+│  · Historical   │  │              │  │                            │  │                        │
+│    snapshots    │  │              │  │                            │  │                        │
+│  · Supplier     │  │              │  │                            │  │                        │
+│    Cortex Bridge│  │              │  │                            │  │                        │
+└────────┬───────┘  └──────┬───────┘  └──────────┬────────────────┘  └───────────┬──────────┘
           │                 │                      │
           └─────────┬───────┴──────────────────────┘
                     │
@@ -186,8 +190,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 │  alerts    │  │          │  │Sync jobs │  │adapter, storefront│
 │  Multi-    │  │          │  │Ingestion │  │projections        │
 │  seller    │  │          │  │worker    │  │                   │
-└────────────┘  └──────────┘  │(6h)      │  └──────────────────┘
-                              └──────────┘
+└────────────┘  └──────────┘  └──────────┘  └──────────────────┘
 ```
 
 ## Capabilities
@@ -207,7 +210,7 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 11  | **Product Sync**                        | Prepares Plasticov → Maustian listing sync proposals behind approval gates as one configured account boundary                                                                                                                                                                                                                               |
 | 12  | **Approval Queue**                      | Every write action goes through prepare → approve → execute → audit                                                                                                                                                                                                                                                                         |
 | 13  | **ML Business Tools**                   | 40 MCP tools + 17 agent tools for real MercadoLibre data: listings, fees, orders, ads, pricing, promotions, quality, relist, images, visits, claims, returns, shipping, moderation, notices, workforce, orchestration                                                                                                                       |
-| 14  | **Background Ingestion**                | 6h worker ingesting 8 entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing) into operational DB with per-kind checkpoints and freshness TTLs                                                                                                                                                       |
+| 14  | **Background Ingestion**                | Multi-cycle worker ingesting 9+ entity kinds (listings, claims, questions, orders, messages, reputation, product ads, pricing, creative snapshots) into operational DB with per-kind checkpoints and freshness TTLs                                                                                                      |
 | 15  | **Seasonal Detection**                  | Analyzes 2+ years of order history to detect seasonal patterns per category, 30-day advance alerts                                                                                                                                                                                                                                          |
 | 16  | **Cross-Account Intelligence**          | Compares Plasticov vs Maustian performance, detects gaps, suggests sync opportunities                                                                                                                                                                                                                                                       |
 | 17  | **Proactive Alerts**                    | Push notifications for visit anomalies, paused listing reuse, seasonal preparation, cross-account gaps                                                                                                                                                                                                                                      |
@@ -229,6 +232,9 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | 33  | **Cost/Cache Operating Ledger**         | Internal bounded ledger for token/cache counters and routing evidence. Summaries stay in Block C, omit raw prompts/responses/secrets/raw IDs, and are not billing truth.                                                                                                                                                                    |
 | 34  | **Supplier Mirror / Jinpeng Readiness** | Local SQLite supplier evidence, target-policy proposals, disabled-by-default scheduler gates, and Jinpeng dry-run bootstrap. No live supplier automation is enabled yet.                                                                                                                                                                    |
 | 35  | **Owned Ecommerce (Preview + Runtime)** | Medusa-oriented storefront projections, static preview route, readiness/approval guardrails, local/data media boundary, and DeepSeek fallback behavior. Runtime approval execution (contracts, executor, regression matrix) is merged and gated behind approvals + env credentials. Live Medusa publish/checkout remains future gated work. |
+| 36  | **Creative Studio Agent**             | AI-powered content generation lane integrated via agent message bus. MiniMax API for image and video generation with policy engine, cost ledger, and CEO approval gates. Creative assets daemon detects listing image problems and enqueues remediation proposals.                                                                            |
+| 37  | **Supplier → Cortex Bridge**          | Ingests supplier mirror data into Cortex neural graph for agent-driven reasoning. Feeds owned ecommerce storefront candidate discovery via spreading activation and pattern learning across supplier categories.                                                                                                                              |
+| 38  | **12 Autonomous Daemons**             | marketCatalog, operationsManager, costSupplier, creativeAssets, creativeCommercial, creativeStudio, productAdsMonitor, productAdsProfitability, ceoProfitabilityHandler, supplierManager, morningReport, eodSummary — autonomous 15-min cycles, read-only proposals, never mutate without CEO approval.                                     |
 
 ## Stack
 
@@ -239,10 +245,11 @@ Telegram durable session keys include the configured seller id (`telegram:<selle
 | **Memory**    | SQLite (better-sqlite3) + recursive CTEs     | Zero external services, ~400 lines TS                       |
 | **Web UI**    | Next.js 15 + React 19                        | Demo console for deterministic agent interaction            |
 | **Bot**       | Telegram (grammY, proactive messaging)       | Natural language interface, no UI needed                    |
+| **Creative**  | MiniMax API (image/video generation)       | AI-powered content, policy-gated, human-approved               |
 | **Ecommerce** | Medusa (write boundary, preview adapter)     | Owned ecommerce storefront projections, approval-gated      |
 | **Protocol**  | MCP (`@modelcontextprotocol/sdk`)            | Compatible tool surface for business evidence and proposals |
 | **Testing**   | Vitest (unit/integration) + Playwright (E2E) | Guarded platform support                                    |
-| **Quality**   | ESLint + Prettier + tsc strict               | No warnings, no untyped code                                |
+| **Quality**   | ESLint + Prettier + tsc strict               | 0 errors, 0 warnings, green CI                               |
 
 ## Philosophy
 
