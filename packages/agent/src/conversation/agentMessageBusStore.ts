@@ -6,6 +6,29 @@ import Database from "better-sqlite3";
 const MAX_ATTEMPTS = 3;
 const CLAIM_TIMEOUT_MINUTES = 5;
 
+// ── Migration ────────────────────────────────────────────────────────
+
+export function migrateBusSchema(db: Database.Database): void {
+  const cols = db.pragma("table_info(agent_message_bus)") as { name: string }[];
+  const existing = new Set(cols.map((c) => c.name));
+  const migrations: [string, string][] = [
+    ["result_json", "TEXT"],
+    ["error_json", "TEXT"],
+    ["cancel_reason", "TEXT"],
+    ["correlation_id", "TEXT"],
+    ["parent_message_id", "TEXT"],
+    ["seller_id", "TEXT"],
+    ["learned_at", "TEXT"],
+    ["outcome_score", "REAL"],
+    ["action_id", "TEXT"],
+  ];
+  for (const [col, type] of migrations) {
+    if (!existing.has(col)) {
+      db.exec(`ALTER TABLE agent_message_bus ADD COLUMN ${col} ${type}`);
+    }
+  }
+}
+
 // ── Schema ───────────────────────────────────────────────────────────
 
 const SCHEMA_SQL = `
@@ -50,6 +73,15 @@ type AgentMessageBusRow = {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+  result_json: string | null;
+  error_json: string | null;
+  cancel_reason: string | null;
+  correlation_id: string | null;
+  parent_message_id: string | null;
+  seller_id: string | null;
+  learned_at: string | null;
+  outcome_score: number | null;
+  action_id: string | null;
 };
 
 // ── Public types ─────────────────────────────────────────────────────
@@ -69,6 +101,15 @@ export type AgentMessage = {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  resultJson: string | null;
+  errorJson: string | null;
+  cancelReason: string | null;
+  correlationId: string | null;
+  parentMessageId: string | null;
+  sellerId: string | null;
+  learnedAt: string | null;
+  outcomeScore: number | null;
+  actionId: string | null;
 };
 
 export type EnqueueAgentMessageInput = {
@@ -78,13 +119,17 @@ export type EnqueueAgentMessageInput = {
   payloadJson: string;
   priority?: number;
   dedupeKey?: string;
+  correlationId?: string;
+  parentMessageId?: string;
+  sellerId?: string;
+  actionId?: string;
 };
 
 export type AgentMessageBusStore = {
   enqueue(input: EnqueueAgentMessageInput): AgentMessage;
   claimNext(receiverAgentId: string, options?: { limit?: number }): AgentMessage[];
-  resolve(messageId: string, result: unknown): void;
-  fail(messageId: string, error: string): void;
+  resolve(messageId: string, result?: unknown): void;
+  fail(messageId: string, error?: string): void;
   cancel(messageId: string, reason?: string): void;
   /** Look up recent messages whose dedupe_key starts with `prefix` and were created after `since` (ISO date string). */
   lookupRecentByDedupePrefix(prefix: string, since: string): AgentMessage[];
@@ -96,6 +141,12 @@ export type AgentMessageBusStore = {
   getProcessingStuck(timeoutMinutes?: number): AgentMessage[];
   /** Count of messages currently in `pending` status. */
   getPendingCount(): number;
+  /** Retrieve all messages sharing the same correlation ID. */
+  getMessagesByCorrelationId(correlationId: string): AgentMessage[];
+  /** Retrieve messages with outcome scores for learning pipeline analysis. */
+  getLearningHistory(options?: { since?: string; minScore?: number }): AgentMessage[];
+  /** Record an outcome score and timestamp for a resolved message. */
+  recordOutcome(messageId: string, score: number, learnedAt: string): void;
 };
 
 // ── Row mapper ───────────────────────────────────────────────────────
@@ -116,6 +167,15 @@ function rowToAgentMessage(row: AgentMessageBusRow): AgentMessage {
     resolvedAt: row.resolved_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    resultJson: row.result_json,
+    errorJson: row.error_json,
+    cancelReason: row.cancel_reason,
+    correlationId: row.correlation_id,
+    parentMessageId: row.parent_message_id,
+    sellerId: row.seller_id,
+    learnedAt: row.learned_at,
+    outcomeScore: row.outcome_score,
+    actionId: row.action_id,
   };
 }
 
@@ -123,6 +183,7 @@ function rowToAgentMessage(row: AgentMessageBusRow): AgentMessage {
 
 export function createAgentMessageBusStore(db: Database.Database): AgentMessageBusStore {
   db.exec(SCHEMA_SQL);
+  migrateBusSchema(db);
 
   // ── Prepared statements ────────────────────────────────────
 
@@ -136,10 +197,12 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
   const insertStmt = db.prepare(`
     INSERT INTO agent_message_bus (
       message_id, sender_agent_id, receiver_agent_id,
-      message_type, payload_json, status, priority, attempts, dedupe_key
+      message_type, payload_json, status, priority, attempts, dedupe_key,
+      correlation_id, parent_message_id, seller_id, action_id
     ) VALUES (
       @messageId, @senderAgentId, @receiverAgentId,
-      @messageType, @payloadJson, 'pending', @priority, 0, @dedupeKey
+      @messageType, @payloadJson, 'pending', @priority, 0, @dedupeKey,
+      @correlationId, @parentMessageId, @sellerId, @actionId
     )
   `);
 
@@ -166,8 +229,9 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
 
   const resolveStmt = db.prepare(`
     UPDATE agent_message_bus
-    SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now')
-    WHERE message_id = ? AND status = 'processing'
+    SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now'),
+        result_json = @result
+    WHERE message_id = @messageId AND status = 'processing'
   `);
 
   const failStmt = db.prepare(`
@@ -176,14 +240,16 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
       attempts = attempts + 1,
       status = CASE WHEN attempts + 1 >= @maxAttempts THEN 'failed' ELSE 'pending' END,
       locked_at = CASE WHEN attempts + 1 >= @maxAttempts THEN locked_at ELSE NULL END,
-      updated_at = datetime('now')
+      updated_at = datetime('now'),
+      error_json = @error
     WHERE message_id = @messageId AND status = 'processing'
   `);
 
   const cancelStmt = db.prepare(`
     UPDATE agent_message_bus
-    SET status = 'cancelled', updated_at = datetime('now')
-    WHERE message_id = ? AND status IN ('pending', 'processing')
+    SET status = 'cancelled', updated_at = datetime('now'),
+        cancel_reason = @reason
+    WHERE message_id = @messageId AND status IN ('pending', 'processing')
   `);
 
   const lookupRecentByDedupePrefixStmt = db.prepare(`
@@ -216,6 +282,26 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     SELECT COUNT(*) as cnt FROM agent_message_bus WHERE status = 'pending'
   `);
 
+  const getMessagesByCorrelationIdStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE correlation_id = ?
+    ORDER BY created_at ASC
+  `);
+
+  const getLearningHistoryStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE outcome_score IS NOT NULL
+      AND (@since IS NULL OR learned_at > @since)
+      AND (@minScore IS NULL OR outcome_score >= @minScore)
+    ORDER BY learned_at DESC
+  `);
+
+  const recordOutcomeStmt = db.prepare(`
+    UPDATE agent_message_bus
+    SET outcome_score = @score, learned_at = @learnedAt, updated_at = datetime('now')
+    WHERE message_id = @messageId
+  `);
+
   // ── API methods ────────────────────────────────────────────
 
   const enqueue = (input: EnqueueAgentMessageInput): AgentMessage => {
@@ -235,6 +321,10 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
       payloadJson: input.payloadJson,
       priority: input.priority ?? 5,
       dedupeKey: input.dedupeKey ?? null,
+      correlationId: input.correlationId ?? null,
+      parentMessageId: input.parentMessageId ?? null,
+      sellerId: input.sellerId ?? null,
+      actionId: input.actionId ?? null,
     });
 
     const row = selectByMessageIdStmt.get(messageId) as AgentMessageBusRow;
@@ -262,25 +352,32 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     return results;
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const resolve = (messageId: string, _result: unknown): void => {
-    const info = resolveStmt.run(messageId);
+  const resolve = (messageId: string, result?: unknown): void => {
+    const info = resolveStmt.run({
+      messageId,
+      result: result != null ? JSON.stringify(result) : null,
+    });
     if (info.changes === 0) {
       throw new Error(`AgentMessage "${messageId}" not found or not in a resolvable state.`);
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const fail = (messageId: string, _error: string): void => {
-    const info = failStmt.run({ messageId, maxAttempts: MAX_ATTEMPTS });
+  const fail = (messageId: string, error?: string): void => {
+    const info = failStmt.run({
+      messageId,
+      maxAttempts: MAX_ATTEMPTS,
+      error: error != null ? JSON.stringify({ message: error, timestamp: new Date().toISOString() }) : null,
+    });
     if (info.changes === 0) {
       throw new Error(`AgentMessage "${messageId}" not found or not in processing state.`);
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const cancel = (messageId: string, _reason?: string): void => {
-    const info = cancelStmt.run(messageId);
+  const cancel = (messageId: string, reason?: string): void => {
+    const info = cancelStmt.run({
+      messageId,
+      reason: reason ?? null,
+    });
     if (info.changes === 0) {
       throw new Error(`AgentMessage "${messageId}" not found or not in a cancellable state.`);
     }
@@ -314,6 +411,23 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     return row?.cnt ?? 0;
   };
 
+  const getMessagesByCorrelationId = (correlationId: string): AgentMessage[] => {
+    const rows = getMessagesByCorrelationIdStmt.all(correlationId) as AgentMessageBusRow[];
+    return rows.map(rowToAgentMessage);
+  };
+
+  const getLearningHistory = (options?: { since?: string; minScore?: number }): AgentMessage[] => {
+    const rows = getLearningHistoryStmt.all({
+      since: options?.since ?? null,
+      minScore: options?.minScore ?? null,
+    }) as AgentMessageBusRow[];
+    return rows.map(rowToAgentMessage);
+  };
+
+  const recordOutcome = (messageId: string, score: number, learnedAt: string): void => {
+    recordOutcomeStmt.run({ messageId, score, learnedAt });
+  };
+
   return {
     enqueue,
     claimNext,
@@ -325,5 +439,8 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     reenqueueFailed,
     getProcessingStuck,
     getPendingCount,
+    getMessagesByCorrelationId,
+    getLearningHistory,
+    recordOutcome,
   };
 }

@@ -35,11 +35,11 @@ Chain strategy: stacked-to-main
 
 ## PR2: Bus Schema + Outcome Persistence (~350 lines)
 
-- [ ] 2.1 `migrateBusSchema()` — `PRAGMA table_info` + 9 columns
-- [ ] 2.2 Wire `resolve/result_json`, `fail/error_json`, `cancel/cancel_reason`
-- [ ] 2.3 Enqueue opts: `correlationId`, `parentMessageId`, `sellerId`, `actionId`
-- [ ] 2.4 APIs: `getMessagesByCorrelationId`, `getLearningHistory`, `recordOutcome`
-- [ ] 2.5 Tests: migration, column writes, correlation queries
+- [x] 2.1 `migrateBusSchema()` — `PRAGMA table_info` + 9 columns
+- [x] 2.2 Wire `resolve/result_json`, `fail/error_json`, `cancel/cancel_reason`
+- [x] 2.3 Enqueue opts: `correlationId`, `parentMessageId`, `sellerId`, `actionId`
+- [x] 2.4 APIs: `getMessagesByCorrelationId`, `getLearningHistory`, `recordOutcome`
+- [x] 2.5 Tests: migration, column writes, correlation queries
 
 ## PR3: Lane Contract Completeness (~300 lines)
 
