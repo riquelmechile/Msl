@@ -17,3 +17,4 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 .msl/
+msl-forum-topics.json
