@@ -69,9 +69,9 @@ Chain strategy: stacked-to-main
 
 ## PR6: Maturity + E2E (~350 lines)
 
-- [ ] 6.1 Create `validateEnv.ts` — `validateRuntimeEnv()` → `EnvValidation`
-- [ ] 6.2 Create `webhookIngestor.ts` — endpoint + routing + dedup
-- [ ] 6.3 Create `learningPipeline.ts` — batch scoring → Cortex observations
-- [ ] 6.4 Startup: `validateRuntimeEnv()` + webhook in start script
-- [ ] 6.5 E2E: `agent-pipeline.e2e.test.ts` — SQLite tick→daemon→CEO→inbox
-- [ ] 6.6 Unit tests: env validation, webhook routing, learning batch
+- [x] 6.1 Create `validateEnv.ts` — `validateRuntimeEnv()` → `EnvValidation`
+- [x] 6.2 Create `webhookIngestor.ts` — endpoint + routing + dedup
+- [x] 6.3 Create `learningPipeline.ts` — batch scoring → Cortex observations
+- [x] 6.4 Startup: `validateRuntimeEnv()` + webhook in start script
+- [x] 6.5 E2E: `agent-pipeline.e2e.test.ts` — SQLite tick→daemon→CEO→inbox
+- [x] 6.6 Unit tests: env validation, webhook routing, learning batch

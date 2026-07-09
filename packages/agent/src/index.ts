@@ -308,6 +308,21 @@ export type {
   WorkforceCostCacheLedgerStore,
 } from "./conversation/workforceCostCacheLedgerStore.js";
 
+export { createCeoInboxStore } from "./conversation/ceoInboxStore.js";
+export type { CeoInboxStore, InsertAgentProposalInput, AgentProposalRow } from "./conversation/ceoInboxStore.js";
+
+// ── Runtime env validation ───────────────────────────────────────────
+export { validateRuntimeEnv } from "./conversation/validateEnv.js";
+export type { EnvValidation } from "./conversation/validateEnv.js";
+
+// ── Webhook ingestor ─────────────────────────────────────────────────
+export { createWebhookIngestor } from "./conversation/webhookIngestor.js";
+export type { WebhookIngestor, WebhookEvent, WebhookResponse } from "./conversation/webhookIngestor.js";
+
+// ── Learning pipeline ────────────────────────────────────────────────
+export { runLearningPipeline, scoreMessage } from "./conversation/learningPipeline.js";
+export type { LearningPipelineOptions, ScoredOutcome, LearningPipelineResult } from "./conversation/learningPipeline.js";
+
 // ── Sync tools ──────────────────────────────────────────────────────
 export {
   createSyncProductTool,

@@ -147,6 +147,8 @@ export type AgentMessageBusStore = {
   getLearningHistory(options?: { since?: string; minScore?: number }): AgentMessage[];
   /** Record an outcome score and timestamp for a resolved message. */
   recordOutcome(messageId: string, score: number, learnedAt: string): void;
+  /** Retrieve messages that have outcome_score IS NULL and a terminal status (resolved, failed, cancelled). */
+  getUnscoredMessages(options?: { since?: string; limit?: number }): AgentMessage[];
 };
 
 // ── Row mapper ───────────────────────────────────────────────────────
@@ -296,6 +298,17 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     ORDER BY learned_at DESC
   `);
 
+  const getUnscoredMessagesStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE outcome_score IS NULL
+      AND status IN ('resolved', 'failed', 'cancelled')
+      AND (@since IS NULL OR updated_at > @since)
+    ORDER BY
+      CASE status WHEN 'resolved' THEN 0 WHEN 'failed' THEN 1 ELSE 2 END,
+      updated_at DESC
+    LIMIT @limit
+  `);
+
   const recordOutcomeStmt = db.prepare(`
     UPDATE agent_message_bus
     SET outcome_score = @score, learned_at = @learnedAt, updated_at = datetime('now')
@@ -428,6 +441,14 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     recordOutcomeStmt.run({ messageId, score, learnedAt });
   };
 
+  const getUnscoredMessages = (options?: { since?: string; limit?: number }): AgentMessage[] => {
+    const rows = getUnscoredMessagesStmt.all({
+      since: options?.since ?? null,
+      limit: options?.limit ?? 100,
+    }) as AgentMessageBusRow[];
+    return rows.map(rowToAgentMessage);
+  };
+
   return {
     enqueue,
     claimNext,
@@ -442,5 +463,6 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     getMessagesByCorrelationId,
     getLearningHistory,
     recordOutcome,
+    getUnscoredMessages,
   };
 }

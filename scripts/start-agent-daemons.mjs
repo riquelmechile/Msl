@@ -38,6 +38,18 @@ if (!cortexPath) {
   process.exit(1);
 }
 
+// ── Runtime env validation ────────────────────────────────────
+const { validateRuntimeEnv } = await import("@msl/agent");
+const envCheck = validateRuntimeEnv();
+if (!envCheck.valid) {
+  for (const error of envCheck.errors) {
+    console.warn("[agent-daemons] Env error:", error);
+  }
+}
+for (const warning of envCheck.warnings) {
+  console.warn("[agent-daemons] Env warning:", warning);
+}
+
 // ── Imports ────────────────────────────────────────────────────
 const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonScheduler } =
   await import("@msl/agent");
@@ -168,6 +180,15 @@ const advisors = createDaemonAdvisorsFromEnv(env, {
   supplierMirrorStore,
 });
 
+// ── Webhook ingestor (optional) ──────────────────────────────
+const webhookPort = env.MSL_WEBHOOK_PORT?.trim();
+let webhookHandle = undefined;
+if (webhookPort) {
+  const { createWebhookIngestor } = await import("@msl/agent");
+  webhookHandle = createWebhookIngestor(bus);
+  webhookHandle.start(Number(webhookPort));
+}
+
 // ── Start daemon scheduler ─────────────────────────────────────
 console.log("[agent-daemons] Starting daemon scheduler...");
 
@@ -216,28 +237,19 @@ const dlqInterval = setInterval(
 );
 
 // ── Graceful shutdown ──────────────────────────────────────────
-process.on("SIGINT", () => {
+const shutdown = () => {
   clearInterval(healthInterval);
   clearInterval(dlqInterval);
   console.log("\n[agent-daemons] Stopping daemon scheduler...");
   handle.stop();
+  webhookHandle?.stop();
   supplierMirrorHandle?.stop();
   busDb.close();
   readerDb.close();
   approvalRepo?.close?.();
   supplierMirrorRuntime?.close();
   process.exit(0);
-});
+};
 
-process.on("SIGTERM", () => {
-  clearInterval(healthInterval);
-  clearInterval(dlqInterval);
-  console.log("\n[agent-daemons] Stopping daemon scheduler...");
-  handle.stop();
-  supplierMirrorHandle?.stop();
-  busDb.close();
-  readerDb.close();
-  approvalRepo?.close?.();
-  supplierMirrorRuntime?.close();
-  process.exit(0);
-});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
