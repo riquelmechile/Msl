@@ -1,5 +1,6 @@
 import type { SupplierMirrorStore } from "@msl/memory";
-import { getDeepSeekClient } from "./deepseekClient.js";
+import { DeepSeekRealTransport } from "./transports/deepseekTransport.js";
+import type { DeepSeekTransport } from "./transports/deepseekTransport.js";
 import { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
 import { OperationsDeepSeekAdvisor } from "./operationsDeepSeekAdvisor.js";
 import { CatalogDeepSeekAdvisor } from "./catalogDeepSeekAdvisor.js";
@@ -63,8 +64,8 @@ export function createDaemonAdvisorsFromEnv(
     return {};
   }
 
-  const baseUrl = env.DEEPSEEK_BASE_URL?.trim() || undefined;
-  const openai = getDeepSeekClient(deepseekKey, baseUrl);
+  const baseUrl = env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com";
+  const transport: DeepSeekTransport = new DeepSeekRealTransport(deepseekKey, baseUrl);
 
   const result: DaemonAdvisors = {};
 
@@ -75,7 +76,7 @@ export function createDaemonAdvisorsFromEnv(
   if (extra.supplierMirrorStore) {
     result.advisor = new SupplierMirrorDeepSeekAdvisor({
       store: extra.supplierMirrorStore,
-      openai,
+      transport,
       sellerIds,
       ...ledgerParam,
     });
@@ -84,7 +85,7 @@ export function createDaemonAdvisorsFromEnv(
   // ── OperationsDeepSeekAdvisor ────────────────────────────────
   try {
     result.operationsAdvisor = new OperationsDeepSeekAdvisor({
-      openai,
+      transport,
       sellerIds,
       ...ledgerParam,
     });
@@ -95,7 +96,7 @@ export function createDaemonAdvisorsFromEnv(
   // ── CatalogDeepSeekAdvisor ───────────────────────────────────
   try {
     result.catalogAdvisor = new CatalogDeepSeekAdvisor({
-      openai,
+      transport,
       sellerIds,
       ...ledgerParam,
     });
@@ -106,7 +107,7 @@ export function createDaemonAdvisorsFromEnv(
   // ── CostSupplierDeepSeekAdvisor ──────────────────────────────
   try {
     result.costSupplierAdvisor = new CostSupplierDeepSeekAdvisor({
-      openai,
+      transport,
       sellerIds,
       ...ledgerParam,
     });
@@ -117,7 +118,7 @@ export function createDaemonAdvisorsFromEnv(
   // ── CreativeDeepSeekAdvisor ──────────────────────────────────
   try {
     result.creativeAdvisor = new CreativeDeepSeekAdvisor({
-      openai,
+      transport,
       sellerIds,
       ...ledgerParam,
     });

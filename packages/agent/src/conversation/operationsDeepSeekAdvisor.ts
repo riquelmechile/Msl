@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import type { DeepSeekTransport } from "./transports/deepseekTransport.js";
 import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
 import { DeepSeekReasoningGateway } from "../reasoning/DeepSeekReasoningGateway.js";
 import { ReasoningLevel } from "../reasoning/reasoningTypes.js";
@@ -39,28 +39,28 @@ export type OperationsAnalysis = {
 
 export class OperationsDeepSeekAdvisor {
   private gateway: DeepSeekReasoningGateway | null = null;
-  private openai: OpenAI;
+  private transport: DeepSeekTransport;
   private ledger: WorkforceCostCacheLedgerStore | undefined;
   private sellerIds: string[];
 
   constructor(input: {
-    openai: OpenAI;
+    transport: DeepSeekTransport;
     sellerIds: string[];
     ledger?: WorkforceCostCacheLedgerStore;
   }) {
-    this.openai = input.openai;
+    this.transport = input.transport;
     this.sellerIds = input.sellerIds;
     this.ledger = input.ledger;
   }
 
   /**
    * Lazily initializes the reasoning gateway, sharing the singleton
-   * OpenAI client. Keeps constructor signature compatible with the
+   * transport. Keeps constructor signature compatible with the
    * SupplierMirrorDeepSeekAdvisor pattern.
    */
   private getGateway(): DeepSeekReasoningGateway {
     if (!this.gateway) {
-      this.gateway = new DeepSeekReasoningGateway(this.openai, this.ledger);
+      this.gateway = new DeepSeekReasoningGateway(this.transport, this.ledger);
     }
     return this.gateway;
   }

@@ -1,4 +1,4 @@
-import { getDeepSeekClient } from "../conversation/deepseekClient.js";
+import { DeepSeekRealTransport } from "../conversation/transports/deepseekTransport.js";
 import {
   resolveDeepSeekRuntimeConfig,
   type DeepSeekRuntimeConfig,
@@ -88,8 +88,8 @@ export function createCeoDeepSeekClient(
   const resolved = runtime ?? resolveDeepSeekRuntimeConfig();
   if (!resolved.apiKey) return null;
 
-  const openai = getDeepSeekClient(resolved.apiKey, resolved.baseURL);
-  const gateway = new DeepSeekReasoningGateway(openai, undefined, _deps?.autonomy);
+  const transport = new DeepSeekRealTransport(resolved.apiKey, resolved.baseURL);
+  const gateway = new DeepSeekReasoningGateway(transport, undefined, _deps?.autonomy);
 
   return new CeoDeepSeekClientImpl(gateway);
 }
