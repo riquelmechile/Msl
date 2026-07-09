@@ -1,6 +1,5 @@
 import type { ActorType, ProbeAlert, SimulationResult } from "../types.js";
 
-
 import { simulateActor as defaultSimulateActor } from "../actorSimulator.js";
 import {
   analyzeQuestions as defaultAnalyzeQuestions,

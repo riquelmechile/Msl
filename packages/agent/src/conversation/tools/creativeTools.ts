@@ -97,7 +97,7 @@ export function createApproveCreativeAssetTool(
         assetId: args.assetId,
         notes: args.notes ?? null,
         message:
-          `Asset ${args.assetId} for job ${args.jobId} has been approved for preparation. ` +  // eslint-disable-line @typescript-eslint/restrict-template-expressions
+          `Asset ${args.assetId} for job ${args.jobId} has been approved for preparation. ` + // eslint-disable-line @typescript-eslint/restrict-template-expressions
           "No external mutation executed. Use the prepare-only ML orchestration flow to upload and associate.",
         nextAction: "ml-orchestration-prepare",
         noMutationExecuted: true,

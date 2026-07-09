@@ -177,7 +177,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
       try {
         let payload: Record<string, unknown> = {};
         try {
-          payload = JSON.parse(claim.payloadJson);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+          payload = JSON.parse(claim.payloadJson); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
         } catch {
           // non-JSON payloads are still consumed but skipped for review
         }

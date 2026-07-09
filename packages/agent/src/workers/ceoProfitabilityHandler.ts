@@ -110,10 +110,10 @@ function parseFindings(payloadJson: string): {
     const payload = JSON.parse(payloadJson) as Record<string, unknown>;
     if (payload.type !== "proposal") return null;
 
-    const reportedFindings = payload.findings as unknown[] ?? [];   
+    const reportedFindings = (payload.findings as unknown[]) ?? [];
     if (reportedFindings.length === 0) return null;
 
-    const capturedAt: string = payload.capturedAt as string ?? new Date().toISOString();   
+    const capturedAt: string = (payload.capturedAt as string) ?? new Date().toISOString();
 
     // Parse recommendation identity to extract sellerId, campaignId, itemId, signal
     const findings: CeoFinding[] = (reportedFindings as Record<string, unknown>[]).map((f) => {
@@ -122,7 +122,7 @@ function parseFindings(payloadJson: string): {
       // prefix:sellerId:campaignId:itemId:signal
       const sellerId = parts[1] ?? "";
       const campaignId = parts[2] ?? "";
-      const itemId = parts[3] ?? "";      
+      const itemId = parts[3] ?? "";
       let signal: string;
       let dataGapDate: string | undefined;
 

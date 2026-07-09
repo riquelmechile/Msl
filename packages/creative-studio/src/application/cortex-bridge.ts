@@ -37,7 +37,7 @@ export type CortexSink = {
     result: CreativeExecutionResult,
     outcome: CortexOutcome,
   ): Promise<void>;
-}
+};
 
 export class CortexBridge implements CortexSink {
   constructor(
@@ -53,7 +53,8 @@ export class CortexBridge implements CortexSink {
    * @param result  — The full execution result
    * @param outcome — Approval/publish state + optional metrics
    */
-  async recordOutcome(  // eslint-disable-line @typescript-eslint/require-await
+  async recordOutcome(
+     
     jobId: string,
     result: CreativeExecutionResult,
     outcome: CortexOutcome,

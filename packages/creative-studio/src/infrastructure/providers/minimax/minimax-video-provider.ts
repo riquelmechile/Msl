@@ -37,7 +37,7 @@ type VideoModelConfig = {
   model: string;
   costPerSecond: number;
   resolution: string;
-}
+};
 
 const VIDEO_MODELS: Record<string, VideoModelConfig> = {
   "MiniMax-Hailuo-2.3-Fast": {

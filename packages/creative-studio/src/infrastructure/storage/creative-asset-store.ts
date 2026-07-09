@@ -26,7 +26,8 @@ export class CreativeAssetStore {
    * Save an asset buffer to local storage.
    * Returns the storage URI (file:// scheme).
    */
-  async saveAsset(assetId: string, buffer: Buffer, metadata: object): Promise<string> {  // eslint-disable-line @typescript-eslint/require-await
+  async saveAsset(assetId: string, buffer: Buffer, metadata: object): Promise<string> {
+     
     this.ensureDir();
 
     const filePath = resolve(this.storagePath, assetId);
@@ -42,7 +43,8 @@ export class CreativeAssetStore {
   /**
    * Get the local file system path for an asset.
    */
-  async getAssetPath(assetId: string): Promise<string> {  // eslint-disable-line @typescript-eslint/require-await
+  async getAssetPath(assetId: string): Promise<string> {
+     
     return resolve(this.storagePath, assetId);
   }
 

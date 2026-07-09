@@ -11,7 +11,7 @@ import {
   safeString,
   normalizeCompanyAgentText,
   validateCompanyAgentText,
-  truncateCompanyAgentText,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  truncateCompanyAgentText,
   nonEmptyUniqueStrings,
   isWritableCompanyAgentRegistry,
   summarizeCompanyAgent,
@@ -21,7 +21,6 @@ import {
   validDepartmentIds,
   companyAgentIdPattern,
   productiveRequestPattern,
-  promptInjectionPattern,  // eslint-disable-line @typescript-eslint/no-unused-vars
 } from "./types.js";
 import type { AgentEvidenceResponse } from "../companyAgents.js";
 
@@ -188,7 +187,8 @@ export function createCreateCompanyAgentTool(
       ];
 
       try {
-        const agent = registry.insertCompanyAgent({  // eslint-disable-line @typescript-eslint/no-unsafe-assignment,@typescript-eslint/no-unsafe-call
+        const agent = registry.insertCompanyAgent({
+           
           id: agentId,
           label,
           departmentId,
@@ -202,7 +202,7 @@ export function createCreateCompanyAgentTool(
 
         return {
           status: "created",
-          agent: summarizeCompanyAgent(agent),  // eslint-disable-line @typescript-eslint/no-unsafe-argument
+          agent: summarizeCompanyAgent(agent), // eslint-disable-line @typescript-eslint/no-unsafe-argument
           noExternalMutationExecuted: true,
         };
       } catch {

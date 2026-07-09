@@ -84,7 +84,7 @@ export const morningReportDaemon: DaemonHandler = async ({
         if (prevScore > 0 && currScore < prevScore * 0.95) {
           allAlerts.push(`🔴 ${sellerName}: reputación bajó de ${prevScore} a ${currScore}`);
         }
-        summary.push(`   ⭐ Reputación: ${String(latest.reputationLevel as string ?? "N/A")}`);
+        summary.push(`   ⭐ Reputación: ${String((latest.reputationLevel as string) ?? "N/A")}`);
       }
     } catch {
       /* skip */

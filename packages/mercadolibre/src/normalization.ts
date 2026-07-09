@@ -1,8 +1,4 @@
-import {
-  evaluateFreshness,
-  isMlcCategoryId,
-  isMlcDomainId,
-} from "@msl/domain";
+import { evaluateFreshness, isMlcCategoryId, isMlcDomainId } from "@msl/domain";
 import type {
   MlCategory,
   MlCategoriesSnapshot,

@@ -1,7 +1,7 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CreativeSnapshotData } from "../conversation/backgroundIngestion.js";
 import type {
-  CreativeDeepSeekAdvisor,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  CreativeDeepSeekAdvisor, // eslint-disable-line @typescript-eslint/no-unused-vars
   CreativeActionableFinding,
   CreativeEnrichmentFinding,
 } from "../conversation/creativeDeepSeekAdvisor.js";
@@ -17,7 +17,7 @@ function metadataString(value: unknown, fallback = ""): string {
 
 type CreativeSnapshotWithSeller = {
   sellerId: string;
-} & CreativeSnapshotData
+} & CreativeSnapshotData;
 
 // ── Daemon handler ──────────────────────────────────────────────────
 

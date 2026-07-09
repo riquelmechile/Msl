@@ -6,7 +6,7 @@ import {
   safeString,
   normalizeCompanyAgentText,
   validateCompanyAgentText,
-  truncateCompanyAgentText,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  truncateCompanyAgentText,
   summarizeAgentSkill,
   companyAgentTextLimits,
   validSkillCategories,

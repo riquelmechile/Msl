@@ -2323,14 +2323,15 @@ describe("buildConsensusContext", () => {
     const result = buildConsensusContext(proposal, store);
 
     expect(result).toBe("");
-    expect(store.requiresConsensus).toHaveBeenCalledWith("stock-change");  // eslint-disable-line @typescript-eslint/unbound-method
+    expect(store.requiresConsensus).toHaveBeenCalledWith("stock-change"); // eslint-disable-line @typescript-eslint/unbound-method
   });
 
   it("returns empty string when no reviews exist for the proposal", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) =>  // eslint-disable-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
+           
           ({
             proposalId: "prop-001",
             reviews: [],
@@ -2352,7 +2353,8 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) =>  // eslint-disable-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
+           
           ({
             proposalId: "prop-001",
             reviews: [
@@ -2408,7 +2410,8 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) =>  // eslint-disable-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
+           
           ({
             proposalId: "prop-002",
             reviews: [
@@ -2465,7 +2468,8 @@ describe("createAgentLoop — consensus context integration", () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
       getConsensus: vi.fn(
-        (_proposalId: string) =>  // eslint-disable-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
+           
           ({
             proposalId: "prop-001",
             reviews: [
@@ -2492,7 +2496,6 @@ describe("createAgentLoop — consensus context integration", () => {
       mockClient: true,
       consensusStore,
     });
-
 
     // The mock client for "listing-edit" intent returns normal text (no prepare_action).
     // We need a state where the LLM generates a proposal via prepare_action.
@@ -2554,7 +2557,8 @@ describe("createAgentLoop — consensus context integration", () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
       getConsensus: vi.fn(
-        (_proposalId: string) =>  // eslint-disable-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
+           
           ({
             proposalId: "prop-pending",
             reviews: [

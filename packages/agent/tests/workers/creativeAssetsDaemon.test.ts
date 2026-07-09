@@ -640,8 +640,8 @@ describe("creativeAssetsDaemon", () => {
       expect(msgRow!.receiver_agent_id).toBe("ceo");
       expect(msgRow!.message_type).toBe("proposal");
 
-      const payload = JSON.parse(msgRow!.payload_json as string);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-      expect(payload.noMutationExecuted).toBe(true);  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+      const payload = JSON.parse(msgRow!.payload_json as string); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+      expect(payload.noMutationExecuted).toBe(true); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
     });
 
     it("uses correct dedupeKey format with hour segment", async () => {
@@ -669,12 +669,13 @@ describe("creativeAssetsDaemon", () => {
         expect(row!.dedupe_key).toMatch(
           /^creative-assets-(critical|warning)-\d{4}-\d{2}-\d{2}T\d{2}$/,
         );
-        const pl = JSON.parse(row!.payload_json);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-        expect(pl.noMutationExecuted).toBe(true);  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+        const pl = JSON.parse(row!.payload_json); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        expect(pl.noMutationExecuted).toBe(true); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
       }
     });
 
-    it("enqueues creative-studio delegation message when env gate is enabled and low image count detected", async () => {  // eslint-disable-line @typescript-eslint/require-await
+    it("enqueues creative-studio delegation message when env gate is enabled and low image count detected", async () => {
+       
       // Set env gate for creative-studio
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
 
@@ -684,14 +685,6 @@ describe("creativeAssetsDaemon", () => {
         hasMainImage: false,
         moderationStatus: "active",
       });
-
-
-
-
-
-
-
-
 
       // Verify CEO proposal was enqueued (existing flow preserved)
       const ceoMessages = db
@@ -707,16 +700,17 @@ describe("creativeAssetsDaemon", () => {
       expect(studioMessages[0]!.sender_agent_id).toBe("creative-assets");
       expect(studioMessages[0]!.message_type).toBe("proposal");
 
-      const payload = JSON.parse(studioMessages[0]!.payload_json as string);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-      expect(payload.requestId).toContain("cj_");  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-      expect(payload.kind).toBe("product-cover-i2i");  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-      expect(payload.channel).toBe("mercadolibre");  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+      const payload = JSON.parse(studioMessages[0]!.payload_json as string); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+      expect(payload.requestId).toContain("cj_"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+      expect(payload.kind).toBe("product-cover-i2i"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+      expect(payload.channel).toBe("mercadolibre"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
 
       // Clean up
       delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
     });
 
-    it("does NOT enqueue creative-studio delegation when env gate is disabled", async () => {  // eslint-disable-line @typescript-eslint/require-await
+    it("does NOT enqueue creative-studio delegation when env gate is disabled", async () => {
+       
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
 
       seedCreativeSnapshot(operationalStore, {
@@ -725,14 +719,6 @@ describe("creativeAssetsDaemon", () => {
         hasMainImage: false,
         moderationStatus: "active",
       });
-
-
-
-
-
-
-
-
 
       // CEO proposal should still be enqueued
       const ceoMessages = db

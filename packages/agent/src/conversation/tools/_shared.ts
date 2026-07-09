@@ -11,8 +11,6 @@ import type {
 import { assertPlasticovToMaustianDirection } from "@msl/mercadolibre";
 import type { Strategy as SyncStrategy } from "@msl/mercadolibre";
 
-
-
 // ---------------------------------------------------------------------------
 // Shared types
 // ---------------------------------------------------------------------------
@@ -38,7 +36,8 @@ type PriceIntelligenceEndpointResult = {
   history: OptionalToolRead<MlcPricingAutomationHistorySnapshot>;
 };
 
-type PriceIntelligenceEndpointSpec<K extends PriceIntelligenceEndpointKey> = {  // eslint-disable-line @typescript-eslint/no-unused-vars
+type PriceIntelligenceEndpointSpec<K extends PriceIntelligenceEndpointKey> = {
+   
   key: K;
   read: () => Promise<PriceIntelligenceEndpointResult[K]>;
 };

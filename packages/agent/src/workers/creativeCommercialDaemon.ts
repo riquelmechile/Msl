@@ -1,6 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type {
-  CreativeDeepSeekAdvisor,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  CreativeDeepSeekAdvisor, // eslint-disable-line @typescript-eslint/no-unused-vars
   CreativeActionableFinding,
   CreativeEnrichmentFinding,
 } from "../conversation/creativeDeepSeekAdvisor.js";

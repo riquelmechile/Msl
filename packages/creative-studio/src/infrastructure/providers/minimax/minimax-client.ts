@@ -1,5 +1,3 @@
-
-
 // ── MiniMax API error codes ──────────────────────────────────────────
 
 export type MinimaxErrorCode =
@@ -21,11 +19,11 @@ export type MinimaxStatusCategory =
 export type MinimaxApiError = {
   status_code: MinimaxErrorCode;
   status_message: string;
-}
+};
 
 export type MinimaxBaseResponse = {
   base_resp: MinimaxApiError;
-}
+};
 
 // ── Client ───────────────────────────────────────────────────────────
 
@@ -33,7 +31,7 @@ export type MinimaxClientConfig = {
   apiKey: string;
   apiHost: string;
   timeoutMs: number;
-}
+};
 
 export class MinimaxClient {
   private readonly apiKey: string;
@@ -75,14 +73,13 @@ export class MinimaxClient {
       const bodyText = await response.text();
       let data: Record<string, unknown>;
       try {
-        data = JSON.parse(bodyText);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        data = JSON.parse(bodyText); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
       } catch {
         // Non-JSON response
         throw classifyError(0, `Non-JSON response (${response.status}): ${bodyText.slice(0, 200)}`);
       }
 
-      const maybeBaseResp = (data)["base_resp"] as
-        MinimaxApiError | undefined;
+      const maybeBaseResp = data["base_resp"] as MinimaxApiError | undefined;
 
       // Check HTTP-level errors first
       if (response.status === 401) {

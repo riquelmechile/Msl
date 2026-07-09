@@ -1,4 +1,3 @@
-
 import type { MlcListingSummary } from "@msl/mercadolibre";
 
 import { metadataString, todayLabel, categoryBreakdownFromMetadata } from "./utils.js";

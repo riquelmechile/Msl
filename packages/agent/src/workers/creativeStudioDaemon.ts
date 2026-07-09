@@ -105,10 +105,10 @@ export function createCortexBridge(cortex: GraphEngine): CortexSink {
 
 export const creativeStudioDaemon: DaemonHandler = async ({
   claim,
-  reader: _reader,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  reader: _reader, // eslint-disable-line @typescript-eslint/no-unused-vars
   cortex,
   bus,
-  sellerIds: _sellerIds,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  sellerIds: _sellerIds, // eslint-disable-line @typescript-eslint/no-unused-vars
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];

@@ -36,7 +36,7 @@ function seedOrmSnapshot(
 
 function seedCortexNode(engine: GraphEngine, metadata: Record<string, unknown>): number {
   const node = engine.getOrCreateNode(
-    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,  // eslint-disable-line @typescript-eslint/restrict-template-expressions
+    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`, // eslint-disable-line @typescript-eslint/restrict-template-expressions
     metadata,
   );
   return node.id;

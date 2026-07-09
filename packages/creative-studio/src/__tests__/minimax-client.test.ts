@@ -49,7 +49,8 @@ describe("MinimaxClient", () => {
 
       let capturedHeaders: Record<string, string> | undefined;
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementation(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
+      vi.mocked(fetch).mockImplementation(async (_url, opts) => {
+         
         capturedHeaders = opts?.headers as Record<string, string>;
         return {
           status: 200,

@@ -16,7 +16,7 @@ export type CreativeJob = {
   actualCost?: number;
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
 /**
  * Factory function to create a CreativeJob from a CreativeAssetRequest.

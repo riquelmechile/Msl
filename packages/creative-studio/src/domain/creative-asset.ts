@@ -10,7 +10,7 @@ export type CreativeAsset = {
   sha256: string;
   mlDiagnostic?: MlDiagnosticResult | undefined;
   policyFlags: string[];
-}
+};
 
 export type CreateCreativeAssetParams = {
   jobId: string;
@@ -19,7 +19,7 @@ export type CreateCreativeAssetParams = {
   sha256: string;
   mlDiagnostic?: MlDiagnosticResult;
   policyFlags?: string[];
-}
+};
 
 /**
  * Factory function to create a CreativeAsset.

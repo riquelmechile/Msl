@@ -59,7 +59,7 @@ function seedOrmSnapshot(
 
 function seedCortexNode(engine: GraphEngine, metadata: Record<string, unknown>): number {
   const node = engine.getOrCreateNode(
-    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,  // eslint-disable-line @typescript-eslint/restrict-template-expressions
+    `${metadata.type}_${metadata.itemId}_${Date.now()}_${Math.random().toString(36).slice(2)}`, // eslint-disable-line @typescript-eslint/restrict-template-expressions
     metadata,
   );
   return node.id;
@@ -370,15 +370,16 @@ describe("creativeCommercialDaemon", () => {
       expect(row!.receiver_agent_id).toBe("ceo");
       expect(row!.message_type).toBe("proposal");
 
-      const payload = JSON.parse(row!.payload_json as string);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-      expect(payload.noMutationExecuted).toBe(true);  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+      const payload = JSON.parse(row!.payload_json as string); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+      expect(payload.noMutationExecuted).toBe(true); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
     });
   });
 
   // ── Creative Studio delegation (Phase 5) ──────────────────────
 
   describe("creative-studio delegation", () => {
-    it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", async () => {  // eslint-disable-line @typescript-eslint/require-await
+    it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", async () => {
+       
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
 
@@ -440,14 +441,6 @@ describe("creativeCommercialDaemon", () => {
       // Enable creative-studio env gate
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
 
-
-
-
-
-
-
-
-
       // CEO proposal should still be enqueued
       const ceoMessages = db
         .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
@@ -462,14 +455,15 @@ describe("creativeCommercialDaemon", () => {
       expect(studioMessages[0]!.sender_agent_id).toBe("creative-commercial");
       expect(studioMessages[0]!.message_type).toBe("proposal");
 
-      const payload = JSON.parse(studioMessages[0]!.payload_json as string);  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-      expect(payload.kind).toBe("social-pack");  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-      expect(payload.channel).toBe("mercadolibre");  // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+      const payload = JSON.parse(studioMessages[0]!.payload_json as string); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+      expect(payload.kind).toBe("social-pack"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+      expect(payload.channel).toBe("mercadolibre"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
 
       delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
     });
 
-    it("does NOT enqueue social-pack to creative-studio when env gate is disabled", async () => {  // eslint-disable-line @typescript-eslint/require-await
+    it("does NOT enqueue social-pack to creative-studio when env gate is disabled", async () => {
+       
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
 
@@ -499,14 +493,6 @@ describe("creativeCommercialDaemon", () => {
       });
 
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
-
-
-
-
-
-
-
-
 
       // CEO proposal still enqueued
       const ceoMessages = db

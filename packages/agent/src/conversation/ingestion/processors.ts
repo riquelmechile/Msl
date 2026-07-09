@@ -1,10 +1,3 @@
-
-
-import {
-  buildDeepSeekChatCompletionRequest,  // eslint-disable-line @typescript-eslint/no-unused-vars
-  resolveDeepSeekRuntimeConfig,  // eslint-disable-line @typescript-eslint/no-unused-vars
-  resolveDeepSeekUserId,  // eslint-disable-line @typescript-eslint/no-unused-vars
-} from "../deepseekRuntime.js";
 import type { GraphEngine, OperationalReadModelWriter } from "@msl/memory";
 import type {
   MlcApiClient,
@@ -12,7 +5,6 @@ import type {
   MlcListingSummary,
   MlcMessageSummary,
   MlcOrderSummary,
-  MlcPerformanceSummary,
   MlcPriceToWinSummary,
   MlcProductAdsInsights,
   MlcQuestionSummary,
@@ -25,8 +17,6 @@ import {
   isRecord,
   metadataString,
   todayLabel,
-  categoryBreakdownFromMetadata,  // eslint-disable-line @typescript-eslint/no-unused-vars
-  hashString,  // eslint-disable-line @typescript-eslint/no-unused-vars
   paginateAll,
   isGracefulPricingNoDataError,
   selectRotatedPricingListings,
@@ -69,7 +59,6 @@ export const PRICING_MAX_ITEMS_PER_CYCLE = 20;
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-
 const TREND_WINDOW = 3;
 const VISIT_SPIKE_THRESHOLD = 0.5;
 const PRICE_CHANGE_THRESHOLD = 0.2;
@@ -83,10 +72,6 @@ function isMlcListingSummary(value: unknown): value is MlcListingSummary {
 
 function isMlcVisitsSummary(value: unknown): value is MlcVisitsSummary {
   return isRecord(value) && typeof value.itemId === "string";
-}
-
-function isMlcPerformanceSummary(value: unknown): value is MlcPerformanceSummary {
-  return isRecord(value) && typeof value.entityId === "string";
 }
 
 function isMlcProductAdsInsights(value: unknown): value is MlcProductAdsInsights {
@@ -106,14 +91,6 @@ function firstVisitsSummary(
   const raw: unknown = data;
   if (Array.isArray(raw)) return raw.find(isMlcVisitsSummary);
   return isMlcVisitsSummary(raw) ? raw : undefined;
-}
-
-function firstPerformanceSummary(  // eslint-disable-line @typescript-eslint/no-unused-vars
-  data: MlcPerformanceSummary | ReadonlyArray<MlcPerformanceSummary>,
-): MlcPerformanceSummary | undefined {
-  const raw: unknown = data;
-  if (Array.isArray(raw)) return raw.find(isMlcPerformanceSummary);
-  return isMlcPerformanceSummary(raw) ? raw : undefined;
 }
 
 function firstProductAdsInsights(
@@ -814,13 +791,15 @@ export async function processSellerCreativeAssets(
   const BATCH_SIZE = 50;
 
   try {
-    const listingSnaps: Array<{  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+    const listingSnaps: Array<{
+       
       itemId: string;
       data: Record<string, unknown>;
       capturedAt: string;
       freshness: string;
       evidenceId: string;
-    }> = await (config.operationalStore as any).searchSnapshots({  // eslint-disable-line @typescript-eslint/no-unsafe-call,@typescript-eslint/no-explicit-any,@typescript-eslint/no-unsafe-member-access
+    }> = await (config.operationalStore as any).searchSnapshots({
+       
       sellerId,
       kind: "listing_snapshot",
       limit: BATCH_SIZE,

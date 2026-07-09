@@ -255,7 +255,8 @@ describe("MinimaxVideoProvider", () => {
 
     it("includes first_frame_image from references", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+         
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -302,7 +303,8 @@ describe("MinimaxVideoProvider", () => {
       let capturedBody: string | undefined;
       // Override the first mock from mockPollingFlow to capture the request body
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+         
         capturedBody = opts?.body as string;
         return {
           status: 200,
@@ -348,7 +350,8 @@ describe("MinimaxVideoProvider", () => {
 
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockReset();
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+         
         capturedBody = opts?.body as string;
         return {
           status: 200,

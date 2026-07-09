@@ -64,7 +64,7 @@ export type CreativeAssetRequest = {
       };
     };
   };
-}
+};
 
 export type MlDiagnosticResult = {
   passed: boolean;
@@ -73,7 +73,7 @@ export type MlDiagnosticResult = {
     name: "white_background" | "minimum_size" | "text_logo" | "watermark";
     wordings: Array<{ kind: string; value: string }>;
   }>;
-}
+};
 
 export type CreativeExecutionResult = {
   jobId: string;
@@ -93,13 +93,13 @@ export type CreativeExecutionResult = {
     policyFlags: string[];
   }>;
   noMutationExecuted: true;
-}
+};
 
 export type CreativeProvider = {
   supports(kind: CreativeJobKind): boolean;
   estimate(request: CreativeAssetRequest): number;
   execute(request: CreativeAssetRequest): Promise<CreativeExecutionResult>;
-}
+};
 
 export type CreativeBudgetPolicy = {
   maxDailyUsd: number;
@@ -109,4 +109,4 @@ export type CreativeBudgetPolicy = {
   allowedProviders: Array<"minimax" | "flux" | "local">;
   dailySpentUsd: number;
   resetAt: string;
-}
+};

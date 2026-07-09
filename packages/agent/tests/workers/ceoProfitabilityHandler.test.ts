@@ -122,10 +122,12 @@ describe("ceoProfitabilityHandler", () => {
       ["unit-economics", "review-campaign-structure", "info", false],
     ])(
       "maps signal '%s' to proposalType '%s' severity '%s' requiresApproval %s",
-      async (signal, expectedProposalType, _expectedSeverity, _requiresApproval) => {  // eslint-disable-line @typescript-eslint/no-unused-vars
+      async (signal, expectedProposalType, _expectedSeverity, _requiresApproval) => {
+         
         const preparedActions: Array<Record<string, unknown>> = [];
         const ceoCtx = makeCeoContext({
-          prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+          prepareProductAdsAction: async (input) => {
+             
             preparedActions.push(input);
           },
         });
@@ -167,7 +169,8 @@ describe("ceoProfitabilityHandler", () => {
     it("calls prepareProductAdsAction for actionable signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+        prepareProductAdsAction: async (input) => {
+           
           preparedActions.push(input);
         },
       });
@@ -190,7 +193,8 @@ describe("ceoProfitabilityHandler", () => {
     it("does not call prepareProductAdsAction for unit-economics (info-only) signals", async () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+        prepareProductAdsAction: async (input) => {
+           
           preparedActions.push(input);
         },
       });
@@ -332,14 +336,16 @@ describe("ceoProfitabilityHandler", () => {
     it("sends proactive message when ceoContext.sendProactiveMessage is provided", async () => {
       const sentMessages: Array<{ chatId: number; text: string; threadId?: number }> = [];
       const ceoCtx = makeCeoContext({
-        sendProactiveMessage: async (chatId, text, threadId) => {  // eslint-disable-line @typescript-eslint/require-await
+        sendProactiveMessage: async (chatId, text, threadId) => {
+           
           sentMessages.push({ chatId, text, threadId } as {
             chatId: number;
             text: string;
             threadId?: number;
           });
         },
-        createForumTopic: async (_chatId, _name) => {  // eslint-disable-line @typescript-eslint/require-await,@typescript-eslint/no-unused-vars
+        createForumTopic: async (_chatId, _name) => {
+           
           return { message_thread_id: 42 };
         },
       });
@@ -562,7 +568,8 @@ describe("ceoProfitabilityHandler", () => {
     it("continues processing remaining findings when one fails", async () => {
       let callCount = 0;
       const ceoCtx = makeCeoContext({
-        sendProactiveMessage: async () => {  // eslint-disable-line @typescript-eslint/require-await
+        sendProactiveMessage: async () => {
+           
           callCount++;
           if (callCount === 1) {
             throw new Error("Simulated Telegram failure");
@@ -634,7 +641,8 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+        prepareProductAdsAction: async (input) => {
+           
           preparedActions.push(input);
         },
         workforceCostCacheLedgerStore: {
@@ -672,7 +680,8 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+        prepareProductAdsAction: async (input) => {
+           
           preparedActions.push(input);
         },
       });
@@ -699,7 +708,8 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+        prepareProductAdsAction: async (input) => {
+           
           preparedActions.push(input);
         },
         workforceCostCacheLedgerStore: {
@@ -740,7 +750,8 @@ describe("ceoProfitabilityHandler", () => {
       // No ledger in context → should skip LLM and use fallback
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+        prepareProductAdsAction: async (input) => {
+           
           preparedActions.push(input);
         },
         // Note: no workforceCostCacheLedgerStore
@@ -774,7 +785,8 @@ describe("ceoProfitabilityHandler", () => {
 
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
-        prepareProductAdsAction: async (input) => {  // eslint-disable-line @typescript-eslint/require-await
+        prepareProductAdsAction: async (input) => {
+           
           preparedActions.push(input);
         },
         workforceCostCacheLedgerStore: {

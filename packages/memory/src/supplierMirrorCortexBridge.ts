@@ -285,7 +285,7 @@ export async function ingestAllSuppliersToCortex(
  * Returns the node ID. The caller is responsible for creating the
  * lesson → supplier edge.
  */
-export async function ingestFallbackLessonToCortex(  // eslint-disable-line @typescript-eslint/require-await
+export async function ingestFallbackLessonToCortex( // eslint-disable-line @typescript-eslint/require-await
   cortex: GraphEngine,
   lesson: SupplierLearnedFallbackPolicy,
 ): Promise<number> {

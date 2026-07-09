@@ -1,7 +1,7 @@
 export type CostLedgerConfig = {
   maxDailyUsd: number;
   maxJobUsd: number;
-}
+};
 
 export class CostLedger {
   private dailySpentUsd: number = 0;

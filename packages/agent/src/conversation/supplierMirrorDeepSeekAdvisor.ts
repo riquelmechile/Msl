@@ -152,7 +152,10 @@ export class SupplierMirrorDeepSeekAdvisor {
         .join("\n") || "(sin notificaciones)",
       `\n### Fallback lessons aprendidas (${fallbackPolicies.length}):`,
       fallbackPolicies
-        .map((f) => `- ${f.policyType}: ${String((f.decision as { summary: string }).summary ?? "ver detalle")}`)
+        .map(
+          (f) =>
+            `- ${f.policyType}: ${String((f.decision as { summary: string }).summary ?? "ver detalle")}`,
+        )
         .join("\n") || "(sin lecciones)",
       `\n\nAnalizá los datos y devolvé hallazgos en este formato JSON:`,
       `{ "findings": [{ "kind": "stock-alert|price-opportunity|mapping-suggestion|policy-recommendation|general-insight", "severity": "info|warning|critical", "summary": "una línea", "detail": "explicación", "evidenceIds": ["id1"] }], "summary": "resumen general en 2-3 oraciones" }`,

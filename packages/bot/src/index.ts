@@ -266,9 +266,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     : undefined;
 
   // ── Supplier Mirror ─────────────────────────────────────────────
-  const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(
-    env,
-  );
+  const supplierMirrorRuntime = getSupplierMirrorRuntimeFromEnv(env);
   if (supplierMirrorRuntime) {
     console.log("[bot] Supplier Mirror store connected");
   }
@@ -281,7 +279,8 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
 
     // Hourly periodic sync — keeps Cortex in sync with SM store
     const syncInterval = setInterval(
-      async () => {  // eslint-disable-line @typescript-eslint/no-misused-promises
+      async () => {
+         
         try {
           await ingestAllSuppliersToCortex(supplierMirrorRuntime.store, engine);
           console.log("[bot] Supplier Mirror → Cortex hourly sync complete");

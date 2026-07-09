@@ -210,21 +210,20 @@ describe("creativeStudioDaemon", () => {
     expect(result.proposalEnqueued).toBe(true);
     expect(enqueue).toHaveBeenCalledTimes(1);
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const enqueued = enqueue.mock.calls[0]?.[0];
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(enqueued?.senderAgentId).toBe("creative-studio");
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(enqueued?.receiverAgentId).toBe("ceo");
 
- 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const payload = JSON.parse(enqueued?.payloadJson ?? "{}");  // eslint-disable-line @typescript-eslint/no-unsafe-assignment,@typescript-eslint/no-unsafe-member-access
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const payload = JSON.parse(enqueued?.payloadJson ?? "{}"); // eslint-disable-line @typescript-eslint/no-unsafe-assignment,@typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(payload.result).toBeDefined();
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(payload.noMutationExecuted).toBe(true);
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(payload.nextAction).toBe("approve_creative_asset");
   });
 
@@ -256,15 +255,16 @@ describe("creativeStudioDaemon", () => {
 
     function mlAwareClaim(overrides: Partial<AgentMessage> = {}): AgentMessage {
       const base = claimFixture(overrides);
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(base.payloadJson);
       // Ensure it's a mercadolibre channel with pictureType context
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      payload.channel = "mercadolibre";
- 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      payload.constraints = {  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      payload.channel = "mercadolibre";
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      payload.constraints = {
+         
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         ...payload.constraints,
         channelFormat: {
           ml: {
@@ -304,13 +304,12 @@ describe("creativeStudioDaemon", () => {
       expect(result.proposalEnqueued).toBe(true);
       expect(enqueue).toHaveBeenCalledTimes(1);
 
- 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const payload = JSON.parse(enqueue.mock.calls[0]?.[0]?.payloadJson ?? "{}");  // eslint-disable-line @typescript-eslint/no-unsafe-assignment,@typescript-eslint/no-unsafe-member-access
- 
+      const payload = JSON.parse(enqueue.mock.calls[0]?.[0]?.payloadJson ?? "{}"); // eslint-disable-line @typescript-eslint/no-unsafe-assignment,@typescript-eslint/no-unsafe-member-access
+
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const outputs = payload.result?.outputs ?? [];  // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const outputs = payload.result?.outputs ?? []; // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(outputs.length).toBeGreaterThan(0);
       expect(enqueue).toHaveBeenCalled();
     });
@@ -357,9 +356,9 @@ describe("creativeStudioDaemon", () => {
         .mockResolvedValue(new Response());
 
       const nonMlClaim = claimFixture();
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const payload = JSON.parse(nonMlClaim.payloadJson);
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       payload.channel = "storefront";
       nonMlClaim.payloadJson = JSON.stringify(payload);
 

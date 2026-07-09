@@ -325,7 +325,7 @@ describe("DeepSeekReasoningGateway", () => {
     const gateway = new DeepSeekReasoningGateway(new OpenAI({ apiKey: "test" }), ledger);
     await gateway.reason(makeCall());
 
-    expect(ledger.insertEntry).toHaveBeenCalledTimes(1);  // eslint-disable-line @typescript-eslint/unbound-method
+    expect(ledger.insertEntry).toHaveBeenCalledTimes(1); // eslint-disable-line @typescript-eslint/unbound-method
     const entry = (ledger.insertEntry as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<
       string,
       unknown
@@ -347,8 +347,8 @@ describe("DeepSeekReasoningGateway", () => {
     await gateway.reason(makeCall(), overrideLedger);
 
     // override ledger should be used, not constructor ledger
-    expect(constructorLedger.insertEntry).not.toHaveBeenCalled();  // eslint-disable-line @typescript-eslint/unbound-method
-    expect(overrideLedger.insertEntry).toHaveBeenCalledTimes(1);  // eslint-disable-line @typescript-eslint/unbound-method
+    expect(constructorLedger.insertEntry).not.toHaveBeenCalled(); // eslint-disable-line @typescript-eslint/unbound-method
+    expect(overrideLedger.insertEntry).toHaveBeenCalledTimes(1); // eslint-disable-line @typescript-eslint/unbound-method
   });
 
   it("does not throw when ledger insertEntry fails", async () => {

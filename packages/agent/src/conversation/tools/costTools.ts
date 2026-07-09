@@ -7,8 +7,8 @@ import type { LaneId } from "../lanes.js";
 import type { ToolDefinition } from "./types.js";
 import {
   safeString,
-  normalizeCompanyAgentText,  // eslint-disable-line @typescript-eslint/no-unused-vars
-  truncateCompanyAgentText,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  normalizeCompanyAgentText,
+  truncateCompanyAgentText,
   summarizeWorkforceCostCacheLedgerEntry,
   validWorkforceCacheStatuses,
 } from "./types.js";

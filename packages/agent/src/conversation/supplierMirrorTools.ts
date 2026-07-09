@@ -718,7 +718,8 @@ export function createSupplierMirrorTools(
       },
       required: ["supplierId"],
     },
-    execute: async (args) => {  // eslint-disable-line @typescript-eslint/require-await
+    execute: async (args) => {
+       
       const supplierId = readString(args.supplierId);
       const queryType = readString(args.queryType) ?? "all";
       const depth = readNumber(args.depth) ?? 2;
@@ -744,7 +745,6 @@ export function createSupplierMirrorTools(
 
       // Query supplier profile node
       if (queryType === "all" || queryType === "items" || queryType === "patterns") {
-
         const profileNodes = engine.queryByMetadata({
           type: "supplier_profile",
           labelPrefix: `supplier_${supplierId}`,

@@ -13,7 +13,7 @@ import { selectModel } from "./modelRouter.js";
 import {
   getLevelRisk,
   getLevelTimeout,
-  isAutoExecuteLevel,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  isAutoExecuteLevel, // eslint-disable-line @typescript-eslint/no-unused-vars
   requiresApprovalByDefault,
 } from "./reasoningLevels.js";
 import type {

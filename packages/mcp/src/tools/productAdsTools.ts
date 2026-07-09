@@ -130,7 +130,8 @@ const CREDENTIAL_LIKE_KEY_PATTERN =
 
 // ── Product Ads helper functions ─────────────────────────────────────
 
-function isProductAdsPrepareWriteTarget(target: PrepareWriteInput["target"]): boolean {  // eslint-disable-line @typescript-eslint/no-unused-vars
+function isProductAdsPrepareWriteTarget(target: PrepareWriteInput["target"]): boolean {
+   
   return target.type === "product-ads-campaign" || target.type === "product-ads-ad";
 }
 
@@ -348,8 +349,6 @@ export function registerProductAdsTools(
   const { validateApiKey, config } = deps;
 
   if (!config.prepareWrite) return;
-
-
 
   // ── prepare_product_ads_action ────────────────────────────────────
   server.registerTool(

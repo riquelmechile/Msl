@@ -4,7 +4,6 @@ import {
   buildDeepSeekChatCompletionRequest,
   resolveDeepSeekRuntimeConfig,
   resolveDeepSeekUserId,
-  type DeepSeekRuntimeConfig,  // eslint-disable-line @typescript-eslint/no-unused-vars
 } from "./deepseekRuntime.js";
 import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
@@ -18,7 +17,7 @@ import type {
   Strategy,
   StreamingChunk,
 } from "./types.js";
-import { AutonomyLevel, type TurnOutcome } from "./types.js";  // eslint-disable-line @typescript-eslint/no-unused-vars
+import { AutonomyLevel } from "./types.js";
 import {
   spanishValidator,
   harmfulContentFilter,
@@ -93,10 +92,7 @@ import type { OperationalEvidenceProvider } from "./operationalEvidenceProvider.
 import { buildDailyAggregates, injectCortexContext } from "./cacheBlocks.js";
 import { OperationalDailyDataSource } from "./operationalDataSource.js";
 import type { CompanyAgentId, CompanyAgentRegistry } from "./companyAgents.js";
-import type {
-  AgentLearningRecord,  // eslint-disable-line @typescript-eslint/no-unused-vars
-  CompanyAgentLearningStore,
-} from "./companyAgentLearningStore.js";
+import type { CompanyAgentLearningStore } from "./companyAgentLearningStore.js";
 import type { CompanyAgentSkillStore } from "./companyAgentSkillStore.js";
 import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerStore.js";
 import { SupplierMirrorDeepSeekAdvisor } from "./supplierMirrorDeepSeekAdvisor.js";
@@ -117,16 +113,12 @@ import {
   buildMessages,
   createDeepSeekClient,
   createOpenAiToolDefinitions,
-  estimateTokens,  // eslint-disable-line @typescript-eslint/no-unused-vars
   extractPromptCacheTelemetry,
-  hasRejectionPattern,  // eslint-disable-line @typescript-eslint/no-unused-vars
   resolveTurnOutcome,
   type OpenAiFunctionToolDefinition,
 } from "./loop/index.js";
 
 // ── Token budget ──────────────────────────────────────────────────────
-
-
 
 const CEO_INTERNAL_WORKFORCE_GUIDANCE = [
   "## Orquestación Interna de Workforce del CEO",
@@ -1559,14 +1551,6 @@ function recordReturnedToolIssue(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function readNumericCounter(  // eslint-disable-line @typescript-eslint/no-unused-vars
-  usage: Record<string, unknown> | null | undefined,
-  key: "prompt_cache_hit_tokens" | "prompt_cache_miss_tokens",
-): number | null {
-  const value = usage?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function readNonNegativeInteger(usage: Record<string, unknown>, key: string): number | undefined {

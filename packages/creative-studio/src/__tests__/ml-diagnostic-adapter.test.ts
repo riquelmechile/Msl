@@ -257,7 +257,8 @@ describe("MlDiagnosticAdapter", () => {
 
     it("sends correct request body", async () => {
       let capturedBody: string | undefined;
-      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {  // eslint-disable-line @typescript-eslint/require-await
+      vi.mocked(fetch).mockImplementationOnce(async (_url, opts) => {
+         
         capturedBody = opts?.body as string;
         return mockResponse({ action: "empty" }) as Response;
       });

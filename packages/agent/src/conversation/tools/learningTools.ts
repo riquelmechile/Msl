@@ -9,7 +9,7 @@ import {
   safeString,
   normalizeCompanyAgentText,
   validateCompanyAgentText,
-  truncateCompanyAgentText,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  truncateCompanyAgentText,
   nonEmptyUniqueStrings,
   resolveCompanyAgent,
   summarizeAgentLesson,
@@ -202,7 +202,9 @@ export function createListAgentLessonsTool(
       const lessons = learningStore.listAgentLessons({
         ...filter,
         ...(targetAgentId ? { targetAgentId } : {}),
-        ...(validDepartmentIds.has(departmentId as CompanyDepartmentId) ? { departmentId: departmentId as CompanyDepartmentId } : {}),
+        ...(validDepartmentIds.has(departmentId as CompanyDepartmentId)
+          ? { departmentId: departmentId as CompanyDepartmentId }
+          : {}),
         ...(validLessonScopes.has(scope) ? { scope } : {}),
       });
 
