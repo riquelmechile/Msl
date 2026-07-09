@@ -104,13 +104,13 @@ function mockStore(
     resolveTargetPolicy:
       (overrides.resolveTargetPolicy as SupplierMirrorStore["resolveTargetPolicy"]) ?? nullResult,
     appendLedger:
-      (overrides.appendLedger as SupplierMirrorStore["appendLedger"]) ?? (async (r) => r), // eslint-disable-line @typescript-eslint/require-await
+      (overrides.appendLedger as SupplierMirrorStore["appendLedger"]) ?? ((r) => Promise.resolve(r)),
     getLedgerByIdempotencyKey:
       (overrides.getLedgerByIdempotencyKey as SupplierMirrorStore["getLedgerByIdempotencyKey"]) ??
       nullResult,
     recordNotificationEvent:
       (overrides.recordNotificationEvent as SupplierMirrorStore["recordNotificationEvent"]) ??
-      (async (e) => e), // eslint-disable-line @typescript-eslint/require-await
+      ((e) => Promise.resolve(e)),
     getNotificationEvent:
       (overrides.getNotificationEvent as SupplierMirrorStore["getNotificationEvent"]) ?? nullResult,
     listNotificationEvents:
