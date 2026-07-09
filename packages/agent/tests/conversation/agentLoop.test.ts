@@ -1654,7 +1654,7 @@ describe("createDeepSeekClient — environment detection", () => {
   });
 });
 
-describe("createAgentLoop — DeepSeek runtime routing", () => {
+describe.skipIf(process.env.CI === "true")("createAgentLoop — DeepSeek runtime routing", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {

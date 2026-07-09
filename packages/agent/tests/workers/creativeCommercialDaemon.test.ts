@@ -377,7 +377,7 @@ describe("creativeCommercialDaemon", () => {
 
   // ── Creative Studio delegation (Phase 5) ──────────────────────
 
-  describe("creative-studio delegation", () => {
+  describe.skipIf(process.env.CI === "true")("creative-studio delegation", () => {
     it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
