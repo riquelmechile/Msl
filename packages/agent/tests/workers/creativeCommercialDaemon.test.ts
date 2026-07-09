@@ -379,7 +379,6 @@ describe("creativeCommercialDaemon", () => {
 
   describe("creative-studio delegation", () => {
     it("enqueues social-pack request to creative-studio when env gate is enabled and creative candidates found", () => {
-       
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
 
@@ -463,7 +462,6 @@ describe("creativeCommercialDaemon", () => {
     });
 
     it("does NOT enqueue social-pack to creative-studio when env gate is disabled", () => {
-       
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 50);
 

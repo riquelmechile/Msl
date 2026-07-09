@@ -2330,8 +2330,8 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
-           
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
           ({
             proposalId: "prop-001",
             reviews: [],
@@ -2353,8 +2353,8 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
-           
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
           ({
             proposalId: "prop-001",
             reviews: [
@@ -2410,8 +2410,8 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
-           
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
           ({
             proposalId: "prop-002",
             reviews: [
@@ -2468,8 +2468,8 @@ describe("createAgentLoop — consensus context integration", () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
       getConsensus: vi.fn(
-        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
-           
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
           ({
             proposalId: "prop-001",
             reviews: [
@@ -2557,8 +2557,8 @@ describe("createAgentLoop — consensus context integration", () => {
     const consensusStore: AgentConsensusStore = {
       submitReview: vi.fn(),
       getConsensus: vi.fn(
-        (_proposalId: string) => // eslint-disable-line @typescript-eslint/no-unused-vars
-           
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_proposalId: string) =>
           ({
             proposalId: "prop-pending",
             reviews: [

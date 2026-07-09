@@ -256,7 +256,6 @@ describe("MinimaxVideoProvider", () => {
     it("includes first_frame_image from references", async () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,
@@ -304,7 +303,6 @@ describe("MinimaxVideoProvider", () => {
       // Override the first mock from mockPollingFlow to capture the request body
       vi.mocked(fetch).mockReset();
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,
@@ -351,7 +349,6 @@ describe("MinimaxVideoProvider", () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockReset();
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,

@@ -263,7 +263,6 @@ describe("creativeStudioDaemon", () => {
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
       payload.constraints = {
-         
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         ...payload.constraints,
         channelFormat: {

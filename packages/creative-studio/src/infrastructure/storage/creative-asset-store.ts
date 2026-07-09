@@ -27,7 +27,6 @@ export class CreativeAssetStore {
    * Returns the storage URI (file:// scheme).
    */
   saveAsset(assetId: string, buffer: Buffer, metadata: object): Promise<string> {
-    
     this.ensureDir();
 
     const filePath = resolve(this.storagePath, assetId);
@@ -44,7 +43,6 @@ export class CreativeAssetStore {
    * Get the local file system path for an asset.
    */
   getAssetPath(assetId: string): Promise<string> {
-    
     return Promise.resolve(resolve(this.storagePath, assetId));
   }
 

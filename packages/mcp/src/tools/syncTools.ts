@@ -1,11 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type {
-  ApprovalQueueEntry,
-  ApprovalQueueRepository,
-  Clock, // eslint-disable-line @typescript-eslint/no-unused-vars
-  PrepareWriteInput, // eslint-disable-line @typescript-eslint/no-unused-vars
-} from "@msl/tools";
+import type { ApprovalQueueEntry, ApprovalQueueRepository } from "@msl/tools";
 import type { ApprovalRecord, ExactChange } from "@msl/domain";
 import {
   applyStrategies,
@@ -13,12 +8,8 @@ import {
   assertPlasticovToMaustianDirection,
   buildNewItemFromMlItem,
   getMlAccountRoleConfig,
-  normalizeImageOrchestration, // eslint-disable-line @typescript-eslint/no-unused-vars
   normalizeMlcItemId,
   previewStrategyChanges,
-  MLC_PRODUCT_ADS_MAX_LIMIT, // eslint-disable-line @typescript-eslint/no-unused-vars
-  type MlcApiClient, // eslint-disable-line @typescript-eslint/no-unused-vars
-  type MlcImageOrchestrationSummary, // eslint-disable-line @typescript-eslint/no-unused-vars
   type MlItem,
   type MlWriteSnapshot,
   type MlAccountRoleConfig,

@@ -54,7 +54,6 @@ export class CortexBridge implements CortexSink {
    * @param outcome — Approval/publish state + optional metrics
    */
   recordOutcome(
-    
     jobId: string,
     result: CreativeExecutionResult,
     outcome: CortexOutcome,

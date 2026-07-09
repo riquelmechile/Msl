@@ -258,7 +258,6 @@ describe("MlDiagnosticAdapter", () => {
     it("sends correct request body", async () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve(mockResponse({ action: "empty" }) as Response);
       });

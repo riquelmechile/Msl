@@ -130,7 +130,6 @@ describe("MinimaxImageProvider", () => {
     it("uses correct aspect ratio for storefront channel", async () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,
@@ -155,7 +154,6 @@ describe("MinimaxImageProvider", () => {
     it("includes explicit 1200x1200 dimensions for mercadolibre channel", async () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,
@@ -185,7 +183,6 @@ describe("MinimaxImageProvider", () => {
     it("does NOT include explicit dimensions for non-ML channels", async () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,
@@ -214,7 +211,6 @@ describe("MinimaxImageProvider", () => {
     it("includes subject_reference when references provided", async () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,
@@ -241,7 +237,6 @@ describe("MinimaxImageProvider", () => {
     it("handles empty references without subject_reference", async () => {
       let capturedBody: string | undefined;
       vi.mocked(fetch).mockImplementationOnce((_url, opts) => {
-        
         capturedBody = opts?.body as string;
         return Promise.resolve({
           status: 200,

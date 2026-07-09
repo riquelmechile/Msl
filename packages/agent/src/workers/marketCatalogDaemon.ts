@@ -1,8 +1,5 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
-import type {
-  CatalogActionableFinding,
-  CatalogDeepSeekAdvisor, // eslint-disable-line @typescript-eslint/no-unused-vars
-} from "../conversation/catalogDeepSeekAdvisor.js";
+import type { CatalogActionableFinding } from "../conversation/catalogDeepSeekAdvisor.js";
 
 // ── Thresholds ──────────────────────────────────────────────────────
 

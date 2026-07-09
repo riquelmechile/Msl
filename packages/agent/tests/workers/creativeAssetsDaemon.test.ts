@@ -675,7 +675,6 @@ describe("creativeAssetsDaemon", () => {
     });
 
     it("enqueues creative-studio delegation message when env gate is enabled and low image count detected", () => {
-       
       // Set env gate for creative-studio
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
 
@@ -710,7 +709,6 @@ describe("creativeAssetsDaemon", () => {
     });
 
     it("does NOT enqueue creative-studio delegation when env gate is disabled", () => {
-       
       process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
 
       seedCreativeSnapshot(operationalStore, {

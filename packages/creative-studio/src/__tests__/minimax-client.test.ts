@@ -50,7 +50,6 @@ describe("MinimaxClient", () => {
       let capturedHeaders: Record<string, string> | undefined;
       vi.mocked(fetch).mockReset();
       vi.mocked(fetch).mockImplementation((_url, opts) => {
-        
         capturedHeaders = opts?.headers as Record<string, string>;
         return Promise.resolve({
           status: 200,

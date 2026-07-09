@@ -58,7 +58,6 @@ export class MinimaxImageProvider implements CreativeProvider {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   estimate(_request: CreativeAssetRequest): number {
-    
     return this.modelConfig.costPerCall;
   }
 

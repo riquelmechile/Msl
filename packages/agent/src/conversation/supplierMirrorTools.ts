@@ -719,13 +719,16 @@ export function createSupplierMirrorTools(
       required: ["supplierId"],
     },
     execute: (args) => {
-      
       const supplierId = readString(args.supplierId);
       const queryType = readString(args.queryType) ?? "all";
       const depth = readNumber(args.depth) ?? 2;
 
       if (!supplierId) {
-        return Promise.resolve({ status: "blocked", missingInputs: ["supplierId"], noMutationExecuted: true });
+        return Promise.resolve({
+          status: "blocked",
+          missingInputs: ["supplierId"],
+          noMutationExecuted: true,
+        });
       }
 
       if (!engine) {

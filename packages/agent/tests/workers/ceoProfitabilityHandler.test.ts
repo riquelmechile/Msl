@@ -124,11 +124,9 @@ describe("ceoProfitabilityHandler", () => {
       "maps signal '%s' to proposalType '%s' severity '%s' requiresApproval %s",
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       async (signal, _expectedProposalType, _expectedSeverity, _requiresApproval) => {
-         
         const preparedActions: Array<Record<string, unknown>> = [];
         const ceoCtx = makeCeoContext({
           prepareProductAdsAction: (input) => {
-             
             preparedActions.push(input);
             return Promise.resolve();
           },
@@ -172,7 +170,6 @@ describe("ceoProfitabilityHandler", () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
         prepareProductAdsAction: (input) => {
-           
           preparedActions.push(input);
           return Promise.resolve();
         },
@@ -197,7 +194,6 @@ describe("ceoProfitabilityHandler", () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
         prepareProductAdsAction: (input) => {
-           
           preparedActions.push(input);
           return Promise.resolve();
         },
@@ -341,7 +337,6 @@ describe("ceoProfitabilityHandler", () => {
       const sentMessages: Array<{ chatId: number; text: string; threadId?: number }> = [];
       const ceoCtx = makeCeoContext({
         sendProactiveMessage: (chatId, text, threadId) => {
-          
           sentMessages.push({ chatId, text, threadId } as {
             chatId: number;
             text: string;
@@ -351,7 +346,6 @@ describe("ceoProfitabilityHandler", () => {
         },
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         createForumTopic: (_chatId, _name) => {
-          
           return Promise.resolve({ message_thread_id: 42 });
         },
       });
@@ -575,7 +569,6 @@ describe("ceoProfitabilityHandler", () => {
       let callCount = 0;
       const ceoCtx = makeCeoContext({
         sendProactiveMessage: () => {
-          
           callCount++;
           if (callCount === 1) {
             return Promise.reject(new Error("Simulated Telegram failure"));
@@ -649,7 +642,6 @@ describe("ceoProfitabilityHandler", () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
         prepareProductAdsAction: (input) => {
-          
           preparedActions.push(input);
           return Promise.resolve();
         },
@@ -689,7 +681,6 @@ describe("ceoProfitabilityHandler", () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
         prepareProductAdsAction: (input) => {
-          
           preparedActions.push(input);
           return Promise.resolve();
         },
@@ -718,7 +709,6 @@ describe("ceoProfitabilityHandler", () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
         prepareProductAdsAction: (input) => {
-          
           preparedActions.push(input);
           return Promise.resolve();
         },
@@ -761,7 +751,6 @@ describe("ceoProfitabilityHandler", () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
         prepareProductAdsAction: (input) => {
-          
           preparedActions.push(input);
           return Promise.resolve();
         },
@@ -797,7 +786,6 @@ describe("ceoProfitabilityHandler", () => {
       const preparedActions: Array<Record<string, unknown>> = [];
       const ceoCtx = makeCeoContext({
         prepareProductAdsAction: (input) => {
-          
           preparedActions.push(input);
           return Promise.resolve();
         },

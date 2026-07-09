@@ -793,17 +793,15 @@ export async function processSellerCreativeAssets(
   try {
     /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
     const listingSnaps: Array<{
-      
       itemId: string;
       data: Record<string, unknown>;
       capturedAt: string;
       freshness: string;
       evidenceId: string;
     }> = await (config.operationalStore as any).searchSnapshots({
-      
       sellerId,
       kind: "listing_snapshot",
-    /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
+      /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
       limit: BATCH_SIZE,
     });
 

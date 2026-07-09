@@ -74,18 +74,18 @@ function mockStore(
     getSupplier: (overrides.getSupplier as SupplierMirrorStore["getSupplier"]) ?? nullResult,
     listEnabledSuppliers:
       overrides.listEnabledSuppliers ??
-      (() => Promise.resolve([
-         
-        {
-          id: "su-1",
-          name: "Test Supplier",
-          enabled: true,
-          primarySource: "mercadolibre-api" as const,
-          metadata: {},
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ])),
+      (() =>
+        Promise.resolve([
+          {
+            id: "su-1",
+            name: "Test Supplier",
+            enabled: true,
+            primarySource: "mercadolibre-api" as const,
+            metadata: {},
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ])),
     upsertSupplierItemSnapshot: overrides.upsertSupplierItemSnapshot ?? noop,
     getSupplierItemSnapshot:
       (overrides.getSupplierItemSnapshot as SupplierMirrorStore["getSupplierItemSnapshot"]) ??
@@ -195,11 +195,11 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
         getLedgerByIdempotencyKey: () => Promise.resolve(null),
         appendLedger: (r) => Promise.resolve(r),
       });
@@ -229,11 +229,11 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
       });
 
       const result = await supplierManagerDaemon({
@@ -254,10 +254,10 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+          ]),
       });
 
       const result = await supplierManagerDaemon({
@@ -286,13 +286,12 @@ describe("supplierManagerDaemon", () => {
       const appendLedger = ((r: Record<string, unknown>) => Promise.resolve(r)) as never;
 
       const store = mockStore({
-        listSupplierItemSnapshots: () => Promise.resolve([
-          
-          defaultItem({ price: 1100 }), // current price → 1100
-        ]),
+        listSupplierItemSnapshots: () =>
+          Promise.resolve([
+            defaultItem({ price: 1100 }), // current price → 1100
+          ]),
         listTargetMappings: () => Promise.resolve([]),
         getLedgerByIdempotencyKey: (key: string) => {
-          
           // Return a prior record for the previous hour
           if (key.includes(prevHour)) {
             return Promise.resolve({
@@ -338,13 +337,12 @@ describe("supplierManagerDaemon", () => {
       const prevHour = new Date(Date.now() - 3_600_000).toISOString().slice(0, 13);
 
       const store = mockStore({
-        listSupplierItemSnapshots: () => Promise.resolve([
-          
-          defaultItem({ price: 1020 }), // 2% increase from 1000
-        ]),
+        listSupplierItemSnapshots: () =>
+          Promise.resolve([
+            defaultItem({ price: 1020 }), // 2% increase from 1000
+          ]),
         listTargetMappings: () => Promise.resolve([]),
         getLedgerByIdempotencyKey: (key: string) => {
-          
           if (key.includes(prevHour)) {
             return Promise.resolve({
               id: `price-record-${prevHour}`,
@@ -452,7 +450,8 @@ describe("supplierManagerDaemon", () => {
 
     it("mlItemId set → no unfilled finding", async () => {
       const store = mockStore({
-        listSupplierItemSnapshots: () => Promise.resolve([defaultItem({ mlItemId: "MLC-EXISTING-001" })]),
+        listSupplierItemSnapshots: () =>
+          Promise.resolve([defaultItem({ mlItemId: "MLC-EXISTING-001" })]),
         listTargetMappings: () => Promise.resolve([]),
       });
 
@@ -553,13 +552,12 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
         getLedgerByIdempotencyKey: (key: string) => {
-          
           // Return existing record for the stock gap key
           if (key === idempotencyKey) {
             return Promise.resolve({
@@ -606,9 +604,8 @@ describe("supplierManagerDaemon", () => {
         listTargetMappings: () => Promise.resolve([]),
         getLedgerByIdempotencyKey: () => Promise.resolve(null),
         appendLedger: (r) => {
-          
           appended = true;
-          return Promise.resolve(r as never);  
+          return Promise.resolve(r as never);
         },
       });
 
@@ -635,11 +632,11 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
         getLedgerByIdempotencyKey: () => Promise.resolve(null),
         appendLedger: (r) => Promise.resolve(r),
       });
@@ -666,11 +663,11 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
       });
 
       const result = await supplierManagerDaemon({
@@ -696,11 +693,11 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
         getLedgerByIdempotencyKey: () => Promise.resolve(null),
         appendLedger: (r) => Promise.resolve(r),
       });
@@ -763,36 +760,36 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 5 });
 
       const store = mockStore({
-        listEnabledSuppliers: () => Promise.resolve([
-          
-          {
-            id: "su-1",
-            name: "Supplier A",
-            enabled: true,
-            primarySource: "mercadolibre-api" as const,
-            metadata: {},
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          {
-            id: "su-2",
-            name: "Supplier B",
-            enabled: true,
-            primarySource: "mercadolibre-api" as const,
-            metadata: {},
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ]),
+        listEnabledSuppliers: () =>
+          Promise.resolve([
+            {
+              id: "su-1",
+              name: "Supplier A",
+              enabled: true,
+              primarySource: "mercadolibre-api" as const,
+              metadata: {},
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            {
+              id: "su-2",
+              name: "Supplier B",
+              enabled: true,
+              primarySource: "mercadolibre-api" as const,
+              metadata: {},
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ]),
         listSupplierItemSnapshots: (supplierId: string) => {
-          
           if (supplierId === "su-1") {
             return Promise.resolve([defaultItem({ supplierItemId: "ITM-1", price: 1000 })]);
           }
-          return Promise.resolve([defaultItem({ supplierItemId: "ITM-2", price: 2000, mlItemId: "MLC-EXISTS" })]);
+          return Promise.resolve([
+            defaultItem({ supplierItemId: "ITM-2", price: 2000, mlItemId: "MLC-EXISTS" }),
+          ]);
         },
         listTargetMappings: (_sid: string, itemId: string) => {
-          
           if (itemId === "ITM-1") {
             return Promise.resolve([
               defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
@@ -829,33 +826,33 @@ describe("supplierManagerDaemon", () => {
       seedListingNode(engine, "MLC-B-001", { sellerId: "seller-b", stock: 0 });
 
       const mockAdvisor = {
-        analyze: () => Promise.resolve({
-          
-          findings: [
-            {
-              kind: "stock-alert" as const,
-              severity: "critical" as const,
-              summary: "Critical stock imbalance detected",
-              detail: "Stock on seller-a but not on seller-b",
-              evidenceIds: ["supplier-item:ITM-1"],
-            },
-          ],
-          summary: "AI analysis: stock imbalance requires attention",
-          modelUsed: "deepseek-chat",
-          costMicros: 100,
-          cacheHitTokens: 0,
-          cacheMissTokens: 500,
-          outputTokens: 200,
-        }),
+        analyze: () =>
+          Promise.resolve({
+            findings: [
+              {
+                kind: "stock-alert" as const,
+                severity: "critical" as const,
+                summary: "Critical stock imbalance detected",
+                detail: "Stock on seller-a but not on seller-b",
+                evidenceIds: ["supplier-item:ITM-1"],
+              },
+            ],
+            summary: "AI analysis: stock imbalance requires attention",
+            modelUsed: "deepseek-chat",
+            costMicros: 100,
+            cacheHitTokens: 0,
+            cacheMissTokens: 500,
+            outputTokens: 200,
+          }),
       };
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
         getLedgerByIdempotencyKey: () => Promise.resolve(null),
         appendLedger: (r) => Promise.resolve(r),
       });
@@ -900,11 +897,11 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
         getLedgerByIdempotencyKey: () => Promise.resolve(null),
         appendLedger: (r) => Promise.resolve(r),
       });
@@ -942,11 +939,11 @@ describe("supplierManagerDaemon", () => {
 
       const store = mockStore({
         listSupplierItemSnapshots: () => Promise.resolve([defaultItem()]),
-        listTargetMappings: () => Promise.resolve([
-          
-          defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
-          defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
-        ]),
+        listTargetMappings: () =>
+          Promise.resolve([
+            defaultMapping({ targetSellerId: "seller-a", targetItemId: "MLC-A-001" }),
+            defaultMapping({ targetSellerId: "seller-b", targetItemId: "MLC-B-001" }),
+          ]),
         getLedgerByIdempotencyKey: () => Promise.resolve(null),
         appendLedger: (r) => Promise.resolve(r),
       });
