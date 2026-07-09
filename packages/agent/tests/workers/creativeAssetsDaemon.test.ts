@@ -674,64 +674,70 @@ describe("creativeAssetsDaemon", () => {
       }
     });
 
-    it.skipIf(process.env.CI === "true")("enqueues creative-studio delegation message when env gate is enabled and low image count detected", () => {
-      // Set env gate for creative-studio
-      process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
+    it.skipIf(process.env.CI === "true")(
+      "enqueues creative-studio delegation message when env gate is enabled and low image count detected",
+      () => {
+        // Set env gate for creative-studio
+        process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
 
-      seedCreativeSnapshot(operationalStore, {
-        itemId: "MLC-STUDIO-001",
-        pictureCount: 0,
-        hasMainImage: false,
-        moderationStatus: "active",
-      });
+        seedCreativeSnapshot(operationalStore, {
+          itemId: "MLC-STUDIO-001",
+          pictureCount: 0,
+          hasMainImage: false,
+          moderationStatus: "active",
+        });
 
-      // Verify CEO proposal was enqueued (existing flow preserved)
-      const ceoMessages = db
-        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
-        .all() as Array<Record<string, unknown>>;
-      expect(ceoMessages.length).toBeGreaterThan(0);
+        // Verify CEO proposal was enqueued (existing flow preserved)
+        const ceoMessages = db
+          .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
+          .all() as Array<Record<string, unknown>>;
+        expect(ceoMessages.length).toBeGreaterThan(0);
 
-      // Verify creative-studio message was enqueued (new delegation)
-      const studioMessages = db
-        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'creative-studio'")
-        .all() as Array<Record<string, unknown>>;
-      expect(studioMessages.length).toBeGreaterThan(0);
-      expect(studioMessages[0]!.sender_agent_id).toBe("creative-assets");
-      expect(studioMessages[0]!.message_type).toBe("proposal");
+        // Verify creative-studio message was enqueued (new delegation)
+        const studioMessages = db
+          .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'creative-studio'")
+          .all() as Array<Record<string, unknown>>;
+        expect(studioMessages.length).toBeGreaterThan(0);
+        expect(studioMessages[0]!.sender_agent_id).toBe("creative-assets");
+        expect(studioMessages[0]!.message_type).toBe("proposal");
 
-      const payload = JSON.parse(studioMessages[0]!.payload_json as string); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-      expect(payload.requestId).toContain("cj_"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-      expect(payload.kind).toBe("product-cover-i2i"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-      expect(payload.channel).toBe("mercadolibre"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+        const payload = JSON.parse(studioMessages[0]!.payload_json as string); // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        expect(payload.requestId).toContain("cj_"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+        expect(payload.kind).toBe("product-cover-i2i"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+        expect(payload.channel).toBe("mercadolibre"); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
 
-      // Clean up
-      delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
-    });
+        // Clean up
+        delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
+      },
+    );
 
-    it.skipIf(process.env.CI === "true")("does NOT enqueue creative-studio delegation when env gate is disabled", () => {
-      process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
+    it.skipIf(process.env.CI === "true")(
+      "does NOT enqueue creative-studio delegation when env gate is disabled",
+      () => {
+        process.env.MSL_CREATIVE_STUDIO_ENABLED = "false";
 
-      seedCreativeSnapshot(operationalStore, {
-        itemId: "MLC-STUDIO-002",
-        pictureCount: 0,
-        hasMainImage: false,
-        moderationStatus: "active",
-      });
+        seedCreativeSnapshot(operationalStore, {
+          itemId: "MLC-STUDIO-002",
+          pictureCount: 0,
+          hasMainImage: false,
+          moderationStatus: "active",
+        });
 
-      // CEO proposal should still be enqueued
-      const ceoMessages = db
-        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
-        .all() as Array<Record<string, unknown>>;
-      expect(ceoMessages.length).toBeGreaterThan(0);
+        // CEO proposal should still be enqueued
+        const ceoMessages = db
+          .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'ceo'")
+          .all() as Array<Record<string, unknown>>;
+        expect(ceoMessages.length).toBeGreaterThan(0);
 
-      // No creative-studio message
-      const studioMessages = db
-        .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'creative-studio'")
-        .all() as Array<Record<string, unknown>>;
-      expect(studioMessages).toEqual([]);
+        // No creative-studio message
+        const studioMessages = db
+          .prepare("SELECT * FROM agent_message_bus WHERE receiver_agent_id = 'creative-studio'")
+          .all() as Array<Record<string, unknown>>;
+        expect(studioMessages).toEqual([]);
 
-      delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
-    });
+        delete process.env.MSL_CREATIVE_STUDIO_ENABLED;
+      },
+    );
 
     it("returns empty findings when all checks pass (healthy listings)", async () => {
       seedCreativeSnapshot(operationalStore, {
