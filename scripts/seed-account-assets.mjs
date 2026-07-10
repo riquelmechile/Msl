@@ -29,9 +29,8 @@ async function loadStore() {
   // npx tsx handles .ts imports transparently, but for .mjs we use the
   // compiled JS path. The tsconfig alias @msl/domain is resolved by vitest
   // but not by Node. We import the source files directly via tsx's loader.
-  const { createAccountAssetStore } = await import(
-    "../packages/agent/src/conversation/accountAssetStore.ts"
-  );
+  const { createAccountAssetStore } =
+    await import("../packages/agent/src/conversation/accountAssetStore.ts");
   return { createAccountAssetStore };
 }
 

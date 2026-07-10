@@ -331,14 +331,14 @@ Telegram runtime around the CEO agent loop. Handles incoming Telegram messages, 
 
 The `AccountAsset` domain model treats each MercadoLibre seller account as a strategic asset with its own capabilities, profit goal, risk level, and memory scoping.
 
-| Concept | Implementation |
-|---------|---------------|
-| Account record | `account_assets` table — one row per `seller_id`, with `name`, `marketplace`, `profit_goal`, `risk_level`, `status` |
-| Capabilities | `account_capabilities` table — per-account capabilities (`publish`, `pricing`, `claims`, `ads`, etc.) with health snapshots |
-| Health history | `account_health_snapshots` — time-series of health states with reputation, sales velocity, and risk level |
-| Profit goals | `account_profit_goals` — target margin percentage per seller |
-| Strategy notes | `account_strategy_notes` — strategic directives per seller or global (`seller_id = NULL`) |
-| Risks & opportunities | `account_risks`, `account_opportunities` — tracked business risks and opportunities per seller |
+| Concept               | Implementation                                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Account record        | `account_assets` table — one row per `seller_id`, with `name`, `marketplace`, `profit_goal`, `risk_level`, `status`         |
+| Capabilities          | `account_capabilities` table — per-account capabilities (`publish`, `pricing`, `claims`, `ads`, etc.) with health snapshots |
+| Health history        | `account_health_snapshots` — time-series of health states with reputation, sales velocity, and risk level                   |
+| Profit goals          | `account_profit_goals` — target margin percentage per seller                                                                |
+| Strategy notes        | `account_strategy_notes` — strategic directives per seller or global (`seller_id = NULL`)                                   |
+| Risks & opportunities | `account_risks`, `account_opportunities` — tracked business risks and opportunities per seller                              |
 
 #### Column scoping vs. file isolation
 
@@ -378,6 +378,7 @@ DaemonScheduler (interval tick)
 #### Approval (dale) scoping
 
 The bot's "dale" flow resolves seller context by matching seller name from the message:
+
 - `dale la de Maustian` → resolves to Maustian's sellerId
 - `dale` with 1 account → auto-resolves
 - `dale` with 2+ accounts → prompts "¿Cuál cuenta?"
