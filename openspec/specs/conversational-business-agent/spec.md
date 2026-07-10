@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the Spanish-facing chat agent that learns the seller's business judgment for MercadoLibre Chile operations. Responses are LLM-generated via DeepSeek, not template-matched.
+Define the Spanish-facing chat agent that learns the seller's business judgment for MercadoLibre Chile operations. Responses are LLM-generated via DeepSeek, not template-matched. AgentLoop now carries `accountContext` for per-seller scoping of tools, approvals, outcomes, and system prompt.
 
 ## Requirements
 
@@ -24,7 +24,7 @@ The system MUST infer seller intent from natural Spanish without topic enums, co
 
 ### Requirement: DeepSeek LLM Integration
 
-The system MUST use DeepSeek v4 Flash via `openai` npm with `baseURL: "https://api.deepseek.com"`. Falls back to mock or noop client on failure.
+The system MUST use DeepSeek v4 Flash via `openai` npm with `baseURL: "https://api.deepseek.com"`. Falls back to mock or noop client on failure. Cache `user_id` MAY incorporate `sellerId` for per-account cache separation.
 
 #### Scenario: Valid API key
 
@@ -40,7 +40,7 @@ The system MUST use DeepSeek v4 Flash via `openai` npm with `baseURL: "https://a
 
 ### Requirement: 3-Block Prefix-Anchored Cache
 
-The system MUST assemble prompts as Block A (system prompt ~5K, immutable) + Block B (daily aggregates ~15K, 24h refresh) at prefix for caching, then Block C (Cortex context) per query.
+The system MUST assemble prompts as Block A (system prompt ~5K, immutable) + Block B (daily aggregates ~15K, 24h refresh) at prefix for caching, then Block C (Cortex context) per query. Blocks A+B remain cacheable prefix. Block C injects account-scoped new evidence per query.
 
 #### Scenario: New conversation
 
@@ -56,7 +56,9 @@ The system MUST assemble prompts as Block A (system prompt ~5K, immutable) + Blo
 
 ### Requirement: Cortex Context via Tool
 
-The system MUST expose `get_business_context` tool reading `GraphEngine.traverse().context`. Agent calls it on demand.
+The system MUST expose `get_business_context` tool reading `GraphEngine.traverse()` scoped to active `sellerId`, including `AccountAsset` capabilities.
+
+(Previously: Cortex context was global, not account-scoped.)
 
 #### Scenario: Category context available
 
@@ -69,6 +71,13 @@ The system MUST expose `get_business_context` tool reading `GraphEngine.traverse
 - GIVEN the Cortex has no learned data for the query
 - WHEN the agent calls the tool
 - THEN it MUST return empty context without error
+
+#### Scenario: Scoped context
+
+- GIVEN active account is Plasticov
+- WHEN agent calls `get_business_context`
+- THEN Plasticov-scoped nodes and capabilities returned; Maustian account-scoped nodes excluded
+- AND global nodes included for both
 
 ### Requirement: Conversation State
 
@@ -158,7 +167,7 @@ The system MUST learn the seller's business model, operating style, decision cri
 
 ### Requirement: Strategy-Aware System Prompt
 
-The system MUST inject active CEO strategies into Block A of the system prompt under an `## Estrategia del CEO` section, rendering each strategy rule as a human-readable Spanish directive. `buildSystemPrompt(sellerName, strategies)` MUST accept an optional strategies parameter.
+The system MUST inject active CEO strategies into Block A of the system prompt under an `## Estrategia del CEO` section, rendering each strategy rule as a human-readable Spanish directive. `buildSystemPrompt(sellerName, strategies, accountContext?)` MUST accept an optional strategies parameter and account context.
 
 #### Scenario: Active strategies injected
 
@@ -451,3 +460,89 @@ The system MUST include `captured_at` timestamps in all operational summaries in
 - GIVEN a snapshot older than 24 hours
 - WHEN formatted
 - THEN output MUST include age information interpretable by the LLM
+
+### Requirement: AgentLoop Account Context
+
+`AgentLoopConfig` MUST include `accountContext?: { sellerId, asset?: AccountAsset }`. When set, business tools, approvals, and outcome attribution SHALL be account-scoped.
+
+#### Scenario: Wired with capabilities
+
+- GIVEN `accountContext.asset` has profitGoal=40, capabilities
+- WHEN Agent initializes
+- THEN `get_business_context` includes capabilities and profit goal
+
+#### Scenario: No account context
+
+- GIVEN `accountContext` undefined
+- WHEN Agent initializes
+- THEN Functions globally (backward compatible)
+
+### Requirement: Account-Aware System Prompt
+
+`buildSystemPrompt(name, strategies, accountContext?)` MUST inject account name, capabilities, profit goal, and risk into Block A when context provided.
+
+#### Scenario: Context injected
+
+- GIVEN Plasticov: goal 40%, risk low
+- WHEN Prompt built
+- THEN Block A includes name, goal, risk
+
+#### Scenario: No context
+
+- GIVEN `accountContext` undefined
+- WHEN Prompt built
+- THEN No account section (backward compatible)
+
+### Requirement: DeepSeek Cache Prompt Stability
+
+Block A+B MUST remain stable for prefix caching. Account context changes SHALL regenerate Block A accepting one-time cache miss.
+
+#### Scenario: Cache hit
+
+- GIVEN A+B cached, context unchanged
+- WHEN New message
+- THEN `prompt_cache_hit_tokens > 0`
+
+#### Scenario: Cache miss
+
+- GIVEN Strategy changes between turns
+- WHEN New message
+- THEN Block A regenerated, one-time miss cost
+
+### Requirement: Outcome Attribution per Account
+
+Cortex reinforcement and lesson creation MUST use active `sellerId`. Maustian outcome MUST NOT affect Plasticov edges.
+
+#### Scenario: Maustian outcome isolated
+
+- GIVEN AgentLoop in Maustian session, price confirmed
+- WHEN Escribano processes
+- THEN Node scoped to Maustian; only Maustian edges reinforced
+
+#### Scenario: Plasticov outcome isolated
+
+- GIVEN AgentLoop in Plasticov session
+- WHEN Outcome processed
+- THEN All artifacts scoped to `seller_id = "plasticov"`
+
+### Requirement: Per-Account "dale" in AgentLoop
+
+`turnResolution` MUST scope confirmation to active `sellerId`. Multi-account ambiguity SHALL reject with disambiguation prompt.
+
+#### Scenario: Active account resolves
+
+- GIVEN AgentLoop in Maustian session, pending proposal
+- WHEN User: "dale"
+- THEN Maustian proposal confirmed
+
+#### Scenario: Multi-account ambiguity
+
+- GIVEN Both Plasticov and Maustian pending
+- WHEN User: "dale"
+- THEN Rejected; asks "¿para cuál cuenta?"
+
+#### Scenario: "dale la de Maustian"
+
+- GIVEN Both pending
+- WHEN User specifies account
+- THEN Only Maustian confirmed

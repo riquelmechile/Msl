@@ -1,12 +1,14 @@
 # neural-graph-memory Specification
 
-SQLite-backed graph engine with Hebbian learning, recursive CTE spreading activation, Darwinian pruning, convergence detection, and autonomous Hebbian learning from conversation outcomes via the Escribano observer.
+SQLite-backed graph engine with Hebbian learning, recursive CTE spreading activation, Darwinian pruning, convergence detection, and autonomous Hebbian learning from conversation outcomes via the Escribano observer. Nodes, edges, and darwinian_lessons now carry `seller_id` for per-account scoping.
 
 ## Requirements
 
 ### Requirement: Graph Schema
 
-The system MUST persist a directed weighted graph in SQLite with: `nodes` (id, label, activation, metadata), `edges` (source, target, weight, last_activated, co_occurrence_count, distilled_lesson), `darwinian_lessons` (id, source_node, target_node, lesson, archived_at, reason).
+The system MUST persist a directed weighted graph in SQLite with: `nodes` (id, label, activation, metadata, **seller_id TEXT DEFAULT NULL**), `edges` (source, target, weight, last_activated, co_occurrence_count, distilled_lesson, **seller_id TEXT DEFAULT NULL**), `darwinian_lessons` (id, source_node, target_node, lesson, archived_at, reason, **seller_id TEXT DEFAULT NULL**). `seller_id = NULL` represents global scope; non-NULL represents account-scoped. The migration MUST be idempotent via `PRAGMA table_info` guard before `ALTER TABLE ADD COLUMN`.
+
+(Previously: nodes table had no `seller_id`.)
 
 #### Scenario: Node creation
 
@@ -21,9 +23,23 @@ The system MUST persist a directed weighted graph in SQLite with: `nodes` (id, l
 - THEN weight MUST default to 0.5 (co_occurrence_count 0)
 - AND duplicate (source, target) pairs MUST be rejected
 
+#### Scenario: Migration adds seller_id column
+
+- GIVEN DB without `seller_id`
+- WHEN Migration runs
+- THEN Column exists; existing rows NULL
+
+#### Scenario: Migration idempotent
+
+- GIVEN Column already exists
+- WHEN Migration re-runs
+- THEN No error
+
 ### Requirement: Hebbian Learning
 
-The system MUST adjust edge weights: +0.1 on reinforcement, −0.15 on penalty, clamped to [0, 1].
+The system MUST adjust edge weights: +0.1 on reinforcement, −0.15 on penalty, clamped to [0, 1]. When `sellerId` is provided, only edges whose both endpoints match that `sellerId` (or are NULL/global) are affected. Cross-seller edge reinforcement requests SHALL be rejected.
+
+(Previously: Hebbian learning was global.)
 
 #### Scenario: Weight adjustment
 
@@ -37,9 +53,17 @@ The system MUST adjust edge weights: +0.1 on reinforcement, −0.15 on penalty, 
 - GIVEN weight 0.95; WHEN reinforced → clamped to 1.0
 - GIVEN weight 0.10; WHEN penalized → clamped to 0.0
 
+#### Scenario: Scoped reinforcement
+
+- GIVEN Edges for Plasticov and Maustian share labels
+- WHEN `reinforceEdge(A,B,"plasticov")`
+- THEN Only Plasticov's edge weight increases
+
 ### Requirement: Spreading Activation
 
-The system MUST propagate activation from seed nodes via recursive CTE, bounded by depth (default 3) and activation threshold. When seed nodes are supplier-typed, spreading activation SHALL discover niche patterns by traversing edges between supplier concepts and storefront or category concepts.
+The system MUST propagate activation from seed nodes via recursive CTE, bounded by depth (default 3) and activation threshold. When seed nodes are supplier-typed, spreading activation SHALL discover niche patterns by traversing edges between supplier concepts and storefront or category concepts. When `sellerId` is provided in `SpreadingOptions`, the CTE MUST filter `WHERE nodes.seller_id = ? OR nodes.seller_id IS NULL`, ensuring only account-scoped or global nodes are traversed.
+
+(Previously: not seller-scoped.)
 
 #### Scenario: Activation propagates to neighbors
 
@@ -67,9 +91,23 @@ The system MUST propagate activation from seed nodes via recursive CTE, bounded 
 - THEN activated nodes SHALL include category, margin, and strategy concepts reachable from the supplier node
 - AND the agent MAY use these activated paths to reason about niche storefront opportunities
 
+#### Scenario: Isolated activation per seller
+
+- GIVEN Plasticov pattern A→B→C, Maustian D→E→F
+- WHEN `spread([A],{sellerId:"plasticov"})`
+- THEN B,C activated; D,E,F not
+
+#### Scenario: Global reachable
+
+- GIVEN Global node "margin" connected to both
+- WHEN `spread([A],{sellerId:"plasticov"})`
+- THEN Global node activatable
+
 ### Requirement: Darwinian Pruning
 
-The system MUST archive edges with weight < 0.05 and distill a lesson from each discarded connection.
+The system MUST archive edges with weight < 0.05 and distill a lesson from each discarded connection. When `sellerId` is provided, only edges whose both endpoints match that `sellerId` (or are NULL/global) are evaluated. Omitting `sellerId` prunes global edges only.
+
+(Previously: not seller-scoped.)
 
 #### Scenario: Weak edge archived with lesson
 
@@ -82,6 +120,12 @@ The system MUST archive edges with weight < 0.05 and distill a lesson from each 
 
 - GIVEN weight exactly 0.05 → MUST NOT be removed
 - GIVEN all weak edges already archived → no additional edges removed on re-run
+
+#### Scenario: Scoped pruning
+
+- GIVEN Both accounts have weak edges
+- WHEN `prune("plasticov")`
+- THEN Only Plasticov's weak edges removed
 
 ### Requirement: Convergence Detection
 
@@ -258,3 +302,87 @@ Cortex MUST NOT store listing snapshots, catalog data, or ingestion checkpoints.
 - WHEN Cortex traversal runs
 - THEN it MUST return learned judgment and distilled lessons only
 - AND MUST NOT return listing snapshots or catalog pages
+
+### Requirement: Seller-Scoped Node Schema
+
+`nodes`, `edges`, and `darwinian_lessons` MUST gain `seller_id TEXT` via idempotent `ALTER TABLE ADD COLUMN`. NULL = global, non-NULL = account. Existing rows default to NULL. An index `idx_nodes_seller` MUST be created on `nodes(seller_id)`.
+
+#### Scenario: Migration adds column
+
+- GIVEN DB without `seller_id`
+- WHEN Migration runs
+- THEN Column exists; existing rows NULL
+
+#### Scenario: Migration idempotent
+
+- GIVEN Column already exists
+- WHEN Migration re-runs
+- THEN No error
+
+### Requirement: Scoped Node Creation
+
+`createNode(label, metadata?, sellerId?)` MUST accept optional `sellerId`. Omitted → NULL (global). `getOrCreateNode` MUST accept optional `sellerId` for idempotent creation.
+
+#### Scenario: Account-scoped
+
+- GIVEN `createNode("asset", {}, "plasticov")`
+- WHEN Node queried
+- THEN `seller_id = "plasticov"`
+
+#### Scenario: Global
+
+- GIVEN `createNode("concept")`
+- WHEN Node queried
+- THEN `seller_id IS NULL`
+
+### Requirement: Scoped Hebbian Learning
+
+`reinforceEdge(src, tgt, sellerId?)` / `penalizeEdge(src, tgt, sellerId?)` MUST scope to edges where both endpoints match `sellerId` or are NULL. Cross-seller reinforcement requests SHALL be rejected.
+
+#### Scenario: Scoped reinforcement
+
+- GIVEN Edges for Plasticov and Maustian share labels
+- WHEN `reinforceEdge(A,B,"plasticov")`
+- THEN Only Plasticov's edge weight increases
+
+### Requirement: Scoped Spreading Activation
+
+`spread(seeds, { sellerId? })` MUST only traverse edges where both nodes match `sellerId` or NULL. Global nodes visible to all scopes.
+
+#### Scenario: Isolated activation
+
+- GIVEN Plasticov pattern A→B→C, Maustian D→E→F
+- WHEN `spread([A],{sellerId:"plasticov"})`
+- THEN B,C activated; D,E,F not
+
+#### Scenario: Global reachable
+
+- GIVEN Global node "margin" connected to both
+- WHEN `spread([A],{sellerId:"plasticov"})`
+- THEN Global node activatable
+
+### Requirement: Scoped Darwinian Pruning
+
+`prune(sellerId?)` MUST evaluate only edges where both nodes match. Omitting `sellerId` prunes global edges.
+
+#### Scenario: Scoped pruning
+
+- GIVEN Both accounts have weak edges
+- WHEN `prune("plasticov")`
+- THEN Only Plasticov's weak edges removed
+
+### Requirement: Seller-Scoped Query API
+
+`queryByMetadata(key, val, sellerId?)` and `getNodesBySeller(sellerId)` MUST filter by `seller_id` matching or NULL. `ensureAccountAssetNode(sellerId)` MUST create/return the `account_asset:{sellerId}` root node for each seller's subgraph.
+
+#### Scenario: Account query
+
+- GIVEN Plasticov 3 nodes, Maustian 2
+- WHEN `getNodesBySeller("plasticov")`
+- THEN Returns Plasticov's 3 + global nodes
+
+#### Scenario: AccountAsset root node
+
+- GIVEN No node for seller "maustian"
+- WHEN `ensureAccountAssetNode("maustian")`
+- THEN Node created with label `account_asset:maustian`

@@ -2,20 +2,20 @@
 
 ## Purpose
 
-Define approval, audit, and risk controls for business writes and public-facing actions. Proposals may originate from conversational LLM or deterministic agent.
+Define approval, audit, and risk controls for business writes and public-facing actions. Proposals may originate from conversational LLM or deterministic agent. Approval queue tables now carry `seller_id` for per-account scoping. "dale" resolution is per-account.
 
 ## Requirements
 
 ### Requirement: Conversational Proposal Pipeline
 
-The system MUST accept LLM natural-language proposals and format them as pending prepared work. In Phase 1 CEO delegation, seller confirmation words such as "dale", "sí", or "ok" MUST approve bounded investigation, preparation, or proposal advancement only; they MUST NOT execute external/productive effects.
-(Previously: confirmation words executed the prepared action after approval.)
+The system MUST accept LLM natural-language proposals and format them as pending prepared work. `PreparedAction` MUST carry `sellerId` scoped to the active account. "dale" confirms proposals FOR THAT ACCOUNT only. In Phase 1 CEO delegation, seller confirmation words such as "dale", "sí", or "ok" MUST approve bounded investigation, preparation, or proposal advancement only; they MUST NOT execute external/productive effects.
 
-#### Scenario: Agent proposes an action
+(Previously: global proposal resolution. Phase 1 boundary added 2026-07.)
 
-- GIVEN the agent suggests "¿bajo el precio 10%?"
-- WHEN the proposal is formatted
-- THEN it MUST create a `PreparedAction` with pending status
+#### Scenario: Agent proposes an action scoped to account
+
+- GIVEN agent in Maustian context suggests price change
+- WHEN proposal formatted → `PreparedAction` with `sellerId = "maustian"`, pending
 
 #### Scenario: User confirms Phase 1 delegation
 
@@ -128,8 +128,9 @@ The system MUST require explicit seller approval before price changes, stock cha
 
 ### Requirement: Risk Audit Trail
 
-Audit MUST record who approved, what changed, why, when, business risk, and proposer type (deterministic/conversational). For executed `sync_product` proposals, records MUST additionally capture pre-execution snapshot, ML API evidence (endpoint, payload, itemId/permalink), post-execution status, and rollback path.
-(Previously: no execution audit record contract.)
+Audit MUST record `seller_id`, who approved, what changed, why, when, business risk, and proposer type (deterministic/conversational). For executed `sync_product` proposals, records MUST additionally capture pre-execution snapshot, ML API evidence (endpoint, payload, itemId/permalink), post-execution status, and rollback path.
+
+(Previously: sellerId in JSON only; now explicit column.)
 
 #### Scenario: Approved action audited
 
@@ -502,6 +503,72 @@ Before owned ecommerce runtime execution, the system MUST reserve idempotency, v
 - WHEN execution eligibility is evaluated
 - THEN the system MUST block execution with redacted reason codes
 - AND it MUST preserve the action as not executed.
+
+---
+
+### Requirement: Seller-Scoped Approval Schema
+
+`approval_queue_entries`, `approval_records`, `audit_records` MUST gain `seller_id TEXT` via idempotent `ALTER TABLE ADD COLUMN`. Backfill from `action_json.sellerId` where available; default NULL otherwise.
+
+#### Scenario: Migration adds columns
+
+- GIVEN Tables without `seller_id`
+- WHEN Migration runs
+- THEN All three tables gain `seller_id`; backfill succeeds
+
+#### Scenario: Migration idempotent
+
+- GIVEN Column exists
+- WHEN Re-run
+- THEN No error
+
+### Requirement: Per-Account Approval Queue Queries
+
+`listPendingBySeller(sellerId)` MUST return only that account's pending entries. `getEntryForSeller(actionId, sellerId)` MUST verify ownership first.
+
+#### Scenario: Filtered queue
+
+- GIVEN 3 Plasticov pending, 2 Maustian
+- WHEN `listPendingBySeller("plasticov")`
+- THEN 3 entries returned
+
+#### Scenario: Cross-account blocked
+
+- GIVEN "act-1" belongs to Plasticov
+- WHEN `getEntryForSeller("act-1","maustian")`
+- THEN Not returned
+
+### Requirement: Per-Account "dale" Resolution
+
+"dale" MUST resolve against bot's configured `sellerId`. Multi-account ambiguity SHALL reject and ask for account specification.
+
+#### Scenario: Ambiguity rejected
+
+- GIVEN Both accounts have pending proposals
+- WHEN User: "dale"
+- THEN Neither executes; asks "¿dale para cuál cuenta?"
+
+#### Scenario: "dale la de Maustian"
+
+- GIVEN Both pending
+- WHEN User specifies account
+- THEN Only Maustian confirmed
+
+#### Scenario: Single-account bot
+
+- GIVEN Bot bound to Plasticov, only Plasticov pending
+- WHEN User: "dale"
+- THEN Confirmed normally
+
+### Requirement: Duplicate Tick Idempotency
+
+Duplicate daemon tick for same `(laneId, sellerId, dedupe_key)` MUST NOT duplicate proposals. Composite `(seller_id, dedupe_key)` uniqueness enforced.
+
+#### Scenario: No duplicate
+
+- GIVEN Tick for market-catalog/plasticov at 10:00 pending
+- WHEN Same tick re-enqueued
+- THEN No second proposal created
 
 ---
 

@@ -2,22 +2,29 @@
 
 ## Purpose
 
-A configurable poll-dispatch loop that wakes specialist agents on a schedule, claims their pending messages from the agent message bus, routes to matching daemon handlers, and resolves or fails the message on the bus. Survives daemon errors without crashing.
+A configurable poll-dispatch loop that wakes specialist agents on a schedule, claims their pending messages from the agent message bus, routes to matching daemon handlers, and resolves or fails the message on the bus. Survives daemon errors without crashing. Daemons now dispatch per-seller with account context.
 
 ## Requirements
 
 ### Requirement: Agent Polling Loop
 
-Scheduler MUST poll `claimNext(agentId)` on configured interval (default 15 min). Before polling, SHALL call `enqueueDaemonTick(agentId)` for agents with cron/tick schedule. Suspended agents excluded from polling and tick generation.
-(Previously: Reactive-only — claimed existing messages; no self-triggering.)
+Scheduler MUST poll `claimNext(agentId)` on configured interval (default 15 min). Before polling, SHALL call `enqueueDaemonTick(agentId)` for agents with cron/tick schedule. Suspended agents excluded from polling and tick generation. **The scheduler SHALL dispatch each daemon handler once per `sellerId` in the configured seller list.**
+
+(Previously: daemon handlers were invoked once globally, not per-seller.)
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
 | Normal poll | Agent has pending message | Scheduler polls for that agent | `claimNext` returns message, dispatched to daemon |
-| Tick triggers poll | Agent has matching cron schedule | Tick enqueued, then polled | Message claimed from tick; daemon investigates |
+| Tick triggers per-seller poll | Agent has matching cron schedule | Tick enqueued, then polled | Handler invoked per seller with scoped context |
 | No pending | Agent has no pending messages | claimNext returns empty | Scheduler moves to next agent |
 | No handler | Agent exists but no matching daemon | Scheduler evaluates agent | Agent skipped, no error |
 | Suspended agent | Agent status is "suspended" | Scheduler executes cycle | Agent excluded from polling and tick generation |
+
+#### Scenario: Tick triggers per-seller polls
+
+- GIVEN sellerIds = ["plasticov", "maustian"] and market-catalog cron fires
+- WHEN the tick is enqueued and polled
+- THEN the handler is invoked for Plasticov, then for Maustian, each with scoped context
 
 ### Requirement: Autonomous Tick Generation
 
@@ -41,11 +48,13 @@ Each daemon lane MAY define `cronSchedule` or `tickIntervalMs`. Cron evaluated p
 
 ### Requirement: Claim-Dispatch-Resolve Lifecycle
 
-For each claimed message, the scheduler MUST call the matching daemon's `investigate()` function. On success, the scheduler MUST `resolve()` the message. On daemon error, the scheduler MUST `fail()` the message with the error string and continue to the next agent.
+For each claimed message, the scheduler MUST call the matching daemon's `investigate()` function **with the per-seller `accountContext`**. On success, the scheduler MUST `resolve()` the message. On daemon error, the scheduler MUST `fail()` the message with the error string and continue to the next agent **and next seller**.
+
+(Previously: handler input did not include account context.)
 
 | Scenario | GIVEN | WHEN | THEN |
 |----------|-------|------|------|
-| Successful dispatch | Claimed message, daemon returns DaemonResult | investigate() succeeds | Message resolved on bus |
+| Successful per-seller dispatch | Claimed message, daemon returns DaemonResult | investigate() succeeds for seller | Message resolved, next seller begins |
 | Daemon throws | Claimed message, daemon throws Error | investigate() fails | Message failed on bus, scheduler continues |
 | Fail retry | Message at attempts < maxAttempts | fail() called | Message re-enters pending for next cycle |
 
@@ -103,3 +112,58 @@ Handler map SHALL cover 13 lanes: cost-supplier, market-catalog, creative-assets
 |----------|-------|------|------|
 | Adapters configured | Env defines adapter URLs | Scheduler starts | Real adapters passed |
 | No adapters | No env vars | Scheduler starts | Empty Map; internal mirror only (backward compatible) |
+
+### Requirement: Per-Seller Daemon Dispatch
+
+The daemon scheduler MUST iterate `sellerIds` from configuration and dispatch each daemon handler with per-seller account context. Each daemon handler invocation SHALL receive the current seller's `sellerId` in the handler input.
+
+#### Scenario: Daemon iterates seller IDs
+
+- GIVEN `sellerIds = ["plasticov", "maustian"]` and a `market-catalog` tick fires
+- WHEN the scheduler dispatches the handler
+- THEN the handler MUST be invoked once per seller
+- AND each invocation MUST receive the respective `sellerId`
+
+#### Scenario: Single seller unchanged behavior
+
+- GIVEN `sellerIds = ["plasticov"]`
+- WHEN a daemon tick fires
+- THEN the handler MUST be invoked once with `sellerId = "plasticov"`
+
+### Requirement: Scoped Operational Evidence
+
+When a daemon handler queries operational evidence (via `OperationalReadModelReader`), the query MUST be scoped to the daemon's current `sellerId`. A daemon processing for Plasticov MUST NOT receive Maustian's operational data.
+
+#### Scenario: Evidence scoped to current seller
+
+- GIVEN the `market-catalog` daemon runs for `sellerId = "plasticov"`
+- WHEN it queries operational snapshots
+- THEN only Plasticov's listings, orders, and claims MUST be returned
+
+### Requirement: Account Context in Daemon Handler Input
+
+The `DaemonHandler` input type MUST include `accountContext: { sellerId: SellerId, asset?: AccountAsset }`. The `accountAsset` SHALL be populated from `AccountAssetStore` when available, or `undefined` for backward compatibility.
+
+#### Scenario: Handler receives account context
+
+- GIVEN an `AccountAsset` exists for Plasticov with capabilities and profit goal
+- WHEN a daemon handler is invoked for `sellerId = "plasticov"`
+- THEN `input.accountContext.sellerId` MUST be `"plasticov"`
+- AND `input.accountContext.asset` MUST contain the `AccountAsset` record
+
+#### Scenario: Handler works without asset context
+
+- GIVEN no `AccountAssetStore` is configured
+- WHEN a daemon handler is invoked
+- THEN `input.accountContext.asset` MUST be `undefined`
+- AND the handler MUST still function with `sellerId` alone
+
+### Requirement: Per-Seller Dedupe Keys
+
+Daemon tick deduplication MUST include `seller_id` in the dedupe key. A tick for `market-catalog` with `seller_id = "plasticov"` MUST NOT deduplicate against the same lane for `seller_id = "maustian"`.
+
+#### Scenario: Dedupe keys scoped per account
+
+- GIVEN a `daemon_tick` for `market-catalog` with `seller_id = "plasticov"` at 10:00
+- WHEN a `daemon_tick` for `market-catalog` with `seller_id = "maustian"` is enqueued at 10:00
+- THEN both ticks MUST be enqueued (different dedupe scopes)
