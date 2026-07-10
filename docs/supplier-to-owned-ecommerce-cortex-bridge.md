@@ -699,3 +699,47 @@ Cortex aprende
 ```
 
 Esto convierte MSL en una operación comercial multicanal: MercadoLibre sigue siendo el primer canal, pero las tiendas propias empiezan a reaccionar a proveedores, stock, margen, imágenes, SEO y resultados reales bajo control humano.
+
+---
+
+## Signal Contract (Implemented)
+
+The Supplier Manager Daemon now enqueues `supplier-web-signal` messages to the `owned-ecommerce` lane via the Agent Message Bus. Each signal follows a strict contract defined by `SupplierWebSignalPayload` in `packages/domain/src/supplierWebSignal.ts`.
+
+### Dedupe Key Format
+
+```
+sws:{supplierId}:{supplierItemId}:{signalKind}:{hourKey}
+```
+
+Duplicate signals within the same hour window are suppressed by the bus dedupe key.
+
+### Feature Flag
+
+`MSL_OWNED_ECOMMERCE_INTELLIGENCE_ENABLED=true` enables signal enqueue. When disabled, no signals are sent.
+
+### Signal Kinds
+
+| Kind                      | Trigger                                  | Severity   | Example Dedupe Key                                       |
+| ------------------------- | ---------------------------------------- | ---------- | -------------------------------------------------------- |
+| `new-supplier-product`    | Item has no `ml_item_id` and no mappings | `warning`  | `sws:jinpeng:S001:new-supplier-product:2026-07-10T12`    |
+| `stock-gap`               | One seller stock > 0, another = 0        | `critical` | `sws:jinpeng:S001:stock-gap:2026-07-10T12`               |
+| `supplier-price-change`   | Price delta >5%                          | `warning`  | `sws:jinpeng:S001:supplier-price-change:2026-07-10T12`   |
+| `supplier-stock-restored` | All sellers stock > 0                    | `info`     | `sws:jinpeng:S001:supplier-stock-restored:2026-07-10T12` |
+| `supplier-stock-out`      | All sellers stock = 0                    | `critical` | `sws:jinpeng:S001:supplier-stock-out:2026-07-10T12`      |
+| `publish-opportunity`     | Unfilled mirror with price evidence      | `info`     | `sws:jinpeng:S001:publish-opportunity:2026-07-10T12`     |
+
+### Missing Evidence Handling
+
+When an unfilled mirror item has no price evidence, the `new-supplier-product` signal uses `recommendedAction: "collect-more-evidence"` instead of `"prepare-storefront-candidate"`. No aggressive proposals are made without evidence.
+
+## Implementation Status
+
+| Fase                                                             | Descripción           | Estado |
+| ---------------------------------------------------------------- | --------------------- | ------ |
+| Signal bridge (domain types, daemon enqueue, dedupe)             | ✅ Implemented (PR 1) |
+| Owned ecommerce daemon (claim signals, prepare proposals)        | 🔲 Planned (PR 2)     |
+| Intelligence service + Cortex reasoner + scorer + projection     | 🔲 Planned (PR 2)     |
+| Daemon integration + tools + creative delegation + work sessions | 🔲 Planned (PR 3)     |
+
+See `docs/architecture/owned-ecommerce-intelligence.md` for the full architecture reference.

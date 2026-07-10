@@ -140,6 +140,7 @@ The business model is hybrid: dropshipping, arbitrage, and some owned stock. The
 MSL must grow beyond MercadoLibre:
 
 - Owned ecommerce: evidence-backed Medusa-oriented storefront projections and static previews are implemented. Runtime approval execution (domain/store contracts, Medusa runtime executor, regression verification) is merged as a stacked-PR SDD cycle and gated behind approvals + env credentials. Live Medusa deployment, checkout, and public publish remain future gated work.
+  - **Supplier Intelligence (new)**: The Website Manager (Owned Ecommerce specialist) now receives `supplier-web-signal` messages from the Supplier Manager daemon via the Agent Message Bus. Six signal kinds (new-supplier-product, stock-gap, supplier-price-change, supplier-stock-restored, supplier-stock-out, publish-opportunity) are enqueued with deduplication. All processing is preparation-only (`noMutationExecuted: true`). The intelligence pipeline (Cortex reasoning, scoring, projection building) is in progress via stacked PRs. See `docs/architecture/owned-ecommerce-intelligence.md`.
 - Social channels and content/creative workflows.
 - Ripley and other marketplaces.
 - Supplier discovery, negotiation, and catalog intelligence.

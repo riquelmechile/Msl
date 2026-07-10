@@ -82,7 +82,7 @@ describe("ownedEcommerceDaemon", () => {
   describe("with no data", () => {
     it("returns empty findings when no listing snapshots exist", async () => {
       const result: DaemonResult = await ownedEcommerceDaemon({
-        claim: claimFixture(),
+        claim: claimFixture({ messageType: "daemon-tick" }),
         reader: createSqliteOperationalReadModel(db),
         cortex: {} as never,
         bus,
@@ -100,7 +100,7 @@ describe("ownedEcommerceDaemon", () => {
   describe("DaemonResult contract", () => {
     it("returns valid DaemonResult with correct shape", async () => {
       const result: DaemonResult = await ownedEcommerceDaemon({
-        claim: claimFixture(),
+        claim: claimFixture({ messageType: "daemon-tick" }),
         reader: createSqliteOperationalReadModel(db),
         cortex: {} as never,
         bus,
@@ -141,7 +141,7 @@ describe("ownedEcommerceDaemon", () => {
       });
 
       const result = await ownedEcommerceDaemon({
-        claim: claimFixture(),
+        claim: claimFixture({ messageType: "daemon-tick" }),
         reader: createSqliteOperationalReadModel(db),
         cortex: {} as never,
         bus,
@@ -166,7 +166,7 @@ describe("ownedEcommerceDaemon", () => {
       });
 
       const result = await ownedEcommerceDaemon({
-        claim: claimFixture(),
+        claim: claimFixture({ messageType: "daemon-tick" }),
         reader: createSqliteOperationalReadModel(db),
         cortex: {} as never,
         bus,
@@ -194,7 +194,7 @@ describe("ownedEcommerceDaemon", () => {
       });
 
       const result = await ownedEcommerceDaemon({
-        claim: claimFixture(),
+        claim: claimFixture({ messageType: "daemon-tick" }),
         reader: createSqliteOperationalReadModel(db),
         cortex: {} as never,
         bus,
@@ -217,7 +217,7 @@ describe("ownedEcommerceDaemon", () => {
       });
 
       const result = await ownedEcommerceDaemon({
-        claim: claimFixture(),
+        claim: claimFixture({ messageType: "daemon-tick" }),
         reader: createSqliteOperationalReadModel(db),
         cortex: {} as never,
         bus,
@@ -243,7 +243,7 @@ describe("ownedEcommerceDaemon", () => {
       });
 
       const result = await ownedEcommerceDaemon({
-        claim: claimFixture(),
+        claim: claimFixture({ messageType: "daemon-tick" }),
         reader: createSqliteOperationalReadModel(db),
         cortex: {} as never,
         bus,
