@@ -24,7 +24,9 @@ The system MUST infer seller intent from natural Spanish without topic enums, co
 
 ### Requirement: DeepSeek LLM Integration
 
-The system MUST use DeepSeek v4 Flash via `openai` npm with `baseURL: "https://api.deepseek.com"`. Falls back to mock or noop client on failure. Cache `user_id` MAY incorporate `sellerId` for per-account cache separation.
+The system MUST use DeepSeek v4 Flash via `openai` npm with `baseURL: "https://api.deepseek.com"`. Falls back to mock or noop client on failure. Cache `user_id` MAY incorporate `sellerId` for per-account cache separation. Tool list extended to include `get_agent_work_status` alongside existing 40+ tools.
+
+(Previously: tool list did not include agent work status introspection.)
 
 #### Scenario: Valid API key
 
@@ -546,3 +548,97 @@ Cortex reinforcement and lesson creation MUST use active `sellerId`. Maustian ou
 - GIVEN Both pending
 - WHEN User specifies account
 - THEN Only Maustian confirmed
+
+### Requirement: get_agent_work_status Tool
+
+The agent loop MUST register `get_agent_work_status` as an internal workforce MCP tool. It SHALL query `AgentWorkSessionStore` and return structured status per seller.
+
+#### Scenario: Query all agents today
+
+- GIVEN 3 agents ran sessions for Plasticov today
+- WHEN CEO calls `get_agent_work_status({ sellerId: "plasticov" })`
+- THEN returns: agents worked, per-account, latest observations, pending proposals, failed sessions, estimated cost, cache efficiency, next steps
+
+#### Scenario: Account scoped
+
+- GIVEN Plasticov has sessions, Maustian has sessions
+- WHEN tool called with `sellerId: "plasticov"`
+- THEN only Plasticov data returned
+
+#### Scenario: Include lessons
+
+- GIVEN `includeLessons: true` parameter
+- WHEN tool queried
+- THEN response includes recent transferable lessons per agent
+
+### Requirement: Write Prohibition
+
+`get_agent_work_status` SHALL NOT execute any mutations. Response MUST include `noMutationExecuted: true`.
+
+#### Scenario: Read-only guarantee
+
+- GIVEN tool invoked multiple times
+- WHEN response inspected
+- THEN `noMutationExecuted: true` always present, no ML API writes triggered
+
+### Requirement: Backend Only
+
+Tool output is machine-readable JSON. No dashboard UI or human-facing rendering created.
+
+### Requirement: get_account_brain_status Tool
+
+The agent loop MUST register `get_account_brain_status` as an internal read-only workforce tool. It SHALL aggregate existing stores per seller and return `AccountBrainStatus` with health, risks, opportunities, agent activity, costs, pending approvals, and cortex presence.
+
+#### Scenario: Tool registered and available
+
+- GIVEN the agent loop initializes
+- WHEN tools are registered
+- THEN `get_account_brain_status` MUST appear in the LLM tool list alongside `get_agent_work_status`
+
+#### Scenario: Tool query returns per-account status
+
+- GIVEN CEO asks "cómo está Plasticov?"
+- WHEN agent invokes `get_account_brain_status({ sellerId: "plasticov" })`
+- THEN returns health, risks, agent activity, costs, pending approvals scoped to Plasticov
+- AND `noMutationExecuted: true`
+
+#### Scenario: Missing account handled gracefully
+
+- GIVEN CEO asks about unknown account
+- WHEN agent invokes tool
+- THEN returns `missing_account_asset` status — conversation continues without error
+
+#### Scenario: Store unavailability degrades gracefully
+
+- GIVEN a dependent store is not configured
+- WHEN agent invokes tool
+- THEN affected fields report `"unavailable"` — agent SHALL NOT crash or throw
+
+### Requirement: compare_account_assets Tool
+
+The agent loop MUST register `compare_account_assets` as an internal read-only workforce tool. It SHALL compare candidate accounts side-by-side and return `AccountAssetComparison` with recommendation, ranking, and `requiresApproval: true`.
+
+#### Scenario: Tool registered and available
+
+- GIVEN the agent loop initializes
+- WHEN tools are registered
+- THEN `compare_account_assets` MUST appear in the LLM tool list
+
+#### Scenario: Tool query returns comparison with recommendation
+
+- GIVEN CEO asks "qué cuenta me conviene para este producto?"
+- WHEN agent invokes `compare_account_assets` with product opportunity
+- THEN returns ranking with `recommendedSellerId`, confidence, decisionLogic, and evidence
+- AND `requiresApproval: true`, `noMutationExecuted: true`
+
+#### Scenario: Goal-driven weighting applied
+
+- GIVEN CEO asks "dónde maximizo ganancia?"
+- WHEN agent invokes tool with `goal: "maximize_profit"`
+- THEN ranking weights margin and opportunity factors highest
+
+#### Scenario: Insufficient data does not break conversation
+
+- GIVEN accounts have similar scores, no clear winner
+- WHEN agent invokes tool
+- THEN returns low confidence with `collect_more_evidence` suggestion — agent continues conversation
