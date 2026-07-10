@@ -6,6 +6,12 @@ import { join } from "node:path";
 
 import { createWorkforceCostCacheLedgerStore } from "../../src/conversation/workforceCostCacheLedgerStore.js";
 
+const recentDay = (offset: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - offset);
+  return d.toISOString().slice(0, 10);
+};
+
 const baseEntry = {
   agentId: "agent:pricing",
   provider: "deepseek",
@@ -310,6 +316,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
 
     try {
       // Insert two entries for the same day, agent, and model
+      const day = recentDay(2);
       store.insertEntry({
         ...baseEntry,
         entryId: "entry:rollup-a",
@@ -317,7 +324,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
         inputTokens: 30,
         outputTokens: 15,
         estimatedCostMicros: 100,
-        measuredAt: "2026-07-03T10:00:00.000Z",
+        measuredAt: `${day}T10:00:00.000Z`,
       });
       store.insertEntry({
         ...baseEntry,
@@ -326,15 +333,14 @@ describe("createWorkforceCostCacheLedgerStore", () => {
         inputTokens: 70,
         outputTokens: 35,
         estimatedCostMicros: 150,
-        measuredAt: "2026-07-03T10:01:00.000Z",
+        measuredAt: `${day}T10:01:00.000Z`,
       });
 
       const rollupRow = db
         .prepare(
           `SELECT * FROM workforce_cost_cache_ledger_rollups WHERE day = ? AND agent_id = ? AND model = ?`,
         )
-        .get("2026-07-03", "agent:pricing", "deepseek-v4-flash") as
-        Record<string, number> | undefined;
+        .get(day, "agent:pricing", "deepseek-v4-flash") as Record<string, number> | undefined;
 
       expect(rollupRow).toBeDefined();
       expect(rollupRow!.input_tokens_agg).toBe(100);
@@ -356,6 +362,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
     const store = createWorkforceCostCacheLedgerStore(db, { maxEntries: 2 });
 
     try {
+      const day = recentDay(2);
       // Insert 3 entries on the same day — raw table will prune but rollups persist
       for (let index = 0; index < 3; index += 1) {
         store.insertEntry({
@@ -365,7 +372,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
           inputTokens: 10,
           outputTokens: 5,
           estimatedCostMicros: 50,
-          measuredAt: `2026-07-03T10:0${index}:00.000Z`,
+          measuredAt: `${day}T10:0${index}:00.000Z`,
         });
       }
 
@@ -466,6 +473,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
     const store = createWorkforceCostCacheLedgerStore(db);
 
     try {
+      const day = recentDay(2);
       store.insertEntry({
         ...baseEntry,
         entryId: "entry:dept-ops-1",
@@ -474,7 +482,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
         inputTokens: 100,
         outputTokens: 50,
         estimatedCostMicros: 300_000,
-        measuredAt: "2026-07-03T10:00:00.000Z",
+        measuredAt: `${day}T10:00:00.000Z`,
       });
       store.insertEntry({
         ...baseEntry,
@@ -484,7 +492,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
         inputTokens: 200,
         outputTokens: 100,
         estimatedCostMicros: 500_000,
-        measuredAt: "2026-07-03T10:05:00.000Z",
+        measuredAt: `${day}T10:05:00.000Z`,
       });
 
       const aggregate = store.aggregateCosts({ days: 7 });
@@ -540,13 +548,14 @@ describe("createWorkforceCostCacheLedgerStore", () => {
     const store = createWorkforceCostCacheLedgerStore(db);
 
     try {
+      const day = recentDay(2);
       store.insertEntry({
         ...baseEntry,
         entryId: "entry:hit-1",
         cacheStatus: "hit",
         promptCacheHitTokens: 80,
         promptCacheMissTokens: 0,
-        measuredAt: "2026-07-03T10:00:00.000Z",
+        measuredAt: `${day}T10:00:00.000Z`,
       });
       store.insertEntry({
         ...baseEntry,
@@ -554,7 +563,7 @@ describe("createWorkforceCostCacheLedgerStore", () => {
         cacheStatus: "miss",
         promptCacheHitTokens: 0,
         promptCacheMissTokens: 20,
-        measuredAt: "2026-07-03T10:01:00.000Z",
+        measuredAt: `${day}T10:01:00.000Z`,
       });
 
       const aggregate = store.aggregateCosts({ days: 7 });

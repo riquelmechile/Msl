@@ -32,6 +32,12 @@ import {
 } from "../../src/conversation/tools.js";
 import { createGraphEngine } from "@msl/memory";
 
+const recentDay = (offset: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - offset);
+  return d.toISOString().slice(0, 10);
+};
+
 function makeState(overrides: Partial<ConversationState> = {}): ConversationState {
   return {
     messages: [],
@@ -635,6 +641,7 @@ describe("createAgentLoop — mock client", () => {
   it("adds cost/cache ledger context to latest user Block C when ledger has entries", async () => {
     await withInMemoryWorkforceLedger(async ({ workforceCostCacheLedgerStore }) => {
       const { capturedMessages, llmClient } = makePromptCaptureClient();
+      const day = recentDay(2);
       workforceCostCacheLedgerStore.insertEntry({
         entryId: "ledger:cost-cache-1",
         agentId: "agent:pricing-analyst",
@@ -647,7 +654,7 @@ describe("createAgentLoop — mock client", () => {
         promptCacheHitTokens: 80,
         promptCacheMissTokens: 20,
         cacheStatus: "partial",
-        measuredAt: "2026-07-03T10:00:00Z",
+        measuredAt: `${day}T10:00:00Z`,
       });
       workforceCostCacheLedgerStore.insertEntry({
         entryId: "ledger:cost-cache-2",
@@ -661,7 +668,7 @@ describe("createAgentLoop — mock client", () => {
         promptCacheHitTokens: 50,
         promptCacheMissTokens: 0,
         cacheStatus: "hit",
-        measuredAt: "2026-07-03T10:01:00Z",
+        measuredAt: `${day}T10:01:00Z`,
       });
       const agent = createAgentLoop({ systemPrompt, llmClient, workforceCostCacheLedgerStore });
 
