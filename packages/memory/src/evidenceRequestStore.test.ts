@@ -1,20 +1,18 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 
-import type {
-  EvidenceRequestPayload,
-  EvidenceResponsePayload,
-} from "@msl/domain";
+import type { EvidenceRequestPayload, EvidenceResponsePayload } from "@msl/domain";
 
-import { createSqliteEvidenceRequestStore, type EvidenceRequestStore } from "./evidenceRequestStore.js";
+import {
+  createSqliteEvidenceRequestStore,
+  type EvidenceRequestStore,
+} from "./evidenceRequestStore.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makePayload(
-  overrides: Partial<EvidenceRequestPayload> = {},
-): EvidenceRequestPayload {
+function makePayload(overrides: Partial<EvidenceRequestPayload> = {}): EvidenceRequestPayload {
   const ts = new Date("2026-07-10T12:00:00.000Z").toISOString();
   return {
     type: "evidence-request",
@@ -36,9 +34,7 @@ function makePayload(
   };
 }
 
-function makeResponse(
-  overrides: Partial<EvidenceResponsePayload> = {},
-): EvidenceResponsePayload {
+function makeResponse(overrides: Partial<EvidenceResponsePayload> = {}): EvidenceResponsePayload {
   const ts = new Date("2026-07-10T12:01:00.000Z").toISOString();
   return {
     type: "evidence-response",
@@ -179,7 +175,9 @@ describe("EvidenceRequestStore", () => {
   // 6
   it("dedupe returns existing request ID as duplicate", () => {
     const store = createStore();
-    const first = store.enqueueRequest(makePayload({ requestId: "req-original", dedupeKey: "same-key" }));
+    const first = store.enqueueRequest(
+      makePayload({ requestId: "req-original", dedupeKey: "same-key" }),
+    );
     expect(first.status).toBe("queued");
 
     const second = store.enqueueRequest(
@@ -256,25 +254,52 @@ describe("EvidenceRequestStore", () => {
 
     // Request 1: answered
     store.enqueueRequest(
-      makePayload({ requestId: "req-s1", dedupeKey: "dedupe-s1", candidateId: "cand-sum", kind: "cost-margin" }),
+      makePayload({
+        requestId: "req-s1",
+        dedupeKey: "dedupe-s1",
+        candidateId: "cand-sum",
+        kind: "cost-margin",
+      }),
     );
     store.claimRequest("req-s1", "cost-supplier");
     store.answerRequest(
-      makeResponse({ responseId: "resp-s1", requestId: "req-s1", candidateId: "cand-sum", confidence: "high", blockers: ["b1"] }),
+      makeResponse({
+        responseId: "resp-s1",
+        requestId: "req-s1",
+        candidateId: "cand-sum",
+        confidence: "high",
+        blockers: ["b1"],
+      }),
     );
 
     // Request 2: answered with lower confidence
     store.enqueueRequest(
-      makePayload({ requestId: "req-s2", dedupeKey: "dedupe-s2", candidateId: "cand-sum", kind: "market-demand" }),
+      makePayload({
+        requestId: "req-s2",
+        dedupeKey: "dedupe-s2",
+        candidateId: "cand-sum",
+        kind: "market-demand",
+      }),
     );
     store.claimRequest("req-s2", "market-catalog");
     store.answerRequest(
-      makeResponse({ responseId: "resp-s2", requestId: "req-s2", candidateId: "cand-sum", confidence: "medium", blockers: ["b2"] }),
+      makeResponse({
+        responseId: "resp-s2",
+        requestId: "req-s2",
+        candidateId: "cand-sum",
+        confidence: "medium",
+        blockers: ["b2"],
+      }),
     );
 
     // Request 3: still queued
     store.enqueueRequest(
-      makePayload({ requestId: "req-s3", dedupeKey: "dedupe-s3", candidateId: "cand-sum", kind: "supplier-stock" }),
+      makePayload({
+        requestId: "req-s3",
+        dedupeKey: "dedupe-s3",
+        candidateId: "cand-sum",
+        kind: "supplier-stock",
+      }),
     );
 
     const summary = store.summarizeEvidenceForCandidate("cand-sum");

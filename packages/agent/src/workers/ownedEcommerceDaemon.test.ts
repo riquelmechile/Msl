@@ -967,16 +967,14 @@ describe("ownedEcommerceDaemon — evidence re-evaluation (Task 3.7)", () => {
 
     // Grab all CEO proposals for this seller
     const allCeoMsgs = ctx.bus.claimNext("ceo", { limit: 100 });
-    const reEvalProposals = allCeoMsgs.filter(
-      (m) => {
-        try {
-          const payload = JSON.parse(m.payloadJson);
-          return payload.source === "evidence-reeval" && payload.sellerId === "plasticov";
-        } catch {
-          return false;
-        }
-      },
-    );
+    const reEvalProposals = allCeoMsgs.filter((m) => {
+      try {
+        const payload = JSON.parse(m.payloadJson);
+        return payload.source === "evidence-reeval" && payload.sellerId === "plasticov";
+      } catch {
+        return false;
+      }
+    });
 
     // Only one evidence-reeval proposal should exist (first tick)
     expect(reEvalProposals).toHaveLength(1);

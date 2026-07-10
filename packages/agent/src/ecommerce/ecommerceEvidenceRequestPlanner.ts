@@ -176,14 +176,11 @@ export class EcommerceEvidenceRequestPlanner {
           },
         );
       } else {
-        this.log?.info(
-          "EcommerceEvidenceRequestPlanner: persisted evidence request to store",
-          {
-            requestId,
-            candidateId: input.candidateId,
-            kind: input.kind,
-          },
-        );
+        this.log?.info("EcommerceEvidenceRequestPlanner: persisted evidence request to store", {
+          requestId,
+          candidateId: input.candidateId,
+          kind: input.kind,
+        });
       }
     } catch (err) {
       this.log?.error(
@@ -198,7 +195,11 @@ export class EcommerceEvidenceRequestPlanner {
    * Attempt to enqueue a message via the message bus. Failures are logged
    * but never thrown — the structured message is always returned.
    */
-  private tryEnqueue(message: EvidenceRequestMessage, candidateId: string, correlationId: string): void {
+  private tryEnqueue(
+    message: EvidenceRequestMessage,
+    candidateId: string,
+    correlationId: string,
+  ): void {
     if (!this.messageBus) return;
 
     try {

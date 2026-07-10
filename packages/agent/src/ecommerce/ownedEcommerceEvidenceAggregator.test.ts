@@ -26,7 +26,9 @@ function makeRequest(overrides: Partial<EvidenceRequestPayload> = {}): EvidenceR
     correlationId: overrides.correlationId ?? `corr-${id.slice(0, 8)}`,
     sourceAgentId: overrides.sourceAgentId ?? "planner",
     targetAgentId: overrides.targetAgentId ?? "cost-supplier",
-    ...(overrides.sellerId !== undefined ? { sellerId: overrides.sellerId } : { sellerId: "plasticov" }),
+    ...(overrides.sellerId !== undefined
+      ? { sellerId: overrides.sellerId }
+      : { sellerId: "plasticov" }),
     candidateId,
     kind,
     question: overrides.question ?? "What is the cost?",
@@ -192,11 +194,13 @@ describe("OwnedEcommerceEvidenceAggregator", () => {
     const req = makeRequest({ candidateId: "cand-4", kind: "cost-margin" });
     store.enqueueRequest(req);
     store.claimRequest(req.requestId, "cost-supplier");
-    store.answerRequest(makeResponse(req, {
-      confidence: "high",
-      evidenceIds: ["ev-cost-1", "ev-cost-2"],
-      blockers: [],
-    }));
+    store.answerRequest(
+      makeResponse(req, {
+        confidence: "high",
+        evidenceIds: ["ev-cost-1", "ev-cost-2"],
+        blockers: [],
+      }),
+    );
 
     const enriched = await aggregator.applyEvidenceResponsesToCandidate(candidate);
 

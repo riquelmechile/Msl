@@ -341,13 +341,15 @@ describe("EcommerceEvidenceRequestPlanner", () => {
       });
 
       const candidateId = "cand-store-1";
-      const requests = [makeReport({
-        candidateId,
-        category: "cost",
-        severity: "high",
-        targetAgentId: "cost-supplier",
-        question: "What is the supplier cost?",
-      })];
+      const requests = [
+        makeReport({
+          candidateId,
+          category: "cost",
+          severity: "high",
+          targetAgentId: "cost-supplier",
+          question: "What is the supplier cost?",
+        }),
+      ];
 
       planner.planRequests(requests, candidateId);
 
@@ -368,10 +370,12 @@ describe("EcommerceEvidenceRequestPlanner", () => {
         evidenceRequestStore: store,
       });
 
-      const requests = [makeReport({
-        targetAgentId: "creative-assets",
-        question: "Are images ready?",
-      })];
+      const requests = [
+        makeReport({
+          targetAgentId: "creative-assets",
+          question: "Are images ready?",
+        }),
+      ];
 
       planner.planRequests(requests, "cand-bus-1");
 

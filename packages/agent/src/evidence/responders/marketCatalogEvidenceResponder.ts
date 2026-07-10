@@ -59,9 +59,7 @@ export class MarketCatalogEvidenceResponder implements EvidenceResponder {
 
     const demandSignal = category ? this.transport.getDemandSignal(category) : null;
     const competitorCount = category ? this.transport.getCompetitorCount(category) : null;
-    const averageObservedPrice = category
-      ? this.transport.getAverageObservedPrice(category)
-      : null;
+    const averageObservedPrice = category ? this.transport.getAverageObservedPrice(category) : null;
     const priceRange = category ? this.transport.getPriceRange(category) : null;
     const listingPerformance = request.candidateId
       ? this.transport.getListingPerformance(request.candidateId)
@@ -87,9 +85,7 @@ export class MarketCatalogEvidenceResponder implements EvidenceResponder {
       ...(demandSignal !== null ? { demandSignal } : {}),
       ...(competitorCount !== null ? { competitorCount } : {}),
       ...(averageObservedPrice !== null ? { averageObservedPrice } : {}),
-      ...(priceRange !== null
-        ? { priceRange: { min: priceRange.min, max: priceRange.max } }
-        : {}),
+      ...(priceRange !== null ? { priceRange: { min: priceRange.min, max: priceRange.max } } : {}),
       ...(listingPerformance !== null ? { listingPerformance } : {}),
     };
 
@@ -103,9 +99,10 @@ export class MarketCatalogEvidenceResponder implements EvidenceResponder {
       ...(request.sellerId !== undefined ? { sellerId: request.sellerId } : {}),
       ...(request.candidateId !== undefined ? { candidateId: request.candidateId } : {}),
       status: "answered",
-      answer: demandSignal !== null
-        ? `Market demand signal: ${demandSignal}/100. ${competitorCount !== null ? `${competitorCount} competitors.` : ""}`
-        : "Market data available — see structured evidence.",
+      answer:
+        demandSignal !== null
+          ? `Market demand signal: ${demandSignal}/100. ${competitorCount !== null ? `${competitorCount} competitors.` : ""}`
+          : "Market data available — see structured evidence.",
       structuredEvidence,
       evidenceIds: [`ev-market-${request.requestId}`],
       confidence,

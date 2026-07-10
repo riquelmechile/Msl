@@ -104,18 +104,16 @@ export class AccountBrainEvidenceResponder implements EvidenceResponder {
       status: "answered",
       answer:
         request.kind === "claim-support"
-          ? `Recommended account for claim support: ${recommendedAccountName} (${recommendedSellerId}). `
-            + `Claim history score: ${topAccount.claimHistoryScore}.`
-          : `Best channel fit: ${recommendedAccountName} (${recommendedSellerId}). `
-            + `Channel fit score: ${topAccount.channelFitScore}.`,
+          ? `Recommended account for claim support: ${recommendedAccountName} (${recommendedSellerId}). ` +
+            `Claim history score: ${topAccount.claimHistoryScore}.`
+          : `Best channel fit: ${recommendedAccountName} (${recommendedSellerId}). ` +
+            `Channel fit score: ${topAccount.channelFitScore}.`,
       structuredEvidence,
       evidenceIds: [`ev-account-${request.requestId}`],
       confidence,
       blockers: [],
       warnings:
-        ranking.length < 2
-          ? ["Only one account available for comparison — limited context."]
-          : [],
+        ranking.length < 2 ? ["Only one account available for comparison — limited context."] : [],
       createdAt: new Date().toISOString(),
       noMutationExecuted: true,
     };

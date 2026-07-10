@@ -105,10 +105,7 @@ export class CreativeAssetsEvidenceResponder implements EvidenceResponder {
           : imageReady
             ? []
             : ["Creative asset readiness unknown."],
-      warnings:
-        constraints !== null
-          ? [`Creative constraints apply: ${constraints}.`]
-          : [],
+      warnings: constraints !== null ? [`Creative constraints apply: ${constraints}.`] : [],
       createdAt: new Date().toISOString(),
       noMutationExecuted: true,
     };

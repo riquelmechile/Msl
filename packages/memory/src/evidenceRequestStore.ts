@@ -304,9 +304,7 @@ export function createSqliteEvidenceRequestStore(db: Database.Database): Evidenc
 
   const getRequestStmt = db.prepare("SELECT * FROM evidence_requests WHERE request_id = ?");
 
-  const getRequestByDedupeStmt = db.prepare(
-    "SELECT * FROM evidence_requests WHERE dedupe_key = ?",
-  );
+  const getRequestByDedupeStmt = db.prepare("SELECT * FROM evidence_requests WHERE dedupe_key = ?");
 
   const claimRequestStmt = db.prepare(`
     UPDATE evidence_requests
@@ -523,23 +521,24 @@ export function createSqliteEvidenceRequestStore(db: Database.Database): Evidenc
     listPendingRequestsForAgent(agentId, sellerId, limit = 50) {
       const effectiveLimit = Math.max(1, Math.min(limit, 200));
       return (
-        listPendingStmt.all({
-          sellerId: sellerId ?? null,
-          limit: effectiveLimit,
-        }, agentId) as RequestRow[]
+        listPendingStmt.all(
+          {
+            sellerId: sellerId ?? null,
+            limit: effectiveLimit,
+          },
+          agentId,
+        ) as RequestRow[]
       ).map(requestFromRow);
     },
 
     listResponsesForCorrelation(correlationId) {
-      return (
-        listResponsesByCorrelationStmt.all(correlationId) as ResponseRow[]
-      ).map(responseFromRow);
+      return (listResponsesByCorrelationStmt.all(correlationId) as ResponseRow[]).map(
+        responseFromRow,
+      );
     },
 
     listRequestsForCandidate(candidateId) {
-      return (
-        listRequestsByCandidateStmt.all(candidateId) as RequestRow[]
-      ).map(requestFromRow);
+      return (listRequestsByCandidateStmt.all(candidateId) as RequestRow[]).map(requestFromRow);
     },
 
     findDuplicate(dedupeKey) {
@@ -548,15 +547,16 @@ export function createSqliteEvidenceRequestStore(db: Database.Database): Evidenc
     },
 
     summarizeEvidenceForCandidate(candidateId) {
-      const responses = (
-        listResponsesByCandidateStmt.all(candidateId) as ResponseRow[]
-      ).map(responseFromRow);
+      const responses = (listResponsesByCandidateStmt.all(candidateId) as ResponseRow[]).map(
+        responseFromRow,
+      );
 
       if (responses.length === 0) return null;
 
-      const counts = (
-        countRequestsByCandidateStmt.all(candidateId) as Array<{ status: string; cnt: number }>
-      );
+      const counts = countRequestsByCandidateStmt.all(candidateId) as Array<{
+        status: string;
+        cnt: number;
+      }>;
 
       const countMap: Record<string, number> = {};
       for (const { status, cnt } of counts) {
@@ -565,8 +565,7 @@ export function createSqliteEvidenceRequestStore(db: Database.Database): Evidenc
 
       const totalRequests = Object.values(countMap).reduce((a, b) => a + b, 0);
       const answeredCount = countMap.answered ?? 0;
-      const pendingCount =
-        (countMap.queued ?? 0) + (countMap.claimed ?? 0);
+      const pendingCount = (countMap.queued ?? 0) + (countMap.claimed ?? 0);
       const failedCount =
         (countMap.failed ?? 0) + (countMap.expired ?? 0) + (countMap.unsupported ?? 0);
 
@@ -574,9 +573,7 @@ export function createSqliteEvidenceRequestStore(db: Database.Database): Evidenc
       const confidenceOrder: Record<ConfidenceLevel, number> = { low: 1, medium: 2, high: 3 };
       let minConfidence: ConfidenceLevel = "high";
       for (const r of responses) {
-        if (
-          (confidenceOrder[r.confidence] ?? 0) < (confidenceOrder[minConfidence] ?? 3)
-        ) {
+        if ((confidenceOrder[r.confidence] ?? 0) < (confidenceOrder[minConfidence] ?? 3)) {
           minConfidence = r.confidence;
         }
       }
@@ -607,15 +604,11 @@ export function createSqliteEvidenceRequestStore(db: Database.Database): Evidenc
     },
 
     listLinks(requestId) {
-      return (
-        listLinksStmt.all(requestId) as LinkRow[]
-      ).map(
-        (row): EvidenceLink => ({
-          requestId: row.request_id,
-          linkedEntityType: row.linked_entity_type as EvidenceLinkedEntityType,
-          linkedEntityId: row.linked_entity_id,
-        }),
-      );
+      return (listLinksStmt.all(requestId) as LinkRow[]).map((row): EvidenceLink => ({
+        requestId: row.request_id,
+        linkedEntityType: row.linked_entity_type as EvidenceLinkedEntityType,
+        linkedEntityId: row.linked_entity_id,
+      }));
     },
   };
 }

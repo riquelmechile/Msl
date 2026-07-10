@@ -239,7 +239,10 @@ export type { AdvisorValidationResult } from "./ecommerce/merchandisingAdvisorVa
 export { EcommerceEvidenceRequestPlanner } from "./ecommerce/ecommerceEvidenceRequestPlanner.js";
 export type { EvidenceRequestMessage } from "./ecommerce/ecommerceEvidenceRequestPlanner.js";
 export { OwnedEcommerceEvidenceAggregator } from "./ecommerce/ownedEcommerceEvidenceAggregator.js";
-export type { EvidenceAggregatorDeps, EvidenceReadiness } from "./ecommerce/ownedEcommerceEvidenceAggregator.js";
+export type {
+  EvidenceAggregatorDeps,
+  EvidenceReadiness,
+} from "./ecommerce/ownedEcommerceEvidenceAggregator.js";
 export {
   buildStableSystemPrompt,
   buildEvidenceBlock,
@@ -396,7 +399,10 @@ export type {
 
 // ── Evidence pipeline ─────────────────────────────────────────────────
 export { EvidenceResponseRouter } from "./evidence/evidenceResponseRouter.js";
-export type { EvidenceResponder, EvidenceResponseRouterDeps } from "./evidence/evidenceResponseRouter.js";
+export type {
+  EvidenceResponder,
+  EvidenceResponseRouterDeps,
+} from "./evidence/evidenceResponseRouter.js";
 export { CostSupplierEvidenceResponder } from "./evidence/responders/costSupplierEvidenceResponder.js";
 export type { CostSupplierTransport } from "./evidence/responders/costSupplierEvidenceResponder.js";
 export { MarketCatalogEvidenceResponder } from "./evidence/responders/marketCatalogEvidenceResponder.js";

@@ -1,13 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import {
-  EvidenceResponseRouter,
-  type EvidenceResponder,
-} from "./evidenceResponseRouter.js";
-import {
-  createSqliteEvidenceRequestStore,
-  migrateEvidenceStore,
-} from "@msl/memory";
+import { EvidenceResponseRouter, type EvidenceResponder } from "./evidenceResponseRouter.js";
+import { createSqliteEvidenceRequestStore, migrateEvidenceStore } from "@msl/memory";
 import type {
   EvidenceKind,
   EvidenceRequestPayload,
@@ -113,7 +107,10 @@ describe("EvidenceResponseRouter", () => {
   describe("processRequest — unsupported kind", () => {
     it("marks unsupported when no responder handles the kind", async () => {
       const store = createStore();
-      const req = makeRequest({ kind: "unknown", targetAgentId: "unknown" as EvidenceTargetAgentId });
+      const req = makeRequest({
+        kind: "unknown",
+        targetAgentId: "unknown" as EvidenceTargetAgentId,
+      });
       // Pretend "unknown" target agent for pending lookup; enqueue it as queued
       // Hack: manually insert so it's queued for our fake targetAgentId
       (req as Record<string, unknown>).targetAgentId = "unknown";

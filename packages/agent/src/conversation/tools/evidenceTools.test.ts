@@ -17,13 +17,16 @@ function createTestStore(): { db: Database.Database; store: EvidenceRequestStore
   return { db, store };
 }
 
-function seedRequest(store: EvidenceRequestStore, overrides: {
-  sellerId?: string;
-  candidateId?: string;
-  kind?: string;
-  targetAgentId?: string;
-  correlationId?: string;
-} = {}) {
+function seedRequest(
+  store: EvidenceRequestStore,
+  overrides: {
+    sellerId?: string;
+    candidateId?: string;
+    kind?: string;
+    targetAgentId?: string;
+    correlationId?: string;
+  } = {},
+) {
   const requestId = crypto.randomUUID();
   const correlationId = overrides.correlationId ?? `corr-${requestId.slice(0, 8)}`;
   const candidateId = overrides.candidateId ?? "cand-1";
@@ -123,7 +126,10 @@ describe("evidenceTools — CEO read-only inspection", () => {
 
     // ── Tool 3: inspect_candidate_evidence ────────────────────────
     const inspectTool = createInspectCandidateEvidenceTool({ evidenceRequestStore: store });
-    const inspectResult = inspectTool.execute({ candidateId: "cand-plasticov" }) as Record<string, unknown>;
+    const inspectResult = inspectTool.execute({ candidateId: "cand-plasticov" }) as Record<
+      string,
+      unknown
+    >;
 
     expect(inspectResult.noMutationExecuted).toBe(true);
     expect(inspectResult.status).toBe("ok");
@@ -131,11 +137,17 @@ describe("evidenceTools — CEO read-only inspection", () => {
     expect(inspectResult.overallConfidence).toBe("high");
 
     // ── Nonexistent entity → controlled response ──────────────────
-    const nonexistentResult = inspectTool.execute({ candidateId: "cand-nonexistent" }) as Record<string, unknown>;
+    const nonexistentResult = inspectTool.execute({ candidateId: "cand-nonexistent" }) as Record<
+      string,
+      unknown
+    >;
     expect(nonexistentResult.noMutationExecuted).toBe(true);
     expect(nonexistentResult.status).toBe("not-found");
 
-    const nonexistentStatus = statusTool.execute({ correlationId: "nonexistent-12345" }) as Record<string, unknown>;
+    const nonexistentStatus = statusTool.execute({ correlationId: "nonexistent-12345" }) as Record<
+      string,
+      unknown
+    >;
     expect(nonexistentStatus.noMutationExecuted).toBe(true);
     expect(nonexistentStatus.status).toBe("not-found");
   });

@@ -29,13 +29,7 @@ export type EvidenceTargetAgentId =
   | "operations-manager";
 
 export type EvidenceStatus =
-  | "queued"
-  | "claimed"
-  | "answered"
-  | "failed"
-  | "expired"
-  | "duplicate"
-  | "unsupported";
+  "queued" | "claimed" | "answered" | "failed" | "expired" | "duplicate" | "unsupported";
 
 export type Priority = "low" | "medium" | "high" | "critical";
 

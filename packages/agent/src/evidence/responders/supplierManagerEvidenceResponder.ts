@@ -144,8 +144,7 @@ export class SupplierManagerEvidenceResponder implements EvidenceResponder {
     const freshnessScore =
       (input.priceFreshness === "fresh" ? 2 : input.priceFreshness === "stale" ? 1 : 0) +
       (input.stockFreshness === "fresh" ? 2 : input.stockFreshness === "stale" ? 1 : 0);
-    const reliabilityBonus =
-      input.reliability !== null && input.reliability >= 0.7 ? 1 : 0;
+    const reliabilityBonus = input.reliability !== null && input.reliability >= 0.7 ? 1 : 0;
 
     const total = freshnessScore + reliabilityBonus;
     if (total >= 4) return "high";

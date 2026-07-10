@@ -1,8 +1,4 @@
-import type {
-  ConfidenceLevel,
-  EvidenceResponsePayload,
-  EvidenceSummary,
-} from "@msl/domain";
+import type { ConfidenceLevel, EvidenceResponsePayload, EvidenceSummary } from "@msl/domain";
 import type { EvidenceRequestStore } from "@msl/memory";
 import type { StorefrontCandidate } from "@msl/domain";
 import type { Logger } from "../conversation/observability.js";
@@ -97,7 +93,7 @@ export class OwnedEcommerceEvidenceAggregator {
     // Add evidence-response blockers as guardrail blockers
     const newBlockers = new Set(candidate.blockedReasons);
     for (const blocker of summary.blockers) {
-      newBlockers.add(blocker as typeof candidate.blockedReasons[number]);
+      newBlockers.add(blocker as (typeof candidate.blockedReasons)[number]);
     }
     enriched.blockedReasons = [...newBlockers];
 
@@ -184,9 +180,7 @@ export class OwnedEcommerceEvidenceAggregator {
    * Compute aggregate confidence as the minimum across all
    * response confidences. Returns null if no responses.
    */
-  computeEvidenceConfidence(
-    responses: EvidenceResponsePayload[],
-  ): ConfidenceLevel | null {
+  computeEvidenceConfidence(responses: EvidenceResponsePayload[]): ConfidenceLevel | null {
     if (responses.length === 0) return null;
 
     const order: Record<ConfidenceLevel, number> = { low: 1, medium: 2, high: 3 };
@@ -209,10 +203,7 @@ export class OwnedEcommerceEvidenceAggregator {
   /**
    * Find the evidence kinds that are expected but have no response yet.
    */
-  findMissingKinds(
-    requestedKinds: string[],
-    answeredKinds: Set<string>,
-  ): string[] {
+  findMissingKinds(requestedKinds: string[], answeredKinds: Set<string>): string[] {
     return requestedKinds.filter((k) => !answeredKinds.has(k));
   }
 

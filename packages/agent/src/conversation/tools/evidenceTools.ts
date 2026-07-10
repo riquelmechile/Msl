@@ -15,9 +15,7 @@ export type EvidenceToolsOptions = {
  * Returns status, responder agent, confidence, and response payload.
  * Read-only — `noMutationExecuted: true`.
  */
-export function createGetEvidenceRequestStatusTool(
-  options: EvidenceToolsOptions,
-): ToolDefinition {
+export function createGetEvidenceRequestStatusTool(options: EvidenceToolsOptions): ToolDefinition {
   const store = options.evidenceRequestStore;
 
   return {
@@ -46,9 +44,8 @@ export function createGetEvidenceRequestStatusTool(
       const responses = store.listResponsesForCorrelation(correlationId);
 
       // 2. Extract request info from the first response's requestId
-      const requestFromResponse = responses.length > 0
-        ? store.getRequest(responses[0]!.requestId)
-        : null;
+      const requestFromResponse =
+        responses.length > 0 ? store.getRequest(responses[0]!.requestId) : null;
 
       // 3. If no responses and no request, try scanning pending requests across agents
       let request = requestFromResponse;
@@ -153,11 +150,7 @@ export function createListPendingEvidenceRequestsTool(
       const allPending: Record<string, unknown>[] = [];
 
       for (const agentId of agentIds) {
-        const pending = store.listPendingRequestsForAgent(
-          agentId as never,
-          sellerId,
-          50,
-        );
+        const pending = store.listPendingRequestsForAgent(agentId as never, sellerId, 50);
 
         for (const req of pending) {
           const now = new Date().getTime();
@@ -196,9 +189,7 @@ export function createListPendingEvidenceRequestsTool(
  * blockers, readiness, and per-kind response summaries.
  * Read-only — `noMutationExecuted: true`.
  */
-export function createInspectCandidateEvidenceTool(
-  options: EvidenceToolsOptions,
-): ToolDefinition {
+export function createInspectCandidateEvidenceTool(options: EvidenceToolsOptions): ToolDefinition {
   const store = options.evidenceRequestStore;
 
   return {

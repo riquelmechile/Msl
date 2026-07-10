@@ -186,9 +186,7 @@ export class EvidenceResponseRouter {
   // ── Internal dispatcher ──────────────────────────────────────────────
 
   /** Find the first registered responder that `canHandle` this request. */
-  private findResponder(
-    request: EvidenceRequestPayload,
-  ): EvidenceResponder | undefined {
+  private findResponder(request: EvidenceRequestPayload): EvidenceResponder | undefined {
     // First try: exact targetAgentId match
     const byTarget = this.responders.get(request.targetAgentId);
     if (byTarget?.canHandle(request)) {
