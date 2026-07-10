@@ -1,4 +1,4 @@
-import type { Strategy } from "./types.js";
+import type { Strategy, AgentAccountContext } from "./types.js";
 import { AutonomyLevel } from "./types.js";
 
 /**
@@ -25,6 +25,7 @@ export function buildSystemPrompt(
   strategies?: Strategy[],
   actorProfiles?: boolean,
   autonomyLevel?: AutonomyLevel,
+  accountContext?: AgentAccountContext,
 ): string {
   const base = `Eres un asistente de negocio con IA para el vendedor, que administra cuentas en MercadoLibre Chile.
 
@@ -242,6 +243,32 @@ Cada conversación debe terminar con al menos una propuesta concreta si los dato
 Si el vendedor dice "dale", la acción queda registrada y lista para ejecutar.`;
 
   let prompt = base;
+
+  // Inject account context when provided — structured Block A extension.
+  if (accountContext?.asset) {
+    const asset = accountContext.asset;
+    const capabilities = asset.capabilities
+      .filter((c) => c.status === "active")
+      .map((c) => c.kind)
+      .join(", ");
+    const riskLabel: Record<string, string> = {
+      low: "bajo",
+      medium: "medio",
+      high: "alto",
+      critical: "crítico",
+    };
+    prompt = `${prompt}
+
+## Cuenta activa
+- Nombre: ${asset.name}
+- Marketplace: ${asset.marketplace}
+- Objetivo de utilidad: ${asset.profitGoal}%
+- Nivel de riesgo: ${riskLabel[asset.riskLevel] ?? asset.riskLevel}
+- Capacidades: ${capabilities || "ninguna configurada"}
+- Estado: ${asset.status}
+
+Trabajá en el contexto de esta cuenta. Toda propuesta de acción debe dirigirse a esta cuenta (sellerId: ${asset.sellerId}).`;
+  }
 
   // Inject CEO strategies when provided.
   if (strategies && strategies.length > 0) {

@@ -219,7 +219,7 @@ describe("daemonScheduler", () => {
     });
 
     it("enqueues ticks for the new owned-ecommerce and unanswered-questions lanes", () => {
-      enqueueDaemonTick(bus);
+      enqueueDaemonTick(bus, ["seller-1"]);
 
       const tickRows = db
         .prepare(
@@ -235,7 +235,7 @@ describe("daemonScheduler", () => {
 
   describe("enqueueDaemonTick", () => {
     it("enqueues one tick per registered lane", () => {
-      enqueueDaemonTick(bus);
+      enqueueDaemonTick(bus, ["seller-1"]);
 
       // Check that all known lanes have a daemon-tick message
       const tickRows = db
@@ -260,16 +260,16 @@ describe("daemonScheduler", () => {
 
     it("deduplicates when called twice in the same hour", () => {
       // First call
-      enqueueDaemonTick(bus);
+      enqueueDaemonTick(bus, ["seller-1"]);
 
       // Second call in the same hour — dedupeKey prevents duplicates
-      enqueueDaemonTick(bus);
+      enqueueDaemonTick(bus, ["seller-1"]);
 
       const count = db
         .prepare("SELECT COUNT(*) as cnt FROM agent_message_bus WHERE message_type = 'daemon-tick'")
         .get() as { cnt: number };
 
-      // Should have exactly one tick per lane (no duplicates)
+      // Should have exactly one tick per lane per seller (no duplicates)
       const uniqueLaneCount = (
         db
           .prepare(

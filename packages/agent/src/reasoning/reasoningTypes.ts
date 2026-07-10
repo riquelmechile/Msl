@@ -27,6 +27,8 @@ export type ReasoningCall = {
   forcePro?: boolean;
   /** Override the per-level default timeout (ms). */
   timeoutMs?: number;
+  /** Seller account identifier for autonomy gate scoping. */
+  sellerId?: string;
   /** Department ID for cost ledger attribution. */
   departmentId: string;
   /** Agent ID recorded in cost ledger entries. */

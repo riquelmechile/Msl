@@ -1,4 +1,4 @@
-import type { PreparedAction, RiskLevel, SellerId } from "@msl/domain";
+import type { AccountAsset, PreparedAction, RiskLevel, SellerId } from "@msl/domain";
 
 // ── Autonomy Levels ─────────────────────────────────────────────────
 
@@ -32,6 +32,8 @@ export type KpiSnapshot = {
   responseAccuracy: number;
   /** ISO timestamp of when the snapshot was created. */
   timestamp: string;
+  /** Optional seller scoping — the account this KPI belongs to. */
+  sellerId?: string;
 };
 
 /** Recorded when the autonomy level drops due to KPI breaches. */
@@ -156,6 +158,8 @@ export type Strategy = {
   /** Extraction confidence 0.0-1.0. */
   confidence: number;
   status: "active" | "archived" | "superseded";
+  /** Optional seller scoping — NULL means global. */
+  sellerId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -223,6 +227,16 @@ export type DecoyProposal = {
   tosCompliant: boolean;
   /** MANDATORY — Spanish ML TOS reminder, ALWAYS populated. */
   tosWarning: string;
+};
+
+// ── Account Context ──────────────────────────────────────────────────
+
+/** Per-account context injected into agent loops and daemons for seller-level scoping. */
+export type AgentAccountContext = {
+  /** The seller identifier for the current account. */
+  sellerId: SellerId;
+  /** Full AccountAsset when available; undefined for backward compatibility. */
+  asset?: AccountAsset;
 };
 
 // ── El Escribano — Memory Scribe ──────────────────────────────────

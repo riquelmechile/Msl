@@ -132,7 +132,7 @@ export class DeepSeekReasoningGateway {
       this.recordCost(call, model, costTelemetry, costLedgerOverride ?? this.ledger);
 
       // 9. Check autonomy gate
-      const requiresApproval = this.resolveApproval(call.level);
+      const requiresApproval = this.resolveApproval(call.level, call.sellerId);
 
       return {
         status: "success",
@@ -215,14 +215,14 @@ export class DeepSeekReasoningGateway {
 
   // ── Private: Autonomy gate ─────────────────────────────────────────
 
-  private resolveApproval(level: ReasoningLevel): boolean {
+  private resolveApproval(level: ReasoningLevel, sellerId?: string): boolean {
     // Recommendation and decision always require approval
     if (requiresApprovalByDefault(level)) return true;
 
     // Auto-execute levels: check autonomy gate when available
     if (this.autonomy) {
       const risk = getLevelRisk(level);
-      return !this.autonomy.canAutoApprove(risk);
+      return !this.autonomy.canAutoApprove(sellerId ?? "default", risk);
     }
 
     // No autonomy engine → auto-execute is allowed

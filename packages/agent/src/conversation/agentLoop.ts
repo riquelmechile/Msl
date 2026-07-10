@@ -5,6 +5,7 @@ import { resolveDeepSeekRuntimeConfig, resolveDeepSeekUserId } from "./deepseekR
 import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
+  AgentAccountContext,
   AgentProposal,
   ConversationMessage,
   ConversationState,
@@ -140,7 +141,8 @@ export * from "./loop/index.js";
 // ── Strategy Store Interface ─────────────────────────────────────────
 
 export type StrategyStore = {
-  listActive(): Strategy[];
+  listActive(sellerId?: string): Strategy[];
+  listActiveBySeller(sellerId: string): Strategy[];
   insertStrategy(ruleText: string, parsedRule: ParsedRule, confidence: number): Strategy;
   archiveStrategy(id: number): void;
   supersedeStrategy(oldId: number, newId: number): void;
@@ -159,6 +161,9 @@ export type AgentLoopConfig = {
   deepSeekTransport?: DeepSeekTransport;
   model?: string;
   sellerId?: string;
+  /** Per-account context. When set, business tools, approvals, and outcome
+   *  attribution are account-scoped to this seller. */
+  accountContext?: AgentAccountContext;
   deepSeekUserId?: string;
   strategies?: Strategy[];
   store?: StrategyStore;
@@ -609,8 +614,8 @@ export function createAgentLoop(config: AgentLoopConfig) {
   function getSystemPrompt(): string {
     let prompt = appendCeoInternalWorkforceGuidance(config.systemPrompt);
 
-    if (config.autonomyEngine) {
-      const level = config.autonomyEngine.getCurrentLevel();
+    if (config.autonomyEngine && config.sellerId) {
+      const level = config.autonomyEngine.getCurrentLevel(config.sellerId);
       const name = AutonomyLevel[level] ?? "DESCONOCIDO";
 
       let levelDesc: string;
@@ -651,6 +656,32 @@ export function createAgentLoop(config: AgentLoopConfig) {
 
 ## Nivel de Autonomía Actual: ${name} (${level})
 Actualmente te encuentro en nivel ${name}. ${levelDesc}`;
+    }
+
+    // ── Account context injection ──────────────────────────────
+    // When per-account context is provided, inject the account name,
+    // capabilities, profit goal, and risk level into the system prompt
+    // so the agent scopes tool context and attribution to this seller.
+    if (config.accountContext?.asset) {
+      const a = config.accountContext.asset;
+      const capList = a.capabilities.map((c) => `- ${c.kind}: ${c.status}`).join("\n");
+      prompt = `${prompt}
+
+## Contexto de Cuenta: ${a.name}
+- **SellerId**: ${a.sellerId}
+- **Marketplace**: ${a.marketplace}
+- **Profit Goal**: ${a.profitGoal}%
+- **Riesgo**: ${a.riskLevel}
+- **Estado**: ${a.status}
+
+### Capacidades
+${capList}`;
+    } else if (config.accountContext) {
+      // Minimal context — sellerId only, no full asset loaded yet
+      prompt = `${prompt}
+
+## Contexto de Cuenta
+- **SellerId**: ${config.accountContext.sellerId}`;
     }
 
     const strategies = getActiveStrategies();
@@ -751,8 +782,8 @@ ${strategyLines.join("\n")}`;
       }
 
       let degradationMsg: string | null = null;
-      if (config.autonomyEngine) {
-        const deg = config.autonomyEngine.evaluateDegradation();
+      if (config.autonomyEngine && config.sellerId) {
+        const deg = config.autonomyEngine.evaluateDegradation(config.sellerId);
         if (deg) {
           metrics?.record("autonomy.degradation", 1, {
             from: String(deg.from),
@@ -854,11 +885,15 @@ ${strategyLines.join("\n")}`;
         }
       }
 
-      if (proposal && !isConfirmation(userMessage) && config.autonomyEngine) {
-        const gateResult = autonomyGate({ riskLevel: proposal.riskLevel }, config.autonomyEngine);
+      if (proposal && !isConfirmation(userMessage) && config.autonomyEngine && config.sellerId) {
+        const gateResult = autonomyGate(
+          { riskLevel: proposal.riskLevel },
+          config.autonomyEngine,
+          config.sellerId,
+        );
 
         if (!gateResult.reason) {
-          const level = config.autonomyEngine.getCurrentLevel();
+          const level = config.autonomyEngine.getCurrentLevel(config.sellerId);
           const levelName = AutonomyLevel[level] ?? "DESCONOCIDO";
 
           config.autonomyEngine.recordKpi({
@@ -912,9 +947,10 @@ ${strategyLines.join("\n")}`;
         }
 
         {
-          const currentLevel = config.autonomyEngine
-            ? (AutonomyLevel[config.autonomyEngine.getCurrentLevel()] ?? "SUGIERE")
-            : "SUGIERE";
+          const currentLevel =
+            config.autonomyEngine && config.sellerId
+              ? (AutonomyLevel[config.autonomyEngine.getCurrentLevel(config.sellerId)] ?? "SUGIERE")
+              : "SUGIERE";
           const verifyResult = selfVerify(proposal, getActiveStrategies(), {
             sellerId: state.sessionMetadata.sellerId,
             currentLevel,
@@ -948,9 +984,9 @@ ${strategyLines.join("\n")}`;
           }
         }
 
-        if (isConfirmation(userMessage) && config.autonomyEngine) {
+        if (isConfirmation(userMessage) && config.autonomyEngine && config.sellerId) {
           config.autonomyEngine.recordKpi({
-            level: config.autonomyEngine.getCurrentLevel(),
+            level: config.autonomyEngine.getCurrentLevel(config.sellerId),
             marginCompliance: 1,
             successRate: 1,
             safetyViolations: 0,
@@ -968,10 +1004,14 @@ ${strategyLines.join("\n")}`;
         metrics?.record("escribano.observation", 1, { outcome });
       }
 
-      if (config.autonomyEngine && !proposal) {
-        const promotion = config.autonomyEngine.evaluatePromotion();
+      if (config.autonomyEngine && config.sellerId && !proposal) {
+        const promotion = config.autonomyEngine.evaluatePromotion(config.sellerId);
         if (promotion.recommend) {
-          config.autonomyEngine.setLevel(promotion.to, "KPI thresholds met — auto-promotion");
+          config.autonomyEngine.setLevel(
+            config.sellerId,
+            promotion.to,
+            "KPI thresholds met — auto-promotion",
+          );
           metrics?.record("autonomy.promotion", 1, {
             from: String(promotion.to - 1),
             to: String(promotion.to),
@@ -1007,8 +1047,8 @@ ${strategyLines.join("\n")}`;
       }
 
       let degradationMsg: string | null = null;
-      if (config.autonomyEngine) {
-        const deg = config.autonomyEngine.evaluateDegradation();
+      if (config.autonomyEngine && config.sellerId) {
+        const deg = config.autonomyEngine.evaluateDegradation(config.sellerId);
         if (deg) {
           degradationMsg =
             `⚠️ Tu nivel de autonomía bajó de ${AutonomyLevel[deg.from]} (${deg.from}) ` +

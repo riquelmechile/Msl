@@ -54,6 +54,8 @@ function makeMockAutonomy(allowed: boolean): AutonomyEngine {
     getCurrentLevel: vi.fn().mockReturnValue(3),
     setLevel: vi.fn(),
     recordKpi: vi.fn(),
+    getKpiHistory: vi.fn().mockReturnValue([]),
+    getDegradationEvents: vi.fn().mockReturnValue([]),
     evaluateDegradation: vi.fn().mockReturnValue(null),
     evaluatePromotion: vi.fn().mockReturnValue({ recommend: false, to: 3 }),
   };

@@ -11,6 +11,7 @@ import type { LaneId } from "../conversation/lanes.js";
 import type { CeoInboxStore } from "../conversation/ceoInboxStore.js";
 import { listCompanyAgents } from "../conversation/companyAgents.js";
 import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
+import type { AgentAccountContext } from "../conversation/types.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
 import type { CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
@@ -118,21 +119,24 @@ function createCachingReader(reader: OperationalReadModelReader): OperationalRea
 // ── Tick Generation ─────────────────────────────────────────────────
 
 /**
- * Enqueue a self-triggering daemon tick for each registered lane.
+ * Enqueue a self-triggering daemon tick for each registered lane × seller.
+ * Dedupe keys include `sellerId` to prevent cross-account dedupe collisions.
  * Each tick carries an ISO-8601 `cycleTimestamp` so daemons can check
- * hour gates. The dedupeKey prevents more than one tick per lane per hour.
+ * hour gates.
  */
-export function enqueueDaemonTick(bus: AgentMessageBusStore): void {
+export function enqueueDaemonTick(bus: AgentMessageBusStore, sellerIds: string[]): void {
   const now = new Date();
   const hourKey = now.toISOString().slice(0, 13); // "2026-07-09T14"
   for (const laneId of Object.keys(daemonHandlerMap)) {
-    bus.enqueue({
-      senderAgentId: "system",
-      receiverAgentId: laneId,
-      messageType: "daemon-tick",
-      payloadJson: JSON.stringify({ cycleTimestamp: now.toISOString() }),
-      dedupeKey: `${laneId}:tick:${hourKey}`,
-    });
+    for (const sellerId of sellerIds) {
+      bus.enqueue({
+        senderAgentId: "system",
+        receiverAgentId: laneId,
+        messageType: "daemon-tick",
+        payloadJson: JSON.stringify({ cycleTimestamp: now.toISOString(), sellerId }),
+        dedupeKey: `${laneId}:${sellerId}:tick:${hourKey}`,
+      });
+    }
   }
 }
 
@@ -151,8 +155,14 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
   const intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
 
   const run = async () => {
+    // ── Build per-seller account contexts ──
+    const accountContexts = new Map<string, AgentAccountContext>();
+    for (const sellerId of config.sellerIds) {
+      accountContexts.set(sellerId, { sellerId });
+    }
+
     // ── Enqueue autonomous ticks before claim loop ──
-    enqueueDaemonTick(config.bus);
+    enqueueDaemonTick(config.bus, config.sellerIds);
 
     const agents = listCompanyAgents();
     const activeAgents = agents.filter(
@@ -180,6 +190,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               cortex: config.cortex,
               bus: config.bus,
               sellerIds: config.sellerIds,
+              accountContexts,
               supplierMirrorStore: config.supplierMirrorStore,
               ceoContext: config.ceoContext,
               advisor: config.advisor,

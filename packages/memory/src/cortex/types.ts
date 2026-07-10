@@ -3,6 +3,8 @@ export type GraphNode = {
   label: string;
   activation: number;
   metadata: string;
+  /** Optional seller scoping — NULL means global visibility. */
+  sellerId?: string;
 };
 
 export type GraphEdge = {
@@ -13,6 +15,8 @@ export type GraphEdge = {
   last_activated: string | null;
   co_occurrence_count: number;
   distilled_lesson: string | null;
+  /** Optional seller scoping — NULL means global visibility. */
+  sellerId?: string;
 };
 
 export type DarwinianLesson = {
@@ -22,6 +26,8 @@ export type DarwinianLesson = {
   lesson: string;
   archived_at: string;
   reason: string;
+  /** Optional seller scoping — NULL means global visibility. */
+  sellerId?: string;
 };
 
 /** Node ID → activation value */
@@ -54,6 +60,12 @@ export type SpreadingOptions = {
   activationThreshold?: number;
   /** Per-hop decay factor applied to activation (default 0.5) */
   decayFactor?: number;
+  /**
+   * Optional seller scoping — when provided, the recursive CTE only
+   * traverses edges whose endpoint nodes match this sellerId or are
+   * global (NULL / 'unknown').
+   */
+  sellerId?: string;
 };
 
 export class DuplicateEdgeError extends Error {

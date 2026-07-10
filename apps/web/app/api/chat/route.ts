@@ -79,8 +79,13 @@ function createDemoStrategyStore(): StrategyStore {
   let nextId = strategies.length + 1;
 
   return {
-    listActive(): Strategy[] {
-      return strategies.filter((s) => s.status === "active");
+    listActive(sellerId?: string): Strategy[] {
+      return strategies.filter(
+        (s) => s.status === "active" && (!sellerId || !s.sellerId || s.sellerId === sellerId),
+      );
+    },
+    listActiveBySeller(sellerId: string): Strategy[] {
+      return strategies.filter((s) => s.status === "active" && s.sellerId === sellerId);
     },
     insertStrategy(ruleText: string, parsedRule: ParsedRule, confidence: number): Strategy {
       const s: Strategy = {
@@ -115,15 +120,22 @@ function createDemoAutonomyEngine(): AutonomyEngine {
 
   return {
     getCurrentLevel: () => level,
-    setLevel: (l: AutonomyLevel) => {
+    setLevel: (
+      _sellerId: string,
+      l: AutonomyLevel,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _reason: string,
+    ) => {
       level = l;
     },
     recordKpi: () => {
       /* no-op for demo */
     },
+    getKpiHistory: () => [],
+    getDegradationEvents: () => [],
     evaluateDegradation: () => null,
     evaluatePromotion: () => ({ recommend: false, to: level }),
-    canAutoApprove: (riskLevel: string) => riskLevel === "low",
+    canAutoApprove: (_sellerId: string, riskLevel: string) => riskLevel === "low",
   };
 }
 
@@ -395,8 +407,8 @@ export async function POST(req: NextRequest) {
       // Send metadata after the text.
       const metadata: Record<string, unknown> = {
         type: "metadata",
-        autonomyLevel: AutonomyLevel[autonomyEngine.getCurrentLevel()],
-        autonomyLevelNumber: autonomyEngine.getCurrentLevel(),
+        autonomyLevel: AutonomyLevel[autonomyEngine.getCurrentLevel(sellerId)],
+        autonomyLevelNumber: autonomyEngine.getCurrentLevel(sellerId),
         hasProposal: !!result.proposal,
         strategiesActive: store.listActive().length,
         sessionId,

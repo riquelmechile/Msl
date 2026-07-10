@@ -18,6 +18,8 @@ export type AgentLearningRecord = {
   impact: number;
   outcome?: string;
   status: AgentLessonStatus;
+  /** Optional seller scoping — NULL means global. */
+  sellerId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -33,18 +35,23 @@ export type RecordAgentLessonInput = {
   confidence: number;
   impact: number;
   outcome?: string;
+  /** Optional seller scoping. */
+  sellerId?: string;
 };
 
 export type ListAgentLessonsFilter = {
   targetAgentId?: string;
   departmentId?: CompanyDepartmentId;
   scope?: AgentLessonScope;
+  /** Optional seller scoping filter. */
+  sellerId?: string;
   limit?: number;
 };
 
 export type CompanyAgentLearningStore = {
   insertAgentLesson(input: RecordAgentLessonInput): AgentLearningRecord;
   listAgentLessons(filter?: ListAgentLessonsFilter): readonly AgentLearningRecord[];
+  getLessonsBySeller(sellerId: string): readonly AgentLearningRecord[];
   count(): number;
 };
 
@@ -77,6 +84,7 @@ type AgentLessonRow = {
   confidence: number;
   impact: number;
   outcome: string | null;
+  seller_id: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -126,14 +134,28 @@ function rowToAgentLesson(row: AgentLessonRow): AgentLearningRecord | undefined 
     confidence: row.confidence,
     impact: row.impact,
     ...(row.outcome ? { outcome: row.outcome } : {}),
+    ...(row.seller_id ? { sellerId: row.seller_id } : {}),
     status: row.status as AgentLessonStatus,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
 }
 
+/**
+ * Check whether a column exists in a table (idempotent migration guard).
+ */
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return info.some((col) => col.name === column);
+}
+
 export function createCompanyAgentLearningStore(db: Database.Database): CompanyAgentLearningStore {
   db.exec(SCHEMA_SQL);
+
+  // ── Idempotent migration: add seller_id column ──────────────
+  if (!columnExists(db, "company_agent_lessons", "seller_id")) {
+    db.exec(`ALTER TABLE company_agent_lessons ADD COLUMN seller_id TEXT`);
+  }
 
   const insertStmt = db.prepare(`
     INSERT INTO company_agent_lessons (
@@ -147,6 +169,7 @@ export function createCompanyAgentLearningStore(db: Database.Database): CompanyA
       confidence,
       impact,
       outcome,
+      seller_id,
       status
     ) VALUES (
       @lessonId,
@@ -159,6 +182,7 @@ export function createCompanyAgentLearningStore(db: Database.Database): CompanyA
       @confidence,
       @impact,
       @outcome,
+      @sellerId,
       'active'
     )
   `);
@@ -169,6 +193,13 @@ export function createCompanyAgentLearningStore(db: Database.Database): CompanyA
       AND (@targetAgentId IS NULL OR target_agent_id = @targetAgentId)
       AND (@departmentId IS NULL OR department_id = @departmentId)
       AND (@scope IS NULL OR scope = @scope)
+      AND (@sellerId IS NULL OR seller_id = @sellerId OR seller_id IS NULL)
+    ORDER BY updated_at DESC, created_at DESC, lesson_id ASC
+    LIMIT @limit
+  `);
+  const listBySellerStmt = db.prepare(`
+    SELECT * FROM company_agent_lessons
+    WHERE seller_id = @sellerId
     ORDER BY updated_at DESC, created_at DESC, lesson_id ASC
     LIMIT @limit
   `);
@@ -186,6 +217,7 @@ export function createCompanyAgentLearningStore(db: Database.Database): CompanyA
       confidence: input.confidence,
       impact: input.impact,
       outcome: input.outcome ?? null,
+      sellerId: input.sellerId ?? null,
     });
 
     const row = getStmt.get(input.lessonId) as AgentLessonRow | undefined;
@@ -201,7 +233,22 @@ export function createCompanyAgentLearningStore(db: Database.Database): CompanyA
       targetAgentId: filter.targetAgentId ?? null,
       departmentId: filter.departmentId ?? null,
       scope: filter.scope ?? null,
+      sellerId: filter.sellerId ?? null,
       limit: Math.max(1, Math.min(filter.limit ?? 20, 50)),
+    }) as AgentLessonRow[];
+    return rows.flatMap((row) => {
+      const lesson = rowToAgentLesson(row);
+      return lesson ? [lesson] : [];
+    });
+  };
+
+  /**
+   * Return all lessons scoped to a specific seller account.
+   */
+  const getLessonsBySeller = (sellerId: string, limit = 50): readonly AgentLearningRecord[] => {
+    const rows = listBySellerStmt.all({
+      sellerId,
+      limit: Math.max(1, Math.min(limit, 50)),
     }) as AgentLessonRow[];
     return rows.flatMap((row) => {
       const lesson = rowToAgentLesson(row);
@@ -214,5 +261,5 @@ export function createCompanyAgentLearningStore(db: Database.Database): CompanyA
     return row.count;
   };
 
-  return { insertAgentLesson, listAgentLessons, count };
+  return { insertAgentLesson, listAgentLessons, getLessonsBySeller, count };
 }

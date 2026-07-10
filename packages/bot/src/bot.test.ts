@@ -63,6 +63,8 @@ const mocks = vi.hoisted(() => {
     getCurrentLevel: vi.fn(() => 1),
     setLevel: vi.fn(),
     recordKpi: vi.fn(),
+    getKpiHistory: vi.fn(() => []),
+    getDegradationEvents: vi.fn(() => []),
     evaluateDegradation: vi.fn(() => null),
     evaluatePromotion: vi.fn(() => ({ recommend: false, to: 1 })),
     canAutoApprove: vi.fn(() => false),

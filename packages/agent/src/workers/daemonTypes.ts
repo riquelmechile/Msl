@@ -7,6 +7,7 @@ import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSe
 import type { CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvisor.js";
 import type { CostSupplierDeepSeekAdvisor } from "../conversation/costSupplierDeepSeekAdvisor.js";
 import type { CreativeDeepSeekAdvisor } from "../conversation/creativeDeepSeekAdvisor.js";
+import type { AgentAccountContext } from "../conversation/types.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -71,6 +72,10 @@ export type DaemonHandler = (input: {
   cortex: GraphEngine;
   bus: AgentMessageBusStore;
   sellerIds: string[];
+  /** Optional per-account context map keyed by sellerId. When provided, handlers
+   *  can use it to scope proposals and evidence per seller. When absent, handlers
+   *  fall back to sellerId-only scoping. */
+  accountContexts?: Map<string, AgentAccountContext>;
   /** Optional SupplierMirrorStore for supplier-manager daemon. When absent
    *  the supplier-manager daemon returns empty findings without error. */
   supplierMirrorStore?: SupplierMirrorStore;

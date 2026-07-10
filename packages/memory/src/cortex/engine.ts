@@ -50,23 +50,32 @@ export class GraphEngine {
     this.db = db;
   }
 
-  createNode(label: string, metadata: Record<string, unknown> = {}): GraphNode {
+  /**
+   * Create a new graph node.
+   *
+   * @param sellerId — Optional seller scope. Omitted → NULL (global visibility).
+   */
+  createNode(label: string, metadata: Record<string, unknown> = {}, sellerId?: string): GraphNode {
     const metadataJson = JSON.stringify(metadata);
+    const sellerIdValue = sellerId ?? null;
     const stmt = this.db.prepare(
-      "INSERT INTO nodes (label, activation, metadata) VALUES (?, 0.0, ?)",
+      "INSERT INTO nodes (label, activation, metadata, seller_id) VALUES (?, 0.0, ?, ?)",
     );
-    const result = stmt.run(label, metadataJson);
+    const result = stmt.run(label, metadataJson, sellerIdValue);
     return {
       id: Number(result.lastInsertRowid),
       label,
       activation: 0.0,
       metadata: metadataJson,
+      ...(sellerIdValue ? { sellerId: sellerIdValue } : {}),
     };
   }
 
   getNode(id: number): GraphNode | null {
     const row = this.db
-      .prepare("SELECT id, label, activation, metadata FROM nodes WHERE id = ?")
+      .prepare(
+        "SELECT id, label, activation, metadata, seller_id AS sellerId FROM nodes WHERE id = ?",
+      )
       .get(id) as GraphNode | undefined;
     return row ?? null;
   }
@@ -74,7 +83,7 @@ export class GraphEngine {
   getEdge(id: number): GraphEdge | null {
     const row = this.db
       .prepare(
-        "SELECT id, source, target, weight, last_activated, co_occurrence_count, distilled_lesson FROM edges WHERE id = ?",
+        "SELECT id, source, target, weight, last_activated, co_occurrence_count, distilled_lesson, seller_id AS sellerId FROM edges WHERE id = ?",
       )
       .get(id) as GraphEdge | undefined;
     return row ?? null;
@@ -111,14 +120,24 @@ export class GraphEngine {
     }
   }
 
-  /** Hebbian reinforcement: +0.1 delta, clamped to [0, 1] via SQL MAX/MIN. */
-  reinforceEdge(source: number, target: number): GraphEdge {
+  /**
+   * Hebbian reinforcement: +0.1 delta, clamped to [0, 1] via SQL MAX/MIN.
+   *
+   * When `sellerId` is provided, validates that both source and target nodes
+   * belong to the same seller scope (or are global). Cross-seller edges are
+   * rejected with a descriptive error.
+   */
+  reinforceEdge(source: number, target: number, sellerId?: string): GraphEdge {
+    if (sellerId !== undefined) {
+      this.#validateEdgeScope(source, target, sellerId);
+    }
+
     const row = this.db
       .prepare(
         `UPDATE edges SET weight = MAX(0.0, MIN(1.0, weight + 0.1)),
                          last_activated = datetime('now')
          WHERE source = ? AND target = ?
-         RETURNING id, source, target, weight, last_activated, co_occurrence_count, distilled_lesson`,
+         RETURNING id, source, target, weight, last_activated, co_occurrence_count, distilled_lesson, seller_id AS sellerId`,
       )
       .get(source, target) as GraphEdge | undefined;
 
@@ -130,14 +149,54 @@ export class GraphEngine {
     return row;
   }
 
-  /** Hebbian penalization: −0.15 delta, clamped to [0, 1] via SQL MAX/MIN. */
-  penalizeEdge(source: number, target: number): GraphEdge {
+  /**
+   * Validate that source and target nodes share the seller scope.
+   * Global nodes (NULL / 'unknown' seller_id) are allowed in any scope.
+   */
+  #validateEdgeScope(source: number, target: number, sellerId: string): void {
+    const sourceNode = this.getNode(source);
+    const targetNode = this.getNode(target);
+
+    if (!sourceNode) {
+      throw new Error(`Cannot scope edge: source node ${source} not found`);
+    }
+    if (!targetNode) {
+      throw new Error(`Cannot scope edge: target node ${target} not found`);
+    }
+
+    const isGlobal = (sid: string | undefined): boolean =>
+      sid === undefined || sid === null || sid === "unknown";
+
+    if (!isGlobal(sourceNode.sellerId) && sourceNode.sellerId !== sellerId) {
+      throw new Error(
+        `Cross-seller edge rejected: source node ${source} belongs to "${sourceNode.sellerId}", not "${sellerId}"`,
+      );
+    }
+    if (!isGlobal(targetNode.sellerId) && targetNode.sellerId !== sellerId) {
+      throw new Error(
+        `Cross-seller edge rejected: target node ${target} belongs to "${targetNode.sellerId}", not "${sellerId}"`,
+      );
+    }
+  }
+
+  /**
+   * Hebbian penalization: −0.15 delta, clamped to [0, 1] via SQL MAX/MIN.
+   *
+   * When `sellerId` is provided, validates that both source and target nodes
+   * belong to the same seller scope (or are global). Cross-seller edges are
+   * rejected with a descriptive error.
+   */
+  penalizeEdge(source: number, target: number, sellerId?: string): GraphEdge {
+    if (sellerId !== undefined) {
+      this.#validateEdgeScope(source, target, sellerId);
+    }
+
     const row = this.db
       .prepare(
         `UPDATE edges SET weight = MAX(0.0, MIN(1.0, weight - 0.15)),
                          last_activated = datetime('now')
          WHERE source = ? AND target = ?
-         RETURNING id, source, target, weight, last_activated, co_occurrence_count, distilled_lesson`,
+         RETURNING id, source, target, weight, last_activated, co_occurrence_count, distilled_lesson, seller_id AS sellerId`,
       )
       .get(source, target) as GraphEdge | undefined;
 
@@ -155,6 +214,9 @@ export class GraphEngine {
    * Traverses the graph outward from seed nodes, decaying activation at each hop.
    * Increments `co_occurrence_count` on every edge traversed during the spread.
    *
+   * When `options.sellerId` is provided, the CTE only follows edges whose
+   * endpoint nodes match that sellerId or are global (NULL / 'unknown' seller_id).
+   *
    * @returns activated nodes sorted by activation descending.
    */
   spreadActivation(
@@ -164,6 +226,7 @@ export class GraphEngine {
     const maxDepth = options.maxDepth ?? 3;
     const threshold = options.activationThreshold ?? 0.01;
     const decay = options.decayFactor ?? 0.5;
+    const sellerId = options.sellerId;
 
     if (nodeIds.length === 0) {
       return { activatedNodes: [] };
@@ -171,9 +234,13 @@ export class GraphEngine {
 
     const placeholders = nodeIds.map(() => "?").join(", ");
 
-    const rows = this.db
-      .prepare(
-        `WITH RECURSIVE spread(src, tgt, nid, label, act, depth) AS (
+    // Build the seller-scope filter for the recursive CTE
+    const scopeFilter =
+      sellerId !== undefined
+        ? `AND (n.seller_id = ? OR n.seller_id IS NULL OR n.seller_id = 'unknown')`
+        : "";
+
+    const sql = `WITH RECURSIVE spread(src, tgt, nid, label, act, depth) AS (
            SELECT NULL, NULL, n.id, n.label, n.activation, 0
            FROM nodes n WHERE n.id IN (${placeholders})
            UNION ALL
@@ -184,10 +251,16 @@ export class GraphEngine {
            JOIN nodes n ON n.id = e.target
            WHERE s.depth < ${maxDepth}
              AND s.act * e.weight * ${decay} > ${threshold}
+             ${scopeFilter}
          )
-         SELECT src, tgt, nid, label, act, depth FROM spread`,
-      )
-      .all(...nodeIds) as Array<{
+         SELECT src, tgt, nid, label, act, depth FROM spread`;
+
+    const params: unknown[] = [...nodeIds];
+    if (sellerId !== undefined) {
+      params.push(sellerId);
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{
       src: number | null;
       tgt: number | null;
       nid: number;
@@ -245,38 +318,80 @@ export class GraphEngine {
    * Strict less-than: edges at exactly 0.05 survive.
    * Idempotent: re-running on an already-pruned graph is a no-op.
    *
-   * When `maxNodes` is set and the node count exceeds it, the oldest
-   * inactive nodes (activation=0, no edges) are archived and removed.
-   * Nodes with active edges or activation > 0 are preserved regardless
-   * of age.
+   * When `sellerId` is provided, only evaluates edges whose both endpoint
+   * nodes belong to the given seller scope (or are global). Omitting
+   * `sellerId` prunes globally.
    *
    * @param options.maxNodes — maximum nodes before archival kicks in (default 10000).
    * @param options.excludeNodeIds — set of node IDs to preserve regardless of
    *   activation or edge count (e.g. business-data nodes that should survive FIFO).
+   * @param options.sellerId — optional seller scope for targeted pruning.
    * @returns the number of edges pruned.
    */
-  prune(options?: { maxNodes?: number; excludeNodeIds?: Set<number> }): { archivedCount: number } {
+  prune(options?: { maxNodes?: number; excludeNodeIds?: Set<number>; sellerId?: string }): {
+    archivedCount: number;
+  } {
     const maxNodes = options?.maxNodes ?? 10000;
     const excludeNodeIds = options?.excludeNodeIds;
+    const sellerId = options?.sellerId;
+
+    // Build seller-scope filter for edge pruning
+    const scopeJoin =
+      sellerId !== undefined
+        ? `JOIN nodes sn ON sn.id = e.source
+           JOIN nodes tn ON tn.id = e.target`
+        : "";
+    const scopeWhere =
+      sellerId !== undefined
+        ? `AND (sn.seller_id = ? OR sn.seller_id IS NULL OR sn.seller_id = 'unknown')
+           AND (tn.seller_id = ? OR tn.seller_id IS NULL OR tn.seller_id = 'unknown')`
+        : "";
 
     const count = this.db.transaction(() => {
       // Distill lessons from edges about to be pruned
-      this.db
-        .prepare(
-          `INSERT INTO darwinian_lessons (source_node, target_node, lesson, archived_at, reason)
-           SELECT e.source, e.target,
-                  COALESCE(e.distilled_lesson,
-                           'connection between ' || sn.label || ' and ' || tn.label),
-                  datetime('now'), 'weight_below_threshold'
-           FROM edges e
-           JOIN nodes sn ON sn.id = e.source
-           JOIN nodes tn ON tn.id = e.target
-           WHERE e.weight < 0.05`,
-        )
-        .run();
+      const lessonSql =
+        sellerId !== undefined
+          ? `INSERT INTO darwinian_lessons (source_node, target_node, lesson, archived_at, reason)
+             SELECT e.source, e.target,
+                    COALESCE(e.distilled_lesson,
+                             'connection between ' || sn.label || ' and ' || tn.label),
+                    datetime('now'), 'weight_below_threshold'
+             FROM edges e
+             JOIN nodes sn ON sn.id = e.source
+             JOIN nodes tn ON tn.id = e.target
+             WHERE e.weight < 0.05 ${scopeWhere}`
+          : `INSERT INTO darwinian_lessons (source_node, target_node, lesson, archived_at, reason)
+             SELECT e.source, e.target,
+                    COALESCE(e.distilled_lesson,
+                             'connection between ' || sn.label || ' and ' || tn.label),
+                    datetime('now'), 'weight_below_threshold'
+             FROM edges e
+             JOIN nodes sn ON sn.id = e.source
+             JOIN nodes tn ON tn.id = e.target
+             WHERE e.weight < 0.05`;
 
-      // Delete the weak edges
-      const info = this.db.prepare("DELETE FROM edges WHERE weight < 0.05").run();
+      if (sellerId !== undefined) {
+        this.db.prepare(lessonSql).run(sellerId, sellerId);
+      } else {
+        this.db.prepare(lessonSql).run();
+      }
+
+      // Delete the weak edges (with seller scope when applicable)
+      const deleteSql =
+        sellerId !== undefined
+          ? `DELETE FROM edges WHERE id IN (
+               SELECT e.id FROM edges e
+               ${scopeJoin}
+               WHERE e.weight < 0.05 ${scopeWhere}
+             )`
+          : "DELETE FROM edges WHERE weight < 0.05";
+
+      let info;
+      if (sellerId !== undefined) {
+        info = this.db.prepare(deleteSql).run(sellerId, sellerId);
+      } else {
+        info = this.db.prepare(deleteSql).run();
+      }
 
       // ── Node cap: archive oldest inactive nodes when above maxNodes ──
       const nodeCount = (
@@ -296,6 +411,16 @@ export class GraphEngine {
             : "";
         const excludeParams = excludeNodeIds ? Array.from(excludeNodeIds) : [];
 
+        // Build node cap scope filter
+        const nodeScopeFilter =
+          sellerId !== undefined
+            ? `AND (n.seller_id = ? OR n.seller_id IS NULL OR n.seller_id = 'unknown')`
+            : "";
+        const nodeCapParams =
+          sellerId !== undefined
+            ? [...excludeParams, sellerId, toArchive]
+            : [...excludeParams, toArchive];
+
         this.db
           .prepare(
             `INSERT INTO darwinian_lessons (source_node, target_node, lesson, archived_at, reason)
@@ -307,10 +432,11 @@ export class GraphEngine {
                AND n.id NOT IN (SELECT DISTINCT source FROM edges)
                AND n.id NOT IN (SELECT DISTINCT target FROM edges)
                ${excludeClause}
+               ${nodeScopeFilter}
              ORDER BY n.id ASC
              LIMIT ?`,
           )
-          .run(...excludeParams, toArchive);
+          .run(...nodeCapParams);
 
         this.db
           .prepare(
@@ -321,11 +447,12 @@ export class GraphEngine {
                  AND id NOT IN (SELECT DISTINCT source FROM edges)
                  AND id NOT IN (SELECT DISTINCT target FROM edges)
                  ${excludeClause}
+                 ${nodeScopeFilter}
                ORDER BY id ASC
                LIMIT ?
              )`,
           )
-          .run(...excludeParams, toArchive);
+          .run(...nodeCapParams);
       }
 
       return info.changes;
@@ -471,8 +598,10 @@ export class GraphEngine {
 
       // Look for an existing actor node by persona tag in metadata
       const existing = this.db
-        .prepare("SELECT id FROM nodes WHERE metadata LIKE ?")
-        .get(`%"persona":"${profile.actorType}"%`) as { id: number } | undefined;
+        .prepare(
+          "SELECT id, label, activation, metadata, seller_id AS sellerId FROM nodes WHERE metadata LIKE ?",
+        )
+        .get(`%"persona":"${profile.actorType}"%`) as GraphNode | undefined;
 
       if (existing) {
         this.db
@@ -495,7 +624,9 @@ export class GraphEngine {
    */
   getActorNode(actorType: ActorType): GraphNode | null {
     const row = this.db
-      .prepare("SELECT id, label, activation, metadata FROM nodes WHERE metadata LIKE ?")
+      .prepare(
+        "SELECT id, label, activation, metadata, seller_id AS sellerId FROM nodes WHERE metadata LIKE ?",
+      )
       .get(`%"persona":"${actorType}"%`) as GraphNode | undefined;
     return row ?? null;
   }
@@ -542,16 +673,23 @@ export class GraphEngine {
    *
    * @param label — Unique concept label (e.g., "strategy_margin").
    * @param metadata — Optional metadata merged into the node on creation.
+   * @param sellerId — Optional seller scope for the created node.
    * @returns The existing or newly created graph node.
    */
-  findOrCreateConceptNode(label: string, metadata: Record<string, unknown> = {}): GraphNode {
+  findOrCreateConceptNode(
+    label: string,
+    metadata: Record<string, unknown> = {},
+    sellerId?: string,
+  ): GraphNode {
     const existing = this.db
-      .prepare("SELECT id, label, activation, metadata FROM nodes WHERE label = ?")
+      .prepare(
+        "SELECT id, label, activation, metadata, seller_id AS sellerId FROM nodes WHERE label = ?",
+      )
       .get(label) as GraphNode | undefined;
 
     if (existing) return existing;
 
-    return this.createNode(label, metadata);
+    return this.createNode(label, metadata, sellerId);
   }
 
   /**
@@ -567,13 +705,20 @@ export class GraphEngine {
    *
    * @param label — Unique node label (e.g., "listing_MLC1234").
    * @param metadata — Metadata written to the node on create or update.
+   * @param sellerId — Optional seller scope (only applied on create, not on update).
    * @returns The existing (updated) or newly created graph node.
    */
-  getOrCreateNode(label: string, metadata: Record<string, unknown> = {}): GraphNode {
+  getOrCreateNode(
+    label: string,
+    metadata: Record<string, unknown> = {},
+    sellerId?: string,
+  ): GraphNode {
     const metadataJson = JSON.stringify(metadata);
 
     const existing = this.db
-      .prepare("SELECT id, label, activation, metadata FROM nodes WHERE label = ?")
+      .prepare(
+        "SELECT id, label, activation, metadata, seller_id AS sellerId FROM nodes WHERE label = ?",
+      )
       .get(label) as GraphNode | undefined;
 
     if (existing) {
@@ -581,7 +726,7 @@ export class GraphEngine {
       return { ...existing, metadata: metadataJson };
     }
 
-    return this.createNode(label, metadata);
+    return this.createNode(label, metadata, sellerId);
   }
 
   /**
@@ -623,8 +768,14 @@ export class GraphEngine {
         params.push(filters.itemId);
       }
       if (filters.sellerId !== undefined) {
-        conditions.push("JSON_EXTRACT(metadata, '$.sellerId') = ?");
-        params.push(filters.sellerId);
+        // Canonical column match OR global node (no seller in column AND metadata)
+        // OR JSON metadata fallback for nodes created before column scoping
+        conditions.push(
+          `(seller_id = ?
+            OR ((seller_id IS NULL OR seller_id = 'unknown') AND JSON_EXTRACT(metadata, '$.sellerId') IS NULL)
+            OR JSON_EXTRACT(metadata, '$.sellerId') = ?)`,
+        );
+        params.push(filters.sellerId, filters.sellerId);
       }
       if (filters.status !== undefined) {
         conditions.push("JSON_EXTRACT(metadata, '$.status') = ?");
@@ -672,6 +823,81 @@ export class GraphEngine {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Query all nodes belonging to a specific seller, including global nodes
+   * (NULL / 'unknown' seller_id).
+   *
+   * @param sellerId — The seller to query nodes for.
+   * @returns Array of graph nodes scoped to the seller (or global).
+   */
+  getNodesBySeller(sellerId: string): GraphNode[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, label, activation, metadata, seller_id AS sellerId
+         FROM nodes
+         WHERE seller_id = ? OR seller_id IS NULL OR seller_id = 'unknown'
+         ORDER BY id DESC`,
+      )
+      .all(sellerId) as GraphNode[];
+    return rows;
+  }
+
+  /**
+   * Ensure an account-asset root node exists in Cortex for a seller.
+   *
+   * Creates (or retrieves) a node labeled `account_asset:{sellerId}` and
+   * connects it via edges to existing listing, order, claim, strategy,
+   * and lesson nodes belonging to the same seller. Idempotent — repeated
+   * calls are safe no-ops.
+   *
+   * @param sellerId — Seller identifier (e.g. "plasticov").
+   * @returns The account-asset root node.
+   */
+  ensureAccountAssetNode(sellerId: string): GraphNode {
+    const label = `account_asset:${sellerId}`;
+    const accountNode = this.getOrCreateNode(
+      label,
+      {
+        type: "account_asset",
+        sellerId,
+      },
+      sellerId,
+    );
+
+    // Find existing business-data nodes for this seller to link
+    const linkedLabels: Array<{ prefix: string }> = [
+      { prefix: "listing_" },
+      { prefix: "order_" },
+      { prefix: "claim_" },
+      { prefix: "strategy_" },
+      { prefix: "lesson_" },
+      { prefix: "proposal_outcome_" },
+    ];
+
+    const edgeStmt = this.db.prepare(
+      `INSERT OR IGNORE INTO edges (source, target, weight, co_occurrence_count)
+       VALUES (?, ?, 0.5, 0)`,
+    );
+
+    for (const { prefix } of linkedLabels) {
+      const matchingNodes = this.db
+        .prepare(
+          `SELECT id FROM nodes
+           WHERE label LIKE ?
+             AND (seller_id = ? OR seller_id IS NULL OR seller_id = 'unknown')
+           LIMIT 50`,
+        )
+        .all(`${prefix}%`, sellerId) as { id: number }[];
+
+      for (const node of matchingNodes) {
+        // Link from account node to each matching node
+        edgeStmt.run(accountNode.id, node.id);
+      }
+    }
+
+    return accountNode;
   }
 
   /**
