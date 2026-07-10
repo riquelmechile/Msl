@@ -14,7 +14,6 @@ function isOwnedEcommerceIntelligenceEnabled(): boolean {
 
 const LOW_STOCK_THRESHOLD = 5;
 const PRICE_DEVIATION_THRESHOLD = 0.2; // 20% above/below average
-const EVIDENCE_REEVAL_DEDUPE_WINDOW_HOURS = 1;
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -224,7 +223,6 @@ async function handleEvidenceReEvaluation(params: {
   const {
     sellerIds,
     bus,
-    evidenceRequestStore,
     evidenceAggregator,
     ownedEcommerceStore,
     sessionStore,
@@ -243,7 +241,7 @@ async function handleEvidenceReEvaluation(params: {
 
       for (const candidate of candidates) {
         // Only re-evaluate candidates that were waiting for evidence
-        if (!candidate.blockedReasons.includes("incomplete-evidence" as never)) {
+        if (!candidate.blockedReasons.includes("incomplete-evidence")) {
           continue;
         }
 

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import type { AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { Logger } from "../conversation/observability.js";
 import type { MissingEvidenceReport } from "./ownedEcommerceMerchandisingAdvisor.js";
-import type { EvidenceRequestPayload, EvidenceKind, EvidenceTargetAgentId, Priority } from "@msl/domain";
+import type { EvidenceRequestPayload, EvidenceKind, Priority } from "@msl/domain";
 import type { EvidenceRequestStore } from "@msl/memory";
 
 // ── Public types ─────────────────────────────────────────────────────
