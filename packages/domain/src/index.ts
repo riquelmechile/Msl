@@ -32,3 +32,6 @@ export * from "./supplierWebSignal.js";
 export * from "./unitEconomics.js";
 export * from "./interAgentEvidence.js";
 export * from "./financialAssessment.js";
+export * from "./economicLearning.js";
+export * from "./economicLearningEligibility.js";
+export * from "./economicSignal.js";

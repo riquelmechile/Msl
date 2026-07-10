@@ -62,6 +62,11 @@ export {
   createSqliteFinanceDirectorAssessmentStore,
   migrateFinanceDirectorAssessmentStore,
 } from "./financeDirectorAssessmentStore.js";
+export type { EconomicLearningStore } from "./economicLearningStore.js";
+export {
+  createSqliteEconomicLearningStore,
+  migrateEconomicLearningStore,
+} from "./economicLearningStore.js";
 export type { EvidenceRequestStore, EnqueueResult, ClaimResult } from "./evidenceRequestStore.js";
 export { createSqliteEvidenceRequestStore, migrateEvidenceStore } from "./evidenceRequestStore.js";
 export type { SupplierMirrorStore } from "./supplierMirrorStore.js";
