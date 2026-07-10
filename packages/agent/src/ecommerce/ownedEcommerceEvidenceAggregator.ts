@@ -76,9 +76,7 @@ export class OwnedEcommerceEvidenceAggregator {
    *
    * Returns a new candidate object — does NOT persist.
    */
-  applyEvidenceResponsesToCandidate(
-    candidate: StorefrontCandidate,
-  ): StorefrontCandidate {
+  applyEvidenceResponsesToCandidate(candidate: StorefrontCandidate): StorefrontCandidate {
     const summary = this.aggregateCandidateEvidence(candidate.id);
 
     const enriched = { ...candidate };

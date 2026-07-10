@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
-import crypto from "node:crypto";
 import { EcommerceEvidenceRequestPlanner } from "./ecommerceEvidenceRequestPlanner.js";
 import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { MissingEvidenceReport } from "./ownedEcommerceMerchandisingAdvisor.js";

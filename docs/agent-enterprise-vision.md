@@ -63,7 +63,7 @@ The hierarchy is not cosmetic. It defines who can investigate, who can request e
 ## Decision loop
 
 1. A specialist detects an opportunity or risk from operational data, market signals, or CEO strategy.
-2. The specialist asks other agents for missing evidence instead of guessing.
+2. The specialist asks other agents for missing evidence instead of guessing. Evidence requests flow through the Agent Message Bus to specialized responders (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager) who provide structured responses with confidence levels. See [`docs/architecture/multi-agent-evidence-responses.md`](./architecture/multi-agent-evidence-responses.md).
 3. The manager combines evidence into a proposal with expected upside, cost, risk, and confidence.
 4. The CEO agent sends only the business decision to Telegram.
 5. The human CEO approves, rejects, or redirects.
@@ -163,7 +163,7 @@ The current branch includes the first durable company-agent foundation. It makes
 | Proposal escalation contract | Keeps Telegram focused on CEO approve/reject/redirect decisions.                                              |
 | Outcome feedback             | Connects approvals, rejections, operational outcomes, and corrections back into Cortex.                       |
 
-The kernel foundation is live: company-agent registry, learning store, admin learning tools, cost/cache ledger, and runtime approval execution contracts are all merged. Collaboration and learning are real; broader production mutations remain gated behind explicit approvals, env credentials, and CEO authorization.
+The kernel foundation is live: company-agent registry, learning store, admin learning tools, cost/cache ledger, and runtime approval execution contracts are all merged. **Multi-agent evidence response handling** lets specialist agents collaborate internally — when the owned-ecommerce advisor detects evidence gaps, five specialized responders (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager) provide structured evidence that enriches CEO candidates. Collaboration and learning are real; broader production mutations remain gated behind explicit approvals, env credentials, and CEO authorization.
 
 ## Current repository alignment
 
