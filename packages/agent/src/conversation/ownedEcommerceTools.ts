@@ -3,6 +3,10 @@ import { createPreparedAction } from "@msl/domain";
 import type { OwnedEcommerceStore } from "@msl/memory";
 
 import type { ToolDefinition } from "./tools.js";
+import type { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
+import type { StorefrontProjectionPreparation } from "../ecommerce/storefrontProjectionBuilder.js";
+import { buildProjection } from "../ecommerce/storefrontProjectionBuilder.js";
+import { scoreCandidate } from "../ecommerce/storefrontCandidateScorer.js";
 
 type ApprovalOperation = "publish" | "checkout" | "payment" | "price" | "stock" | "risky-claim";
 
@@ -106,9 +110,12 @@ function summarizeProjection(projection: StorefrontProjection) {
 
 export function createOwnedEcommerceTools(
   store: OwnedEcommerceStore,
-  options: OwnedEcommerceToolsOptions = {},
+  options: OwnedEcommerceToolsOptions & {
+    intelligenceService?: OwnedEcommerceIntelligenceService;
+  } = {},
 ): ToolDefinition[] {
   const now = options.now ?? (() => new Date());
+  const intelligenceService = options.intelligenceService;
 
   const reviewProjection: ToolDefinition = {
     name: "review_owned_ecommerce_projection",
@@ -333,5 +340,212 @@ export function createOwnedEcommerceTools(
     },
   };
 
-  return [reviewProjection, prepareApproval];
+  // ── E2: inspect_owned_ecommerce_candidate ──────────────────────
+
+  const inspectCandidate: ToolDefinition = {
+    name: "inspect_owned_ecommerce_candidate",
+    description:
+      "Read-only inspection of an owned-ecommerce candidate. Returns evidence, provenance, score, and blockers. No mutations ever executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        candidateId: { type: "string" },
+      },
+      required: ["candidateId"],
+    },
+    execute: async (args) => {
+      const candidateId = readString(args.candidateId);
+      if (!candidateId) {
+        return {
+          status: "blocked",
+          missingInputs: ["candidateId"],
+          noMutationExecuted: true,
+        };
+      }
+
+      const candidate = await store.getCandidate(candidateId);
+      if (!candidate) {
+        return {
+          status: "not-found",
+          candidateId,
+          reason: "Candidate not found in store",
+          noMutationExecuted: true,
+        };
+      }
+
+      return {
+        status: "found",
+        candidateId: candidate.id,
+        title: candidate.title,
+        itemRef: candidate.itemRef,
+        provenance: {
+          source: candidate.provenance.source,
+          sourceId: candidate.provenance.sourceId,
+          supplierId: candidate.provenance.supplierId,
+          accountId: candidate.provenance.accountId,
+          evidenceIds: candidate.provenance.evidenceIds,
+        },
+        evidenceState: candidate.evidenceState,
+        stock: candidate.stock,
+        margin: candidate.margin,
+        blockedReasons: candidate.blockedReasons,
+        redactedReasons: candidate.redactedReasons,
+        evidenceIds: candidate.evidenceIds,
+        createdAt: candidate.createdAt,
+        noMutationExecuted: true,
+      };
+    },
+  };
+
+  // ── E2: prepare_storefront_projection ──────────────────────────
+
+  const prepareProjection: ToolDefinition = {
+    name: "prepare_storefront_projection",
+    description:
+      "Build a read-only storefront projection from a candidate without publishing. Returns the projection preparation envelope. No mutations ever executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        candidateId: { type: "string" },
+      },
+      required: ["candidateId"],
+    },
+    execute: async (args) => {
+      const candidateId = readString(args.candidateId);
+      if (!candidateId) {
+        return {
+          status: "blocked",
+          missingInputs: ["candidateId"],
+          noMutationExecuted: true,
+        };
+      }
+
+      // Fetch candidate from store
+      const candidate = await store.getCandidate(candidateId);
+      if (!candidate) {
+        return {
+          status: "not-found",
+          candidateId,
+          reason: "Candidate not found in store",
+          noMutationExecuted: true,
+        };
+      }
+
+      // If intelligence service is available, use it to compute score + projection
+      let projection: StorefrontProjectionPreparation | undefined;
+      let score;
+      let errors: string[] = [];
+
+      if (intelligenceService) {
+        try {
+          const result = intelligenceService.discoverStorefrontCandidates();
+          const foundCandidate = result.candidates.find((c) => c.id === candidateId);
+          if (foundCandidate) {
+            score = result.scores[candidateId];
+            projection = result.projection;
+            errors = result.errors;
+          }
+        } catch (err) {
+          errors.push(
+            `Intelligence service failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      // If no intelligence service or no result, build a minimal projection
+      if (!projection) {
+        const computedScore = scoreCandidate(candidate);
+        score = computedScore;
+        projection = buildProjection([{ candidate, score: computedScore }]);
+      }
+
+      return {
+        status: "prepared",
+        candidateId,
+        projection: projection
+          ? {
+              projectionId: projection.projectionId,
+              title: projection.title,
+              slug: projection.slug,
+              readiness: projection.readiness,
+              media: projection.media,
+              pricing: projection.pricing,
+              inventory: projection.inventory,
+              evidenceIds: projection.evidenceIds,
+            }
+          : undefined,
+        score: score
+          ? {
+              score: score.score,
+              confidence: score.confidence,
+              recommendedAction: score.recommendedAction,
+              blockers: score.blockers,
+              warnings: score.warnings,
+              strengths: score.strengths,
+            }
+          : undefined,
+        errors,
+        noMutationExecuted: true,
+      };
+    },
+  };
+
+  // ── E2: read_storefront_projection_status ──────────────────────
+
+  const readProjectionStatus: ToolDefinition = {
+    name: "read_storefront_projection_status",
+    description:
+      "Read the status of a storefront projection by projectionId. Handles nonexistent projections gracefully. Read-only, no mutations.",
+    parameters: {
+      type: "object",
+      properties: {
+        projectionId: { type: "string" },
+      },
+      required: ["projectionId"],
+    },
+    execute: async (args) => {
+      const projectionId = readString(args.projectionId);
+      if (!projectionId) {
+        return {
+          status: "blocked",
+          missingInputs: ["projectionId"],
+          noMutationExecuted: true,
+        };
+      }
+
+      const projection = await store.getProjection(projectionId);
+      if (!projection) {
+        return {
+          status: "not-found",
+          projectionId,
+          reason: "Storefront projection does not exist",
+          noMutationExecuted: true,
+        };
+      }
+
+      const blockers = blockingReadinessChecks(projection);
+      const approvals = approvalRequiredReadinessChecks(projection);
+
+      return {
+        status: blockers.length > 0 ? "blocked" : projection.readiness.status,
+        projectionId: projection.id,
+        projectionStatus: projection.status,
+        readinessStatus: projection.readiness.status,
+        generatedAt: projection.generatedAt,
+        blockingCodes: blockers.map((c) => c.code),
+        approvalRequiredCodes: approvals.map((c) => c.code),
+        candidateIds: projection.candidateIds,
+        evidenceIds: projection.evidenceIds,
+        noMutationExecuted: true,
+      };
+    },
+  };
+
+  return [
+    reviewProjection,
+    prepareApproval,
+    inspectCandidate,
+    prepareProjection,
+    readProjectionStatus,
+  ];
 }

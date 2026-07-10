@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
-import type { OperationalReadModelReader } from "@msl/memory";
+import type { OperationalReadModelReader, OwnedEcommerceStore } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
@@ -10,6 +10,9 @@ import type { CreativeDeepSeekAdvisor } from "../conversation/creativeDeepSeekAd
 import type { AgentAccountContext } from "../conversation/types.js";
 import type { AgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
 import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.js";
+import type { AccountBrainService } from "../conversation/accountBrainService.js";
+import type { CreativeJobQueueStore } from "../conversation/creativeJobQueueStore.js";
+import type { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -117,4 +120,18 @@ export type DaemonHandler = (input: {
    *  enableWorkSessions in the scheduler, daemon ticks route through the
    *  session runner instead of direct handler invocation. */
   sessionRunner?: AgentWorkSessionRunner;
+  /** Optional OwnedEcommerceIntelligenceService for supplier-web-signal
+   *  processing in the owned-ecommerce daemon. When absent, the daemon
+   *  runs monitor-only mode (tick-based listing checks). */
+  intelligenceService?: OwnedEcommerceIntelligenceService;
+  /** Optional AccountBrainService for channel-recommendation scoring.
+   *  When absent, scored candidates skip channel fit analysis. */
+  accountBrainService?: AccountBrainService;
+  /** Optional CreativeJobQueueStore for creative-asset delegation.
+   *  When absent and images are missing, missingMedia is recorded
+   *  without a creative request. */
+  creativeJobQueueStore?: CreativeJobQueueStore;
+  /** Optional OwnedEcommerceStore for persisting projection snapshots
+   *  and candidate state. When absent, persistence is skipped. */
+  ownedEcommerceStore?: OwnedEcommerceStore;
 }) => Promise<DaemonResult>;

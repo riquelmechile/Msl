@@ -15,3 +15,4 @@ export * from "./supplierMirror.js";
 export * from "./ownedEcommerce.js";
 export * from "./accountAsset.js";
 export * from "./agentWorkSession.js";
+export * from "./supplierWebSignal.js";

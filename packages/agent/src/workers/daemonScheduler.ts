@@ -33,6 +33,10 @@ import { ownedEcommerceDaemon } from "./ownedEcommerceDaemon.js";
 import { unansweredQuestionsDaemon } from "./unansweredQuestionsDaemon.js";
 import type { AgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
 import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.js";
+import type { AccountBrainService } from "../conversation/accountBrainService.js";
+import type { CreativeJobQueueStore } from "../conversation/creativeJobQueueStore.js";
+import type { OwnedEcommerceStore } from "@msl/memory";
+import { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -76,6 +80,15 @@ export type DaemonSchedulerConfig = {
   sessionStore?: AgentWorkSessionStore;
   /** Optional session runner for work-session lifecycle. */
   workSessionRunner?: AgentWorkSessionRunner;
+  /** Optional AccountBrainService for channel-recommendation scoring
+   *  in the owned-ecommerce intelligence pipeline. */
+  accountBrainService?: AccountBrainService;
+  /** Optional CreativeJobQueueStore for creative-asset delegation
+   *  when storefront candidates are missing images. */
+  creativeJobQueueStore?: CreativeJobQueueStore;
+  /** Optional OwnedEcommerceStore for persisting projection snapshots
+   *  and candidate state. */
+  ownedEcommerceStore?: OwnedEcommerceStore;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -195,6 +208,17 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
     const cachedReader = createCachingReader(config.reader);
 
     // ── Run all active daemons in parallel with error isolation ──
+    // Pre-construct the owned-ecommerce intelligence service once per cycle
+    // so all daemon handler invocations share the same instance.
+    const intelligenceService = new OwnedEcommerceIntelligenceService({
+      cortex: config.cortex,
+      ...(config.accountBrainService ? { accountBrainService: config.accountBrainService } : {}),
+      ...(config.creativeJobQueueStore
+        ? { creativeJobQueueStore: config.creativeJobQueueStore }
+        : {}),
+      ...(config.ownedEcommerceStore ? { ownedEcommerceStore: config.ownedEcommerceStore } : {}),
+    });
+
     await Promise.all(
       activeAgents.map(async (agent) => {
         const laneId = agent.profile.laneId!;
@@ -270,6 +294,10 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               creativeAdvisor: config.creativeAdvisor,
               sessionStore: config.sessionStore,
               sessionRunner: config.workSessionRunner,
+              intelligenceService,
+              accountBrainService: config.accountBrainService,
+              creativeJobQueueStore: config.creativeJobQueueStore,
+              ownedEcommerceStore: config.ownedEcommerceStore,
             } as Parameters<DaemonHandler>[0]);
             config.bus.resolve(claim.messageId, result);
           } catch (err) {

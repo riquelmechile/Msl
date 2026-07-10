@@ -72,7 +72,13 @@ export type OwnedEcommerceExecutionResult =
     };
 
 export type CandidateSourceKind =
-  "plasticov" | "maustian" | "supplier-mirror" | "future-supplier" | "read-model" | "cortex";
+  | "plasticov"
+  | "maustian"
+  | "supplier-mirror"
+  | "future-supplier"
+  | "read-model"
+  | "cortex"
+  | "supplier-web-signal";
 
 export type CandidateProvenance = {
   source: CandidateSourceKind;
@@ -120,6 +126,18 @@ export type StorefrontCandidate = {
   blockedReasons: GuardrailCode[];
   redactedReasons: string[];
   createdAt: string;
+};
+
+export type CandidateConfidence = "low" | "medium" | "high";
+
+export type StorefrontCandidateScore = {
+  score: number;
+  confidence: CandidateConfidence;
+  blockers: string[];
+  warnings: string[];
+  strengths: string[];
+  missingEvidence: string[];
+  recommendedAction: string;
 };
 
 export type MedusaCatalogProjection = {
