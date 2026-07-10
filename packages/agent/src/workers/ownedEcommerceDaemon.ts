@@ -275,7 +275,7 @@ export const ownedEcommerceDaemon: DaemonHandler = async ({
 
 // ── Supplier-web-signal handler ─────────────────────────────────────
 
-function handleSupplierWebSignal({
+async function handleSupplierWebSignal({
   claim,
   bus,
   sellerIds: allSellerIds,
@@ -291,7 +291,7 @@ function handleSupplierWebSignal({
   intelligenceService: Parameters<DaemonHandler>[0]["intelligenceService"];
   capturedAt: string;
   hourKey: string;
-}): DaemonResult {
+}): Promise<DaemonResult> {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -332,7 +332,7 @@ function handleSupplierWebSignal({
 
   for (const sellerId of affectedSellers) {
     try {
-      const result = intelligenceService.prepareFromSupplierWebSignal(signal, sellerId);
+      const result = await intelligenceService.prepareFromSupplierWebSignal(signal, sellerId);
 
       // 4. Record work-session observation (F3)
       if (sessionStore) {

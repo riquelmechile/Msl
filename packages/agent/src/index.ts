@@ -224,6 +224,30 @@ export type {
   OwnedEcommerceRuntimeExecutionObserver,
 } from "./runtime/ownedEcommerceExecutor.js";
 
+// ── Ecommerce merchandising advisor ──────────────────────────────────
+export { OwnedEcommerceMerchandisingAdvisor } from "./ecommerce/ownedEcommerceMerchandisingAdvisor.js";
+export type {
+  MerchandisingAdvisorResult,
+  RankingReasoning,
+  ChannelTradeoffExplanation,
+  ExperimentProposal,
+  MissingEvidenceReport,
+  AdvisorCallContext,
+} from "./ecommerce/ownedEcommerceMerchandisingAdvisor.js";
+export { validate as validateAdvisorOutput } from "./ecommerce/merchandisingAdvisorValidator.js";
+export type { AdvisorValidationResult } from "./ecommerce/merchandisingAdvisorValidator.js";
+export { EcommerceEvidenceRequestPlanner } from "./ecommerce/ecommerceEvidenceRequestPlanner.js";
+export type { EvidenceRequestMessage } from "./ecommerce/ecommerceEvidenceRequestPlanner.js";
+export {
+  buildStableSystemPrompt,
+  buildEvidenceBlock,
+  buildOutputSchema,
+  buildFullPrompt,
+  hashStablePrompt,
+  hashEvidenceBlock,
+} from "./ecommerce/ownedEcommerceAdvisorPrompt.js";
+export type { AdvisorPromptConfig, FullPromptResult } from "./ecommerce/ownedEcommerceAdvisorPrompt.js";
+
 export type {
   CompanyAgent,
   CompanyAgentId,
