@@ -91,7 +91,7 @@ describe("AccountBrainService", () => {
       ...plasticovAccount,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
 
     // Seed full data set for Plasticov
     accountStore.recordHealthSnapshot(PLASTICOV_ID, {
@@ -250,7 +250,7 @@ describe("AccountBrainService", () => {
       ...maustianAccount,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
     maustianStore.addRisk(MAUSTIAN_ID, {
       risk: "Maustian-only shipping delay",
       severity: "medium",
@@ -284,7 +284,7 @@ describe("AccountBrainService", () => {
       ...maustianAccount,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
 
     // Add global strategy (sellerId = null)
     acctStore.addStrategyNote(null, {
@@ -416,7 +416,7 @@ describe("AccountBrainService", () => {
       ...maustianAccount,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
     acctStore.recordHealthSnapshot(MAUSTIAN_ID, {
       status: "degraded",
       reputation: "yellow",
@@ -449,12 +449,12 @@ describe("AccountBrainService", () => {
       ...plasticovAccount,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
     acctStore.upsertAccountAsset({
       ...maustianAccount,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
 
     // Same health + goal for both
     for (const sid of [PLASTICOV_ID, MAUSTIAN_ID]) {
@@ -491,13 +491,13 @@ describe("AccountBrainService", () => {
       capabilities: equalCaps,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
     acctStore.upsertAccountAsset({
       ...maustianAccount,
       capabilities: equalCaps,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
 
     // Only Plasticov gets a critical risk
     acctStore.addRisk(PLASTICOV_ID, {
@@ -524,7 +524,7 @@ describe("AccountBrainService", () => {
     expect(pvEntry).toBeDefined();
     expect(mtEntry).toBeDefined();
     // Maustian should have higher score (same caps/health/profit, no critical risks)
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
     expect(mtEntry!.score).toBeGreaterThanOrEqual(pvEntry!.score);
     expect(pvEntry?.weaknesses.some((w) => w.includes("critical"))).toBe(true);
   });
@@ -541,7 +541,7 @@ describe("AccountBrainService", () => {
       profitGoal: 40,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
     acctStore.recordHealthSnapshot(PLASTICOV_ID, {
       status: "healthy",
       reputation: "green",
@@ -554,7 +554,7 @@ describe("AccountBrainService", () => {
       profitGoal: 80,
       createdAt: now,
       updatedAt: now,
-    } as AccountAsset);
+    });
     acctStore.recordHealthSnapshot(MAUSTIAN_ID, {
       status: "degraded",
       reputation: "yellow",
@@ -571,7 +571,7 @@ describe("AccountBrainService", () => {
     // Plasticov should rank higher with health×2.0 weighting
     expect(grPv).toBeDefined();
     expect(grMt).toBeDefined();
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
     expect(grPv!.score).toBeGreaterThanOrEqual(grMt!.score);
 
     // maximize_profit → profit×2.0, opportunity×1.5

@@ -3,12 +3,7 @@ import type { WorkforceCostCacheLedgerStore } from "./workforceCostCacheLedgerSt
 import type { CeoInboxStore } from "./ceoInboxStore.js";
 import type { AgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
 import type { GraphEngine } from "@msl/memory";
-import type {
-  AccountCapability,
-  AccountRisk,
-  AccountOpportunity,
-  AccountStrategy,
-} from "@msl/domain";
+import type { AccountRisk, AccountOpportunity, AccountStrategy } from "@msl/domain";
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -481,7 +476,7 @@ export class AccountBrainService {
           let globalNodes: Array<{ label: string }> = [];
           try {
             globalNodes = this.cortex!.queryByMetadata({ limit: 5 }).filter(
-              (n) => !(n.metadata as Record<string, unknown>).sellerId,
+              (n) => !n.metadata.sellerId,
             );
           } catch {
             // queryByMetadata returns [] on error already, but double-wrap for safety
@@ -517,14 +512,14 @@ export class AccountBrainService {
     const recommendedFocus: string[] = [];
 
     if (health !== "unavailable") {
-      const h = health as HealthSummary;
+      const h = health;
       if (h.currentStatus === "critical" || h.currentStatus === "at-risk") {
         recommendedFocus.push(`Health is ${h.currentStatus} — prioritize recovery actions.`);
       }
     }
 
     if (risks !== "unavailable") {
-      const criticalRisks = (risks as AccountRisk[]).filter((r) => r.severity === "critical");
+      const criticalRisks = risks.filter((r) => r.severity === "critical");
       for (const r of criticalRisks.slice(0, 3)) {
         recommendedFocus.push(
           `Critical risk: ${r.risk}${r.mitigation ? ` (mitigation: ${r.mitigation})` : ""}`,
@@ -533,9 +528,7 @@ export class AccountBrainService {
     }
 
     if (opportunities !== "unavailable") {
-      const highConfidenceOpps = (opportunities as AccountOpportunity[]).filter(
-        (o) => (o.confidence ?? 0) >= 0.7,
-      );
+      const highConfidenceOpps = opportunities.filter((o) => (o.confidence ?? 0) >= 0.7);
       for (const o of highConfidenceOpps.slice(0, 3)) {
         recommendedFocus.push(
           `High-confidence opportunity: ${o.opportunity} (impact: ${o.estimatedImpact}, confidence: ${((o.confidence ?? 0) * 100).toFixed(0)}%)`,
@@ -720,13 +713,13 @@ export class AccountBrainService {
 
     let healthScoreVal = 0;
     if (status.health !== "unavailable") {
-      const h = status.health as HealthSummary;
+      const h = status.health;
       healthScoreVal = healthScore(h.currentStatus);
     }
 
     let riskScore = 0;
     if (Array.isArray(status.risks)) {
-      const r = status.risks as AccountRisk[];
+      const r = status.risks;
       // Invert: high risk count = low score
       const weightedSeverity = r.reduce(
         (sum, r) =>
@@ -747,13 +740,13 @@ export class AccountBrainService {
 
     let profitScore = 0;
     if (status.profitGoal !== "unavailable") {
-      const pg = status.profitGoal as ProfitGoalSummary;
+      const pg = status.profitGoal;
       profitScore = Math.min(100, pg.value);
     }
 
     let opportunityScore = 0;
     if (Array.isArray(status.opportunities)) {
-      const opps = status.opportunities as AccountOpportunity[];
+      const opps = status.opportunities;
       if (opps.length > 0) {
         const avgConfidence = opps.reduce((sum, o) => sum + (o.confidence ?? 0.5), 0) / opps.length;
         opportunityScore = Math.min(100, avgConfidence * 100);
@@ -762,7 +755,7 @@ export class AccountBrainService {
 
     let costScore = 100;
     if (status.costAndCache !== "unavailable") {
-      const cc = status.costAndCache as CostCacheSummary;
+      const cc = status.costAndCache;
       if (cc.totalEstimatedCostMicros !== "unavailable") {
         costScore = Math.max(0, 100 - cc.totalEstimatedCostMicros / 10_000);
       }
@@ -797,25 +790,23 @@ export class AccountBrainService {
     const missingCapabilities: string[] = [];
 
     if (status.health !== "unavailable") {
-      const h = status.health as HealthSummary;
+      const h = status.health;
       if (h.currentStatus === "healthy") strengths.push("Healthy account");
       else if (h.currentStatus === "critical") weaknesses.push("Health is critical");
       else if (h.currentStatus === "at-risk") weaknesses.push("Health is at-risk");
     }
 
     if (Array.isArray(status.risks)) {
-      const criticalRisks = (status.risks as AccountRisk[]).filter(
-        (r) => r.severity === "critical",
-      );
+      const criticalRisks = status.risks.filter((r) => r.severity === "critical");
       if (criticalRisks.length > 0) {
         weaknesses.push(`${criticalRisks.length} critical risk(s)`);
-      } else if ((status.risks as AccountRisk[]).length === 0) {
+      } else if (status.risks.length === 0) {
         strengths.push("No active risks");
       }
     }
 
     if (Array.isArray(status.capabilities)) {
-      const caps = status.capabilities as CapabilitySummary[];
+      const caps = status.capabilities;
       const missing = caps.filter((c) => c.status === "missing");
       if (missing.length > 0) {
         for (const m of missing) missingCapabilities.push(m.kind);
@@ -825,7 +816,7 @@ export class AccountBrainService {
     }
 
     if (status.opportunities !== "unavailable") {
-      const opps = status.opportunities as AccountOpportunity[];
+      const opps = status.opportunities;
       if (opps.length > 0) {
         strengths.push(`${opps.length} opportunities detected`);
       }

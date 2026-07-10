@@ -153,6 +153,8 @@ export {
   createProposeHoneyPotTool,
   createUpdateAgentSkillTool,
   createUpdateCompanyAgentTool,
+  createGetAccountBrainStatusTool,
+  createCompareAccountAssetsTool,
 } from "./conversation/tools.js";
 
 export type { LaneContract, LaneOutput, CacheTelemetry, LaneId } from "./conversation/lanes.js";
@@ -309,6 +311,16 @@ export type {
 
 export { createAccountAssetStore } from "./conversation/accountAssetStore.js";
 export type { AccountAssetStore } from "./conversation/accountAssetStore.js";
+
+export { AccountBrainService } from "./conversation/accountBrainService.js";
+export type {
+  AccountBrainStatusInput,
+  AccountBrainStatus,
+  CompareAccountAssetsInput,
+  AccountAssetComparison,
+  AgentActivitySummary,
+  CostCacheSummary,
+} from "./conversation/accountBrainService.js";
 
 // ── Runtime env validation ───────────────────────────────────────────
 export { validateRuntimeEnv } from "./conversation/validateEnv.js";

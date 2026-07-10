@@ -32,18 +32,18 @@ Chain strategy: feature-branch-chain
 
 ## Phase 2: Tool Definitions
 
-- [ ] 2.1 Create `packages/agent/src/conversation/tools/accountBrainTools.ts` with `createGetAccountBrainStatusTool(service?)` and `createCompareAccountAssetsTool(service?)` factory functions following `agentWorkStatusTool.ts` pattern (`ToolDefinition` with `execute` returning `Record<string, unknown>`); undefined service returns `"unavailable"` + `noMutationExecuted: true`
-- [ ] 2.2 Create `packages/agent/src/conversation/tools/accountBrainTools.test.ts` with ≥6 Vitest tests: both tools return `noMutationExecuted: true`, no DeepSeek calls, no MercadoLibre writes, unavailable path when service is undefined, seller isolation in tool output
+- [x] 2.1 Create `packages/agent/src/conversation/tools/accountBrainTools.ts` with `createGetAccountBrainStatusTool(service?)` and `createCompareAccountAssetsTool(service?)` factory functions following `agentWorkStatusTool.ts` pattern (`ToolDefinition` with `execute` returning `Record<string, unknown>`); undefined service returns `"unavailable"` + `noMutationExecuted: true`
+- [x] 2.2 Create `packages/agent/src/conversation/tools/accountBrainTools.test.ts` with ≥6 Vitest tests: both tools return `noMutationExecuted: true`, no DeepSeek calls, no MercadoLibre writes, unavailable path when service is undefined, seller isolation in tool output
 
 ## Phase 3: Integration & Wiring
 
-- [ ] 3.1 Add `export * from "./accountBrainTools.js"` to `packages/agent/src/conversation/tools/index.ts`
-- [ ] 3.2 Export `AccountBrainService` class, `createGetAccountBrainStatusTool`, `createCompareAccountAssetsTool`, and types from `packages/agent/src/index.ts`
-- [ ] 3.3 Add `accountBrainService?: AccountBrainService` property to `AgentLoopConfig` in `packages/agent/src/conversation/agentLoop.ts`
-- [ ] 3.4 Register `get_account_brain_status` and `compare_account_assets` conditionally in `createAgentLoop` using existing pattern: `config.accountBrainService && toolMap.set("tool_name", createTool(config.accountBrainService))`
-- [ ] 3.5 Create `docs/architecture/ceo-account-brain-dashboard.md` with architecture overview: service diagram, store dependencies, scoring algorithm, and seller isolation guarantees
+- [x] 3.1 Add `export * from "./accountBrainTools.js"` to `packages/agent/src/conversation/tools/index.ts`
+- [x] 3.2 Export `AccountBrainService` class, `createGetAccountBrainStatusTool`, `createCompareAccountAssetsTool`, and types from `packages/agent/src/index.ts`
+- [x] 3.3 Add `accountBrainService?: AccountBrainService` property to `AgentLoopConfig` in `packages/agent/src/conversation/agentLoop.ts`
+- [x] 3.4 Register `get_account_brain_status` and `compare_account_assets` conditionally in `createAgentLoop` using existing pattern: `config.accountBrainService && toolMap.set("tool_name", createTool(config.accountBrainService))`
+- [x] 3.5 Create `docs/architecture/ceo-account-brain-dashboard.md` with architecture overview: service diagram, store dependencies, scoring algorithm, and seller isolation guarantees
 
 ## Phase 4: Final Verification
 
-- [ ] 4.1 Run `npm run format:check && npm run typecheck && npm run lint && npm test`
-- [ ] 4.2 Run `npm run build && npm run test:e2e && npm run check:production-secrets`
+- [x] 4.1 Run `npm run format:check && npm run typecheck && npm run lint && npm test`
+- [x] 4.2 Run `npm run build && npm run test:e2e && npm run check:production-secrets`
