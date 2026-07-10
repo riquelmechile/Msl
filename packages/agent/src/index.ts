@@ -246,7 +246,10 @@ export {
   hashStablePrompt,
   hashEvidenceBlock,
 } from "./ecommerce/ownedEcommerceAdvisorPrompt.js";
-export type { AdvisorPromptConfig, FullPromptResult } from "./ecommerce/ownedEcommerceAdvisorPrompt.js";
+export type {
+  AdvisorPromptConfig,
+  FullPromptResult,
+} from "./ecommerce/ownedEcommerceAdvisorPrompt.js";
 
 export type {
   CompanyAgent,

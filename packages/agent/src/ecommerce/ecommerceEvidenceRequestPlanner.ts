@@ -6,7 +6,8 @@ import type { MissingEvidenceReport } from "./ownedEcommerceMerchandisingAdvisor
 // ── Public types ─────────────────────────────────────────────────────
 
 export type EvidenceRequestMessage = {
-  targetAgentId: "cost-supplier" | "market-catalog" | "creative-assets" | "account-brain" | "supplier-manager";
+  targetAgentId:
+    "cost-supplier" | "market-catalog" | "creative-assets" | "account-brain" | "supplier-manager";
   candidateId: string;
   question: string;
   reason: string;
@@ -130,7 +131,8 @@ export class EcommerceEvidenceRequestPlanner {
         messageHash: message.messageHash,
       });
     } catch (err) {
-      this.log?.error("EcommerceEvidenceRequestPlanner: failed to enqueue evidence request",
+      this.log?.error(
+        "EcommerceEvidenceRequestPlanner: failed to enqueue evidence request",
         err instanceof Error ? err : undefined,
       );
       // Never throw — fire-and-forget semantics
@@ -140,7 +142,9 @@ export class EcommerceEvidenceRequestPlanner {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function severityToPriority(severity: MissingEvidenceReport["severity"]): EvidenceRequestMessage["priority"] {
+function severityToPriority(
+  severity: MissingEvidenceReport["severity"],
+): EvidenceRequestMessage["priority"] {
   switch (severity) {
     case "high":
       return "high";

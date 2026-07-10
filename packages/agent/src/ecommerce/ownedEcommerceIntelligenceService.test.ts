@@ -36,9 +36,7 @@ function seedSupplier(
 }
 
 /** Build a valid SupplierWebSignalPayload for tests. */
-function makeSignal(
-  overrides: Partial<SupplierWebSignalPayload> = {},
-): SupplierWebSignalPayload {
+function makeSignal(overrides: Partial<SupplierWebSignalPayload> = {}): SupplierWebSignalPayload {
   return {
     type: "supplier-web-signal",
     signalKind: "new-supplier-product",
@@ -112,8 +110,7 @@ function channelTradeoffsCompletion(): DeepSeekChatResponse {
                 channel: "Plasticov",
                 upsides: ["Alto tráfico", "Compradores recurrentes"],
                 risks: ["Comisión del 11-16%", "Competencia directa"],
-                overallAssessment:
-                  "Buen canal secundario si el margen soporta la comisión.",
+                overallAssessment: "Buen canal secundario si el margen soporta la comisión.",
               },
             ],
             confidence: 0.85,
@@ -138,13 +135,11 @@ function blockedContentCompletion(): DeepSeekChatResponse {
           content: JSON.stringify({
             seoSuggestions: {
               seoTitle: "The Best Bicycle — Guaranteed Lowest Price! Official Store",
-              seoDescription:
-                "Number one rated bicycle. Top rated by customers worldwide.",
+              seoDescription: "Number one rated bicycle. Top rated by customers worldwide.",
               keywords: ["best bicycle", "guaranteed"],
             },
             geoSuggestions: {
-              geoSummary:
-                "The leading choice for serious cyclists — certified by experts.",
+              geoSummary: "The leading choice for serious cyclists — certified by experts.",
               faq: [],
             },
             confidence: 0.85,
@@ -158,9 +153,7 @@ function blockedContentCompletion(): DeepSeekChatResponse {
 }
 
 /** Create a fake transport that cycles through the given responses. */
-function fakeTransportWithResponses(
-  responses: DeepSeekChatResponse[],
-): DeepSeekTransport {
+function fakeTransportWithResponses(responses: DeepSeekChatResponse[]): DeepSeekTransport {
   return new DeepSeekFakeTransport(responses);
 }
 

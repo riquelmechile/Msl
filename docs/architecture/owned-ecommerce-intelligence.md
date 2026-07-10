@@ -63,12 +63,12 @@ When DeepSeek is configured, SEO titles and GEO copy are validated for:
 
 Between scoring and projection assembly, the pipeline optionally invokes the `OwnedEcommerceMerchandisingAdvisor` (step 7) to enrich candidates with AI-generated SEO/GEO copy and channel tradeoff analysis. Gated by `MSL_OWNED_ECOMMERCE_ADVISOR_ENABLED` (default `false`).
 
-| Condition | Behavior |
-|-----------|----------|
+| Condition                        | Behavior                                               |
+| -------------------------------- | ------------------------------------------------------ |
 | Flag enabled + transport present | Advisor enriches projection with SEO/GEO and tradeoffs |
-| Flag disabled | Step 7 skipped — zero transport calls |
-| Transport absent | Deterministic fallback — zero failure |
-| Advisor throws | Graceful degradation — enrichment skipped |
+| Flag disabled                    | Step 7 skipped — zero transport calls                  |
+| Transport absent                 | Deterministic fallback — zero failure                  |
+| Advisor throws                   | Graceful degradation — enrichment skipped              |
 
 All advisor output passes through `MerchandisingAdvisorValidator` — a pure-function safety gate that blocks superlatives without evidence, publish language, unsupported medical/technical claims, and invented stock/margin data. Blocked claims are stripped; safe content passes through.
 

@@ -49,22 +49,22 @@ Blocked candidates remain blocked — advisor does not unblock.
 
 ## Components
 
-| Component | Role | File |
-|-----------|------|------|
-| `OwnedEcommerceMerchandisingAdvisor` | 5-method advisor with deterministic fallback | `packages/agent/src/ecommerce/ownedEcommerceMerchandisingAdvisor.ts` |
-| `OwnedEcommerceAdvisorPrompt` | 4-block prompt builder with cache-friendly hashing | `packages/agent/src/ecommerce/ownedEcommerceAdvisorPrompt.ts` |
-| `MerchandisingAdvisorValidator` | Pure-function output validator | `packages/agent/src/ecommerce/merchandisingAdvisorValidator.ts` |
-| `EcommerceEvidenceRequestPlanner` | Converts gap reports into inter-agent messages | `packages/agent/src/ecommerce/ecommerceEvidenceRequestPlanner.ts` |
-| `OwnedEcommerceIntelligenceService` | Pipeline host (step 7) | `packages/agent/src/ecommerce/ownedEcommerceIntelligenceService.ts` |
+| Component                            | Role                                               | File                                                                 |
+| ------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------- |
+| `OwnedEcommerceMerchandisingAdvisor` | 5-method advisor with deterministic fallback       | `packages/agent/src/ecommerce/ownedEcommerceMerchandisingAdvisor.ts` |
+| `OwnedEcommerceAdvisorPrompt`        | 4-block prompt builder with cache-friendly hashing | `packages/agent/src/ecommerce/ownedEcommerceAdvisorPrompt.ts`        |
+| `MerchandisingAdvisorValidator`      | Pure-function output validator                     | `packages/agent/src/ecommerce/merchandisingAdvisorValidator.ts`      |
+| `EcommerceEvidenceRequestPlanner`    | Converts gap reports into inter-agent messages     | `packages/agent/src/ecommerce/ecommerceEvidenceRequestPlanner.ts`    |
+| `OwnedEcommerceIntelligenceService`  | Pipeline host (step 7)                             | `packages/agent/src/ecommerce/ownedEcommerceIntelligenceService.ts`  |
 
 ## Transport / Fallback Pattern
 
-| Condition | Behavior |
-|-----------|----------|
-| Transport available + flag enabled | Advisor calls DeepSeek for SEO/GEO and tradeoffs |
-| Transport absent | Deterministic fallback: product-name SEO title, empty keywords/FAQ |
-| Transport throws | `try/catch` degrades gracefully — enrichment skipped, pipeline continues |
-| Flag disabled | Step 7 skipped entirely — no transport calls |
+| Condition                          | Behavior                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| Transport available + flag enabled | Advisor calls DeepSeek for SEO/GEO and tradeoffs                         |
+| Transport absent                   | Deterministic fallback: product-name SEO title, empty keywords/FAQ       |
+| Transport throws                   | `try/catch` degrades gracefully — enrichment skipped, pipeline continues |
+| Flag disabled                      | Step 7 skipped entirely — no transport calls                             |
 
 All advisor methods carry `noMutationExecuted: true` and return structured results even in fallback mode.
 
@@ -72,14 +72,14 @@ All advisor methods carry `noMutationExecuted: true` and return structured resul
 
 Every advisor output passes through `MerchandisingAdvisorValidator.validate()` — a pure function with zero side effects:
 
-| Blocked Pattern | Condition |
-|-----------------|-----------|
-| Superlatives ("best", "guaranteed", "official") | Without evidenceIds |
-| Publish/checkout language | Always blocked |
-| Medical/technical claims | Without evidenceIds |
-| Mixed-account cross-references | Without comparison flag |
-| Invalid targetAgentIds | Unknown agent reference |
-| Invented stock/margin data | Numeric claims without evidenceIds |
+| Blocked Pattern                                 | Condition                          |
+| ----------------------------------------------- | ---------------------------------- |
+| Superlatives ("best", "guaranteed", "official") | Without evidenceIds                |
+| Publish/checkout language                       | Always blocked                     |
+| Medical/technical claims                        | Without evidenceIds                |
+| Mixed-account cross-references                  | Without comparison flag            |
+| Invalid targetAgentIds                          | Unknown agent reference            |
+| Invented stock/margin data                      | Numeric claims without evidenceIds |
 
 Blocked claims are stripped; safe content passes through. `usable: true` only when zero claims are blocked.
 
@@ -98,11 +98,11 @@ Hash strategy: `sha256(A+B+D)` for the cacheable prefix, `sha256(candidateIds+sc
 
 `MSL_OWNED_ECOMMERCE_ADVISOR_ENABLED` (env, default `false`):
 
-| Stage | Flag | Behavior |
-|-------|------|----------|
-| Development | `false` | Step 7 no-op, zero cost |
-| Staging | `true` | Advisor active, transport configured |
-| Production | `true` | Full enrichment active |
+| Stage             | Flag    | Behavior                                |
+| ----------------- | ------- | --------------------------------------- |
+| Development       | `false` | Step 7 no-op, zero cost                 |
+| Staging           | `true`  | Advisor active, transport configured    |
+| Production        | `true`  | Full enrichment active                  |
 | Incident rollback | `false` | Instant disable — no code deploy needed |
 
 When `true` but transport absent: deterministic fallback, zero cost, zero failure.
@@ -110,6 +110,7 @@ When `true` but transport absent: deterministic fallback, zero cost, zero failur
 ## Before / After Example
 
 **Before** (deterministic fallback):
+
 ```
 SEO title: "Bicicleta Mountain Bike Pro — Owned Ecommerce Storefront"
 SEO description: "Storefront listing for Bicicleta Mountain Bike Pro..."
@@ -118,6 +119,7 @@ GEO: "Purchase-intent listing for Bicicleta Mountain Bike Pro."
 ```
 
 **After** (advisor enrichment):
+
 ```
 SEO title: "Bicicleta Mountain Bike Pro — Comprá Online | Envío Rápido"
 SEO description: "Bicicleta disponible en tienda propia. Precio competitivo, envío a todo Chile."

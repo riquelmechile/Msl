@@ -5,7 +5,9 @@ import type { MerchandisingAdvisorResult } from "./ownedEcommerceMerchandisingAd
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /** Construct a minimal valid result that should pass validation. */
-function cleanResult(overrides: Partial<MerchandisingAdvisorResult> = {}): MerchandisingAdvisorResult {
+function cleanResult(
+  overrides: Partial<MerchandisingAdvisorResult> = {},
+): MerchandisingAdvisorResult {
   return {
     reasoning: [],
     positioningAngles: [],
@@ -36,7 +38,9 @@ describe("MerchandisingAdvisorValidator", () => {
     // Test 1: Blocks "best" without evidenceId
     it('blocks "best" without evidenceId', () => {
       const result = cleanResult({
-        reasoning: [reasoningEntry("c1", "This is the best product for the storefront — unmatched value.")],
+        reasoning: [
+          reasoningEntry("c1", "This is the best product for the storefront — unmatched value."),
+        ],
       });
 
       const validated = validate(result);
@@ -58,7 +62,9 @@ describe("MerchandisingAdvisorValidator", () => {
       const validated = validate(result);
 
       expect(validated.usable).toBe(false);
-      expect(validated.blockedClaims.some((c) => c.toLowerCase().includes("guaranteed"))).toBe(true);
+      expect(validated.blockedClaims.some((c) => c.toLowerCase().includes("guaranteed"))).toBe(
+        true,
+      );
       expect(validated.blockedClaims.some((c) => c.includes("seoTitle"))).toBe(true);
     });
 
@@ -85,7 +91,9 @@ describe("MerchandisingAdvisorValidator", () => {
       const validated = validate(result);
 
       expect(validated.usable).toBe(false);
-      expect(validated.blockedClaims.some((c) => c.toLowerCase().includes("number one"))).toBe(true);
+      expect(validated.blockedClaims.some((c) => c.toLowerCase().includes("number one"))).toBe(
+        true,
+      );
     });
   });
 
@@ -107,13 +115,17 @@ describe("MerchandisingAdvisorValidator", () => {
     // Test 6: Blocks checkout activation recommendation
     it('blocks checkout activation recommendation ("activate checkout")', () => {
       const result = cleanResult({
-        reasoning: [reasoningEntry("c3", "Activate checkout for this item — it is ready for sale.")],
+        reasoning: [
+          reasoningEntry("c3", "Activate checkout for this item — it is ready for sale."),
+        ],
       });
 
       const validated = validate(result);
 
       expect(validated.usable).toBe(false);
-      expect(validated.blockedClaims.some((c) => c.toLowerCase().includes("activate checkout"))).toBe(true);
+      expect(
+        validated.blockedClaims.some((c) => c.toLowerCase().includes("activate checkout")),
+      ).toBe(true);
       expect(validated.sanitizedResult.reasoning[0]!.rationale).toContain("[sanitized");
     });
   });
@@ -123,7 +135,8 @@ describe("MerchandisingAdvisorValidator", () => {
     it("blocks medical claim without evidenceId", () => {
       const result = cleanResult({
         seoSuggestions: {
-          seoDescription: "Producto curativo con certificación FDA. Tratamiento natural para la salud.",
+          seoDescription:
+            "Producto curativo con certificación FDA. Tratamiento natural para la salud.",
         },
       });
 
@@ -145,7 +158,9 @@ describe("MerchandisingAdvisorValidator", () => {
       const validated = validate(result);
 
       // Should NOT block since it has evidenceIds
-      const hasMedicalBlock = validated.blockedClaims.some((c) => c.includes("FDA") || c.includes("medical"));
+      const hasMedicalBlock = validated.blockedClaims.some(
+        (c) => c.includes("FDA") || c.includes("medical"),
+      );
       expect(hasMedicalBlock).toBe(false);
       expect(validated.usable).toBe(true);
     });
@@ -156,7 +171,10 @@ describe("MerchandisingAdvisorValidator", () => {
     it("allows valid claim with evidenceId", () => {
       const result = cleanResult({
         reasoning: [
-          reasoningEntry("c5", "Top seller in this category based on historical data.", ["evt-001", "evt-002"]),
+          reasoningEntry("c5", "Top seller in this category based on historical data.", [
+            "evt-001",
+            "evt-002",
+          ]),
         ],
         seoSuggestions: {
           seoTitle: "Product Title — Owned Ecommerce",
@@ -172,7 +190,9 @@ describe("MerchandisingAdvisorValidator", () => {
       expect(validated.warnings).toEqual([]);
       // Sanitized result should be essentially unchanged
       expect(validated.sanitizedResult.reasoning).toHaveLength(1);
-      expect(validated.sanitizedResult.reasoning[0]!.rationale).toBe(result.reasoning[0]!.rationale);
+      expect(validated.sanitizedResult.reasoning[0]!.rationale).toBe(
+        result.reasoning[0]!.rationale,
+      );
     });
 
     it("blocks a superlative but passes clean result for a different claim", () => {
@@ -189,7 +209,9 @@ describe("MerchandisingAdvisorValidator", () => {
       expect(validated.usable).toBe(false); // at least one blocked
       expect(validated.blockedClaims.length).toBeGreaterThan(0);
       // Good reasoning should be intact
-      const goodReasoning = validated.sanitizedResult.reasoning.find((r) => r.candidateId === "good");
+      const goodReasoning = validated.sanitizedResult.reasoning.find(
+        (r) => r.candidateId === "good",
+      );
       expect(goodReasoning!.rationale).toBe("Verified stock and known margin structure.");
       // Bad reasoning should be sanitized
       const badReasoning = validated.sanitizedResult.reasoning.find((r) => r.candidateId === "bad");
@@ -246,7 +268,9 @@ describe("MerchandisingAdvisorValidator", () => {
 
     it("blocks specific margin percentage claims without evidenceIds", () => {
       const result = cleanResult({
-        reasoning: [reasoningEntry("c8", "This product has a 42% margin making it highly profitable.")],
+        reasoning: [
+          reasoningEntry("c8", "This product has a 42% margin making it highly profitable."),
+        ],
       });
 
       const validated = validate(result);
@@ -258,9 +282,7 @@ describe("MerchandisingAdvisorValidator", () => {
 
     it("allows numeric claims WITH evidenceIds", () => {
       const result = cleanResult({
-        reasoning: [
-          reasoningEntry("c9", "Stock of 150 units confirmed by supplier.", ["evt-001"]),
-        ],
+        reasoning: [reasoningEntry("c9", "Stock of 150 units confirmed by supplier.", ["evt-001"])],
       });
 
       const validated = validate(result);

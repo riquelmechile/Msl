@@ -74,7 +74,9 @@ function buildEvidence(candidates: StorefrontCandidate[]): string {
     } else {
       parts.push(`  margin: sin datos`);
     }
-    parts.push(`  evidence: ${c.evidenceState.completeness} (freshness: stock=${c.evidenceState.stockFreshness}, margin=${c.evidenceState.marginFreshness}, supplier=${c.evidenceState.supplierFreshness})`);
+    parts.push(
+      `  evidence: ${c.evidenceState.completeness} (freshness: stock=${c.evidenceState.stockFreshness}, margin=${c.evidenceState.marginFreshness}, supplier=${c.evidenceState.supplierFreshness})`,
+    );
     if (c.blockedReasons.length > 0) {
       parts.push(`  ⛔ bloqueado: ${c.blockedReasons.join(", ")}`);
     }

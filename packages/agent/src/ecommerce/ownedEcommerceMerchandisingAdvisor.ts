@@ -46,7 +46,8 @@ export type MissingEvidenceReport = {
   description: string;
   candidateId: string;
   /** Target agent for the inter-agent message bus. */
-  targetAgentId: "cost-supplier" | "market-catalog" | "creative-assets" | "account-brain" | "supplier-manager";
+  targetAgentId:
+    "cost-supplier" | "market-catalog" | "creative-assets" | "account-brain" | "supplier-manager";
   /** The question to ask the target agent. */
   question: string;
 };
@@ -178,25 +179,33 @@ export class OwnedEcommerceMerchandisingAdvisor {
   private readonly log: Logger | undefined;
   private readonly sellerId: string | undefined;
 
-  constructor(input: {
-    deepSeekTransport?: DeepSeekTransport;
-    clock?: { now: () => Date };
-    logger?: Logger;
-    sellerId?: string;
-  } = {}) {
+  constructor(
+    input: {
+      deepSeekTransport?: DeepSeekTransport;
+      clock?: { now: () => Date };
+      logger?: Logger;
+      sellerId?: string;
+    } = {},
+  ) {
     this.transport = input.deepSeekTransport;
     this.clock = input.clock?.now ?? (() => new Date());
     this.log = input.logger;
     this.sellerId = input.sellerId;
 
     if (this.transport) {
-      this.log?.info("OwnedEcommerceMerchandisingAdvisor: transport available — AI enrichment enabled", {
-        sellerId: this.sellerId ?? "unknown",
-      });
+      this.log?.info(
+        "OwnedEcommerceMerchandisingAdvisor: transport available — AI enrichment enabled",
+        {
+          sellerId: this.sellerId ?? "unknown",
+        },
+      );
     } else {
-      this.log?.info("OwnedEcommerceMerchandisingAdvisor: no transport — deterministic fallback only", {
-        sellerId: this.sellerId ?? "unknown",
-      });
+      this.log?.info(
+        "OwnedEcommerceMerchandisingAdvisor: no transport — deterministic fallback only",
+        {
+          sellerId: this.sellerId ?? "unknown",
+        },
+      );
     }
   }
 
@@ -276,7 +285,8 @@ export class OwnedEcommerceMerchandisingAdvisor {
       const parsed = this.parseResponse(result.rawResponse);
       return this.buildResult(parsed);
     } catch (err) {
-      this.log?.error("rankCandidatesWithReasoning failed — falling back to deterministic ranking",
+      this.log?.error(
+        "rankCandidatesWithReasoning failed — falling back to deterministic ranking",
         err instanceof Error ? err : undefined,
       );
       return this.rankFallback(candidates, context);
@@ -292,9 +302,7 @@ export class OwnedEcommerceMerchandisingAdvisor {
    * and GEO FAQ ideas.
    * **Fallback**: product-name SEO title, empty meta/keywords/faq.
    */
-  async draftSeoGeoCopy(
-    candidate: StorefrontCandidate,
-  ): Promise<MerchandisingAdvisorResult> {
+  async draftSeoGeoCopy(candidate: StorefrontCandidate): Promise<MerchandisingAdvisorResult> {
     if (!this.transport) {
       return this.seoGeoFallback(candidate);
     }
@@ -333,7 +341,8 @@ export class OwnedEcommerceMerchandisingAdvisor {
       const parsed = this.parseResponse(result.rawResponse);
       return this.buildResult(parsed);
     } catch (err) {
-      this.log?.error("draftSeoGeoCopy failed — falling back to deterministic SEO/GEO",
+      this.log?.error(
+        "draftSeoGeoCopy failed — falling back to deterministic SEO/GEO",
         err instanceof Error ? err : undefined,
       );
       return this.seoGeoFallback(candidate);
@@ -391,7 +400,8 @@ export class OwnedEcommerceMerchandisingAdvisor {
       const parsed = this.parseResponse(result.rawResponse);
       return this.buildResult(parsed);
     } catch (err) {
-      this.log?.error("explainChannelTradeoffs failed — falling back to deterministic tradeoffs",
+      this.log?.error(
+        "explainChannelTradeoffs failed — falling back to deterministic tradeoffs",
         err instanceof Error ? err : undefined,
       );
       return this.channelTradeoffsFallback();
@@ -448,7 +458,8 @@ export class OwnedEcommerceMerchandisingAdvisor {
       const parsed = this.parseResponse(result.rawResponse);
       return this.buildResult(parsed);
     } catch (err) {
-      this.log?.error("proposeStorefrontExperiment failed — falling back to null experiment",
+      this.log?.error(
+        "proposeStorefrontExperiment failed — falling back to null experiment",
         err instanceof Error ? err : undefined,
       );
       return this.experimentFallback();
@@ -507,7 +518,8 @@ export class OwnedEcommerceMerchandisingAdvisor {
       const parsed = this.parseResponse(result.rawResponse);
       return this.buildResult(parsed);
     } catch (err) {
-      this.log?.error("identifyMissingEvidence failed — falling back to empty gap report",
+      this.log?.error(
+        "identifyMissingEvidence failed — falling back to empty gap report",
         err instanceof Error ? err : undefined,
       );
       return this.evidenceGapFallback();
@@ -708,11 +720,24 @@ export class OwnedEcommerceMerchandisingAdvisor {
       experimentProposal = null;
     }
 
-    const seoTitle = typeof parsed.seoSuggestions?.seoTitle === "string" ? parsed.seoSuggestions.seoTitle : undefined;
-    const seoDescription = typeof parsed.seoSuggestions?.seoDescription === "string" ? parsed.seoSuggestions.seoDescription : undefined;
-    const seoKeywords = Array.isArray(parsed.seoSuggestions?.keywords) ? parsed.seoSuggestions.keywords : undefined;
-    const geoSummary = typeof parsed.geoSuggestions?.geoSummary === "string" ? parsed.geoSuggestions.geoSummary : undefined;
-    const geoFaq = Array.isArray(parsed.geoSuggestions?.faq) ? parsed.geoSuggestions.faq : undefined;
+    const seoTitle =
+      typeof parsed.seoSuggestions?.seoTitle === "string"
+        ? parsed.seoSuggestions.seoTitle
+        : undefined;
+    const seoDescription =
+      typeof parsed.seoSuggestions?.seoDescription === "string"
+        ? parsed.seoSuggestions.seoDescription
+        : undefined;
+    const seoKeywords = Array.isArray(parsed.seoSuggestions?.keywords)
+      ? parsed.seoSuggestions.keywords
+      : undefined;
+    const geoSummary =
+      typeof parsed.geoSuggestions?.geoSummary === "string"
+        ? parsed.geoSuggestions.geoSummary
+        : undefined;
+    const geoFaq = Array.isArray(parsed.geoSuggestions?.faq)
+      ? parsed.geoSuggestions.faq
+      : undefined;
 
     return {
       reasoning: (parsed.reasoning ?? []).map((r) => ({

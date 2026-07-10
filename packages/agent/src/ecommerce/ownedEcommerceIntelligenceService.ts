@@ -264,13 +264,11 @@ export class OwnedEcommerceIntelligenceService {
 
     const advisorEnabled = process.env.MSL_OWNED_ECOMMERCE_ADVISOR_ENABLED === "true";
     if (advisorEnabled && this.deepSeekTransport) {
-      const advisor = new OwnedEcommerceMerchandisingAdvisor(
-        {
-          deepSeekTransport: this.deepSeekTransport,
-          ...(this.log !== undefined ? { logger: this.log } : {}),
-          ...(sellerId !== undefined ? { sellerId } : {}),
-        },
-      );
+      const advisor = new OwnedEcommerceMerchandisingAdvisor({
+        deepSeekTransport: this.deepSeekTransport,
+        ...(this.log !== undefined ? { logger: this.log } : {}),
+        ...(sellerId !== undefined ? { sellerId } : {}),
+      });
 
       this.log?.info("[owned-ecommerce] DeepSeek advisor enabled — enriching candidates", {
         candidateCount: candidates.length,
@@ -301,17 +299,23 @@ export class OwnedEcommerceIntelligenceService {
           const geoSug = seoValidation.sanitizedResult.geoSuggestions;
           deepSeekEnrichment = {
             ...(seoSug.seoTitle !== undefined ? { seoTitle: seoSug.seoTitle } : {}),
-            ...(seoSug.seoDescription !== undefined ? { seoDescription: seoSug.seoDescription } : {}),
+            ...(seoSug.seoDescription !== undefined
+              ? { seoDescription: seoSug.seoDescription }
+              : {}),
             ...(seoSug.keywords !== undefined ? { keywords: seoSug.keywords } : {}),
             ...(geoSug.geoSummary !== undefined ? { geoSummary: geoSug.geoSummary } : {}),
             ...(geoSug.faq !== undefined ? { faq: geoSug.faq } : {}),
           };
 
           if (!seoValidation.usable || !tradeoffValidation.usable) {
-            this.log?.warn("Advisor output partially blocked by validator — using sanitized enrichment", {
-              candidateId: c.id,
-              blockedClaimCount: seoValidation.blockedClaims.length + tradeoffValidation.blockedClaims.length,
-            });
+            this.log?.warn(
+              "Advisor output partially blocked by validator — using sanitized enrichment",
+              {
+                candidateId: c.id,
+                blockedClaimCount:
+                  seoValidation.blockedClaims.length + tradeoffValidation.blockedClaims.length,
+              },
+            );
           }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);

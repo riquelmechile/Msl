@@ -151,10 +151,12 @@ function channelTradeoffsFixture(): string {
 function experimentFixture(): string {
   return JSON.stringify({
     experimentProposal: {
-      hypothesis: "Un título SEO optimizado aumentará el CTR en Google Shopping un 15% vs título genérico.",
+      hypothesis:
+        "Un título SEO optimizado aumentará el CTR en Google Shopping un 15% vs título genérico.",
       metric: "CTR en Google Shopping (Search Console)",
       stopRule: "500 impresiones o 14 días, lo que ocurra primero.",
-      expectedLearning: "Validar si el SEO copy de DeepSeek supera al título derivado del producto.",
+      expectedLearning:
+        "Validar si el SEO copy de DeepSeek supera al título derivado del producto.",
     },
     confidence: 0.75,
   });
@@ -227,9 +229,7 @@ describe("OwnedEcommerceMerchandisingAdvisor", () => {
         makeCandidate({ title: "Bike C" }),
       ];
 
-      const transport = new DeepSeekFakeTransport([
-        fakeCompletion(rankingFixture(candidates)),
-      ]);
+      const transport = new DeepSeekFakeTransport([fakeCompletion(rankingFixture(candidates))]);
 
       const advisor = new OwnedEcommerceMerchandisingAdvisor({
         deepSeekTransport: transport,
@@ -276,9 +276,7 @@ describe("OwnedEcommerceMerchandisingAdvisor", () => {
     it("with FakeTransport returns SEO/GEO content", async () => {
       const candidate = makeCandidate({ title: "Zapatillas Running" });
 
-      const transport = new DeepSeekFakeTransport([
-        fakeCompletion(seoGeoFixture(candidate)),
-      ]);
+      const transport = new DeepSeekFakeTransport([fakeCompletion(seoGeoFixture(candidate))]);
 
       const advisor = new OwnedEcommerceMerchandisingAdvisor({ deepSeekTransport: transport });
 
@@ -315,9 +313,7 @@ describe("OwnedEcommerceMerchandisingAdvisor", () => {
     it("with FakeTransport returns all 4 channels", async () => {
       const candidate = makeCandidate();
 
-      const transport = new DeepSeekFakeTransport([
-        fakeCompletion(channelTradeoffsFixture()),
-      ]);
+      const transport = new DeepSeekFakeTransport([fakeCompletion(channelTradeoffsFixture())]);
 
       const advisor = new OwnedEcommerceMerchandisingAdvisor({ deepSeekTransport: transport });
 
@@ -355,9 +351,7 @@ describe("OwnedEcommerceMerchandisingAdvisor", () => {
     it("with FakeTransport returns hypothesis, metric, stopRule", async () => {
       const candidate = makeCandidate({ title: "Nuevo Producto Categoría X" });
 
-      const transport = new DeepSeekFakeTransport([
-        fakeCompletion(experimentFixture()),
-      ]);
+      const transport = new DeepSeekFakeTransport([fakeCompletion(experimentFixture())]);
 
       const advisor = new OwnedEcommerceMerchandisingAdvisor({ deepSeekTransport: transport });
 

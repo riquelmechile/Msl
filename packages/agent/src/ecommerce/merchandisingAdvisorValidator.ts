@@ -1,4 +1,7 @@
-import type { MerchandisingAdvisorResult, MissingEvidenceReport } from "./ownedEcommerceMerchandisingAdvisor.js";
+import type {
+  MerchandisingAdvisorResult,
+  MissingEvidenceReport,
+} from "./ownedEcommerceMerchandisingAdvisor.js";
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -50,10 +53,7 @@ const MEDICAL_TECHNICAL_PATTERNS = [
   /\bFDA\b/,
 ];
 
-const MIXED_ACCOUNT_PATTERNS = [
-  /\bPlasticov\b/i,
-  /\bMaustian\b/i,
-];
+const MIXED_ACCOUNT_PATTERNS = [/\bPlasticov\b/i, /\bMaustian\b/i];
 
 const VALID_TARGET_AGENTS = new Set([
   "cost-supplier",
@@ -234,7 +234,9 @@ function checkMixedAccounts(
   // where cross-references happen
   const hasComparisonContext =
     result.channelTradeoffs.length > 0 &&
-    result.channelTradeoffs.some((ct) => ct.channel !== "owned-ecommerce" && ct.channel !== "unknown");
+    result.channelTradeoffs.some(
+      (ct) => ct.channel !== "owned-ecommerce" && ct.channel !== "unknown",
+    );
 
   for (const claim of claims) {
     for (const pattern of MIXED_ACCOUNT_PATTERNS) {
@@ -349,7 +351,9 @@ function buildSeoSuggestions(
   sanitizedFields: Set<string>,
 ): MerchandisingAdvisorResult["seoSuggestions"] {
   const seoTitle = sanitizedFields.has("seoTitle") ? "[sanitized]" : result.seoSuggestions.seoTitle;
-  const seoDescription = sanitizedFields.has("seoDescription") ? "[sanitized]" : result.seoSuggestions.seoDescription;
+  const seoDescription = sanitizedFields.has("seoDescription")
+    ? "[sanitized]"
+    : result.seoSuggestions.seoDescription;
   const keywords = sanitizedFields.has("seoKeyword")
     ? ["[sanitized]"]
     : [...(result.seoSuggestions.keywords ?? [])];
@@ -417,7 +421,9 @@ function sanitizeResult(
         : ct.overallAssessment,
     })),
     missingEvidenceRequests: evidenceRequests,
-    experimentProposal: sanitizedFields.has("experimentHypothesis") ? null : result.experimentProposal,
+    experimentProposal: sanitizedFields.has("experimentHypothesis")
+      ? null
+      : result.experimentProposal,
     confidence: result.confidence,
     noMutationExecuted: true,
   };
