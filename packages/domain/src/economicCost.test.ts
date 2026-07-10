@@ -6,7 +6,6 @@ import {
   type CostComponentType,
   type CostDataSource,
   type CostVerification,
-  type EconomicCostComponent,
 } from "./economicCost.js";
 import type { Money } from "./money.js";
 
@@ -134,7 +133,7 @@ describe("createEconomicCostComponent", () => {
   it("rejects invalid cost type", () => {
     const result = createEconomicCostComponent({
       sellerId: "seller-1",
-      // @ts-expect-error
+      // @ts-expect-error testing invalid cost type rejection
       type: "rent",
       amount: clp1k,
       source: "unknown",

@@ -434,6 +434,7 @@ describe("company agent registry and request_agent_evidence", () => {
       "morning-report",
       "eod-summary",
       "unanswered-questions",
+      "finance-director",
     ]);
     const marketCatalog = agents.find((agent) => agent.id === "market-catalog");
     expect(marketCatalog?.source).toBe("lane-contract");

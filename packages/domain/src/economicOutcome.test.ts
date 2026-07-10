@@ -6,7 +6,6 @@ import {
   transitionOutcome,
   VALID_OUTCOME_TRANSITIONS,
   type EconomicOutcome,
-  type EconomicOutcomeStatus,
 } from "./economicOutcome.js";
 
 describe("EconomicOutcomeStatus", () => {
@@ -142,6 +141,55 @@ describe("transitionOutcome", () => {
   it("rejects observing → verified (skip observed)", () => {
     outcome = transitionOutcome(outcome, "observing");
     expect(() => transitionOutcome(outcome, "verified")).toThrow(EconomicOutcomeStateError);
+  });
+
+  it("invalid transition does not modify the original outcome (immutability)", () => {
+    const original = outcome;
+    expect(original.status).toBe("pending");
+
+    expect(() => transitionOutcome(original, "verified")).toThrow(EconomicOutcomeStateError);
+
+    // Original is unchanged after failed transition
+    expect(original.status).toBe("pending");
+    expect(original.confidence).toBe(0);
+    expect(original.completeness).toBe(0);
+    expect(original.outcomeId).toBeTruthy();
+    expect(original.createdAt).toBeGreaterThan(0);
+  });
+
+  it("verified cannot transition back to pending", () => {
+    const current = transitionOutcome(
+      transitionOutcome(transitionOutcome(outcome, "observing"), "observed"),
+      "verified",
+    );
+    expect(current.status).toBe("verified");
+    expect(() => transitionOutcome(current, "pending")).toThrow(EconomicOutcomeStateError);
+  });
+
+  it("disputed is terminal — cannot transition to anything", () => {
+    const current = transitionOutcome(
+      transitionOutcome(transitionOutcome(outcome, "observing"), "observed"),
+      "disputed",
+    );
+    expect(current.status).toBe("disputed");
+    expect(() => transitionOutcome(current, "pending")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "observing")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "observed")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "verified")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "invalidated")).toThrow(EconomicOutcomeStateError);
+  });
+
+  it("invalidated is terminal — cannot transition to anything", () => {
+    const current = transitionOutcome(
+      transitionOutcome(transitionOutcome(outcome, "observing"), "observed"),
+      "invalidated",
+    );
+    expect(current.status).toBe("invalidated");
+    expect(() => transitionOutcome(current, "pending")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "observing")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "observed")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "verified")).toThrow(EconomicOutcomeStateError);
+    expect(() => transitionOutcome(current, "disputed")).toThrow(EconomicOutcomeStateError);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { CostComponentType, EconomicCostComponent } from "./economicCost.js";
+import type { CostComponentType } from "./economicCost.js";
 import { CurrencyMismatchError, type Currency, type Money } from "./money.js";
 import {
   type CalculationStatus,
@@ -91,7 +91,7 @@ export function computeUnitEconomics(input: UnitEconomicsInput): UnitEconomicsSn
   const { sellerId, grossRevenue, currency, costComponents } = input;
 
   // Validate all costs match the declared currency
-  const costs = costComponents as readonly EconomicCostComponent[];
+  const costs = costComponents;
   assertUniformCurrency({ currency }, ...costs.map((c) => c.amount));
 
   // Classify costs by type

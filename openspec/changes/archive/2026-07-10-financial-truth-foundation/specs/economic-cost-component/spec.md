@@ -8,7 +8,7 @@ Decompose costs with auditable provenance. Each component captures a single cost
 
 ### Requirement: Cost Type Enumeration
 
-The system MUST support exactly 11 `CostComponentType` values: `cogs`, `marketplace_fee`, `shipping`, `advertising`, `discounts`, `refunds`, `taxes`, `financing`, `landed_cost`, `packaging`, `other`. Invalid types MUST be rejected at construction.
+The system MUST support exactly 12 `CostComponentType` values: `product_cost`, `marketplace_fee`, `shipping`, `advertising`, `seller_discount`, `refund`, `return`, `tax`, `financing`, `landed_cost`, `packaging`, `other`. Invalid types MUST be rejected at construction.
 
 #### Scenario: Valid cost type accepted
 

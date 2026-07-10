@@ -4,21 +4,22 @@ import {
   computeMargin,
   computeNetProfit,
   computeUnitEconomics,
-  type ProfitResult,
 } from "./economicCalculation.js";
-import { createEconomicCostComponent, type EconomicCostComponent } from "./economicCost.js";
+import {
+  createEconomicCostComponent,
+  type EconomicCostComponent,
+  type EconomicCostComponentInput,
+} from "./economicCost.js";
+import type { CostComponentType } from "./economicCost.js";
 import { CurrencyMismatchError, type Money } from "./money.js";
-import type { CalculationStatus, UnitEconomicsInput } from "./unitEconomics.js";
+import type { UnitEconomicsInput } from "./unitEconomics.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const now = Date.now();
 
 function cost(
-  overrides: Partial<Parameters<typeof createEconomicCostComponent>[0]> & {
-    type: string;
-    amount: Money;
-  },
+  overrides: { type: CostComponentType; amount: Money } & Partial<EconomicCostComponentInput>,
 ): EconomicCostComponent {
   const result = createEconomicCostComponent({
     sellerId: "seller-1",
@@ -28,7 +29,7 @@ function cost(
     verification: "verified",
     confidence: 0.9,
     ...overrides,
-  } as Parameters<typeof createEconomicCostComponent>[0]);
+  });
   if (!result.success) throw new Error(`Failed to create cost component: ${result.error.message}`);
   return result.component;
 }

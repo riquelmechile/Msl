@@ -62,7 +62,7 @@ All additive — zero existing code modified. Remove new domain modules from bar
 ## Success Criteria
 
 - [ ] `Money` enforces integer `amountMinor`, CLP + USD, no floating point
-- [ ] `EconomicCostComponent` validates against 11 `CostComponentType` values
+- [ ] `EconomicCostComponent` validates against 12 `CostComponentType` values
 - [ ] `UnitEconomicsSnapshot` computes contribution profit, net profit, both margins correctly
 - [ ] `EconomicOutcome` enforces valid transitions; rejects `verified → observed`
 - [ ] Calculation engine never returns NaN or Infinity on valid input

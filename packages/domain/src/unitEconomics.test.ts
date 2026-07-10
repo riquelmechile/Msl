@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createUnitEconomicsSnapshot, type UnitEconomicsSnapshot } from "./unitEconomics.js";
+import { createUnitEconomicsSnapshot } from "./unitEconomics.js";
 import { createEconomicCostComponent } from "./economicCost.js";
 import type { Money } from "./money.js";
 

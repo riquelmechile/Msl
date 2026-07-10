@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
-import { createEconomicOutcome } from "@msl/domain";
+import type { UnitEconomicsSnapshot } from "@msl/domain";
+import { createEconomicOutcome, createUnitEconomicsSnapshot } from "@msl/domain";
 import type { EconomicOutcomeStore } from "@msl/memory";
 import { createSqliteEconomicOutcomeStore } from "@msl/memory";
 import {
   createInspectUnitEconomicsTool,
   createInspectEconomicOutcomeTool,
   createListMissingEconomicInputsTool,
+  createSummarizeProfitTool,
 } from "./economicTools.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -21,6 +23,22 @@ function makeOutcome(sellerId: string, overrides: Record<string, string> = {}) {
   return createEconomicOutcome({
     sellerId,
     ...overrides,
+  });
+}
+
+function makeSnapshot(overrides: Partial<UnitEconomicsSnapshot> & { sellerId: string }): UnitEconomicsSnapshot {
+  return createUnitEconomicsSnapshot({
+    sellerId: overrides.sellerId,
+    grossRevenue: 100000,
+    currency: (overrides.currency ?? "CLP"),
+    costComponents: [],
+    ...(overrides.sku !== undefined ? { sku: overrides.sku } : {}),
+    ...(overrides.orderId !== undefined ? { orderId: overrides.orderId } : {}),
+    ...(overrides.itemId !== undefined ? { itemId: overrides.itemId } : {}),
+    ...(overrides.accountId !== undefined ? { accountId: overrides.accountId } : {}),
+    ...(overrides.channel !== undefined ? { channel: overrides.channel } : {}),
+    ...(overrides.product !== undefined ? { product: overrides.product } : {}),
+    ...(overrides.period !== undefined ? { period: overrides.period } : {}),
   });
 }
 
@@ -42,18 +60,18 @@ describe("inspect_unit_economics", () => {
     expect(result.noExternalMutationExecuted).toBe(true);
   });
 
-  it("returns outcomes for valid seller", async () => {
+  it("returns snapshots for valid seller", async () => {
     const store = createStore();
-    store.insertOutcome(makeOutcome("plasticov"));
-    store.insertOutcome(makeOutcome("plasticov"));
+    store.insertUnitEconomicsSnapshot(makeSnapshot({ sellerId: "plasticov" }));
+    store.insertUnitEconomicsSnapshot(makeSnapshot({ sellerId: "plasticov" }));
 
     const tool = createInspectUnitEconomicsTool(store);
     const result = await tool.execute({ sellerId: "plasticov" });
     expect(result.status).toBe("ok");
     expect(result.noExternalMutationExecuted).toBe(true);
 
-    const data = result.data as { outcomes: unknown[]; total: number };
-    expect(data.outcomes.length).toBe(2);
+    const data = result.data as { snapshots: unknown[]; total: number };
+    expect(data.snapshots.length).toBe(2);
     expect(data.total).toBe(2);
   });
 });
@@ -180,5 +198,68 @@ describe("list_missing_economic_inputs", () => {
     const result = await tool.execute({ sellerId: "maustian" });
     expect(result.status).toBe("ok");
     expect(result.noExternalMutationExecuted).toBe(true);
+  });
+});
+
+// ── summarize_profit tests ──────────────────────────────────────────────────
+
+describe("summarize_profit", () => {
+  it("returns store-unavailable error when store is missing", async () => {
+    const tool = createSummarizeProfitTool(undefined);
+    const result = await tool.execute({ sellerId: "plasticov", currency: "CLP" });
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns error when sellerId is missing", async () => {
+    const store = createStore();
+    const tool = createSummarizeProfitTool(store);
+    const result = await tool.execute({ currency: "CLP" });
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns error when currency is missing", async () => {
+    const store = createStore();
+    const tool = createSummarizeProfitTool(store);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns error for invalid currency", async () => {
+    const store = createStore();
+    const tool = createSummarizeProfitTool(store);
+    const result = await tool.execute({ sellerId: "plasticov", currency: "EUR" });
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns zeroes when no data exists", async () => {
+    const store = createStore();
+    const tool = createSummarizeProfitTool(store);
+    const result = await tool.execute({ sellerId: "plasticov", currency: "CLP" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.totalRevenue).toBe(0);
+    expect(data.totalCosts).toBe(0);
+    expect(data.netProfit).toBe(0);
+    expect(data.snapshotCount).toBe(0);
+  });
+
+  it("returns profit summary for valid seller and currency", async () => {
+    const store = createStore();
+    store.insertUnitEconomicsSnapshot(makeSnapshot({ sellerId: "plasticov", currency: "CLP" }));
+
+    const tool = createSummarizeProfitTool(store);
+    const result = await tool.execute({ sellerId: "plasticov", currency: "CLP" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.sellerId).toBe("plasticov");
+    expect(data.currency).toBe("CLP");
+    expect(typeof data.totalRevenue).toBe("number");
+    expect(typeof data.netProfit).toBe("number");
   });
 });

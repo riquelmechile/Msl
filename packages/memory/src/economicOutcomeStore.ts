@@ -4,7 +4,7 @@ import type {
   EconomicOutcomeStatus,
   UnitEconomicsSnapshot,
 } from "@msl/domain";
-import { EconomicOutcomeStateError, transitionOutcome } from "@msl/domain";
+import { transitionOutcome } from "@msl/domain";
 import type { Currency } from "@msl/domain";
 import Database from "better-sqlite3";
 
@@ -40,21 +40,6 @@ type OutcomeRow = {
   invalidated_at: number | null;
   verification_reason: string | null;
   no_mutation_executed: number;
-};
-
-type CostComponentRow = {
-  id: string;
-  seller_id: string;
-  type: string;
-  amount_minor: number;
-  currency: string;
-  source: string;
-  source_record_id: string | null;
-  occurred_at: number;
-  observed_at: number;
-  verification: string;
-  confidence: number;
-  metadata_json: string;
 };
 
 type UnitEconomicsRow = {
@@ -99,6 +84,11 @@ export type EconomicOutcomeStore = {
   listMissingInputs(
     sellerId: string,
   ): Array<{ outcomeId: string; missingTypes: CostComponentType[] }>;
+  insertUnitEconomicsSnapshot(snapshot: UnitEconomicsSnapshot): UnitEconomicsSnapshot;
+  listUnitEconomicsSnapshots(
+    sellerId: string,
+    opts?: { snapshotId?: string; orderId?: string; itemId?: string; sku?: string; limit?: number },
+  ): UnitEconomicsSnapshot[];
   summarizeProfit(
     sellerId: string,
     currency: Currency,
@@ -345,6 +335,38 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  const getSnapshotByIdStmt = db.prepare(
+    "SELECT * FROM unit_economics_snapshots WHERE snapshot_id = ? AND seller_id = ?",
+  );
+
+  const listSnapshotsBySellerStmt = db.prepare(`
+    SELECT * FROM unit_economics_snapshots
+    WHERE seller_id = ?
+    ORDER BY calculated_at DESC
+    LIMIT ?
+  `);
+
+  const listSnapshotsBySellerAndOrderStmt = db.prepare(`
+    SELECT * FROM unit_economics_snapshots
+    WHERE seller_id = ? AND order_id = ?
+    ORDER BY calculated_at DESC
+    LIMIT ?
+  `);
+
+  const listSnapshotsBySellerAndItemStmt = db.prepare(`
+    SELECT * FROM unit_economics_snapshots
+    WHERE seller_id = ? AND item_id = ?
+    ORDER BY calculated_at DESC
+    LIMIT ?
+  `);
+
+  const listSnapshotsBySellerAndSkuStmt = db.prepare(`
+    SELECT * FROM unit_economics_snapshots
+    WHERE seller_id = ? AND sku = ?
+    ORDER BY calculated_at DESC
+    LIMIT ?
+  `);
+
   return {
     insertOutcome(outcome) {
       const tx = db.transaction(() => {
@@ -502,6 +524,55 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
       }
 
       return result;
+    },
+
+    insertUnitEconomicsSnapshot(snapshot) {
+      const periodStart = snapshot.period?.start ?? null;
+      const periodEnd = snapshot.period?.end ?? null;
+      const periodJson =
+        periodStart !== null && periodEnd !== null
+          ? JSON.stringify({ start: periodStart, end: periodEnd })
+          : null;
+
+      const snapshotJson = JSON.stringify(snapshot);
+
+      insertSnapshotStmt.run(
+        snapshot.snapshotId,
+        snapshot.sellerId,
+        snapshot.accountId ?? null,
+        snapshot.channel ?? null,
+        snapshot.orderId ?? null,
+        snapshot.itemId ?? null,
+        snapshot.sku ?? null,
+        snapshot.product ?? null,
+        periodJson,
+        snapshot.currency,
+        snapshotJson,
+        snapshot.calculatedAt,
+      );
+
+      return snapshot;
+    },
+
+    listUnitEconomicsSnapshots(sellerId, opts = {}) {
+      const limit = Math.max(1, Math.min(opts.limit ?? 100, 1000));
+
+      let rows: UnitEconomicsRow[];
+
+      if (opts.snapshotId) {
+        const row = getSnapshotByIdStmt.get(opts.snapshotId, sellerId) as UnitEconomicsRow | undefined;
+        rows = row ? [row] : [];
+      } else if (opts.orderId) {
+        rows = listSnapshotsBySellerAndOrderStmt.all(sellerId, opts.orderId, limit) as UnitEconomicsRow[];
+      } else if (opts.itemId) {
+        rows = listSnapshotsBySellerAndItemStmt.all(sellerId, opts.itemId, limit) as UnitEconomicsRow[];
+      } else if (opts.sku) {
+        rows = listSnapshotsBySellerAndSkuStmt.all(sellerId, opts.sku, limit) as UnitEconomicsRow[];
+      } else {
+        rows = listSnapshotsBySellerStmt.all(sellerId, limit) as UnitEconomicsRow[];
+      }
+
+      return rows.map(snapshotFromRow);
     },
 
     summarizeProfit(sellerId, currency, opts = {}) {

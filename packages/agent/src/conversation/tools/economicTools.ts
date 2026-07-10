@@ -8,13 +8,13 @@ export function createInspectUnitEconomicsTool(store?: EconomicOutcomeStore): To
   return {
     name: "inspect_unit_economics",
     description:
-      "Read-only inspection of unit economics snapshots for a specific seller. No external mutations are executed. Use this to review financial performance at the order/item level.",
+      "Read-only inspection of unit economics snapshots for a specific seller. Queries the unit_economics_snapshots table to review financial performance at the order/item level. Supports filtering by snapshotId, orderId, itemId, and SKU. No external mutations are executed.",
     parameters: {
       type: "object",
       properties: {
         sellerId: {
           type: "string",
-          description: "Seller ID whose unit economics to inspect.",
+          description: "Seller ID whose unit economics snapshots to inspect.",
         },
         snapshotId: {
           type: "string",
@@ -35,7 +35,7 @@ export function createInspectUnitEconomicsTool(store?: EconomicOutcomeStore): To
       },
       required: ["sellerId"],
     },
-    async execute(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    execute(args: Record<string, unknown>): Record<string, unknown> {
       const sellerId = safeString(args.sellerId);
       if (!sellerId) {
         return {
@@ -54,14 +54,29 @@ export function createInspectUnitEconomicsTool(store?: EconomicOutcomeStore): To
       }
 
       const snapshotId = safeString(args.snapshotId);
-      const outcomes = store.listOutcomesBySeller(sellerId, { limit: 50 });
+      const orderId = safeString(args.orderId);
+      const itemId = safeString(args.itemId);
+      const sku = safeString(args.sku);
+
+      const opts: {
+        snapshotId?: string;
+        orderId?: string;
+        itemId?: string;
+        sku?: string;
+        limit: number;
+      } = { limit: 50 };
+      if (snapshotId) opts.snapshotId = snapshotId;
+      if (orderId) opts.orderId = orderId;
+      if (itemId) opts.itemId = itemId;
+      if (sku) opts.sku = sku;
+
+      const snapshots = store.listUnitEconomicsSnapshots(sellerId, opts);
 
       return {
         status: "ok",
         data: {
-          outcomes,
-          total: outcomes.length,
-          snapshotId: snapshotId || null,
+          snapshots,
+          total: snapshots.length,
         },
         noExternalMutationExecuted: true,
       };
@@ -104,7 +119,7 @@ export function createInspectEconomicOutcomeTool(store?: EconomicOutcomeStore): 
       },
       required: ["sellerId"],
     },
-    async execute(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    execute(args: Record<string, unknown>): Record<string, unknown> {
       const sellerId = safeString(args.sellerId);
       if (!sellerId) {
         return {
@@ -227,7 +242,7 @@ export function createListMissingEconomicInputsTool(store?: EconomicOutcomeStore
       },
       required: ["sellerId"],
     },
-    async execute(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    execute(args: Record<string, unknown>): Record<string, unknown> {
       const sellerId = safeString(args.sellerId);
       if (!sellerId) {
         return {
@@ -263,6 +278,91 @@ export function createListMissingEconomicInputsTool(store?: EconomicOutcomeStore
           affectedSnapshots: missingInputs.length,
           details: missingInputs,
         },
+        noExternalMutationExecuted: true,
+      };
+    },
+  };
+}
+
+// ── Summarize Profit ────────────────────────────────────────────────────────
+
+export function createSummarizeProfitTool(store?: EconomicOutcomeStore): ToolDefinition {
+  return {
+    name: "summarize_profit",
+    description:
+      "Read-only profit summary for a specific seller and currency. Aggregates gross revenue and net profit across all unit economics snapshots. Supports date range filtering. No external mutations are executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "Seller ID whose profit to summarize.",
+        },
+        currency: {
+          type: "string",
+          description: "Currency to filter by (e.g., CLP, USD).",
+        },
+        startDate: {
+          type: "number",
+          description: "Optional start date filter (epoch ms). Snapshots before this are excluded.",
+        },
+        endDate: {
+          type: "number",
+          description: "Optional end date filter (epoch ms). Snapshots after this are excluded.",
+        },
+      },
+      required: ["sellerId", "currency"],
+    },
+    execute(args: Record<string, unknown>): Record<string, unknown> {
+      const sellerId = safeString(args.sellerId);
+      if (!sellerId) {
+        return {
+          status: "error",
+          error: "sellerId es obligatorio",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const currency = safeString(args.currency);
+      if (!currency) {
+        return {
+          status: "error",
+          error: "currency es obligatorio",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!store) {
+        return {
+          status: "error",
+          error: "Tienda no disponible",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const validCurrencies = new Set(["CLP", "USD"]);
+      if (!validCurrencies.has(currency)) {
+        return {
+          status: "error",
+          error: `Moneda inválida: "${currency}". Monedas válidas: ${[...validCurrencies].join(", ")}`,
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const startDate =
+        typeof args.startDate === "number" && !Number.isNaN(args.startDate) ? args.startDate : undefined;
+      const endDate =
+        typeof args.endDate === "number" && !Number.isNaN(args.endDate) ? args.endDate : undefined;
+
+      const opts: { startDate?: number; endDate?: number } = {};
+      if (startDate !== undefined) opts.startDate = startDate;
+      if (endDate !== undefined) opts.endDate = endDate;
+
+      const summary = store.summarizeProfit(sellerId, currency as "CLP" | "USD", opts);
+
+      return {
+        status: "ok",
+        data: summary,
         noExternalMutationExecuted: true,
       };
     },
