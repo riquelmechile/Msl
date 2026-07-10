@@ -246,7 +246,7 @@ async function handleEvidenceReEvaluation(params: {
         }
 
         // Check readiness
-        const readiness = await evidenceAggregator.checkReadiness(candidate.id);
+        const readiness = evidenceAggregator.checkReadiness(candidate.id);
 
         if (readiness === "waiting_for_evidence") {
           // Still waiting — not ready yet
@@ -254,8 +254,8 @@ async function handleEvidenceReEvaluation(params: {
         }
 
         // Readiness is "ready" or "blocked" → aggregate and propose
-        const summary = await evidenceAggregator.aggregateCandidateEvidence(candidate.id);
-        const enriched = await evidenceAggregator.applyEvidenceResponsesToCandidate(candidate);
+        const summary = evidenceAggregator.aggregateCandidateEvidence(candidate.id);
+        const enriched = evidenceAggregator.applyEvidenceResponsesToCandidate(candidate);
 
         // Persist enriched candidate
         try {

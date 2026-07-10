@@ -118,7 +118,7 @@ describe("OwnedEcommerceEvidenceAggregator", () => {
 
   // ── Test 1: Joins responses with min confidence ──────────────────
 
-  it("joins responses with min confidence (high+medium+high → medium)", async () => {
+  it("joins responses with min confidence (high+medium+high → medium)", () => {
     const req1 = makeRequest({ candidateId: "cand-1", kind: "cost-margin" });
     const req2 = makeRequest({ candidateId: "cand-1", kind: "market-demand" });
     const req3 = makeRequest({ candidateId: "cand-1", kind: "creative-assets" });
@@ -135,7 +135,7 @@ describe("OwnedEcommerceEvidenceAggregator", () => {
     store.answerRequest(makeResponse(req2, { confidence: "medium" }));
     store.answerRequest(makeResponse(req3, { confidence: "high" }));
 
-    const summary = await aggregator.aggregateCandidateEvidence("cand-1");
+    const summary = aggregator.aggregateCandidateEvidence("cand-1");
 
     expect(summary.responses).toHaveLength(3);
     expect(summary.answeredCount).toBe(3);
@@ -145,15 +145,15 @@ describe("OwnedEcommerceEvidenceAggregator", () => {
 
   // ── Test 2: Missing kind → waiting_for_evidence ──────────────────
 
-  it("missing kind → waiting_for_evidence", async () => {
+  it("missing kind → waiting_for_evidence", () => {
     // Candidate with no evidence requests at all
-    const readiness = await aggregator.checkReadiness("cand-nonexistent");
+    const readiness = aggregator.checkReadiness("cand-nonexistent");
     expect(readiness).toBe("waiting_for_evidence");
   });
 
   // ── Test 3: Expired response → confidence downgrade + blocker ────
 
-  it("expired response → confidence downgrade + blocker listed", async () => {
+  it("expired response → confidence downgrade + blocker listed", () => {
     // Create an expired request + an answered request for the same candidate
     const expiredReq = makeRequest({
       candidateId: "cand-expired",
@@ -174,7 +174,7 @@ describe("OwnedEcommerceEvidenceAggregator", () => {
     // Expire old requests
     store.expireOldRequests(new Date().toISOString());
 
-    const summary = await aggregator.aggregateCandidateEvidence("cand-expired");
+    const summary = aggregator.aggregateCandidateEvidence("cand-expired");
 
     // Expired counted in failedCount
     expect(summary.failedCount).toBe(1);
@@ -182,13 +182,13 @@ describe("OwnedEcommerceEvidenceAggregator", () => {
     expect(summary.totalRequests).toBe(2);
 
     // Readiness: expired in failedCount → blocked
-    const readiness = await aggregator.checkReadiness("cand-expired");
+    const readiness = aggregator.checkReadiness("cand-expired");
     expect(readiness).toBe("blocked");
   });
 
   // ── Test 4: applyEvidenceResponsesToCandidate enriches candidate ─
 
-  it("enriches candidate with evidence response IDs", async () => {
+  it("enriches candidate with evidence response IDs", () => {
     const candidate = makeCandidate({ id: "cand-4" });
 
     const req = makeRequest({ candidateId: "cand-4", kind: "cost-margin" });
@@ -202,7 +202,7 @@ describe("OwnedEcommerceEvidenceAggregator", () => {
       }),
     );
 
-    const enriched = await aggregator.applyEvidenceResponsesToCandidate(candidate);
+    const enriched = aggregator.applyEvidenceResponsesToCandidate(candidate);
 
     expect(enriched.evidenceIds).toContain("ev-cost-1");
     expect(enriched.evidenceIds).toContain("ev-cost-2");

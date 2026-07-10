@@ -34,7 +34,7 @@ export class OwnedEcommerceEvidenceAggregator {
 
   constructor(deps: EvidenceAggregatorDeps) {
     this.evidenceRequestStore = deps.evidenceRequestStore;
-    this.clock = deps.clock?.now ?? (() => new Date());
+    this.clock = deps.clock ? (): Date => deps.clock!.now() : (): Date => new Date();
     this.log = deps.logger;
   }
 
@@ -47,7 +47,7 @@ export class OwnedEcommerceEvidenceAggregator {
    * Missing required kinds and expired responses result in
    * `waiting_for_evidence` readiness.
    */
-  async aggregateCandidateEvidence(candidateId: string): Promise<EvidenceSummary> {
+  aggregateCandidateEvidence(candidateId: string): EvidenceSummary {
     const summary = this.evidenceRequestStore.summarizeEvidenceForCandidate(candidateId);
 
     if (!summary) {
@@ -76,10 +76,10 @@ export class OwnedEcommerceEvidenceAggregator {
    *
    * Returns a new candidate object — does NOT persist.
    */
-  async applyEvidenceResponsesToCandidate(
+  applyEvidenceResponsesToCandidate(
     candidate: StorefrontCandidate,
-  ): Promise<StorefrontCandidate> {
-    const summary = await this.aggregateCandidateEvidence(candidate.id);
+  ): StorefrontCandidate {
+    const summary = this.aggregateCandidateEvidence(candidate.id);
 
     const enriched = { ...candidate };
 
@@ -128,8 +128,8 @@ export class OwnedEcommerceEvidenceAggregator {
    *    as `failed`, `expired`, or `unsupported`, or the overall failed
    *    count is non-zero.
    */
-  async checkReadiness(candidateId: string): Promise<EvidenceReadiness> {
-    const summary = await this.aggregateCandidateEvidence(candidateId);
+  checkReadiness(candidateId: string): EvidenceReadiness {
+    const summary = this.aggregateCandidateEvidence(candidateId);
 
     if (summary.totalRequests === 0) {
       return "waiting_for_evidence";
@@ -167,7 +167,7 @@ export class OwnedEcommerceEvidenceAggregator {
    * candidate was previously in a waiting state (the daemon tracks
    * last proposal timestamp separately).
    */
-  shouldReRunAdvisor(_candidateId: string): boolean {
+  shouldReRunAdvisor(): boolean {
     // The daemon handles the "since last run" window via CEO dedupe (1 hour).
     // This method is a simple gate: if we ever get to this point, yes — re-run.
     // The daemon still applies dedupe so we don't re-propose within the window.

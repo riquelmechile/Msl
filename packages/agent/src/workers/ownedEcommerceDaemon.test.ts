@@ -792,7 +792,7 @@ describe("ownedEcommerceDaemon — evidence re-evaluation (Task 3.7)", () => {
         evidenceIds: [],
       },
       stock: { status: "in-stock", authority: "supplier-reported", quantity: 50 },
-      blockedReasons: ["incomplete-evidence" as never],
+      blockedReasons: ["incomplete-evidence"],
       redactedReasons: [],
       createdAt: new Date().toISOString(),
     };
@@ -892,7 +892,7 @@ describe("ownedEcommerceDaemon — evidence re-evaluation (Task 3.7)", () => {
         evidenceIds: [],
       },
       stock: { status: "in-stock", authority: "supplier-reported", quantity: 50 },
-      blockedReasons: ["incomplete-evidence" as never],
+      blockedReasons: ["incomplete-evidence"],
       redactedReasons: [],
       createdAt: new Date().toISOString(),
     };
@@ -969,7 +969,7 @@ describe("ownedEcommerceDaemon — evidence re-evaluation (Task 3.7)", () => {
     const allCeoMsgs = ctx.bus.claimNext("ceo", { limit: 100 });
     const reEvalProposals = allCeoMsgs.filter((m) => {
       try {
-        const payload = JSON.parse(m.payloadJson);
+        const payload = JSON.parse(m.payloadJson) as Record<string, unknown>;
         return payload.source === "evidence-reeval" && payload.sellerId === "plasticov";
       } catch {
         return false;

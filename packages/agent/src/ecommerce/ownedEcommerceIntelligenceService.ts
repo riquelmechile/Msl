@@ -232,11 +232,11 @@ export class OwnedEcommerceIntelligenceService {
     if (this.evidenceAggregator) {
       for (const c of candidates) {
         try {
-          const readiness = await this.evidenceAggregator.checkReadiness(c.id);
+          const readiness = this.evidenceAggregator.checkReadiness(c.id);
           if (readiness === "waiting_for_evidence" || readiness === "blocked") {
             // Mark candidate as waiting for evidence
-            if (!c.blockedReasons.includes("incomplete-evidence" as never)) {
-              c.blockedReasons = [...c.blockedReasons, "incomplete-evidence" as never];
+            if (!c.blockedReasons.includes("incomplete-evidence")) {
+              c.blockedReasons = [...c.blockedReasons, "incomplete-evidence"];
             }
             this.log?.info(
               "OwnedEcommerceIntelligenceService: candidate marked waiting_for_evidence",
