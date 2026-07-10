@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import Database from "better-sqlite3";
+import crypto from "node:crypto";
 import { EcommerceEvidenceRequestPlanner } from "./ecommerceEvidenceRequestPlanner.js";
 import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { MissingEvidenceReport } from "./ownedEcommerceMerchandisingAdvisor.js";
+import { createSqliteEvidenceRequestStore } from "@msl/memory";
+import type { EvidenceRequestStore } from "@msl/memory";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -310,6 +314,134 @@ describe("EcommerceEvidenceRequestPlanner", () => {
 
       expect(messages[0]!.timestamp).toBeGreaterThanOrEqual(before);
       expect(messages[0]!.timestamp).toBeLessThanOrEqual(after);
+    });
+  });
+
+  // ── Task 3.2: Store integration tests ───────────────────────────
+
+  describe("evidence request store integration", () => {
+    let db: Database.Database;
+    let store: EvidenceRequestStore;
+
+    beforeEach(() => {
+      db = new Database(":memory:");
+      store = createSqliteEvidenceRequestStore(db);
+    });
+
+    afterEach(() => {
+      db.close();
+    });
+
+    // Test 3.2.1: Persists to store when store available
+    it("persists to store when store available", () => {
+      const { bus } = makeCapturingBus();
+      const planner = new EcommerceEvidenceRequestPlanner({
+        messageBus: bus,
+        evidenceRequestStore: store,
+      });
+
+      const candidateId = "cand-store-1";
+      const requests = [makeReport({
+        candidateId,
+        category: "cost",
+        severity: "high",
+        targetAgentId: "cost-supplier",
+        question: "What is the supplier cost?",
+      })];
+
+      planner.planRequests(requests, candidateId);
+
+      // Verify store has the request
+      const stored = store.listRequestsForCandidate(candidateId);
+      expect(stored).toHaveLength(1);
+      expect(stored[0]!.kind).toBe("cost-margin");
+      expect(stored[0]!.targetAgentId).toBe("cost-supplier");
+      expect(stored[0]!.priority).toBe("high");
+      expect(stored[0]!.noMutationExecuted).toBe(true);
+    });
+
+    // Test 3.2.2: Emits to bus with correlationId
+    it("emits to bus with correlationId", () => {
+      const { bus, messages } = makeCapturingBus();
+      const planner = new EcommerceEvidenceRequestPlanner({
+        messageBus: bus,
+        evidenceRequestStore: store,
+      });
+
+      const requests = [makeReport({
+        targetAgentId: "creative-assets",
+        question: "Are images ready?",
+      })];
+
+      planner.planRequests(requests, "cand-bus-1");
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]!.correlationId).toBeTruthy();
+      expect(messages[0]!.correlationId).toMatch(/^[0-9a-f-]{36}$/); // UUID format
+      expect(messages[0]!.messageType).toBe("evidence-request");
+    });
+
+    // Test 3.2.3: Dedupe hash key matches (same candidate+kind+window → same dedupeKey)
+    it("dedupe hash key matches (same candidate+kind → same dedupeKey)", () => {
+      const fixedDate = new Date("2026-07-10T12:00:00Z");
+      const clock = { now: () => fixedDate };
+
+      const { bus } = makeCapturingBus();
+      const planner = new EcommerceEvidenceRequestPlanner({
+        messageBus: bus,
+        evidenceRequestStore: store,
+        clock,
+      });
+
+      const candidateId = "cand-dedupe";
+
+      // Two reports mapping to same kind for same candidate
+      const req1 = makeReport({
+        candidateId,
+        category: "cost",
+        targetAgentId: "cost-supplier",
+        question: "First cost question",
+      });
+      const req2 = makeReport({
+        candidateId,
+        category: "cost",
+        targetAgentId: "cost-supplier",
+        question: "Second cost question",
+      });
+
+      planner.planRequests([req1, req2], candidateId);
+
+      // Both should be in store (different messageHash), same dedupeKey since same candidate+kind+window
+      const stored = store.listRequestsForCandidate(candidateId);
+
+      // Second request with same candidate+kind+window → duplicate in store
+      // The store's UNIQUE on dedupe_key prevents the second insert
+      // So only 1 request is in the store but 2 messages returned
+      expect(stored).toHaveLength(1);
+      expect(stored[0]!.kind).toBe("cost-margin");
+      expect(stored[0]!.dedupeKey).toHaveLength(64);
+    });
+
+    // Test 3.2.4: Graceful degradation when store unavailable (no throw, returns plans)
+    it("graceful degradation when store unavailable (no throw, returns plans)", () => {
+      // No store → graceful degradation
+      const { bus } = makeCapturingBus();
+      const planner = new EcommerceEvidenceRequestPlanner({
+        messageBus: bus,
+        // evidenceRequestStore intentionally omitted
+      });
+
+      const requests = [
+        makeReport({ targetAgentId: "cost-supplier" }),
+        makeReport({ targetAgentId: "creative-assets", question: "Images?" }),
+      ];
+
+      // Should NOT throw
+      const messages = planner.planRequests(requests, "cand-graceful");
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]!.targetAgentId).toBe("cost-supplier");
+      expect(messages[1]!.targetAgentId).toBe("creative-assets");
     });
   });
 });
