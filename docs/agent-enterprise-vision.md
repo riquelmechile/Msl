@@ -1,188 +1,270 @@
 # MSL Agent Enterprise Vision
 
-MSL is a CEO-led AI company operating system: a hierarchy of specialized agents that learn, collaborate, and propose high-utility business actions while the human CEO keeps control of business decisions through Telegram approvals.
+MSL is una empresa agente liderada por un CEO: una jerarquía de agentes especializados que aprenden, colaboran y proponen acciones de negocio de alta utilidad mientras el CEO humano mantiene el control de las decisiones comerciales a través de aprobaciones en Telegram.
 
-MercadoLibre is the first operating channel, not the product boundary. The product goal is to build a cost-aware learning organization that can run Plasticov and Maustian today, then expand into owned ecommerce, social commerce, supplier operations, ads, content, and additional marketplaces.
+MercadoLibre es el primer canal operativo, no el límite del producto. El objetivo del producto es construir una organización de aprendizaje consciente de costos que pueda operar Plasticov y Maustian hoy y luego expandirse a ecommerce propio, redes sociales, operaciones de proveedores, publicidad, contenido y marketplaces adicionales.
 
-## Current implementation boundary
+## Lo que MSL es y no es
 
-- Telegram is CEO-only. The user talks to the CEO agent, not directly to workers, managers, departments, or specialists.
-- Workers, managers, and departments are internal orchestration resources coordinated by the CEO agent.
-- Workforce lessons are durable company-agent context. They can inform routing and proposals, but they never override system, safety, or CEO policy.
-- Active company-agent routing uses environment/configuration context for lessons and delegation. It does not grant admin authorization.
-- Cost/cache ledger evidence is internal operating evidence for routing decisions, not billing truth and not a user-facing dashboard.
-- Provider usage capture stores bounded numeric counters and boring metadata only. LLM context and ledger summaries must not include prompts, responses, tool args, secrets, raw metadata, full entry IDs, or raw agent/provider labels.
-- Cost/cache context belongs in Block C dynamic evidence, not the system prompt, so Block A remains prefix-cache stable.
+| MSL es                                 | Significado                                                                                                             |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Una empresa simulada                   | Los agentes actúan como departamentos, gerentes y especialistas con límites de responsabilidad claros.                  |
+| Controlada por un CEO                  | El CEO humano aprueba, rechaza o redirige las decisiones de negocio; los agentes investigan de forma autónoma y barata. |
+| Infraestructura de aprendizaje         | Cortex almacena memoria operativa; el feedback darwiniano refuerza patrones útiles y debilita los malos.                |
+| Operaciones de IA conscientes de costo | Los especialistas con caché de DeepSeek usan prompts estables y reglas de ruteo para mantener el razonamiento barato.   |
+| Infraestructura de comercio multicanal | MercadoLibre es el primer canal; la arquitectura debe crecer hacia ecommerce, redes sociales, proveedores y más.        |
 
-## What MSL is
+| MSL no es                                | Por qué                                                                            |
+| ---------------------------------------- | ---------------------------------------------------------------------------------- |
+| Un bot de sincronización de MercadoLibre | La sincronización es una operación acotada, no el producto.                        |
+| Un dashboard                             | MSL propone acciones, no solo muestra datos.                                       |
+| Una colección suelta de herramientas     | Los agentes colaboran con memoria compartida y evidencia entre pares.              |
+| Un motor de mutación autónoma            | Cada mutación requiere aprobación explícita del CEO.                               |
+| Un asistente único                       | Los especialistas tienen dominio acotado; el CEO coordina.                         |
+| Una UI de selección de agentes           | El CEO habla con el CEO Agent; los workers son recursos internos de orquestación.  |
+| Un dashboard de facturación              | La evidencia del ledger de costos es contexto operativo, no verdad de facturación. |
 
-| MSL is                               | Meaning                                                                                                                         |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| A simulated company                  | Agents act like departments, managers, and specialists with clear responsibility boundaries.                                    |
-| CEO-controlled                       | The human CEO approves, rejects, or redirects business decisions; agents do cheap autonomous work first.                        |
-| Learning infrastructure              | Cortex stores operational memory; Darwinian feedback strengthens useful patterns and weakens bad ones.                          |
-| Cost-aware AI operations             | DeepSeek cache-resident specialists use stable prompts and routing rules to keep repeated reasoning cheap.                      |
-| Multichannel commerce infrastructure | MercadoLibre is the first channel; the architecture must grow toward ecommerce, social, suppliers, ads, and other marketplaces. |
+## Principio de arquitectura
 
-## What MSL is not
+MSL utiliza un **núcleo inteligente dentro de una carcasa determinista de seguridad**.
 
-- Not a MercadoLibre sync bot.
-- Not just a dashboard.
-- Not a loose collection of tools.
-- Not an autonomous mutation engine that spends money or changes listings without approval.
-- Not a single assistant trying to know everything equally well.
-- Not a worker-selection UI or a place where the user chats directly with individual workers.
-- Not a billing dashboard; ledger evidence is operational routing context only.
+### El núcleo inteligente
 
-## Operating model
+El núcleo inteligente comprende objetivos abiertos, investiga, relaciona señales, formula hipótesis, solicita evidencia a otros agentes, debate alternativas, cuestiona supuestos, infiere oportunidades y riesgos, propone planes contextualizados, observa resultados y aprende de la experiencia real.
 
-MSL should behave like a real company whose employees are AI agents.
+### La carcasa determinista de seguridad
 
-```text
-Human CEO
-  └─ Executive / CEO Agent
-      ├─ Operations Manager
-      │   ├─ MercadoLibre Specialist
-      │   ├─ Stock / Fulfillment Specialist
-      │   └─ Claims / Reputation Specialist
-      ├─ Commercial Manager
-      │   ├─ Pricing / Margin Specialist
-      │   ├─ Ads Specialist
-      │   └─ Creative / Listing Specialist
-      ├─ Expansion Manager
-      │   ├─ Owned Ecommerce Specialist
-      │   ├─ Social Commerce Specialist
-      │   └─ Marketplace Expansion Specialist
-      └─ Finance / Cost Manager
-          ├─ Unit Economics Specialist
-          └─ LLM Cost / Cache Specialist
+La carcasa determinista protege el negocio con reglas no negociables: autenticación y autorización, alcance por `sellerId`/`accountId`, validación de esquemas, permisos, presupuestos máximos, aprobación humana, idempotencia, deduplicación, auditoría, límites legales, prevención de mutación accidental y aislamiento de secretos.
+
+Las reglas deterministas sirven para seguridad, filtrado, validación, detección inicial, cálculos exactos, scheduling básico, recuperación de fallos y reducción de costos. Pero las decisiones de negocio ambiguas deben aprovechar el razonamiento de DeepSeek, la memoria de Cortex, la evidencia operativa y la colaboración entre agentes.
+
+## Modelo operativo
+
+MSL debe funcionar como una empresa real cuyos empleados son agentes de IA.
+
+```
+CEO Humano
+  └─ CEO Agent
+      ├─ Director Financiero y Rentabilidad
+      ├─ Director de Portafolio
+      ├─ Director de Inventario, Compras e Importaciones
+      ├─ Director de Crecimiento Social
+      └─ Director de Expansión
+           ├─ Agente de Resultados Económicos
+           ├─ Agente de Lanzamiento de Productos
+           ├─ Agente de Oportunidades de Producto
+           ├─ Agente Inteligente de Precios
+           ├─ Agente de Promociones
+           ├─ Agente de Atención y Conversión
+           ├─ Agente de Postventa y Reputación
+           ├─ Agente de Experimentación
+           ├─ Agente Investigador y Entrenador
+           ├─ Agente de Memoria y Conocimiento
+           ├─ Agente de Inferencia Estratégica
+           ├─ Agente de Riesgo y Cumplimiento
+           ├─ Agente Coordinador de Objetivos
+           ├─ Agente Crítico o Abogado del Diablo
+           └─ Agente Evaluador de Agentes
 ```
 
-The hierarchy is not cosmetic. It defines who can investigate, who can request evidence, who can draft a proposal, and which decisions must be escalated to the CEO.
+La jerarquía no es cosmética. Define quién puede investigar, quién puede solicitar evidencia, quién puede redactar una propuesta y qué decisiones deben escalarse al CEO.
 
-## Decision loop
+### Entidades centrales de la empresa
 
-1. A specialist detects an opportunity or risk from operational data, market signals, or CEO strategy.
-2. The specialist asks other agents for missing evidence instead of guessing. Evidence requests flow through the Agent Message Bus to specialized responders (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager) who provide structured responses with confidence levels. See [`docs/architecture/multi-agent-evidence-responses.md`](./architecture/multi-agent-evidence-responses.md).
-3. The manager combines evidence into a proposal with expected upside, cost, risk, and confidence.
-4. The CEO agent sends only the business decision to Telegram.
-5. The human CEO approves, rejects, or redirects.
-6. Cortex records the outcome and Darwinian learning updates future behavior.
+| Entidad                      | Rol en la empresa agente                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
+| **CEO Humano**               | Aprueba, rechaza o redirige decisiones de negocio.                                    |
+| **CEO Agent**                | Coordina especialistas, sintetiza propuestas, interactúa con el CEO humano.           |
+| **Directores**               | Definen prioridades de área, consolidan evidencia, escalan al CEO.                    |
+| **Especialistas**            | Investigan dominios acotados, responden solicitudes de evidencia, generan propuestas. |
+| **Memoria Compartida**       | Cortex: grafo neuronal con aprendizaje hebbiano y poda darwiniana.                    |
+| **Memoria por Cuenta**       | Alcance de columnas `seller_id` en el modelo operacional.                             |
+| **Evidencia entre Agentes**  | Solicitudes y respuestas estructuradas entre especialistas vía Agent Message Bus.     |
+| **Aprendizaje**              | Aprobaciones (preferencias del CEO), resultados económicos (efectividad real).        |
+| **Experimentación**          | Diseño de pruebas controladas con atribución y aprendizaje.                           |
+| **Resultados Económicos**    | Relación causal entre acciones y rentabilidad real.                                   |
+| **Aprobación**               | "Dale" del CEO requerido para toda mutación de negocio.                               |
+| **Ejecución**                | Mutaciones con idempotencia, auditoría y posibilidad de rollback.                     |
+| **Post-Observación**         | Feedback darwiniano después de verificar el resultado real.                           |
+| **Retroalimentación Cortex** | Reforzar o penalizar constelaciones de activación según el outcome.                   |
 
-The CEO should not be interrupted for routine evidence collection. The CEO should be interrupted when there is a decision with meaningful business utility.
+### Aprendizaje humano y aprendizaje económico
 
-## Example: ads proposal with inter-agent evidence
+MSL aprende de dos fuentes distintas:
 
-```text
-Ads Specialist:
-  "Product X has strong conversion and low ad exposure. I need margin before proposing spend."
+- **Aprobación del CEO**: enseña preferencias y tolerancia al riesgo. Cuando el CEO aprueba o rechaza, Cortex refuerza o penaliza la constelación de nodos activada detrás de esa propuesta. Pero una aprobación **no debe tratarse automáticamente como una acción exitosa**.
+- **Resultado económico verificado**: enseña si una acción fue efectiva. Las propuestas aprobadas y ejecutadas se evalúan contra resultados reales de venta, margen, reclamos y costos. Solo el resultado económico comprobable califica una acción como exitosa.
+- **Correcciones**: cuando el CEO redirige una propuesta, la corrección se convierte en política duradera o memoria de especialista.
 
-Costs Specialist:
-  "Unit cost is CLP 4,200, MercadoLibre fee is CLP 1,600, current price is CLP 12,990.
-   Estimated contribution margin before ads is CLP 7,190. Safe CPA ceiling: CLP 2,100."
+## Organización objetivo
 
-Market Specialist:
-  "Catalog competitors are priced between CLP 12,490 and CLP 14,990.
-   Plasticov has better reputation; Maustian needs exposure."
+> **AVISO: Esta sección describe la organización TARGET. No está implementada en su totalidad.
+> Los agentes marcados con `[TARGET]` representan la visión de producto, no el estado actual del código.**
 
-Commercial Manager:
-  "Proposal: run a 7-day Maustian Product Ads test with CLP 2,000/day cap,
-   pause if CPA exceeds CLP 2,100 or ROAS drops below target."
+### 1. Director Financiero y Rentabilidad [TARGET]
 
-CEO Telegram escalation:
-  "I found a controlled ad test for Product X. Expected upside: more Maustian sales
-   without breaking margin. Max spend: CLP 14,000. Stop rule: CPA > CLP 2,100.
-   Approve? Reply 'dale', reject, or redirect."
-```
+Garantiza rentabilidad neta real con flujo de caja visible y retorno real sobre capital por cuenta, canal y período. Conecta cada acción comercial con su contribución al margen.
 
-## Learning model
+### 2. Agente de Resultados Económicos [TARGET]
 
-MSL learns like employees learn: through training, domain research, supervised decisions, and operational outcomes.
+Relaciona causalmente las acciones ejecutadas con ventas, márgenes, costos y rentabilidad. Mide el outcome económico real, no solo la ejecución. Atribuye resultados a agentes y decisiones específicas.
 
-| Learning input                 | How it improves the company                                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| CEO approvals/rejections       | Reinforces or penalizes the activated Cortex constellation behind a proposal.                                     |
-| Operational outcomes           | Compares proposal expectations against real sales, margin, claims, stock movement, and ad performance.            |
-| Corrections                    | Turns CEO redirection into durable policy or specialist memory.                                                   |
-| Specialist research            | Stores domain-specific knowledge such as marketplace rules, supplier terms, category dynamics, and ad benchmarks. |
-| Market data                    | Updates pricing, competition, demand, reputation, and opportunity detection.                                      |
-| Training/course-like knowledge | Lets agents improve their craft over time instead of relying only on generic prompting.                           |
+### 3. Agente de Lanzamiento de Productos [TARGET]
 
-Cortex is the shared company brain. Darwinian feedback is the performance review system: useful reasoning paths become easier to activate; bad or rejected paths become less likely to recur.
+Orquesta el ciclo completo: foto → costo → stock → investigación de competencia → generación de contenido → publicación → monitoreo → aprendizaje. Conecta el Supplier Mirror con el operational read model y la ejecución en el canal objetivo.
 
-## DeepSeek cache economics
+### 4. Agente de Oportunidades de Producto [TARGET]
 
-DeepSeek cache economics are a product constraint, not an implementation detail.
+Descubre productos, categorías y necesidades rentables analizando datos de mercado, competencia, tendencias y señales del Supplier Mirror. Detecta gaps de oferta donde MSL puede entrar con ventaja.
 
-MSL should prefer cache-resident specialists with stable prompts, stable role definitions, and predictable context blocks. The goal is to use strong LLM reasoning without paying full price for repeated context.
+### 5. Director de Portafolio [TARGET]
 
-| Cache principle            | Product implication                                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Stable specialist prefixes | Departments should have durable identities and responsibilities.                                         |
-| Reused company context     | Business identity, policies, and durable operating rules should remain cache-friendly.                   |
-| Small dynamic evidence     | Agents inject only the current evidence needed for a decision.                                           |
-| Cost-aware routing         | Cheap deterministic logic, cached specialists, or no LLM call should be used before expensive reasoning. |
-| Ledgered decisions         | The system should know which agent spent tokens, why, and what utility resulted.                         |
+Decide qué productos impulsar, mantener, corregir o abandonar según rentabilidad, rotación, costo de capital, riesgo de inventario y señal de mercado. Define la estrategia de portafolio por cuenta y canal.
 
-The company should become smarter without becoming expensive to operate.
+### 6. Agente Inteligente de Precios [TARGET]
 
-Cost-aware CEO guardrails prefer recent, cached, or lower-cost evidence when it is sufficient. The CEO agent should ask before expensive, broad, or duplicate investigations, while preserving exceptions for urgent, safety-related, explicitly approved, or policy-required work.
+Optimiza precios considerando margen, demanda, competencia, reputación, nivel de stock, elasticidad y estacionalidad. No aplica reglas fijas; razona con evidencia multicanal y aprende de resultados.
 
-## Commerce expansion path
+### 7. Agente de Promociones [TARGET]
 
-The current base business is two MercadoLibre Chile accounts:
+Diseña promociones con objetivo de rentabilidad incremental, no solo volumen. Mide canibalización, adelanto de demanda y costo real de la promoción. Aprende qué tipo de promoción funciona para qué producto.
 
-- **Plasticov**
-- **Maustian**
+### 8. Director de Inventario, Compras e Importaciones [TARGET]
 
-The business model is hybrid: dropshipping, arbitrage, and some owned stock. These accounts are parallel commercial channels; a configured sync path is only one bounded operation.
+Optimiza inventario, demanda, reposición, proveedores, capital inmovilizado y landed cost. Conecta señales del Supplier Mirror con proyecciones de venta y decisiones de compra.
 
-MSL must grow beyond MercadoLibre:
+### 9. Agente de Atención y Conversión [TARGET]
 
-- Owned ecommerce: evidence-backed Medusa-oriented storefront projections and static previews are implemented. Runtime approval execution (domain/store contracts, Medusa runtime executor, regression verification) is merged as a stacked-PR SDD cycle and gated behind approvals + env credentials. Live Medusa deployment, checkout, and public publish remain future gated work.
-  - **Supplier Intelligence (new)**: The Website Manager (Owned Ecommerce specialist) now receives `supplier-web-signal` messages from the Supplier Manager daemon via the Agent Message Bus. Six signal kinds (new-supplier-product, stock-gap, supplier-price-change, supplier-stock-restored, supplier-stock-out, publish-opportunity) are enqueued with deduplication. All processing is preparation-only (`noMutationExecuted: true`). The intelligence pipeline (Cortex reasoning, scoring, projection building) is in progress via stacked PRs. See `docs/architecture/owned-ecommerce-intelligence.md`.
-- Social channels and content/creative workflows.
-- Ripley and other marketplaces.
-- Supplier discovery, negotiation, and catalog intelligence.
-- Ads planning and budget control.
-- Opportunity detection across channels.
+Convierte preguntas y objeciones en ventas concretas. Responde con contexto real del producto, disponibilidad y política comercial. Aprende qué respuestas convierten y cuáles no.
 
-Every new channel should plug into the same company model: specialist agents, evidence requests, CEO approval gates, Cortex memory, Darwinian feedback, and cost-aware routing.
+### 10. Agente de Postventa y Reputación [TARGET]
 
-## Implemented kernel foundation
+Reduce reclamos, devoluciones, demoras y pérdidas de reputación. Detecta patrones de riesgo antes de que escalen. Propone acciones preventivas basadas en datos operativos reales.
 
-The current branch includes the first durable company-agent foundation. It makes the company model real enough for internal routing, learning, and cost-aware operating evidence while keeping Telegram CEO-only.
+### 11. Director de Crecimiento Social [TARGET]
 
-| Kernel capability            | Current boundary                                                                                              |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Company-agent registry       | Stores active company agents with department, stable prefix, inputs, outputs, evidence needs, and boundaries. |
-| Agent lifecycle              | Supports active/archived records; admin-capable mutation remains separated from routing context.              |
-| Skill and training memory    | Records bounded lessons for agents or departments as durable context, not policy overrides.                   |
-| Evidence request protocol    | Allows bounded evidence requests before CEO escalation; no external business mutation is executed.            |
-| Cost/cache ledger            | Tracks bounded counters and safe metadata for operating evidence; summaries are not billing truth.            |
-| Proposal escalation contract | Keeps Telegram focused on CEO approve/reject/redirect decisions.                                              |
-| Outcome feedback             | Connects approvals, rejections, operational outcomes, and corrections back into Cortex.                       |
+Define estrategia de presencia en redes sociales, contenido, publishing, comunidad y atribución. Coordina agentes de contenido, experimentación y creatividad.
 
-The kernel foundation is live: company-agent registry, learning store, admin learning tools, cost/cache ledger, and runtime approval execution contracts are all merged. **Multi-agent evidence response handling** lets specialist agents collaborate internally — when the owned-ecommerce advisor detects evidence gaps, five specialized responders (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager) provide structured evidence that enriches CEO candidates. Collaboration and learning are real; broader production mutations remain gated behind explicit approvals, env credentials, and CEO authorization.
+### 12. Agente de Experimentación [TARGET]
 
-## Current repository alignment
+Diseña experimentos controlados con hipótesis clara, grupo de control, métrica de éxito y validez estadística. Evita conclusiones falsas por sesgo de selección o varianza insuficiente.
 
-The repository already contains important foundations:
+### 13. Agente Investigador y Entrenador [TARGET]
 
-- Telegram runtime and `AgentLoop` wiring.
-- CEO and specialist lanes plus a durable company-agent registry.
-- Durable workforce lessons for agent/department context.
-- Cost/cache operating ledger summaries injected as Block C evidence.
-- Cortex neural graph memory and operational read model.
-- DeepSeek 3-block cache design and telemetry.
-- `delegate_to_subagent` as a static proposal-oriented primitive.
-- MercadoLibre tooling and approval-gated business operations.
+Mantiene conocimiento actualizado, fechado, atribuido y con caducidad. Investiga reglas de marketplace, términos de proveedores, benchmarks y tendencias. Transfiere conocimiento a otros agentes.
 
-The runtime execution path for owned ecommerce (contracts, Medusa executor, regression matrix) was completed as a stacked-PR SDD cycle and is merged. Remaining product hardening includes richer lifecycle workflows, broader evidence protocols, operational utility feedback, live production policy, and the roadmap for multichannel expansion.
+### 14. Agente de Memoria y Conocimiento [TARGET]
 
-## Related material
+Gestiona los tipos de memoria de la empresa: episódica (qué pasó), semántica (qué sabemos), procedural (cómo se hace), social (quién sabe qué) y económica (qué resultado dio).
 
-- [`docs/propuesta-ceo-socio.md`](./propuesta-ceo-socio.md) is prior Spanish proposal material for the CEO/Socio hierarchy and phased expansion.
-- [`../README.md`](../README.md) describes the current runtime boundary and implemented capabilities.
-- [`../ROADMAP.md`](../ROADMAP.md) tracks implementation phases.
-- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) describes the current monorepo architecture.
+### 15. Agente de Inferencia Estratégica [TARGET]
+
+Encuentra relaciones entre áreas que otros agentes no ven. Conecta una señal de proveedor con una oportunidad de pricing, una tendencia social con un gap de catálogo, un cambio de política con un riesgo de cumplimiento.
+
+### 16. Director de Expansión [TARGET]
+
+Planifica y ejecuta la entrada a nuevos canales: tienda propia, Ripley, Amazon, Alibaba, Global Selling. Evalúa cada canal por rentabilidad esperada, costo de entrada y ajuste al portafolio.
+
+### 17. Agente de Riesgo y Cumplimiento [TARGET]
+
+Protege el negocio sin inmovilizarlo. Detecta riesgos regulatorios, de marca, de cuenta y de canal. Propone controles proporcionados. Aprende de incidentes reales.
+
+### 18. Agente Coordinador de Objetivos [TARGET]
+
+Traduce la estrategia del CEO en objetivos medibles y asigna trabajo colaborativo entre agentes. Rompe objetivos grandes en work orders accionables con criterios de éxito claros.
+
+### 19. Agente Crítico o Abogado del Diablo [TARGET]
+
+Busca evidencia contraria y debilidades en cada propuesta antes de que llegue al CEO. Cuestiona supuestos, señala riesgos no considerados y fuerza a los otros agentes a defender su razonamiento.
+
+### 20. Agente Evaluador de Agentes [TARGET]
+
+Mide la calidad de predicción, el costo operativo, la contribución económica y la tasa de acierto de cada agente. Produce un scorecard que informa decisiones de scheduling, presupuesto y desarrollo.
+
+## Ciclo de decisión
+
+1. Un especialista detecta una oportunidad o riesgo a partir de datos operativos, señales de mercado o estrategia del CEO.
+2. El especialista solicita evidencia faltante a otros agentes en lugar de adivinar. Las solicitudes fluyen por el Agent Message Bus hacia responders especializados que devuelven respuestas estructuradas con nivel de confianza.
+3. El gerente combina la evidencia en una propuesta con upside esperado, costo, riesgo y confianza.
+4. El CEO Agent envía solo la decisión de negocio a Telegram.
+5. El CEO humano aprueba ("dale"), rechaza o redirige.
+6. Cortex registra el resultado y el feedback darwiniano actualiza el comportamiento futuro.
+
+El CEO no debe ser interrumpido para recolección rutinaria de evidencia. Debe ser interrumpido cuando hay una decisión con utilidad de negocio significativa.
+
+## Economía de caché DeepSeek
+
+La economía de caché de DeepSeek es una restricción de producto, no un detalle de implementación.
+
+| Principio de caché               | Implicancia de producto                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Identidad estable del agente     | Los especialistas deben tener roles, responsabilidades y prefijos de prompt duraderos.          |
+| Prefijos estables                | La identidad del negocio, políticas y reglas operativas deben permanecer cache-friendly.        |
+| Políticas durables               | Las reglas que cambian con frecuencia rompen la caché y deben estar en contexto dinámico.       |
+| Conocimiento duradero separado   | El conocimiento estable del dominio vive en bloques cacheados; la evidencia temporal es aparte. |
+| Contexto dinámico pequeño        | Los agentes inyectan solo la evidencia necesaria para la decisión actual.                       |
+| Sesiones de trabajo persistentes | Work Sessions permiten mantener contexto entre ciclos sin reenviar todo.                        |
+| Evitar reenviar lo irrelevante   | Cada token innecesario que se envía es costo operativo que no genera utilidad.                  |
+| Medir costo vs. utilidad         | El sistema debe saber qué agente gastó cuántos tokens, por qué y qué resultado obtuvo.          |
+
+La empresa debe volverse más inteligente sin volverse cara de operar. El CEO Agent prefiere evidencia reciente, cacheada o de bajo costo cuando es suficiente, y pregunta antes de investigaciones caras, amplias o duplicadas.
+
+## Camino de expansión comercial
+
+### Canales actuales
+
+- **Plasticov** — MercadoLibre Chile
+- **Maustian** — MercadoLibre Chile
+
+Estas cuentas son canales comerciales paralelos con precios, tipos de publicación y estrategias independientes. Una ruta de sincronización configurada (Plasticov → Maustian) es una operación acotada de seguridad, no una jerarquía de fábrica/sucursal.
+
+### Canales objetivo [TARGET]
+
+- Tienda propia (ecommerce con Medusa)
+- Ripley marketplace
+- Amazon
+- Alibaba / Global Selling
+- Canales sociales con atribución de venta
+- Otros marketplaces justificados por rentabilidad
+
+Cada nuevo canal debe conectarse al mismo modelo de empresa: agentes especialistas, solicitudes de evidencia, aprobación del CEO, memoria Cortex, feedback darwiniano y ruteo consciente de costos.
+
+## Límite actual de implementación
+
+Esta sección describe lo que está implementado y funcionando en el commit de referencia. Los detalles exactos de archivos, tool counts y PRs se documentan en [`ARCHITECTURE.md`](../ARCHITECTURE.md).
+
+### Kernel de empresa agente — implementado
+
+- **Agent Message Bus**: cola de mensajes asíncrona con SQLite, ciclo de claim/resolve/fail, deduplicación y prioridad.
+- **14 daemon handlers**: agentes especialistas que investigan en ciclos de 15 minutos. Cada uno lee datos operativos y propone al CEO. Nunca mutan sin aprobación.
+- **15 lane contracts**: definiciones tipadas de responsabilidades, entradas, salidas, límites y evidencia requerida para cada especialista.
+- **Evidence Response Router**: 5 responders especializados (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager) que responden solicitudes de evidencia entre agentes.
+- **Work Sessions**: sesiones de trabajo persistentes con cooldown y ciclo de vida completo para agentes que necesitan contexto entre ejecuciones.
+- **Account Assets + Account Brain**: cada cuenta de MercadoLibre es un activo estratégico con sus propias capacidades, riesgos, oportunidades y objetivo de rentabilidad.
+- **Cortex**: grafo neuronal en SQLite con aprendizaje hebbiano, poda darwiniana y propagación de activación por CTEs recursivas.
+- **DeepSeek**: cliente real con bloques de caché estables, disponible con `DEEPSEEK_API_KEY`.
+- **Operational Read Model**: snapshots SQLite de 8 tipos de entidad (listings, claims, questions, orders, messages, reputation, product-ads-insights, pricing).
+- **Supplier Mirror**: evidencia de proveedores local-first, políticas de target, adaptadores de fuente y dry-run de Jinpeng.
+- **Owned Ecommerce**: runtime con write boundary de Medusa (fail-closed), proyecciones de storefront y preview adapter. Activación controlada por variables de entorno.
+- **Creative Studio**: generación de imágenes y video con MiniMax, control de presupuesto y políticas. Activación controlada por variables de entorno.
+- **Telegram Bot**: runtime con grammY, CEO-only, multi-seller.
+- **MCP Server**: ~40 herramientas para clientes MCP.
+- **Aprobación "dale"**: toda mutación requiere aprobación explícita.
+- **Aislamiento por cuenta**: alcance de columnas `seller_id` en el modelo operacional y la memoria.
+
+### Pendiente de producción
+
+- **Credenciales reales de ML OAuth**: el OAuth manager está en modo stub. Sin `MERCADOLIBRE_CLIENT_ID`/`MERCADOLIBRE_CLIENT_SECRET` no hay ingesta real.
+- **Ingesta real**: los procesadores de background ingestion existen pero requieren credenciales reales para funcionar.
+- **Transporte real**: varios componentes usan transporte fake/mock pendiente de reemplazo con credenciales.
+- **Ecommerce productivo**: el write boundary de Medusa está implementado pero no activo sin credenciales.
+- **Canales sociales**: no implementados.
+- **Expansión multicanal**: no implementada.
+
+## Material relacionado
+
+- [`README.md`](../README.md) — introducción y uso actual
+- [`ARCHITECTURE.md`](../ARCHITECTURE.md) — arquitectura implementada
+- [`ROADMAP.md`](../ROADMAP.md) — capacidades pendientes y prioridades
+- [`docs/propuesta-ceo-socio.md`](./propuesta-ceo-socio.md) — material histórico de propuesta inicial
+- [`docs/PHILOSOPHY.md`](./PHILOSOPHY.md) — filosofía de ingeniería

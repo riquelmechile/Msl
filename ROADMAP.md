@@ -1,144 +1,339 @@
 # ROADMAP — MSL Agent Enterprise
 
-## Project identity
+> **Review date:** 2026-07-10
+> **Verified commit:** `413248c`
+> **State definitions:**
+>
+> - **Implementado** — merged, tested, available at HEAD.
+> - **Parcial** — foundation exists, not yet complete.
+> - **Preparado** — contract/spec defined, implementation pending.
+> - **Planificado** — on the roadmap, not yet started.
+> - **Producción pendiente** — code exists, needs credentials/deployment to run on real data.
 
-MSL is a CEO-led AI agent enterprise: a hierarchy of managers, departments, and specialists that perform cheap autonomous investigation, collaborate through evidence requests, learn through Cortex/Darwinian feedback, and escalate only business decisions to the human CEO through Telegram.
+## Implemented at HEAD
 
-MercadoLibre is the first operating channel, not the product boundary. The canonical product vision lives in [`docs/agent-enterprise-vision.md`](docs/agent-enterprise-vision.md).
+Verified against commit `413248c`:
 
-**Business:** Plasticov and Maustian are separate MercadoLibre Chile seller accounts used as parallel commercial channels. Both accounts can use independent prices, listing types, titles, and exposure strategies for the same or similar products. Fulfillment is product-level: some products use owned stock in Recoleta, Chile, while others are supplier-sourced/arbitrage. The configured Plasticov → Maustian sync path is a safety-bounded operation, not a factory/store hierarchy. MLC is the site code, not either account identity.
+| Capability                               | Status                   | Notes                                                                                    |
+| ---------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
+| Agent enterprise kernel                  | Implementado             | Company agent registry, learning store, skill store, admin lifecycle tools               |
+| Cortex neural graph + Darwinian learning | Implementado             | SQLite + recursive CTEs, Hebbian + pruning, constellation propagation                    |
+| DeepSeek integration                     | Implementado             | Real client, cache-friendly blocks, requires `DEEPSEEK_API_KEY`                          |
+| Agent Message Bus                        | Implementado             | SQLite-backed async queue, claim/resolve/fail, dedup, priority                           |
+| 14 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache                  |
+| 15 lane contracts                        | Implementado             | Typed `LANE_CONTRACTS` in `lanes.ts` with stable prefixes                                |
+| Work Sessions                            | Implementado             | `AgentWorkSessionStore` + `AgentWorkSessionRunner`, 6 sessionized lanes                  |
+| Account Assets + Account Brain           | Implementado             | `AccountAssetStore`, `AccountBrainService`, per-seller strategic tracking                |
+| Evidence Response Router                 | Implementado             | 5 responders: CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager |
+| Multi-agent evidence responses           | Implementado             | Inter-agent evidence request/response protocol, `OwnedEcommerceEvidenceAggregator`       |
+| Supplier Intelligence + Supplier Mirror  | Implementado             | Local-first, DeepSeek advisor, Jinpeng dry-run, disabled-by-default workers              |
+| Owned ecommerce runtime                  | Implementado (env-gated) | Medusa write boundary (fail-closed), preview adapter, requires env creds                 |
+| DeepSeek merchandising advisor           | Implementado             | `OwnedEcommerceMerchandisingAdvisor` for storefront recommendations                      |
+| Approval gates + "dale" execution        | Implementado             | Prepare → approve → execute → audit pipeline                                             |
+| Seller/account isolation                 | Implementado             | Column-scoped `seller_id` throughout operational model and Cortex                        |
+| Operational Read Model                   | Implementado             | 8 entity kinds, SQLite snapshots + checkpoints, per-seller isolation                     |
+| Background ingestion                     | Implementado             | 5 processors with checkpoint-based pagination                                            |
+| Telegram bot runtime                     | Implementado             | grammY, CEO-only, multi-seller (single-instance dale limitation)                         |
+| MCP server                               | Implementado             | ~40 tools, stdio, zod validation                                                         |
+| Creative Studio (MiniMax)                | Implementado (env-gated) | Image/video generation, policy engine, cost caps                                         |
+| CEO Inbox Store                          | Implementado             | Persists daemon proposals for CEO review                                                 |
+| Workforce Cost Cache Ledger              | Implementado             | Dual-table rollups, per-agent budget warnings                                            |
+| Agent Consensus Store                    | Implementado             | Multi-agent review with quorum for high-risk proposals                                   |
 
-## Current readiness boundary
+---
 
-| Area              | Status                                                                                                                                                                                                                                                                                                                             |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Safe setup        | Use `.env.local` for local secrets and GitHub Secrets/platform secrets for CI/deploy. Never use `NEXT_PUBLIC_` for private values and never paste raw seller tokens into docs or Git.                                                                                                                                              |
-| Auth/security     | `/api/chat`, MCP auth, encryption, and sync account-role checks fail closed unless an explicit local/demo/test opt-in is set.                                                                                                                                                                                                      |
-| Dual-account sync | Configured Plasticov → Maustian `sync_product` preparation on `MLC`; reverse or arbitrary seller IDs are rejected as a safety boundary. This does not make Plasticov the manufacturer or Maustian the only seller.                                                                                                                 |
-| ML credentials    | **❌ Not configured.** OAuth manager uses stub mode (clientId starts with `TEST-` or is missing). Need `MERCADOLIBRE_CLIENT_ID`/`MERCADOLIBRE_CLIENT_SECRET` + `MSL_ENCRYPTION_KEY`.                                                                                                                                               |
-| Web chat          | Demo-backed; production chat persistence, auth integration, and real LLM wiring remain future work.                                                                                                                                                                                                                                |
-| MCP               | **✅ 40 MCP tools** — 10 original + 30 extended (moderation, notices, answer, claims search/detail/sub-resources, shipping, image orchestration, return detail/reviews/return-cost, workforce agents/skills/lessons, cost ledger, skill declaration). All tools run but MercadoLibre calls use stub mode without real credentials. |
-| Telegram bot      | **✅ Runtime exists.** grammY runtime can use env-backed sessions and optional Cortex/Escribano memory. Telegram is CEO-only: users do not select workers or chat directly with departments/specialists. Needs production secrets and operating policy before real business use.                                                   |
-| Agent workforce   | **✅ Foundation exists.** Durable company-agent registry, internal lessons, active company-agent routing context, and cost/cache ledger evidence are implemented as CEO orchestration resources. Active routing does not grant admin authorization. Cost/cache evidence is operating evidence, not billing truth.                  |
-| CI                | Format, typecheck, lint, Vitest, Playwright E2E, and build gates run in CI. Avoid exact test counts in docs unless freshly verified from the current branch.                                                                                                                                                                       |
-| ML API coverage   | **✅ 42 MlcApiClient methods** across 13 API areas: listings, orders, messages, reputation, categories, pricing, promotions, visits, performance, product ads, image diagnostics/upload, moderation status, notices, claims, shipping, image orchestration, returns. All 9 new 2025-2026 endpoints confirmed MLC-compatible.       |
-| Supplier Mirror   | **✅ Readiness foundation merged.** Domain model, SQLite store, source adapters, XKP enrichment boundary, disabled-by-default worker scheduler, stock-break planning, CEO proposals, fallback learning, and cost/cache evidence are implemented. Jinpeng runtime readiness now has a safe local bootstrap/dry-run.                 |
-| Jinpeng runtime   | **🟡 Ready for operator dry-run.** Next step is `npm run supplier-mirror:jinpeng:dry-run` with environment-only values/credentials. This does not enable live supplier automation, store secrets, call external APIs, or mutate MercadoLibre listings/prices.                                                                      |
+## P0 — Operational Truth & Production
 
-## Architecture
+**Propósito:** Hacer que MSL opere sobre datos reales con credenciales reales.
 
-```
-┌──────────────────────────────────────────────┐
-│                CEO (Telegram)                │
-│     Natural language strategy injection       │
-│  "apunto a 50%+ margen, priorizo +10 stock"  │
-└──────────────────┬───────────────────────────┘
-                   ▼
-┌──────────────────────────────────────────────┐
-│       AGENTE CONVERSACIONAL (DeepSeek)       │
-│  • Infiere intención, no matchea comandos    │
-│  • Simula comprador/proveedor (Actor Models) │
-│  • Propone acciones, safety gates invisibles │
-│  • Español natural, directo, comprimido      │
-└────────┬─────────────────────────┬───────────┘
-         │                         │
-         ▼                         ▼
-┌──────────────────┐    ┌──────────────────────┐
-│   CORTEX (SQLite) │    │  SAFETY GATES        │
-│   • Neural graph  │    │  • Approval queue    │
-│   • Hebbian learn │    │  • Audit trail       │
-│   • Darwinian poda│    │  • Risk validation   │
-│   • Convergencia  │    │  • User says "dale"  │
-│   • Context inj.  │    │    → executes         │
-└────────┬─────────┘    └──────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────┐
-│   DeepSeek API (3-block context cache)       │
-│   A: System prompt + identity (5K, eternal)  │
-│   B: Daily aggregates (15K, 24h refresh)     │
-│   C: Query-specific injection (variable)     │
-└──────────────────────────────────────────────┘
-```
+### Capacidades
 
-## DeepSeek cache strategy
+- Credenciales reales de ML OAuth para ambas cuentas (Plasticov y Maustian)
+- Ingesta real reemplazando el modo stub en todos los procesadores
+- Transporte real donde hoy existe fake/mock
+- Backups de las bases de datos SQLite
+- Migraciones versionadas
+- Observabilidad (logs estructurados, métricas, alertas)
+- CI verificable con gates de seguridad
+- Política de producción documentada (deploy, rollback, secretos, monitoreo)
 
-Raw data is ~663K tokens. Full-cache is fragile (one listing change invalidates everything).
+### Dependencias
 
-| Block              | Content                                      | Size   | Refresh     | Cost     |
-| ------------------ | -------------------------------------------- | ------ | ----------- | -------- |
-| **A — Fixed**      | System prompt, business identity, hard rules | ~5K    | Never       | $0.00001 |
-| **B — Aggregates** | Category stats, monthly volume, reputation   | ~15K   | Daily       | $0.004   |
-| **C — Dynamic**    | Relevant nodes from Cortex (per query)       | 0.3-2K | Per message | $0.0003  |
+- OAuth apps registradas en MercadoLibre para ambas cuentas
+- `MERCADOLIBRE_CLIENT_ID`/`MERCADOLIBRE_CLIENT_SECRET` configurados
+- `MSL_ENCRYPTION_KEY` configurada
 
-## Architecture evolution
+### Criterios de aceptación
 
-The next operational step is the **Jinpeng real dry-run**: run `npm run supplier-mirror:jinpeng:dry-run` with environment-only credentials/source refs, review the generated readiness evidence, and require CEO approval before any runtime gate is enabled. The Agent Enterprise Kernel foundation is already merged; broader manager lifecycle and budget policy enforcement remain future work.
+- La ingesta corre con datos reales de ML sin errores
+- El OAuth manager obtiene y refresca tokens reales
+- Los backups se ejecutan automáticamente
+- CI pasa con gates de seguridad activos
 
-```
-Phase 0         Phase 1         Phase 2         Phase 3         Phases 4-7g        Phases 7h-17
-────────        ───────         ───────         ───────         ────────────        ─────────────
-┌─────────┐    ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────────────┐ ┌─────────────────────────┐
-│ Domain   │───▶│ Domain   │────▶│ Domain   │────▶│ Domain   │────▶│ Domain           │ │ Domain                   │
-│ Approvals│    │ Memory   │     │ Memory   │     │ Memory   │     │ Memory            │ │ Memory                    │
-│ Audit    │    │ Approvals│     │ Agent    │     │ Agent    │     │ Agent (autonomy)   │ │ Agent (autonomy)           │
-│ Demo UI  │    │ Audit    │     │ Guardrails│    │ Strategy │     │ Tools (approval)    │ │ Tools (real ML API)        │
-└─────────┘    │ Demo UI  │     │ Approvals │     │ Guardrails│    │ Workers             │ │ Workers                    │
-               └─────────┘     │ Audit     │     │ Approvals │     │ MCP (10 tools)      │ │ MCP (execution)            │
-                               │ Demo UI   │     │ Audit     │     │ OpenSpec (contract)  │ │ Bot (Telegram real)        │
-                               └─────────┘     │ Demo UI   │     └─────────────────┘ │ Credentials (ML OAuth)     │
-                                               └─────────┘                           └─────────────────────────┘
-```
+### Riesgos
 
-## Phases
+- Rate limiting de ML API durante la ingesta inicial
+- Datos inconsistentes si la ingesta falla parcialmente
+- Rotación de tokens que interrumpa la operación
 
-| #      | What                                                  | Built with                                                                                                                                                                                                                                                                                                                                   | Key insight                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Status                                                   |
-| ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **0**  | Hexagonal domain + deterministic agent + safety gates | `@msl/domain` (12 modules), `@msl/tools` (approval + audit pipeline), `apps/web` (Next.js demo console)                                                                                                                                                                                                                                      | Domain layer must be **pure TypeScript** — no framework, no I/O, no side effects. Every test runs in 0ms and never flakes.                                                                                                                                                                                                                                                                                                                                                                                              | ✅ Done (main)                                           |
-| **1**  | **Cortex: neural graph memory**                       | `@msl/memory` (SQLite + Hebbian learning + recursive CTEs + Darwinian pruning), Corset engine types, actor profile nodes, probe records                                                                                                                                                                                                      | Recursive CTEs in SQLite can model **spreading activation** without a graph DB. Activation travels depth-first, decays per hop, and prune log records distilled lessons from dead edges.                                                                                                                                                                                                                                                                                                                                | ✅ [#14](https://github.com/riquelmechile/Msl/issues/14) |
-| **2**  | **Conversational agent with DeepSeek**                | `@msl/agent` (agentLoop 1391 LOC, systemPrompt, guardrails, types, cacheBlocks), OpenAI SDK with DeepSeek baseURL                                                                                                                                                                                                                            | A **3-block prefix-anchored cache** cuts DeepSeek costs by ~98%. Mock client with intent-based routing lets you test full conversation flows without an API key. Tool call loop handles simulate_actor, detect_probes, propose_honey_pot chains.                                                                                                                                                                                                                                                                        | ✅                                                       |
-| **3**  | **CEO strategy injection via natural language**       | `@msl/agent/conversation/strategyParser.ts` (hybrid parser), `strategyStore.ts` (SQLite persistence), `guardrails.ts` (strategyValidator), `escribano.ts` (memory scribe)                                                                                                                                                                    | **80% of natural strategy commands** (list, update, archive) are intercepted by regex fast-path and handled locally — **zero LLM cost**. The remaining 20% fall through to the LLM for parsing.                                                                                                                                                                                                                                                                                                                         | ✅                                                       |
-| **4**  | **Actor Models / Shadow Actors**                      | `@msl/agent/conversation/actorSimulator.ts` (comprador/proveedor/competidor prompts + LLM simulation), `@msl/memory/cortex/types.ts` (ActorProfileNode)                                                                                                                                                                                      | The LLM simulates mental models of buyers, suppliers, and competitors. The mock client detects actor-related Spanish phrases and chains tool calls. **Escribano** autonomously records actor consultations into Cortex.                                                                                                                                                                                                                                                                                                 | ✅                                                       |
-| **5**  | **Honey-Pot Probing**                                 | `@msl/agent/conversation/probeDetector.ts` (question/view anomaly detection), `honeyPotProposer.ts` (decoy generation), `guardrails.ts` (honeyPotValidator — TOS compliance)                                                                                                                                                                 | Decoy proposals are validated against **active CEO strategies** before presentation. The ToS validator ensures proposals never violate MercadoLibre terms. Confirmed proposals are persisted to Cortex via `GraphEngine.storeProbeResult`.                                                                                                                                                                                                                                                                              | ✅                                                       |
-| **6**  | **Autonomy levels with KPIs and auto-degradation**    | `@msl/agent/conversation/autonomyEngine.ts` (6 levels: CONSULTA → FULL, KPI tracking, degradation rules), `guardrails.ts` (autonomyGate), `selfVerify.ts` (6 verification checks per proposal)                                                                                                                                               | The agent **downgrades itself** when KPIs degrade (3 consecutive violations → level drop). Self-verification with blocking checks and warning checks creates **calibrated distrust** — the agent checks its own work before presenting it.                                                                                                                                                                                                                                                                              | ✅                                                       |
-| **7**  | **Real ML API integration foundation**                | `@msl/mercadolibre` (MlClient with real HTTP transport + exponential backoff, OAuth manager with multi-account support, product sync engine with diff + strategy application), `@msl/mcp` (21 tools via stdio)                                                                                                                               | Real OAuth with refresh token support. HTTP transport has **exponential backoff** for 429/5xx. Sync tooling prepares one configured Plasticov → Maustian proposal path with account isolation and CEO strategies. Both accounts remain parallel seller channels. 39 MlcApiClient methods covering 12 API areas with MLC-confirmed site support.                                                                                                                                                                         | ✅ foundation                                            |
-| **7a** | **Durable approval storage**                          | `@msl/tools` (ApprovalQueueRepository with SQLite), `packages/mcp` (runtime dependency wiring)                                                                                                                                                                                                                                               | Prepared proposals survive process restart. SQLite-backed persistence via `MSL_APPROVAL_QUEUE_DB_PATH`.                                                                                                                                                                                                                                                                                                                                                                                                                 | ✅                                                       |
-| **7b** | **Prepare-only `sync_product`**                       | `packages/mcp/src/index.ts` (auth, item validation, role checks, preview evidence, proposal creation)                                                                                                                                                                                                                                        | First MCP business operation: validates Plasticov→Maustian roles, MLC item IDs, `requiresApproval`, `risk: "high"`. Returns `noMutationExecuted: true`. Optional read-only preview evidence via strategy diff.                                                                                                                                                                                                                                                                                                          | ✅                                                       |
-| **7c** | **Safe preview + completeness**                       | `packages/mercadolibre/src/index.ts` (assertCompleteMlcItem), `packages/mcp/src/index.ts` (sync preview metadata)                                                                                                                                                                                                                            | Item completeness validation centralized in MercadoLibre package. MCP preview degrades safely to `source-read-failed` without raw detail leakage.                                                                                                                                                                                                                                                                                                                                                                       | ✅                                                       |
-| **7d** | **Read-only proposal inspection**                     | `packages/mcp/src/index.ts` (read_sync_product_status), `packages/mcp/src/runtimeDependencies.ts`                                                                                                                                                                                                                                            | Exact-ID read-only status for prepared sync proposals. Returns sanitized metadata, redacted unavailable responses for unknown/unsupported IDs. Auth-before-lookup.                                                                                                                                                                                                                                                                                                                                                      | ✅                                                       |
-| **7e** | **Record-only approval**                              | `packages/mcp/src/index.ts` (approve_sync_product_proposal), `packages/domain/src/approval.ts` (executionStatus: "not-executed")                                                                                                                                                                                                             | Sync-only MCP approval recording for exact pending unexpired proposals. Prevents generic prepare-write spoofing via `sync-product:` namespace. Approval records prove non-execution.                                                                                                                                                                                                                                                                                                                                    | ✅                                                       |
-| **7f** | **Execution readiness gate**                          | `packages/mcp/src/index.ts` (read_sync_product_execution_readiness), OpenSpec contract (`sync-product-execution`)                                                                                                                                                                                                                            | Non-mutating readiness evaluation: eligible/blocked/degraded with 16 redacted reason codes. Real ML API docs consulted via OpenCode MCP. ProductSyncEngine declared obsolete for approved execution path. Idempotency modeled as stable candidate evidence.                                                                                                                                                                                                                                                             | ✅ contract only                                         |
-| **7j** | **ML API 2025-2026 capabilities refresh**             | `packages/mercadolibre` (+12 client methods, 39 total), `packages/mcp` (+11 tools, 21 total), `packages/agent` (+11 agent tools, 30 total)                                                                                                                                                                                                   | Added moderation status, notices, claims search/detail/sub-resources, shipping status, questions answer (prepare-only), and image orchestration (prepare-only). All 6 new endpoints confirmed MLC-compatible via official docs. Agent tools wired with Spanish descriptions for conversational access.                                                                                                                                                                                                                  | ✅                                                       |
-| **7g** | **Telegram bot wiring**                               | `packages/bot/src/index.ts` → grammY runtime (473 LOC), env-backed SQLite sessions, optional Cortex/Escribano memory                                                                                                                                                                                                                         | Real runtime exists with CEO-only routing, proactive alerts, multi-seller support, and internal workforce context. Production operation still needs secrets, deployment policy, and explicit approval-gated mutation boundaries.                                                                                                                                                                                                                                                                                        | ✅ production-ready runtime                              |
-| **7h** | **ML credentials setup**                              | `.env.local` with `MERCADOLIBRE_CLIENT_ID`, `MERCADOLIBRE_CLIENT_SECRET`, `MSL_ENCRYPTION_KEY`                                                                                                                                                                                                                                               | Configure real OAuth credentials for both independent Plasticov and Maustian seller accounts on MLC; the Plasticov → Maustian source/target roles apply only inside the configured sync boundary. OAuth flow must be tested with real tokens before any mutation call.                                                                                                                                                                                                                                                  | ❌ TODO                                                  |
-| **7i** | **Sync execution (create-only)**                      | `packages/mcp` + `packages/mercadolibre` (POST /items for new Maustian listings)                                                                                                                                                                                                                                                             | First real ML mutation: execute approved+ready sync_product proposals with idempotency, audit trail, and compensating-action rollback. Requires 7g + 7h complete. Start with create-only (new Maustian listings), defer update (PUT) for later.                                                                                                                                                                                                                                                                         | 🔲 future (needs credentials + bot)                      |
-| **8**  | **CEO/Socio cache-resident lanes**                    | `@msl/agent` (lanes.ts, cacheBlocks.ts stable prefixes, delegate_to_subagent), `@msl/bot` (CEO Socio Telegram prompt), `@msl/domain` (OperationalEvidence freshness)                                                                                                                                                                         | CEO coordinates cache-resident specialist lanes (Cost/Supplier, Market/Catalog, Creative/Commercial) with stable DeepSeek token-0 prefixes for near-zero cache-hit cost. `dale` in Phase 1 approves investigation/preparation only — no production mutations.                                                                                                                                                                                                                                                           | ✅                                                       |
-| **9**  | **Operational read model with 5-entity ingestion**    | `@msl/memory` (operationalReadModel.ts, SQLite snapshots + checkpoints), `@msl/agent` (backgroundIngestion 5 processors, shared paginateAll), `@msl/mercadolibre` (getQuestions)                                                                                                                                                             | SQLite-backed operational DB stores full catalog, claims, questions, orders, messages, and reputation snapshots with per-seller lane isolation (Plasticov/Maustian). Per-kind TTLs (1h-6h) and checkpoints avoid repeated MercadoLibre API calls. CEO uses historical data for learning — not just current state.                                                                                                                                                                                                       | ✅                                                       |
-| **10** | **Cortex Darwinian feedback**                         | `@msl/agent` (escribano.ts constellation propagation, agentLoop.ts hasRejectionPattern + resolveTurnOutcome), `@msl/memory` (existing GraphEngine reinforceedge/penalizeEdge)                                                                                                                                                                | Spreading-activation outcome propagation through activated Cortex constellation. Approved outcomes strengthen ALL activated edges (+0.10); rejected outcomes weaken ALL (−0.15). Outcome nodes persist even on empty constellation. Learning generalizes: rejecting "pricing in Plasticov" also weakens "pricing in Plasticov for other categories".                                                                                                                                                                    | ✅                                                       |
-| **11** | **DeepSeek V4 official smoke test**                   | `scripts/deepseek-tool-smoke.mjs` (opt-in script), `@msl/agent` (OpenAI-compatible tool schema for delegate_to_subagent)                                                                                                                                                                                                                     | Explicit opt-in live smoke using deepseek-v4-flash with forced named tool_choice, synthetic user_id for KVCache isolation, and cache telemetry validation. Normal CI/tests never call paid APIs.                                                                                                                                                                                                                                                                                                                        | ✅                                                       |
-| **12** | **Product Ads operational ingestion**                 | `@msl/agent` (backgroundIngestion.ts processor), `@msl/memory` (operationalReadModel), `@msl/domain` (ReadSnapshotKind for product-ads-insights)                                                                                                                                                                                             | Persists `product-ads-insights` operational snapshots with ROAS metadata, evidence IDs, freshness/completeness/confidence, and checkpoints. Graceful no-data for sellers without Product Ads access. Safe-read only; no campaign/ad mutations. Feeds CEO/campaign/market lane evidence.                                                                                                                                                                                                                                 | ✅                                                       |
-| **13** | **Catalog competition operational ingestion**         | `@msl/agent` (backgroundIngestion.ts processor, deterministic rotated batch), `@msl/memory` (operationalReadModel), `@msl/domain` (ReadSnapshotKind for pricing)                                                                                                                                                                             | Bounded rotated `price_to_win` ingestion as `pricing` operational snapshots with deterministic evidence IDs. Checkpoint cadence (not per-item cursor). Market/margin lanes retrieve durable catalog competition evidence. Safe-read only.                                                                                                                                                                                                                                                                               | ✅                                                       |
-| **14** | **Returns safe-read evidence**                        | `@msl/mercadolibre` (+3 client methods, +3 snapshot types), `@msl/mcp` (+3 auth-gated return read tools), `@msl/agent` (+3 agent return tools)                                                                                                                                                                                               | 3 GET endpoints: return detail, return reviews, return cost. Typed safe-read snapshots with MLC-to-confirm degradation. MCP tools auth-gated. No return-review POST, attachment upload, refund, or dispute execution.                                                                                                                                                                                                                                                                                                   | ✅                                                       |
-| **15** | **Agent Enterprise Kernel**                           | Durable company-agent registry, CEO-only Telegram routing, company-agent lessons, stable context boundaries, internal workforce delegation hints, workforce cost ledger, agent skill registry, admin lifecycle tools                                                                                                                         | Converts hardcoded CEO lanes into the foundation for a durable learning organization. The CEO coordinates workers internally while Telegram remains CEO-only; active company-agent routing selects context but does not grant admin authorization. Cost ledger tracks bounded counters and metadata for operating evidence. Agent skills and lessons are durable company-agent context. Full manager lifecycle and budget policy enforcement remain future work.                                                        | ✅ production-ready                                      |
-| **16** | **Inter-agent evidence protocol + cost ledger**       | Bounded evidence requests, cost/cache telemetry capture, internal ledger summaries, cost-aware CEO guardrails, workforce cost cache ledger with dual-table rollups and budget warnings                                                                                                                                                       | Agents can request bounded evidence before escalating. Cost-aware guardrails prefer recent/cached/lower-cost evidence when sufficient and ask before expensive, broad, or duplicate investigations unless urgent, safety-related, approved, or policy-required. Ledger summaries are Block C operating evidence, not billing truth; dual-table rollup structure enables per-agent budget tracking and CEO warnings on over-budget lanes. Source citations and utility feedback remain future work.                      | ✅ production-ready                                      |
-| **17** | **Owned ecommerce runtime**                           | `@msl/domain` candidates/projections, `@msl/workers` owned ecommerce projection worker, `@msl/memory` owned ecommerce store, `@msl/agent` CEO approval prep tools, `@msl/ecommerce-medusa` write boundary + preview adapter, Next.js static storefront preview route, runtime approval contracts, Medusa runtime executor, regression matrix | Builds Medusa-oriented storefront projections from evidence, validates readiness/claims/media, records cost/cache telemetry, and serves static preview JSON without request-time LLM reasoning. Runtime approval execution (contracts, Medusa executor, regression matrix) is merged with `@msl/ecommerce-medusa` package providing fail-closed write boundary, preview adapter, and env-gated production activation. Live Medusa deployment, checkout/payment activation, and public publish remain future gated work. | ✅ runtime ready (env-gated)                             |
-| **18** | **Multichannel commerce expansion**                   | Social channels, supplier workflows, ads/content operations, Ripley/other marketplaces, plus live owned ecommerce deployment/checkout/publish                                                                                                                                                                                                | MercadoLibre remains the first channel while the same company-agent model expands to new revenue surfaces with CEO approval, Cortex memory, and Darwinian outcome feedback.                                                                                                                                                                                                                                                                                                                                             | 🔲 future                                                |
-| **19** | **Supplier Mirror + Jinpeng readiness**               | `@msl/domain` supplier mirror model, `@msl/memory` SQLite store + runtime singleton, `@msl/mercadolibre` supplier source adapters, `@msl/agent` DeepSeek V4 advisor + 7 CEO tools, `@msl/workers` scheduler/monitor/Jinpeng bootstrap, cost/cache evidence, and `docs/supplier-mirror.md`                                                    | Supplier Mirror is independent from the Plasticov → Maustian `sync_product` safety boundary. Runtime wired into bot, daemons, and web. DeepSeek advisor analyzes supplier evidence (stock, mappings, policies) on demand via `analyze_supplier_mirror_evidence` tool. Jinpeng dry-run ready. Worker stays disabled-by-default behind `MSL_SUPPLIER_MIRROR_WORKER_ENABLED` gate. XKP is enrichment only — MercadoLibre API is stock authority.                                                                           | ✅ runtime wired + AI advisor ready; dry-run next        |
+### Lo que la empresa aprende
+
+- El volumen real de datos que maneja el negocio
+- La latencia y confiabilidad real de ML API
+- Patrones de acceso que informan la estrategia de caché
+
+---
+
+## P1 — Financial Truth & Economic Outcomes
+
+**Propósito:** Probar qué acciones generan rentabilidad real.
+
+### Capacidades
+
+- `EconomicOutcome`: tracking de resultado económico post-ejecución
+- `UnitEconomics`: margen de contribución por producto, canal y cuenta
+- Landed cost: cálculo real del costo puesto (producto + flete + internación + impuestos)
+- Profit por order, por SKU, por cuenta y por canal
+- Visibilidad de flujo de caja (corto plazo)
+- Outcome attribution: qué agente/acción generó qué resultado
+- Director Financiero (agente) — primera versión
+
+### Dependencias
+
+- P0 completa (datos reales de venta, costo, comisiones)
+- Landed cost requiere datos de proveedores e importación
+
+### Criterios de aceptación
+
+- Cada orden tiene costo, fee de ML, margen y profit atribuido
+- Las propuestas del CEO Agent incluyen expected profit, no solo revenue
+- Los outcomes negativos se detectan y se registran en Cortex
+
+### Riesgos
+
+- Datos de costo incompletos o desactualizados producen decisiones erróneas
+- Atribución incorrecta que refuerce patrones subóptimos
+- Complejidad de landed cost con tipos de cambio y tarifas variables
+
+### Lo que la empresa aprende
+
+- Qué productos, canales y cuentas generan profit real
+- Si las decisiones del CEO Agent están mejorando o no la rentabilidad
+- La diferencia entre revenue y profit en cada canal
+
+---
+
+## P2 — Full Product Launch Cycle
+
+**Propósito:** Lanzar productos de punta a punta con IA.
+
+### Capacidades
+
+- Imagen a identificación de producto (foto → atributos)
+- Investigación de competencia (precio, exposición, reputación)
+- Selección de proveedor (costo, disponibilidad, confiabilidad)
+- Generación de imágenes (Creative Studio)
+- Título, atributos, descripción (generación + validación)
+- Estrategia de pricing (margen, competencia, posicionamiento)
+- Selección de cuenta (Plasticov vs. Maustian según estrategia)
+- Ciclo: Aprobación → Publicación → Monitoreo → Aprendizaje
+
+### Dependencias
+
+- P1 (para medir profit del launch)
+- Creative Studio con credenciales MiniMax
+- ML API con credenciales reales para publicación
+
+### Criterios de aceptación
+
+- Un producto nuevo puede lanzarse con intervención humana solo en la aprobación final
+- El agente mide el resultado del launch (ventas, margen, retorno) contra lo proyectado
+- El aprendizaje del ciclo informa el siguiente launch
+
+### Riesgos
+
+- Publicar con atributos incorrectos que generen reclamos
+- Errores de pricing que erosionen margen
+- Dependencia de calidad de imagen generada por MiniMax
+
+### Lo que la empresa aprende
+
+- Tasa de éxito de launches asistidos por IA vs. manuales
+- Qué señales predicen un launch exitoso
+- Tiempo real desde detección de oportunidad hasta publicación
+
+---
+
+## P3 — Social Growth
+
+**Propósito:** Construir presencia de marca y revenue por canales sociales.
+
+### Capacidades
+
+- Cuentas sociales con identidad de marca por cuenta ML
+- Detección de tendencias (productos, categorías, formatos)
+- Calendario de contenido y campañas
+- Generación creativa (MiniMax: imágenes, video clips)
+- Publicación con aprobación del CEO
+- Engagement con la comunidad (comentarios, preguntas)
+- UTM y atribución de venta desde canales sociales
+- Experimentos controlados y aprendizaje
+
+### Dependencias
+
+- Creative Studio activo
+- APIs de redes sociales (Meta, TikTok, etc.)
+- Sistema de atribución (P1)
+
+### Criterios de aceptación
+
+- Una campaña social puede diseñarse, aprobarse y publicarse
+- Las ventas atribuibles a canales sociales se miden
+- Los experimentos comparan formatos, horarios y mensajes
+
+### Riesgos
+
+- Contenido generado que no cumpla políticas de plataforma
+- Bajo engagement inicial sin audiencia construida
+- Atribución cruzada entre canales que distorsione resultados
+
+### Lo que la empresa aprende
+
+- Qué tipo de contenido convierte en qué canal
+- El CAC real por canal social
+- Si el revenue social justifica el costo operativo y creativo
+
+---
+
+## P4 — Portfolio, Pricing, Inventory & Purchasing
+
+**Propósito:** Optimizar el mix de productos, márgenes y asignación de capital.
+
+### Capacidades
+
+- Detección de oportunidades de producto
+- Gestión de portafolio (push, maintain, fix, abandon)
+- Pricing inteligente (margen, demanda, competencia, elasticidad)
+- Promociones con medición de profit incremental
+- Demand forecasting
+- Reposición automatizada
+- Importaciones (landed cost, lead time, riesgo)
+- Riesgo de proveedor (concentración, confiabilidad, precio)
+
+### Dependencias
+
+- P1 (financial truth para medir profit del portafolio)
+- P2 (launch cycle para incorporar productos nuevos)
+- Supplier Mirror activo con datos reales
+
+### Criterios de aceptación
+
+- El portafolio tiene una clasificación viva de productos por rentabilidad
+- Las decisiones de pricing se basan en datos, no en intuición
+- Las promociones miden profit incremental, no solo volumen
+
+### Riesgos
+
+- Sobre-optimización de pricing que aleje compradores
+- Forecast erróneo que genere sobrestock o quiebre
+- Dependencia de proveedores únicos sin alternativas
+
+### Lo que la empresa aprende
+
+- Elasticidad real de precio por producto y categoría
+- El costo real del capital inmovilizado en inventario
+- Qué proveedores son confiables y cuáles no
+
+---
+
+## P5 — Experimentation & Organizational Intelligence
+
+**Propósito:** Hacer que la empresa misma aprenda y mejore.
+
+### Capacidades
+
+- `BusinessObjective` + `WorkOrder`: modelo de objetivos y trabajo colaborativo
+- Campaign y Experiment models
+- Agent Scorecard: calidad de predicción, costo, contribución económica
+- Agente Crítico / Abogado del Diablo
+- Evaluación económica de cada agente
+- Scheduling de agentes por expected utility
+
+### Dependencias
+
+- P1 (para medir contribución económica de cada agente)
+- P2-P4 (para tener suficientes acciones que evaluar)
+
+### Criterios de aceptación
+
+- Cada agente tiene un scorecard visible para el CEO
+- Las decisiones de scheduling se basan en expected utility, no en round-robin
+- El Abogado del Diablo reduce la tasa de propuestas rechazadas por el CEO
+
+### Riesgos
+
+- Métricas de agente que incentiven comportamiento no deseado
+- Complejidad de atribución cuando múltiples agentes contribuyen
+
+### Lo que la empresa aprende
+
+- Qué agentes generan más valor por token gastado
+- Si la colaboración entre agentes mejora los outcomes
+- La tasa de mejora de la organización en el tiempo
+
+---
+
+## P6 — Multichannel Expansion
+
+**Propósito:** Expandir revenue más allá de MercadoLibre.
+
+### Capacidades
+
+- Ecommerce productivo (Medusa live con checkout y pagos)
+- Ripley marketplace
+- Amazon
+- Alibaba / Global Selling
+- Otros canales justificados por rentabilidad
+
+### Dependencias
+
+- P1 (para comparar rentabilidad entre canales)
+- P2 (para lanzar productos en múltiples canales)
+- Owned ecommerce con credenciales reales de Medusa
+
+### Criterios de aceptación
+
+- Al menos un canal adicional está generando revenue atribuible
+- Las decisiones de canal se basan en profit comparado, no en intuición
+- El modelo de empresa agente funciona igual en cada canal nuevo
+
+### Riesgos
+
+- Complejidad operativa de manejar múltiples canales con reglas distintas
+- Requisitos de fulfillment que excedan la capacidad actual
+- Canibalización entre canales
+
+### Lo que la empresa aprende
+
+- Profit real por canal y por producto en cada canal
+- Si la expansión multicanal mejora o diluye la rentabilidad total
+- Costo marginal de agregar un canal nuevo al modelo de agente
+
+---
 
 ## Technology decisions
 
-| Decision        | Choice                   | Rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| LLM             | DeepSeek v4 Flash/Pro    | 1M window, ~98% cache discount, OpenAI-compatible                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Memory          | SQLite + recursive CTEs  | Zero external services, ~400 lines TS, persistent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Integration     | `openai` npm + `baseURL` | Zero new SDK, trivially swappable                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Agent framework | None (custom agentLoop)  | No LangChain, no Mastra — direct API control                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Hosting         | Node.js 22 in-process    | No external DB servers needed for Cortex                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Protocol        | MCP for tool exposure    | 40 MCP tools (check_account, sync_product, list_catalog, consult_cortex, list_strategies, read_sync_product_status, approve_sync_product_proposal, read_sync_product_execution_readiness, execute_sync_product, prepare_mercadolibre_write, msl_mcp_api_key, read_moderation_status, read_notices, prepare_answer, read_claims, read_claim_detail, read_shipment_status, read_claim_messages, read_claim_expected_resolutions, read_claim_affects_reputation, read_claim_status_history, prepare_image_orchestration, prepare_product_ads_action, read_claim_return, read_return_reviews, read_claim_return_cost, simulate_actor, detect_probes, list_company_agents_mcp, list_agent_skills_mcp, list_agent_lessons_mcp, declare_skill_mcp, update_company_agent_mcp, list_workforce_ledger_mcp, plus listing/pricing/promotion/ads/category reads). All runtime-ready; MercadoLibre calls use stub mode until real credentials configured. |
-
-| Testing | Vitest + Playwright | Unit/integration and E2E gates; exact counts should come from the latest local/CI run, not static docs. |
-| Operational DB | SQLite (better-sqlite3) | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product-ads-insights, pricing) with per-seller lane isolation, freshness TTLs, and ingestion checkpoints |
-| CEO Lanes | `@msl/agent/lanes.ts` | 4 cache-resident specialist lanes (CEO, Cost/Supplier, Market/Catalog, Creative/Commercial) with stable token-0 DeepSeek prefixes, delegate_to_subagent tool, and Phase 1 dale = investigation/preparation only. Telegram remains CEO-only; workers are internal orchestration resources. |
-| Owned Ecommerce | `@msl/ecommerce-medusa` | Medusa write boundary (fail-closed), preview adapter for static storefront projections, blocking check collection for readiness validation, and env-gated production activation via `MEDUSA_RUNTIME_WRITE_ENABLED`. Live publish/checkout requires explicit env credentials + CEO approval. |
-| Cost/cache ledger | `workforceCostCacheLedgerStore` | Stores bounded numeric counters and boring metadata for internal operating evidence. It does not store prompts, responses, tool args, secrets, raw provider/agent labels in LLM context, full entry IDs in summaries, or billing truth. Dynamic summaries belong in Block C, not the system prompt. |
-| Cortex Learning | Spreading activation | Darwinian outcome propagation through activated constellations: approvals +0.10, rejections −0.15; learning generalizes across shared concept edges; audit trail via persistent outcome nodes |
+| Decision          | Choice                   | Rationale                                                                                                                                                                                                   |
+| ----------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LLM               | DeepSeek v4 Flash/Pro    | 1M context window, cache discount for repeated prefixes, OpenAI-compatible API                                                                                                                              |
+| Memory            | SQLite + recursive CTEs  | Zero external services, persistent, portable                                                                                                                                                                |
+| Agent framework   | None (custom agentLoop)  | No LangChain, no Mastra — direct API control                                                                                                                                                                |
+| Integration       | `openai` npm + `baseURL` | Zero new SDK, trivially swappable                                                                                                                                                                           |
+| Hosting           | Node.js 22 in-process    | No external DB servers needed for Cortex                                                                                                                                                                    |
+| Protocol          | MCP for tool exposure    | ~40 MCP tools across MercadoLibre reads, proposals, approvals, Cortex, claims, shipping, moderation, workforce, and cost ledger                                                                             |
+| Testing           | Vitest + Playwright      | Unit/integration and E2E gates; exact counts should come from the latest local/CI run, not static docs                                                                                                      |
+| Operational DB    | SQLite (better-sqlite3)  | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product-ads-insights, pricing) with per-seller lane isolation, freshness TTLs, and ingestion checkpoints                         |
+| CEO Lanes         | 15 lane contracts        | 15 typed `LANE_CONTRACTS` in `@msl/agent/conversation/lanes.ts` with stable token-0 DeepSeek prefixes, `delegate_to_subagent` tool. Telegram remains CEO-only; workers are internal orchestration resources |
+| Owned Ecommerce   | `@msl/ecommerce-medusa`  | Medusa write boundary (fail-closed), preview adapter for static storefront projections, blocking check collection for readiness validation, env-gated production activation                                 |
+| Daemon scheduling | Agent Message Bus        | 14 daemon handlers dispatched on 15-min cycles with per-cycle reader cache, per-seller account contexts, and work-session routing for 6 sessionized lanes                                                   |
+| Evidence protocol | EvidenceResponseRouter   | 5 specialized responders answer inter-agent evidence requests. Bounded, structured, confidence-rated. Reduces CEO interruptions for routine evidence collection                                             |
