@@ -2,7 +2,14 @@ import type { DeepSeekTransport } from "./transports/deepseekTransport.js";
 import { createDeepSeekProviderFromEnv } from "./transports/deepseekFactory.js";
 
 import { resolveDeepSeekRuntimeConfig, resolveDeepSeekUserId } from "./deepseekRuntime.js";
-import type { GraphEngine, OwnedEcommerceStore, SupplierMirrorStore } from "@msl/memory";
+import type {
+  EconomicLearningStore,
+  EconomicOutcomeStore,
+  FinanceDirectorAssessmentStore,
+  GraphEngine,
+  OwnedEcommerceStore,
+  SupplierMirrorStore,
+} from "@msl/memory";
 import type { MlClient, MlcApiClient, ProductSyncEngine } from "@msl/mercadolibre";
 import type {
   AgentAccountContext,
@@ -103,6 +110,9 @@ import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
 import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
 import type { AccountBrainService } from "./accountBrainService.js";
 import { createGetAccountBrainStatusTool, createCompareAccountAssetsTool } from "./tools.js";
+import { createFinanceDirectorTools } from "./tools/financeDirectorTools.js";
+import { createEconomicLearningTools } from "./tools/economicLearningTools.js";
+import { FinanceDirectorAdvisor } from "../finance/FinanceDirectorAdvisor.js";
 
 // Import extracted loop module functions
 import {
@@ -186,6 +196,9 @@ export type AgentLoopConfig = {
   accountBrainService?: AccountBrainService;
   supplierMirrorStore?: SupplierMirrorStore;
   ownedEcommerceStore?: OwnedEcommerceStore;
+  economicStore?: EconomicOutcomeStore;
+  assessmentStore?: FinanceDirectorAssessmentStore;
+  economicLearningStore?: EconomicLearningStore;
   consensusStore?: AgentConsensusStore;
   activeCompanyAgentId?: CompanyAgentId;
   companyAgentAdminAuthorized?: boolean;
@@ -560,6 +573,34 @@ export function createAgentLoop(config: AgentLoopConfig) {
         "compare_account_assets",
         createCompareAccountAssetsTool(config.accountBrainService),
       );
+    }
+  }
+
+  // ── Finance Director Tools ───────────────────────────────────────
+  if (config.economicStore) {
+    let advisorFactory: (() => FinanceDirectorAdvisor | null) | undefined;
+    if (hasRealTransport && transport && config.sellerId && config.workforceCostCacheLedgerStore) {
+      const fdAdvisor = new FinanceDirectorAdvisor({
+        transport,
+        ledger: config.workforceCostCacheLedgerStore,
+      });
+      advisorFactory = () => fdAdvisor;
+    }
+    for (const tool of createFinanceDirectorTools({
+      economicStore: config.economicStore,
+      ...(config.assessmentStore !== undefined
+        ? { assessmentStore: config.assessmentStore }
+        : {}),
+      ...(advisorFactory !== undefined ? { advisorFactory } : {}),
+    })) {
+      if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
+    }
+  }
+
+  // ── Economic Learning Tools ─────────────────────────────────────
+  if (config.economicLearningStore) {
+    for (const tool of createEconomicLearningTools(config.economicLearningStore)) {
+      if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
     }
   }
 

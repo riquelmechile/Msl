@@ -38,7 +38,7 @@ export class FinanceDirectorEvidenceAssembler {
     const maxAge = opts.maxAge;
     const filteredSnapshots =
       maxAge !== undefined
-        ? allSnapshots.filter((s: UnitEconomicsSnapshot) => now - s.calculatedAt <= maxAge)
+        ? allSnapshots.filter((s: UnitEconomicsSnapshot) => now - s.calculatedAt < maxAge)
         : allSnapshots;
 
     // Get outcomes

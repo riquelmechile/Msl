@@ -93,7 +93,7 @@ La jerarquía no es cosmética. Define quién puede investigar, quién puede sol
 MSL aprende de dos fuentes distintas:
 
 - **Aprobación del CEO**: enseña preferencias y tolerancia al riesgo. Cuando el CEO aprueba o rechaza, Cortex refuerza o penaliza la constelación de nodos activada detrás de esa propuesta. Pero una aprobación **no debe tratarse automáticamente como una acción exitosa**.
-- **Resultado económico verificado**: enseña si una acción fue efectiva. Las propuestas aprobadas y ejecutadas se evalúan contra resultados reales de venta, margen, reclamos y costos. Solo el resultado económico comprobable califica una acción como exitosa.
+- **Resultado económico verificado**: enseña si una acción fue efectiva. Las propuestas aprobadas y ejecutadas se evalúan contra resultados reales de venta, margen, reclamos y costos. Solo el resultado económico comprobable califica una acción como exitosa. El **Cortex Economic Reinforcement Loop** (PR 3/3 de Financial Truth) implementa este circuito: eligibility gates deterministas, señal económica, atribución graduada en 5 niveles, plan de refuerzo separado de aplicación, puente Cortex idempotente y ledger auditable con soporte de reversión.
 - **Correcciones**: cuando el CEO redirige una propuesta, la corrección se convierte en política duradera o memoria de especialista.
 
 ## Organización objetivo
@@ -241,7 +241,7 @@ Esta sección describe lo que está implementado y funcionando en el commit de r
 - **Evidence Response Router**: 5 responders especializados (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager) que responden solicitudes de evidencia entre agentes.
 - **Work Sessions**: sesiones de trabajo persistentes con cooldown y ciclo de vida completo para agentes que necesitan contexto entre ejecuciones.
 - **Account Assets + Account Brain**: cada cuenta de MercadoLibre es un activo estratégico con sus propias capacidades, riesgos, oportunidades y objetivo de rentabilidad.
-- **Cortex**: grafo neuronal en SQLite con aprendizaje hebbiano, poda darwiniana y propagación de activación por CTEs recursivas.
+- **Cortex**: grafo neuronal en SQLite con aprendizaje hebbiano, poda darwiniana y propagación de activación por CTEs recursivas. El ciclo de refuerzo económico cierra el circuito de Financial Truth: outcomes verificados alimentan el aprendizaje Darwiniano con atribución graduada, eligibility gates, plan de refuerzo separado, ledger auditable y soporte de reversión.
 - **DeepSeek**: cliente real con bloques de caché estables, disponible con `DEEPSEEK_API_KEY`.
 - **Operational Read Model**: snapshots SQLite de 8 tipos de entidad (listings, claims, questions, orders, messages, reputation, product-ads-insights, pricing).
 - **Supplier Mirror**: evidencia de proveedores local-first, políticas de target, adaptadores de fuente y dry-run de Jinpeng.

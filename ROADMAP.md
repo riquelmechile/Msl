@@ -88,7 +88,7 @@ Verified against commit `413248c`:
 
 **Propósito:** Probar qué acciones generan rentabilidad real.
 
-**Estado:** **Parcial** — PR 1/3 completada (Economic Domain, Calculation & Persistence Foundation), PR 2/3 completada (Finance Director Agent)
+**Estado:** **Fundación completa** — PR 1/3, 2/3, y 3/3 completadas. Real financial data, landed cost, y cash flow pendientes de datos de producción (P0).
 
 ### Capacidades
 
@@ -102,16 +102,18 @@ Verified against commit `413248c`:
 - 🔲 Landed cost: cálculo real del costo puesto (producto + flete + internación + impuestos)
 - 🔲 Profit por order, por SKU, por cuenta y por canal
 - 🔲 Visibilidad de flujo de caja (corto plazo)
-- 🔲 Outcome attribution: qué agente/acción generó qué resultado
-- ✅ Director Financiero (agente) — primera versión con razonamiento DeepSeek, 4 herramientas CEO, daemon handler, work sessions
+- ✅ Outcome attribution: sistema de atribución de 5 niveles con evaluación determinista y puente Cortex idempotente (PR 3/3)
+- ✅ Director Financiero (agente) — razonamiento DeepSeek, 4 herramientas CEO, daemon handler, work sessions (PR 2/3)
+- ✅ Cortex Economic Reinforcement Loop — outcomes verificados alimentan aprendizaje Darwiniano con eligibility gates, 10 block reasons, signal determinista, plan de refuerzo separado de aplicación, y ledger auditable con soporte de reversión (PR 3/3)
+- 🔲 Datos financieros reales, landed cost, y cash flow pendientes de credenciales de producción P0
 
 ### PRs completadas
 
 | PR | Descripción | Estado |
 |----|-------------|--------|
-| 1/3 | Economic Domain, Calculation & Persistence Foundation | ✅ Merged |
-| 2/3 | Finance Director Agent (DeepSeek reasoning) | ✅ Merged |
-| 3/3 | Cortex Reinforcement Loop | 🔲 Planificado |
+| 1/3 | Economic Domain, Calculation & Persistence Foundation | ✅ Complete |
+| 2/3 | Finance Director Agent (DeepSeek reasoning) | ✅ Complete |
+| 3/3 | Cortex Economic Reinforcement Loop (verified outcomes → Darwinian learning) | ✅ Complete |
 
 ### Dependencias
 
