@@ -101,6 +101,8 @@ import { CreativeDeepSeekAdvisor } from "./creativeDeepSeekAdvisor.js";
 import { createSupplierMirrorTools } from "./supplierMirrorTools.js";
 import { createOwnedEcommerceTools } from "./ownedEcommerceTools.js";
 import { estimateSupplierMirrorDeepSeekCostMicros } from "./supplierMirrorDeepSeekPolicy.js";
+import type { AccountBrainService } from "./accountBrainService.js";
+import { createGetAccountBrainStatusTool, createCompareAccountAssetsTool } from "./tools.js";
 
 // Import extracted loop module functions
 import {
@@ -181,6 +183,7 @@ export type AgentLoopConfig = {
   companyAgentLearningStore?: CompanyAgentLearningStore;
   companyAgentSkillStore?: CompanyAgentSkillStore;
   workforceCostCacheLedgerStore?: WorkforceCostCacheLedgerStore;
+  accountBrainService?: AccountBrainService;
   supplierMirrorStore?: SupplierMirrorStore;
   ownedEcommerceStore?: OwnedEcommerceStore;
   consensusStore?: AgentConsensusStore;
@@ -544,6 +547,20 @@ export function createAgentLoop(config: AgentLoopConfig) {
   }
   if (config.engine && !toolMap.has("get_business_context")) {
     toolMap.set("get_business_context", createGetBusinessContextTool(config.engine));
+  }
+  if (config.accountBrainService) {
+    if (!toolMap.has("get_account_brain_status")) {
+      toolMap.set(
+        "get_account_brain_status",
+        createGetAccountBrainStatusTool(config.accountBrainService),
+      );
+    }
+    if (!toolMap.has("compare_account_assets")) {
+      toolMap.set(
+        "compare_account_assets",
+        createCompareAccountAssetsTool(config.accountBrainService),
+      );
+    }
   }
 
   const client: LlmClient =
