@@ -41,6 +41,14 @@ export type RecordWorkforceCostCacheLedgerEntryInput = {
   cacheStatus?: WorkforceCacheStatus;
   metadata?: Record<string, unknown>;
   measuredAt?: string;
+  /** Optional seller attribution for per-account cost tracking. */
+  sellerId?: string;
+  /** Optional session attribution for work-session cost tracking. */
+  sessionId?: string;
+  /** Optional stable prompt hash for cache efficiency tracking. */
+  stablePromptHash?: string;
+  /** Optional evidence hash for cache efficiency tracking. */
+  evidenceHash?: string;
 };
 
 export type ListWorkforceCostCacheLedgerEntriesFilter = {
@@ -68,6 +76,19 @@ export type WorkforceCostCacheLedgerStore = {
   ): readonly WorkforceCostCacheLedgerEntry[];
   count(): number;
   aggregateCosts(filter?: { days?: number }): WorkforceCostAggregate;
+  /** Record a work session usage entry with session attribution. */
+  recordAgentSessionUsage?(
+    input: RecordWorkforceCostCacheLedgerEntryInput,
+  ): WorkforceCostCacheLedgerEntry;
+  /** Aggregate costs by agent within a seller account. */
+  aggregateCostByAgentAndSeller?(
+    sellerId: string,
+  ): Map<
+    string,
+    { inputTokens: number; outputTokens: number; costMicros: number; entries: number }
+  >;
+  /** Compute cache efficiency ratio for a seller account. */
+  aggregateCacheEfficiencyBySeller?(sellerId: string): number;
 };
 
 export type WorkforceCostCacheLedgerStoreOptions = {
@@ -128,6 +149,13 @@ const MIGRATE_DEPARTMENT_ID_SQL = `
 ALTER TABLE workforce_cost_cache_ledger_entries ADD COLUMN department_id TEXT;
 `;
 
+const MIGRATE_SESSION_COLS_SQL = [
+  "ALTER TABLE workforce_cost_cache_ledger_entries ADD COLUMN seller_id TEXT",
+  "ALTER TABLE workforce_cost_cache_ledger_entries ADD COLUMN session_id TEXT",
+  "ALTER TABLE workforce_cost_cache_ledger_entries ADD COLUMN stable_prompt_hash TEXT",
+  "ALTER TABLE workforce_cost_cache_ledger_entries ADD COLUMN evidence_hash TEXT",
+];
+
 type WorkforceCostCacheLedgerRow = {
   entry_id: string;
   agent_id: string;
@@ -146,6 +174,10 @@ type WorkforceCostCacheLedgerRow = {
   metadata: string;
   measured_at: string;
   created_at: string;
+  seller_id: string | null;
+  session_id: string | null;
+  stable_prompt_hash: string | null;
+  evidence_hash: string | null;
 };
 
 type RollupRow = {
@@ -382,6 +414,24 @@ export function createWorkforceCostCacheLedgerStore(
     // Column already exists — safe to ignore
   }
 
+  // A.2: Safe migration — add session attribution columns via columnExists
+  const columns = db.pragma("table_info(workforce_cost_cache_ledger_entries)") as {
+    name: string;
+  }[];
+  const existingColumns = new Set(columns.map((c) => c.name));
+
+  for (const migration of MIGRATE_SESSION_COLS_SQL) {
+    // Extract column name from ALTER TABLE ... ADD COLUMN <name> ...
+    const colMatch = migration.match(/ADD COLUMN (\w+)/);
+    if (colMatch && colMatch[1] && !existingColumns.has(colMatch[1])) {
+      try {
+        db.exec(migration);
+      } catch {
+        // Defensive — ignore migration errors
+      }
+    }
+  }
+
   const requestedMaxEntries = options.maxEntries ?? LEDGER_LIMITS.defaultMaxEntries;
   const maxEntries = Number.isFinite(requestedMaxEntries)
     ? Math.max(1, Math.floor(requestedMaxEntries))
@@ -404,7 +454,11 @@ export function createWorkforceCostCacheLedgerStore(
       currency,
       cache_status,
       metadata,
-      measured_at
+      measured_at,
+      seller_id,
+      session_id,
+      stable_prompt_hash,
+      evidence_hash
     ) VALUES (
       @entryId,
       @agentId,
@@ -421,7 +475,11 @@ export function createWorkforceCostCacheLedgerStore(
       @currency,
       @cacheStatus,
       @metadata,
-      @measuredAt
+      @measuredAt,
+      @sellerId,
+      @sessionId,
+      @stablePromptHash,
+      @evidenceHash
     )
   `);
   const getStmt = db.prepare(`
@@ -492,6 +550,10 @@ export function createWorkforceCostCacheLedgerStore(
       cacheStatus: input.cacheStatus ?? "unknown",
       metadata: JSON.stringify(metadata),
       measuredAt,
+      sellerId: input.sellerId ?? null,
+      sessionId: input.sessionId ?? null,
+      stablePromptHash: input.stablePromptHash ?? null,
+      evidenceHash: input.evidenceHash ?? null,
     });
     const row = getStmt.get(input.entryId) as WorkforceCostCacheLedgerRow | undefined;
     const entry = row ? rowToEntry(row) : undefined;
@@ -616,5 +678,81 @@ export function createWorkforceCostCacheLedgerStore(
     return { byAgent, byDepartment, byPeriod, cacheEfficiency };
   };
 
-  return { insertEntry, listEntries, count, aggregateCosts };
+  // ── New: session-aware aggregates ──────────────────────────────
+
+  const aggregateCostByAgentAndSellerStmt = db.prepare(`
+    SELECT agent_id,
+           COALESCE(SUM(input_tokens), 0) as total_input,
+           COALESCE(SUM(output_tokens), 0) as total_output,
+           COALESCE(SUM(estimated_cost_micros), 0) as total_cost,
+           COUNT(*) as entry_count
+    FROM workforce_cost_cache_ledger_entries
+    WHERE seller_id = ?
+    GROUP BY agent_id
+    ORDER BY total_cost DESC
+  `);
+
+  const aggregateCacheEfficiencyBySellerStmt = db.prepare(`
+    SELECT COALESCE(SUM(prompt_cache_hit_tokens), 0) as total_hit,
+           COALESCE(SUM(prompt_cache_miss_tokens), 0) as total_miss
+    FROM workforce_cost_cache_ledger_entries
+    WHERE seller_id = ?
+  `);
+
+  const recordAgentSessionUsage = (
+    input: RecordWorkforceCostCacheLedgerEntryInput,
+  ): WorkforceCostCacheLedgerEntry => {
+    return insertEntry(input);
+  };
+
+  const aggregateCostByAgentAndSeller = (
+    sellerId: string,
+  ): Map<
+    string,
+    { inputTokens: number; outputTokens: number; costMicros: number; entries: number }
+  > => {
+    const rows = aggregateCostByAgentAndSellerStmt.all(sellerId) as Array<{
+      agent_id: string;
+      total_input: number;
+      total_output: number;
+      total_cost: number;
+      entry_count: number;
+    }>;
+
+    const result = new Map<
+      string,
+      { inputTokens: number; outputTokens: number; costMicros: number; entries: number }
+    >();
+    for (const row of rows) {
+      result.set(row.agent_id, {
+        inputTokens: row.total_input,
+        outputTokens: row.total_output,
+        costMicros: row.total_cost,
+        entries: row.entry_count,
+      });
+    }
+    return result;
+  };
+
+  const aggregateCacheEfficiencyBySeller = (sellerId: string): number => {
+    const row = aggregateCacheEfficiencyBySellerStmt.get(sellerId) as
+      | {
+          total_hit: number;
+          total_miss: number;
+        }
+      | undefined;
+    if (!row) return 0;
+    const total = row.total_hit + row.total_miss;
+    return total > 0 ? row.total_hit / total : 0;
+  };
+
+  return {
+    insertEntry,
+    listEntries,
+    count,
+    aggregateCosts,
+    recordAgentSessionUsage,
+    aggregateCostByAgentAndSeller,
+    aggregateCacheEfficiencyBySeller,
+  };
 }

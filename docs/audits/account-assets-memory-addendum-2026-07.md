@@ -96,3 +96,48 @@ Updated `ARCHITECTURE.md` with:
 - Cortex subgraph per-seller (root node, edge types, scoping rules)
 - Daemon per-seller flow diagram
 - Approval "dale" scoping and bot single-instance limitation
+
+---
+
+## 6. Agent Work Sessions & Cache (Addendum — 2026-07-10)
+
+### Change
+
+**Change**: `agent-work-sessions-cache`
+**Branch**: `feat/agent-work-sessions-cache` (PR #126 → PR #127 stacked-to-main)
+**Related**: Builds on top of `account-assets-strategic-memory`
+
+### Gaps This PR Resolves
+
+| Gap                                                 | Audit Context                                                                                  | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **WorkforceCostCacheLedgerStore lacks `seller_id`** | Deferred in §3. `sellerId` was injected via `metadata` field.                                  | ✅ RESOLVED. `seller_id`, `session_id`, `stable_prompt_hash`, `evidence_hash` columns added via idempotent `columnExists()` migration. `insertEntry()` extended with optional fields (backward compatible). New aggregates: `aggregateCostByAgentAndSeller(sellerId)`, `aggregateCacheEfficiencyBySeller(sellerId)`.                                                                                                                                              |
+| **No agent work introspection**                     | CEO had no visibility into autonomous agent activity per account.                              | ✅ RESOLVED. `get_agent_work_status` tool registered. Returns agents worked today, observations, pending proposals, failed sessions, estimated cost, cache efficiency, and next steps — all read-only, `noMutationExecuted: true`.                                                                                                                                                                                                                                |
+| **Daemon cycles not session-aware**                 | Handlers ran statelessly; no mechanism to skip redundant work.                                 | ✅ RESOLVED. `AgentWorkSessionRunner` orchestrates full lifecycle: signals → wake decision → session → DeepSeek → record → complete. `DaemonScheduler` extended with `enableWorkSessions` config. 6 sessionized lanes (`unanswered-questions`, `product-ads-profitability`, `creative-assets`, `operations-manager`, `morning-report`, `eod-summary`) route through session runner. Backward compatible: `enableWorkSessions: false` preserves existing behavior. |
+| **No shift summaries**                              | Morning report and EOD summary daemons had no session data to aggregate.                       | ✅ RESOLVED. `agentShiftSummary` module: `createMorningBrief`, `createEndOfDaySummary`, `summarizeAccountShift`. DB-query-first; DeepSeek optional for compression.                                                                                                                                                                                                                                                                                               |
+| **No Cortex work session recording**                | Agent work had no neural memory footprint.                                                     | ✅ RESOLVED. `agentWorkCortexBridge`: `recordWorkSessionToCortex`, `recordObservationToCortex`, `recordLessonToCortex`, `connectSessionToProposal`, `connectSessionToOutcome`. Graph model: `AccountAsset → Agent → WorkSession → Observation/Proposal/Lesson`. All seller-scoped. Transferable lessons link to `AccountAsset` root for cross-agent discovery.                                                                                                    |
+| **No cache-friendly prompt architecture**           | Every daemon cycle generated full prompts from scratch — zero DeepSeek disk-cache utilization. | ✅ RESOLVED. `cacheFriendlyPromptBuilder`: 9-layer prompt (6 stable layers cached 24h, 3 variable layers per cycle). SHA-256 hashing for `stablePromptHash` and `evidenceHash`. DeepSeek `disk_cache_ttl: 86400`. `agentWakePolicy` deduplicates via signals hash comparison.                                                                                                                                                                                     |
+| **Agent lessons not transferable across agents**    | Each agent learned in isolation; no cross-agent learning within same account.                  | ✅ RESOLVED. `transferable` flag on `AgentLesson`. Runner records lessons from DeepSeek output. `cacheFriendlyPromptBuilder` injects up to 3 transferable lessons into stable prompt prefix. Cortex bridge links transferable lessons to `AccountAsset` root.                                                                                                                                                                                                     |
+
+### What Remains Pending
+
+| Item                                        | Status  | Notes                                                                                                                                                                                                                                         |
+| ------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CEO dashboard**                           | PENDING | `get_agent_work_status` returns structured JSON but no UI. Dashboard planned for future PR.                                                                                                                                                   |
+| **`compare_account_assets`**                | PENDING | Cross-account comparison feature for CEO strategic decisions.                                                                                                                                                                                 |
+| **Multi-bot concurrent work sessions**      | PENDING | Current architecture supports per-seller isolation; concurrent multi-bot deployment is a runtime concern.                                                                                                                                     |
+| **Provider smoke tests**                    | PENDING | DeepSeek cache efficiency measurement in controlled test environments. Not in scope for this PR.                                                                                                                                              |
+| **Full daemon handler session integration** | PARTIAL | 6 handlers have daemon-level session dispatch. Individual handlers can be enhanced to create structured session input (signals, evidence) for richer runner behavior. Current implementation is functional but could be deepened per handler. |
+
+### Test Coverage (PR 2)
+
+| Spec                          | Tests                                                                                                      | Status |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- | ------ |
+| agent-work-session-runner     | 7 tests (skip, complete, fail, proposals, invalid-json, scoping, manual-override)                          | ✅     |
+| agent-work-cortex-bridge      | 8 tests (session recording, observations, lessons, transferable, proposals, outcomes, scoping, idempotent) | ✅     |
+| agent-shift-summaries         | 5 tests (morning, EOD, account-shift, scoping, recommendations)                                            | ✅     |
+| daemon-scheduler              | 3 tests (disabled, enabled+cooldown, backward-compatible)                                                  | ✅     |
+| workforce-cost-rollups        | 6 tests (migration, attribution, backward-compatible, per-seller-cost, cache-efficiency)                   | ✅     |
+| conversational-business-agent | 5 tests (no-store, seller-scoped, per-account, lessons, noMutation)                                        | ✅     |
+
+**Full suite after PR 2**: 2242 tests (all passing), 7 skipped (smoke tests). No regressions.

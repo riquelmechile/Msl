@@ -45,6 +45,9 @@ function makeMockLedger(): WorkforceCostCacheLedgerStore {
       byPeriod: [],
       cacheEfficiency: 0,
     }),
+    recordAgentSessionUsage: vi.fn(),
+    aggregateCostByAgentAndSeller: vi.fn().mockReturnValue(new Map()),
+    aggregateCacheEfficiencyBySeller: vi.fn().mockReturnValue(0),
   };
 }
 
