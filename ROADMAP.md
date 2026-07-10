@@ -88,15 +88,29 @@ Verified against commit `413248c`:
 
 **Propósito:** Probar qué acciones generan rentabilidad real.
 
+**Estado:** **Parcial** — PR 1/3 completada (Economic Domain, Calculation & Persistence Foundation)
+
 ### Capacidades
 
-- `EconomicOutcome`: tracking de resultado económico post-ejecución
-- `UnitEconomics`: margen de contribución por producto, canal y cuenta
-- Landed cost: cálculo real del costo puesto (producto + flete + internación + impuestos)
-- Profit por order, por SKU, por cuenta y por canal
-- Visibilidad de flujo de caja (corto plazo)
-- Outcome attribution: qué agente/acción generó qué resultado
-- Director Financiero (agente) — primera versión
+- ✅ `EconomicOutcome`: tracking de resultado económico post-ejecución (PR 1/3)
+- ✅ `UnitEconomics`: margen de contribución por producto, canal y cuenta (PR 1/3)
+- ✅ Money type seguro (`amountMinor` entero, CLP+USD, sin floating point) (PR 1/3)
+- ✅ EconomicCostComponent con provenance (12 tipos de costo) (PR 1/3)
+- ✅ SQLite EconomicOutcomeStore con seller isolation (PR 1/3)
+- ✅ Herramientas CEO read-only: `inspect_unit_economics`, `inspect_economic_outcome`, `list_missing_economic_inputs` (PR 1/3)
+- 🔲 Landed cost: cálculo real del costo puesto (producto + flete + internación + impuestos)
+- 🔲 Profit por order, por SKU, por cuenta y por canal
+- 🔲 Visibilidad de flujo de caja (corto plazo)
+- 🔲 Outcome attribution: qué agente/acción generó qué resultado
+- 🔲 Director Financiero (agente) — primera versión
+
+### PRs completadas
+
+| PR | Descripción | Estado |
+|----|-------------|--------|
+| 1/3 | Economic Domain, Calculation & Persistence Foundation | ✅ Merged |
+| 2/3 | Finance Director Agent (DeepSeek reasoning) | 🔲 Planificado |
+| 3/3 | Cortex Reinforcement Loop | 🔲 Planificado |
 
 ### Dependencias
 

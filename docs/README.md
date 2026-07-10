@@ -69,6 +69,7 @@ Documentos que detallan componentes específicos de la arquitectura, integracion
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | [`architecture/multi-agent-evidence-responses.md`](./architecture/multi-agent-evidence-responses.md)     | Evidencia entre agentes               |
 | [`architecture/agent-work-sessions-cache.md`](./architecture/agent-work-sessions-cache.md)               | Work Sessions y caché                 |
+| [`architecture/financial-truth-foundation.md`](./architecture/financial-truth-foundation.md)             | Financial Truth Foundation (P1, PR 1/3) |
 | [`architecture/owned-ecommerce-deepseek-advisor.md`](./architecture/owned-ecommerce-deepseek-advisor.md) | DeepSeek Merchandising Advisor        |
 | [`architecture/owned-ecommerce-intelligence.md`](./architecture/owned-ecommerce-intelligence.md)         | Owned Ecommerce Intelligence          |
 | [`architecture/ceo-account-brain-dashboard.md`](./architecture/ceo-account-brain-dashboard.md)           | Account Brain Dashboard               |
