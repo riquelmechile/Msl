@@ -11,9 +11,12 @@ import {
   buildProjection,
   type ScoredCandidate,
   type StorefrontProjectionPreparation,
+  type DeepSeekEnrichment,
 } from "./storefrontProjectionBuilder.js";
 import type { StorefrontCandidateScore } from "@msl/domain";
 import crypto from "node:crypto";
+import { OwnedEcommerceMerchandisingAdvisor } from "./ownedEcommerceMerchandisingAdvisor.js";
+import { validate as validateAdvisorOutput } from "./merchandisingAdvisorValidator.js";
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -87,10 +90,10 @@ export class OwnedEcommerceIntelligenceService {
    * @param sellerId — Optional seller scope for Cortex isolation.
    * @returns `IntelligenceResult` with `noMutationExecuted: true`.
    */
-  prepareFromSupplierWebSignal(
+  async prepareFromSupplierWebSignal(
     signal: SupplierWebSignalPayload,
     sellerId?: string,
-  ): IntelligenceResult {
+  ): Promise<IntelligenceResult> {
     const errors: string[] = [];
 
     // 1. Validate
@@ -256,7 +259,80 @@ export class OwnedEcommerceIntelligenceService {
       }
     }
 
-    // 7. DeepSeek SEO/GEO (deferred — handled by optional DeepSeek advisor in PR 3)
+    // 7. DeepSeek merchandising advisor — gated by feature flag and transport
+    let deepSeekEnrichment: DeepSeekEnrichment | undefined;
+
+    const advisorEnabled = process.env.MSL_OWNED_ECOMMERCE_ADVISOR_ENABLED === "true";
+    if (advisorEnabled && this.deepSeekTransport) {
+      const advisor = new OwnedEcommerceMerchandisingAdvisor({
+        deepSeekTransport: this.deepSeekTransport,
+        ...(this.log !== undefined ? { logger: this.log } : {}),
+        ...(sellerId !== undefined ? { sellerId } : {}),
+      });
+
+      this.log?.info("[owned-ecommerce] DeepSeek advisor enabled — enriching candidates", {
+        candidateCount: candidates.length,
+        sellerId: sellerId ?? "unknown",
+      });
+
+      for (const c of candidates) {
+        const score = scores[c.id];
+        if (!score) continue;
+
+        // Skip blocked candidates — advisor does NOT unblock them
+        if (score.blockers.length > 0) {
+          this.log?.info("Skipping advisor for blocked candidate", { candidateId: c.id });
+          continue;
+        }
+
+        try {
+          const seoResult = await advisor.draftSeoGeoCopy(c);
+          const tradeoffResult = await advisor.explainChannelTradeoffs(c);
+
+          // Validate both results through the pure-function validator
+          const seoValidation = validateAdvisorOutput(seoResult);
+          const tradeoffValidation = validateAdvisorOutput(tradeoffResult);
+
+          // Build DeepSeekEnrichment from validated advisor output
+          // Use conditional spreads to satisfy exactOptionalPropertyTypes
+          const seoSug = seoValidation.sanitizedResult.seoSuggestions;
+          const geoSug = seoValidation.sanitizedResult.geoSuggestions;
+          deepSeekEnrichment = {
+            ...(seoSug.seoTitle !== undefined ? { seoTitle: seoSug.seoTitle } : {}),
+            ...(seoSug.seoDescription !== undefined
+              ? { seoDescription: seoSug.seoDescription }
+              : {}),
+            ...(seoSug.keywords !== undefined ? { keywords: seoSug.keywords } : {}),
+            ...(geoSug.geoSummary !== undefined ? { geoSummary: geoSug.geoSummary } : {}),
+            ...(geoSug.faq !== undefined ? { faq: geoSug.faq } : {}),
+          };
+
+          if (!seoValidation.usable || !tradeoffValidation.usable) {
+            this.log?.warn(
+              "Advisor output partially blocked by validator — using sanitized enrichment",
+              {
+                candidateId: c.id,
+                blockedClaimCount:
+                  seoValidation.blockedClaims.length + tradeoffValidation.blockedClaims.length,
+              },
+            );
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          this.log?.warn("Advisor call failed — degrading gracefully, enrichment skipped", {
+            candidateId: c.id,
+            error: errorMsg,
+          });
+          // Degrade gracefully — enrichment stays undefined for this candidate
+        }
+      }
+    } else {
+      if (!advisorEnabled) {
+        this.log?.info("[owned-ecommerce] DeepSeek advisor disabled — step 7 skipped");
+      } else {
+        this.log?.info("[owned-ecommerce] DeepSeek transport absent — step 7 skipped");
+      }
+    }
 
     // 8. Build projection
     let projection: StorefrontProjectionPreparation | undefined;
@@ -270,7 +346,7 @@ export class OwnedEcommerceIntelligenceService {
 
     if (scoredCandidates.length > 0) {
       try {
-        projection = buildProjection(scoredCandidates);
+        projection = buildProjection(scoredCandidates, deepSeekEnrichment);
         // Inject creative request ref into projection media
         if (projection.media.missingImages && creativeRequestId) {
           projection.media.creativeRequestId = creativeRequestId;
@@ -397,7 +473,7 @@ export class OwnedEcommerceIntelligenceService {
 
       let projection: StorefrontProjectionPreparation | undefined;
       if (scoredCandidates.length > 0) {
-        projection = buildProjection(scoredCandidates);
+        projection = buildProjection(scoredCandidates, undefined);
       }
 
       const result: IntelligenceResult = {

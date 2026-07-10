@@ -417,3 +417,49 @@ The daemon SHALL register observations and lessons in work sessions. It MUST NOT
 - WHEN the daemon attempts to register an observation or lesson
 - THEN the daemon MUST continue silently
 - AND MUST NOT fail or throw
+
+---
+
+### Requirement: DeepSeekEnrichment in Storefront Projections
+
+Storefront projections MUST include `DeepSeekEnrichment` populated by the advisor when transport is available. When unavailable, enrichment MUST be absent but the projection MUST NOT fail.
+
+#### Scenario: Enrichment present
+
+- GIVEN DeepSeek available, advisor returns reasoning
+- WHEN projection is built
+- THEN `DeepSeekEnrichment` includes rationale, tradeoffs, experiments
+
+#### Scenario: No transport
+
+- GIVEN transport absent
+- WHEN projection is built
+- THEN `DeepSeekEnrichment` absent; projection still valid
+
+#### Scenario: Validator blocks content
+
+- GIVEN advisor output partially blocked by validator
+- WHEN projection is built
+- THEN only valid enrichment fields included; blocked fields absent
+
+### Requirement: Advisor Step 7 Fulfilled
+
+The previously deferred pipeline step 7 (DeepSeek merchandising reasoning) MUST now execute when `MSL_OWNED_ECOMMERCE_ADVISOR_ENABLED` is `"true"` and transport is configured. `noMutationExecuted: true` and `requiresApproval: true` MUST be maintained throughout.
+
+#### Scenario: Step 7 wired and runs
+
+- GIVEN feature flag enabled, transport configured
+- WHEN pipeline reaches step 7
+- THEN advisor executes; enrichment passed to projection builder
+
+#### Scenario: Flag disabled
+
+- GIVEN feature flag is not `"true"`
+- WHEN pipeline runs
+- THEN step 7 skipped; behavior identical to before this change
+
+#### Scenario: Transport absent but flag enabled
+
+- GIVEN flag is `"true"`, no transport
+- WHEN pipeline reaches step 7
+- THEN deterministic fallback used; pipeline continues

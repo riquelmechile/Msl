@@ -59,6 +59,23 @@ When DeepSeek is configured, SEO titles and GEO copy are validated for:
 - GEO intent matched to FAQ IDs
 - Missing DeepSeek → deterministic fallback (no hardcoded rules)
 
+## DeepSeek Merchandising Advisor
+
+Between scoring and projection assembly, the pipeline optionally invokes the `OwnedEcommerceMerchandisingAdvisor` (step 7) to enrich candidates with AI-generated SEO/GEO copy and channel tradeoff analysis. Gated by `MSL_OWNED_ECOMMERCE_ADVISOR_ENABLED` (default `false`).
+
+| Condition                        | Behavior                                               |
+| -------------------------------- | ------------------------------------------------------ |
+| Flag enabled + transport present | Advisor enriches projection with SEO/GEO and tradeoffs |
+| Flag disabled                    | Step 7 skipped — zero transport calls                  |
+| Transport absent                 | Deterministic fallback — zero failure                  |
+| Advisor throws                   | Graceful degradation — enrichment skipped              |
+
+All advisor output passes through `MerchandisingAdvisorValidator` — a pure-function safety gate that blocks superlatives without evidence, publish language, unsupported medical/technical claims, and invented stock/margin data. Blocked claims are stripped; safe content passes through.
+
+Blocked candidates remain blocked — the advisor never unblocks.
+
+See [DeepSeek Merchandising Advisor](./owned-ecommerce-deepseek-advisor.md) for architecture details.
+
 ## Creative Studio Delegation
 
 When candidates lack images, the pipeline (planned PR 3) enqueues a `CreativeAssetRequest` to the creative lane. Duplicate requests are suppressed via 24h dedup.
@@ -97,12 +114,16 @@ All Cortex queries carry a `sellerId` argument. Plasticov supplier data is never
 | Domain types (`supplierWebSignal.ts`)    | PR 1 | ✅ Implemented |
 | Supplier Manager bridge (6 signal kinds) | PR 1 | ✅ Implemented |
 | Dedupe keys (`sws:...`)                  | PR 1 | ✅ Implemented |
-| OwnedEcommerceDaemon (signal consumer)   | PR 2 | Planned        |
-| OwnedEcommerceIntelligenceService        | PR 2 | Planned        |
-| CortexReasoner (spreadActivation)        | PR 2 | Planned        |
-| StorefrontCandidateScorer                | PR 2 | Planned        |
-| StorefrontProjectionBuilder              | PR 2 | Planned        |
-| Daemon integration + tools               | PR 3 | Planned        |
-| Creative Studio delegation               | PR 3 | Planned        |
-| AccountBrain channel comparison          | PR 3 | Planned        |
-| Work session observations                | PR 3 | Planned        |
+| OwnedEcommerceDaemon (signal consumer)   | PR 2 | ✅ Implemented |
+| OwnedEcommerceIntelligenceService        | PR 2 | ✅ Implemented |
+| CortexReasoner (spreadActivation)        | PR 2 | ✅ Implemented |
+| StorefrontCandidateScorer                | PR 2 | ✅ Implemented |
+| StorefrontProjectionBuilder              | PR 2 | ✅ Implemented |
+| Daemon integration + tools               | PR 3 | ✅ Implemented |
+| Creative Studio delegation               | PR 3 | ✅ Implemented |
+| AccountBrain channel comparison          | PR 3 | ✅ Implemented |
+| Work session observations                | PR 3 | ✅ Implemented |
+| DeepSeek Merchandising Advisor           | PR 4 | ✅ Implemented |
+| Advisor Validator                        | PR 4 | ✅ Implemented |
+| Evidence Request Planner                 | PR 4 | ✅ Implemented |
+| Integration wiring + feature flag        | PR 4 | ✅ Implemented |
