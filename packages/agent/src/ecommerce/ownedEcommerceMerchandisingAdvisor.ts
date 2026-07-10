@@ -675,7 +675,7 @@ export class OwnedEcommerceMerchandisingAdvisor {
         return true;
       })
       .map((ct) => ({
-        channel: ct.channel as ChannelTradeoffExplanation["channel"],
+        channel: ct.channel,
         upsides: ct.upsides,
         risks: ct.risks,
         overallAssessment: ct.overallAssessment,
@@ -692,11 +692,11 @@ export class OwnedEcommerceMerchandisingAdvisor {
         return true;
       })
       .map((mr) => ({
-        category: mr.category as MissingEvidenceReport["category"],
-        severity: mr.severity as MissingEvidenceReport["severity"],
+        category: mr.category,
+        severity: mr.severity,
         description: mr.description,
         candidateId: mr.candidateId,
-        targetAgentId: mr.targetAgentId as MissingEvidenceReport["targetAgentId"],
+        targetAgentId: mr.targetAgentId,
         question: mr.question,
       }));
 

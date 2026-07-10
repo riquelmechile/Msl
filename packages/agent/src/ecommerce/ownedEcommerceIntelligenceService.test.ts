@@ -160,7 +160,7 @@ function fakeTransportWithResponses(responses: DeepSeekChatResponse[]): DeepSeek
 /** Create a fake transport that throws on every call. */
 function throwingTransport(): DeepSeekTransport {
   class ThrowingTransport extends DeepSeekFakeTransport {
-    override async createChatCompletion(): Promise<DeepSeekChatResponse> {
+    override createChatCompletion(): Promise<DeepSeekChatResponse> {
       throw new Error("Simulated DeepSeek API failure");
     }
   }

@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { validate, type AdvisorValidationResult } from "./merchandisingAdvisorValidator.js";
+import { describe, expect, it } from "vitest";
+import { validate } from "./merchandisingAdvisorValidator.js";
 import type { MerchandisingAdvisorResult } from "./ownedEcommerceMerchandisingAdvisor.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -380,9 +380,8 @@ describe("MerchandisingAdvisorValidator", () => {
         },
       });
 
-      let validated: AdvisorValidationResult;
       expect(() => {
-        validated = validate(rich);
+        validate(rich);
       }).not.toThrow();
 
       // Should have blocked claims and warnings

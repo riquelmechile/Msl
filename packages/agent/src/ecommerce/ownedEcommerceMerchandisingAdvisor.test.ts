@@ -3,11 +3,7 @@ import crypto from "node:crypto";
 import type { StorefrontCandidate, StorefrontCandidateScore } from "@msl/domain";
 import { DeepSeekFakeTransport } from "../conversation/transports/deepseekTransport.js";
 import type { DeepSeekChatResponse } from "../conversation/transports/deepseekTransport.js";
-import {
-  OwnedEcommerceMerchandisingAdvisor,
-  type MerchandisingAdvisorResult,
-  type RankingReasoning,
-} from "./ownedEcommerceMerchandisingAdvisor.js";
+import { OwnedEcommerceMerchandisingAdvisor } from "./ownedEcommerceMerchandisingAdvisor.js";
 import {
   buildStableSystemPrompt,
   buildEvidenceBlock,
@@ -210,7 +206,7 @@ function fakeCompletion(jsonContent: string): DeepSeekChatResponse {
 function throwingTransport(): DeepSeekFakeTransport {
   // Create a transport that throws on createChatCompletion
   class ThrowingTransport extends DeepSeekFakeTransport {
-    override async createChatCompletion(): Promise<DeepSeekChatResponse> {
+    override createChatCompletion(): Promise<DeepSeekChatResponse> {
       throw new Error("Simulated DeepSeek API failure");
     }
   }
