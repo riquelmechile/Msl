@@ -57,6 +57,9 @@ function makeMockLedger(): WorkforceCostCacheLedgerStore {
       byPeriod: [],
       cacheEfficiency: 0,
     }),
+    recordAgentSessionUsage: vi.fn(),
+    aggregateCostByAgentAndSeller: vi.fn().mockReturnValue(new Map()),
+    aggregateCacheEfficiencyBySeller: vi.fn().mockReturnValue(0),
   };
 }
 
@@ -351,6 +354,9 @@ describe("createCeoDeepSeekClient", () => {
         byPeriod: [],
         cacheEfficiency: 0,
       }),
+      recordAgentSessionUsage: vi.fn(),
+      aggregateCostByAgentAndSeller: vi.fn().mockReturnValue(new Map()),
+      aggregateCacheEfficiencyBySeller: vi.fn().mockReturnValue(0),
     } as unknown as WorkforceCostCacheLedgerStore;
 
     await client!.reason(makeFindings(), makeMockCortex(), ledger);

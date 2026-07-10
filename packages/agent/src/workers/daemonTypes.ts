@@ -8,6 +8,8 @@ import type { CatalogDeepSeekAdvisor } from "../conversation/catalogDeepSeekAdvi
 import type { CostSupplierDeepSeekAdvisor } from "../conversation/costSupplierDeepSeekAdvisor.js";
 import type { CreativeDeepSeekAdvisor } from "../conversation/creativeDeepSeekAdvisor.js";
 import type { AgentAccountContext } from "../conversation/types.js";
+import type { AgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
+import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -108,4 +110,11 @@ export type DaemonHandler = (input: {
    *  appended as aiEnrichment to the proposal payload. When absent, all proposals are
    *  rule-only. */
   creativeAdvisor?: CreativeDeepSeekAdvisor;
+  /** Optional AgentWorkSessionStore for session persistence. When provided,
+   *  session-aware lanes may query session state before dispatch. */
+  sessionStore?: AgentWorkSessionStore;
+  /** Optional session runner for work-session lifecycle. When provided alongside
+   *  enableWorkSessions in the scheduler, daemon ticks route through the
+   *  session runner instead of direct handler invocation. */
+  sessionRunner?: AgentWorkSessionRunner;
 }) => Promise<DaemonResult>;

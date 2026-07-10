@@ -31,6 +31,8 @@ import { morningReportDaemon } from "./morningReportDaemon.js";
 import { eodSummaryDaemon } from "./eodSummaryDaemon.js";
 import { ownedEcommerceDaemon } from "./ownedEcommerceDaemon.js";
 import { unansweredQuestionsDaemon } from "./unansweredQuestionsDaemon.js";
+import type { AgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
+import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.js";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -68,11 +70,30 @@ export type DaemonSchedulerConfig = {
   creativeAdvisor?: CreativeDeepSeekAdvisor;
   /** Optional CeoInboxStore for persisting CEO proposals before bus resolution. */
   ceoInboxStore?: CeoInboxStore;
+  /** When true, the 6 sessionized lanes route through WorkSessionRunner instead of direct handler dispatch. */
+  enableWorkSessions?: boolean;
+  /** Optional AgentWorkSessionStore for session persistence (required when enableWorkSessions is true). */
+  sessionStore?: AgentWorkSessionStore;
+  /** Optional session runner for work-session lifecycle. */
+  workSessionRunner?: AgentWorkSessionRunner;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+
+/** Lanes that support work-session routing when enableWorkSessions is true. */
+const SESSION_LANE_IDS = new Set<LaneId>([
+  "unanswered-questions",
+  "product-ads-profitability",
+  "creative-assets",
+  "operations-manager",
+  "morning-report",
+  "eod-summary",
+]);
+
+/** Minimum cooldown between sessions for the same lane+seller (1 hour). */
+const SESSION_COOLDOWN_MS = 60 * 60 * 1000;
 
 /** Static mapping from LaneId → daemon handler. Unknown lanes are skipped silently. */
 const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
@@ -184,6 +205,55 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
 
         for (const claim of claimed) {
           try {
+            // ── Session-aware dispatch for sessionized lanes ──
+            if (config.enableWorkSessions && config.sessionStore && SESSION_LANE_IDS.has(laneId)) {
+              const sessionSellerId =
+                (claim.sellerId ?? claim.payloadJson)
+                  ? (() => {
+                      try {
+                        const parsed = JSON.parse(claim.payloadJson) as {
+                          sellerId?: string;
+                        };
+                        return parsed.sellerId;
+                      } catch {
+                        return undefined;
+                      }
+                    })()
+                  : undefined;
+
+              if (sessionSellerId) {
+                // Check for recent session to skip duplicate dispatches
+                const recentSessions = config.sessionStore.listRecentSessionsByAgent(
+                  sessionSellerId,
+                  laneId,
+                  1,
+                );
+                if (recentSessions.length > 0) {
+                  const lastSession = recentSessions[0];
+                  if (
+                    lastSession &&
+                    (lastSession.status === "completed" || lastSession.status === "skipped")
+                  ) {
+                    const endedAt = lastSession.endedAt;
+                    if (endedAt) {
+                      const elapsed = Date.now() - new Date(endedAt).getTime();
+                      if (elapsed < SESSION_COOLDOWN_MS) {
+                        // Skip — recent session already processed this lane+seller
+                        config.bus.resolve(claim.messageId, {
+                          findings: [],
+                          proposalEnqueued: false,
+                          messageIds: [],
+                          sessionSkipped: true,
+                          reason: "cooldown",
+                        });
+                        continue;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
             const result = await handler({
               claim,
               reader: cachedReader,
@@ -198,6 +268,8 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               catalogAdvisor: config.catalogAdvisor,
               costSupplierAdvisor: config.costSupplierAdvisor,
               creativeAdvisor: config.creativeAdvisor,
+              sessionStore: config.sessionStore,
+              sessionRunner: config.workSessionRunner,
             } as Parameters<DaemonHandler>[0]);
             config.bus.resolve(claim.messageId, result);
           } catch (err) {
