@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
 import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { OperationalReadModelReader, OwnedEcommerceStore } from "@msl/memory";
+import type { EvidenceRequestStore } from "@msl/memory";
 import type { WorkforceCostCacheLedgerStore } from "../conversation/workforceCostCacheLedgerStore.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
 import type { OperationsDeepSeekAdvisor } from "../conversation/operationsDeepSeekAdvisor.js";
@@ -13,6 +14,7 @@ import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.
 import type { AccountBrainService } from "../conversation/accountBrainService.js";
 import type { CreativeJobQueueStore } from "../conversation/creativeJobQueueStore.js";
 import type { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
+import type { OwnedEcommerceEvidenceAggregator } from "../ecommerce/ownedEcommerceEvidenceAggregator.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -134,4 +136,12 @@ export type DaemonHandler = (input: {
   /** Optional OwnedEcommerceStore for persisting projection snapshots
    *  and candidate state. When absent, persistence is skipped. */
   ownedEcommerceStore?: OwnedEcommerceStore;
+  /** Optional EvidenceRequestStore for evidence re-evaluation in
+   *  the owned-ecommerce daemon tick. When absent, evidence re-evaluation
+   *  is skipped. */
+  evidenceRequestStore?: EvidenceRequestStore;
+  /** Optional OwnedEcommerceEvidenceAggregator for aggregating evidence
+   *  responses per candidate. When absent, candidate re-evaluation
+   *  is skipped. */
+  evidenceAggregator?: OwnedEcommerceEvidenceAggregator;
 }) => Promise<DaemonResult>;

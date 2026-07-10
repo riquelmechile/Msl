@@ -1,5 +1,5 @@
 import type { StorefrontCandidate, SupplierWebSignalPayload } from "@msl/domain";
-import type { GraphEngine, OwnedEcommerceStore } from "@msl/memory";
+import type { GraphEngine, OwnedEcommerceStore, EvidenceRequestStore } from "@msl/memory";
 import { isValidSupplierWebSignal } from "@msl/domain";
 import type { Logger } from "../conversation/observability.js";
 import type { AccountBrainService } from "../conversation/accountBrainService.js";
@@ -17,6 +17,7 @@ import type { StorefrontCandidateScore } from "@msl/domain";
 import crypto from "node:crypto";
 import { OwnedEcommerceMerchandisingAdvisor } from "./ownedEcommerceMerchandisingAdvisor.js";
 import { validate as validateAdvisorOutput } from "./merchandisingAdvisorValidator.js";
+import type { OwnedEcommerceEvidenceAggregator } from "./ownedEcommerceEvidenceAggregator.js";
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -28,6 +29,8 @@ export type OwnedEcommerceIntelligenceDeps = {
   deepSeekTransport?: DeepSeekTransport;
   creativeJobQueueStore?: CreativeJobQueueStore;
   ownedEcommerceStore?: OwnedEcommerceStore;
+  evidenceRequestStore?: EvidenceRequestStore;
+  evidenceAggregator?: OwnedEcommerceEvidenceAggregator;
   logger?: Logger;
 };
 
@@ -58,6 +61,8 @@ export class OwnedEcommerceIntelligenceService {
   private readonly deepSeekTransport: DeepSeekTransport | undefined;
   private readonly creativeJobQueueStore: CreativeJobQueueStore | undefined;
   private readonly ownedEcommerceStore: OwnedEcommerceStore | undefined;
+  private readonly evidenceRequestStore: EvidenceRequestStore | undefined;
+  private readonly evidenceAggregator: OwnedEcommerceEvidenceAggregator | undefined;
   private readonly log: Logger | undefined;
 
   constructor(deps: OwnedEcommerceIntelligenceDeps = {}) {
@@ -67,6 +72,8 @@ export class OwnedEcommerceIntelligenceService {
     this.deepSeekTransport = deps.deepSeekTransport;
     this.creativeJobQueueStore = deps.creativeJobQueueStore;
     this.ownedEcommerceStore = deps.ownedEcommerceStore;
+    this.evidenceRequestStore = deps.evidenceRequestStore;
+    this.evidenceAggregator = deps.evidenceAggregator;
     this.log = deps.logger;
   }
 
@@ -218,6 +225,27 @@ export class OwnedEcommerceIntelligenceService {
           candidateId: c.id,
         });
         errors.push(`Scoring failed for candidate ${c.id}: ${msg}`);
+      }
+    }
+
+    // 5b. Check for outstanding evidence and mark candidates
+    if (this.evidenceAggregator) {
+      for (const c of candidates) {
+        try {
+          const readiness = await this.evidenceAggregator.checkReadiness(c.id);
+          if (readiness === "waiting_for_evidence" || readiness === "blocked") {
+            // Mark candidate as waiting for evidence
+            if (!c.blockedReasons.includes("incomplete-evidence" as never)) {
+              c.blockedReasons = [...c.blockedReasons, "incomplete-evidence" as never];
+            }
+            this.log?.info(
+              "OwnedEcommerceIntelligenceService: candidate marked waiting_for_evidence",
+              { candidateId: c.id, readiness },
+            );
+          }
+        } catch {
+          // Evidence check is best-effort
+        }
       }
     }
 

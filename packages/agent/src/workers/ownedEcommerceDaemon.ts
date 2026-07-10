@@ -14,6 +14,7 @@ function isOwnedEcommerceIntelligenceEnabled(): boolean {
 
 const LOW_STOCK_THRESHOLD = 5;
 const PRICE_DEVIATION_THRESHOLD = 0.2; // 20% above/below average
+const EVIDENCE_REEVAL_DEDUPE_WINDOW_HOURS = 1;
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -35,6 +36,14 @@ function buildCeoSignalDedupeKey(
   hourKey: string,
 ): string {
   return `ceo-sws:${signalKind}:${supplierId}:${supplierItemId}:${hourKey}`;
+}
+
+/**
+ * Build a dedupe key for evidence re-evaluation CEO proposals.
+ * Format: ceo-evidence-reeval:{candidateId}:{hourKey}
+ */
+function buildEvidenceReevalDedupeKey(candidateId: string, hourKey: string): string {
+  return `ceo-evidence-reeval:${candidateId}:${hourKey}`;
 }
 
 // ── Monitor helpers (existing behavior) ──────────────────────────────
@@ -200,15 +209,154 @@ function enqueueMonitorProposals(
   return { messageIds, proposalEnqueued };
 }
 
+// ── Evidence re-evaluation helper ────────────────────────────────────
+
+async function handleEvidenceReEvaluation(params: {
+  sellerIds: string[];
+  bus: Parameters<DaemonHandler>[0]["bus"];
+  evidenceRequestStore: NonNullable<Parameters<DaemonHandler>[0]["evidenceRequestStore"]>;
+  evidenceAggregator: NonNullable<Parameters<DaemonHandler>[0]["evidenceAggregator"]>;
+  ownedEcommerceStore: NonNullable<Parameters<DaemonHandler>[0]["ownedEcommerceStore"]>;
+  sessionStore: Parameters<DaemonHandler>[0]["sessionStore"];
+  capturedAt: string;
+  hourKey: string;
+}): Promise<{ findings: DaemonFinding[]; messageIds: string[]; proposalEnqueued: boolean }> {
+  const {
+    sellerIds,
+    bus,
+    evidenceRequestStore,
+    evidenceAggregator,
+    ownedEcommerceStore,
+    sessionStore,
+    capturedAt,
+    hourKey,
+  } = params;
+
+  const findings: DaemonFinding[] = [];
+  const messageIds: string[] = [];
+  let proposalEnqueued = false;
+
+  // For each seller, find candidates with answered evidence
+  for (const sellerId of sellerIds) {
+    try {
+      const candidates = await ownedEcommerceStore.listCandidates();
+
+      for (const candidate of candidates) {
+        // Only re-evaluate candidates that were waiting for evidence
+        if (!candidate.blockedReasons.includes("incomplete-evidence" as never)) {
+          continue;
+        }
+
+        // Check readiness
+        const readiness = await evidenceAggregator.checkReadiness(candidate.id);
+
+        if (readiness === "waiting_for_evidence") {
+          // Still waiting — not ready yet
+          continue;
+        }
+
+        // Readiness is "ready" or "blocked" → aggregate and propose
+        const summary = await evidenceAggregator.aggregateCandidateEvidence(candidate.id);
+        const enriched = await evidenceAggregator.applyEvidenceResponsesToCandidate(candidate);
+
+        // Persist enriched candidate
+        try {
+          await ownedEcommerceStore.upsertCandidate(enriched);
+        } catch {
+          // Persistence is best-effort
+        }
+
+        // Build findings
+        findings.push({
+          kind: "opportunity",
+          severity: readiness === "blocked" ? "warning" : "info",
+          summary: `Evidence re-evaluation for candidate "${candidate.title}": readiness=${readiness}, confidence=${summary.overallConfidence ?? "none"}, ${summary.answeredCount}/${summary.totalRequests} answered`,
+          evidenceIds: enriched.evidenceIds,
+        });
+
+        // CEO proposal with dedupe
+        const dedupeKey = buildEvidenceReevalDedupeKey(candidate.id, hourKey);
+        const ceoMessage = bus.enqueue({
+          senderAgentId: "owned-ecommerce",
+          receiverAgentId: "ceo",
+          messageType: "proposal",
+          payloadJson: JSON.stringify({
+            type: "proposal",
+            source: "evidence-reeval",
+            candidateId: candidate.id,
+            title: candidate.title,
+            itemRef: candidate.itemRef,
+            sellerId,
+            readiness,
+            confidence: summary.overallConfidence,
+            answeredCount: summary.answeredCount,
+            totalRequests: summary.totalRequests,
+            blockers: summary.blockers,
+            responses: summary.responses.map((r) => ({
+              kind: r.sourceAgentId,
+              confidence: r.confidence,
+              status: r.status,
+            })),
+            evidenceIds: enriched.evidenceIds,
+            capturedAt,
+            noMutationExecuted: true,
+            requiresApproval: true,
+          }),
+          dedupeKey,
+          sellerId,
+        });
+        messageIds.push(ceoMessage.messageId);
+        proposalEnqueued = true;
+
+        // Session observation
+        if (sessionStore) {
+          try {
+            sessionStore.addObservation({
+              observationId: crypto.randomUUID(),
+              sellerId,
+              agentId: "owned-ecommerce",
+              sessionId: "",
+              kind: readiness === "blocked" ? "opportunity" : "opportunity",
+              summary: `Evidence re-evaluation: candidate "${candidate.title}" is ${readiness} (${summary.answeredCount}/${summary.totalRequests} answered)`,
+              severity: readiness === "blocked" ? "warning" : "info",
+              metadataJson: JSON.stringify({
+                candidateId: candidate.id,
+                readiness,
+                confidence: summary.overallConfidence,
+                noMutationExecuted: true,
+              }),
+            });
+          } catch {
+            // Store unavailable — continue silently
+          }
+        }
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[owned-ecommerce] Evidence re-evaluation failed for seller ${sellerId}: ${errorMessage}`,
+      );
+      // Isolated per seller — continue to next seller
+    }
+  }
+
+  return { findings, messageIds, proposalEnqueued };
+}
+
 // ── Daemon handler ──────────────────────────────────────────────────
 
 /**
- * Owned Ecommerce daemon handler — dual-mode.
+ * Owned Ecommerce daemon handler — multi-mode.
  *
- * **daemon-tick** messages (existing behavior):
+ * **daemon-tick** messages (existing + evidence re-eval):
  *   Monitor owned-ecommerce listings via `OperationalReadModelReader`.
  *   Detect missing images, low stock, price deviations. Enqueue CEO
  *   proposals with `noMutationExecuted: true`.
+ *
+ *   Additionally, if evidenceRequestStore + evidenceAggregator +
+ *   ownedEcommerceStore are available, re-evaluate candidates that were
+ *   waiting_for_evidence and have received new responses. CEO dedupe
+ *   per candidate+hour prevents duplicate proposals.
  *
  * **supplier-web-signal** messages (intelligence pipeline):
  *   Gated by `MSL_OWNED_ECOMMERCE_INTELLIGENCE_ENABLED`.
@@ -226,6 +374,9 @@ export const ownedEcommerceDaemon: DaemonHandler = async ({
   sellerIds,
   sessionStore,
   intelligenceService,
+  evidenceRequestStore,
+  evidenceAggregator,
+  ownedEcommerceStore,
 }) => {
   const capturedAt = new Date().toISOString();
   const hourKey = capturedAt.slice(0, 13);
@@ -244,7 +395,7 @@ export const ownedEcommerceDaemon: DaemonHandler = async ({
     });
   }
 
-  // ── Route: daemon-tick → monitor behavior ─────────────────────
+  // ── Route: daemon-tick → monitor behavior + evidence re-eval ──
 
   if (claim.messageType === "daemon-tick") {
     const lowStockThreshold = envVal(
@@ -263,9 +414,36 @@ export const ownedEcommerceDaemon: DaemonHandler = async ({
       priceDevThreshold,
     );
 
-    const { messageIds, proposalEnqueued } = enqueueMonitorProposals(findings, capturedAt, bus);
+    const monitorResult = enqueueMonitorProposals(findings, capturedAt, bus);
 
-    return { findings, proposalEnqueued, messageIds };
+    // ── Evidence re-evaluation (optional) ─────────────────────
+
+    let evidenceFindings: DaemonFinding[] = [];
+    let evidenceMessageIds: string[] = [];
+    let evidenceProposalEnqueued = false;
+
+    if (evidenceRequestStore && evidenceAggregator && ownedEcommerceStore) {
+      const evidenceResult = await handleEvidenceReEvaluation({
+        sellerIds,
+        bus,
+        evidenceRequestStore,
+        evidenceAggregator,
+        ownedEcommerceStore,
+        sessionStore,
+        capturedAt,
+        hourKey,
+      });
+
+      evidenceFindings = evidenceResult.findings;
+      evidenceMessageIds = evidenceResult.messageIds;
+      evidenceProposalEnqueued = evidenceResult.proposalEnqueued;
+    }
+
+    return {
+      findings: [...findings, ...evidenceFindings],
+      proposalEnqueued: monitorResult.proposalEnqueued || evidenceProposalEnqueued,
+      messageIds: [...monitorResult.messageIds, ...evidenceMessageIds],
+    };
   }
 
   // ── Unknown message type → no-op ──────────────────────────────
@@ -421,8 +599,6 @@ async function handleSupplierWebSignal({
       // Link proposal to work session (F3)
       if (sessionStore) {
         try {
-          // Use an ephemeral session link — the session store handles
-          // linking proposals to whichever session is active for this seller+agent
           const sessions = sessionStore.listRecentSessionsByAgent(sellerId, "owned-ecommerce", 1);
           if (sessions.length > 0) {
             const activeSession = sessions[0];
@@ -460,7 +636,7 @@ function recordSignalObservation(
       observationId: crypto.randomUUID(),
       sellerId,
       agentId: "owned-ecommerce",
-      sessionId: "", // Will be filled by daemon scheduler's session awareness
+      sessionId: "",
       kind: "new_signal",
       summary: `Supplier web signal: ${signal.signalKind} for ${signal.supplierId}/${signal.supplierItemId}`,
       severity: signal.severity,
