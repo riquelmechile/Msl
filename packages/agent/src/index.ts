@@ -238,6 +238,11 @@ export { validate as validateAdvisorOutput } from "./ecommerce/merchandisingAdvi
 export type { AdvisorValidationResult } from "./ecommerce/merchandisingAdvisorValidator.js";
 export { EcommerceEvidenceRequestPlanner } from "./ecommerce/ecommerceEvidenceRequestPlanner.js";
 export type { EvidenceRequestMessage } from "./ecommerce/ecommerceEvidenceRequestPlanner.js";
+export { OwnedEcommerceEvidenceAggregator } from "./ecommerce/ownedEcommerceEvidenceAggregator.js";
+export type {
+  EvidenceAggregatorDeps,
+  EvidenceReadiness,
+} from "./ecommerce/ownedEcommerceEvidenceAggregator.js";
 export {
   buildStableSystemPrompt,
   buildEvidenceBlock,
@@ -392,6 +397,19 @@ export type {
   WebhookResponse,
 } from "./conversation/webhookIngestor.js";
 
+// ── Evidence pipeline ─────────────────────────────────────────────────
+export { EvidenceResponseRouter } from "./evidence/evidenceResponseRouter.js";
+export type {
+  EvidenceResponder,
+  EvidenceResponseRouterDeps,
+} from "./evidence/evidenceResponseRouter.js";
+export { CostSupplierEvidenceResponder } from "./evidence/responders/costSupplierEvidenceResponder.js";
+export type { CostSupplierTransport } from "./evidence/responders/costSupplierEvidenceResponder.js";
+export { MarketCatalogEvidenceResponder } from "./evidence/responders/marketCatalogEvidenceResponder.js";
+export { CreativeAssetsEvidenceResponder } from "./evidence/responders/creativeAssetsEvidenceResponder.js";
+export { AccountBrainEvidenceResponder } from "./evidence/responders/accountBrainEvidenceResponder.js";
+export { SupplierManagerEvidenceResponder } from "./evidence/responders/supplierManagerEvidenceResponder.js";
+
 // ── Learning pipeline ────────────────────────────────────────────────
 export { runLearningPipeline, scoreMessage } from "./conversation/learningPipeline.js";
 export type {
@@ -400,7 +418,6 @@ export type {
   LearningPipelineResult,
 } from "./conversation/learningPipeline.js";
 
-// ── Sync tools ──────────────────────────────────────────────────────
 export {
   createSyncProductTool,
   createSyncAllTool,

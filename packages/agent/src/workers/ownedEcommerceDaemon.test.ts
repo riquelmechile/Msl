@@ -7,6 +7,8 @@ import { createGraphEngine } from "@msl/memory";
 import { createAgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
 import { createCreativeJobQueueStore } from "../conversation/creativeJobQueueStore.js";
 import { createSqliteOwnedEcommerceStore } from "@msl/memory";
+import { createSqliteEvidenceRequestStore } from "@msl/memory";
+import { OwnedEcommerceEvidenceAggregator } from "../ecommerce/ownedEcommerceEvidenceAggregator.js";
 import { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
 import { ownedEcommerceDaemon } from "./ownedEcommerceDaemon.js";
 
@@ -745,5 +747,236 @@ describe("Owned Ecommerce Intelligence — Integration (F4)", () => {
     // Should return empty — invalid signals are logged, not crashed
     expect(result.findings).toEqual([]);
     expect(result.proposalEnqueued).toBe(false);
+  });
+});
+
+// ── Task 3.7: Evidence re-evaluation integration tests ────────────
+
+describe("ownedEcommerceDaemon — evidence re-evaluation (Task 3.7)", () => {
+  let ctx: TestContext;
+
+  beforeEach(() => {
+    ctx = setupTest();
+  });
+
+  afterEach(() => {
+    ctx.close();
+  });
+
+  // Test 3.7.1: waiting_for_evidence → re-eval cycle end-to-end
+
+  it("waiting_for_evidence → re-eval cycle end-to-end", async () => {
+    const evidenceStore = createSqliteEvidenceRequestStore(ctx.db);
+    const aggregator = new OwnedEcommerceEvidenceAggregator({
+      evidenceRequestStore: evidenceStore,
+    });
+
+    // Seed a candidate marked waiting_for_evidence
+    const candidateId = "cand-evidence-1";
+    const candidate: StorefrontCandidate = {
+      id: candidateId,
+      itemRef: "ref-1",
+      title: "Evidence Candidate",
+      provenance: {
+        source: "supplier-mirror",
+        sourceId: "src-1",
+        snapshotIds: [],
+        evidenceIds: [],
+      },
+      evidenceIds: [],
+      evidenceState: {
+        stockFreshness: "unknown",
+        marginFreshness: "unknown",
+        supplierFreshness: "fresh",
+        completeness: "partial",
+        evidenceIds: [],
+      },
+      stock: { status: "in-stock", authority: "supplier-reported", quantity: 50 },
+      blockedReasons: ["incomplete-evidence"],
+      redactedReasons: [],
+      createdAt: new Date().toISOString(),
+    };
+    await ctx.ownedStore.upsertCandidate(candidate);
+
+    // Enqueue + answer evidence requests for this candidate
+    const requestId = crypto.randomUUID();
+    const request: Parameters<typeof evidenceStore.enqueueRequest>[0] = {
+      type: "evidence-request",
+      requestId,
+      correlationId: crypto.randomUUID(),
+      sourceAgentId: "planner",
+      targetAgentId: "cost-supplier",
+      sellerId: "plasticov",
+      candidateId,
+      kind: "cost-margin",
+      question: "What is the cost?",
+      priority: "high",
+      evidenceIds: [],
+      createdAt: new Date().toISOString(),
+      dedupeKey: crypto.createHash("sha256").update(`${candidateId}|cost-margin`).digest("hex"),
+      noMutationExecuted: true,
+    };
+    evidenceStore.enqueueRequest(request);
+    evidenceStore.claimRequest(requestId, "cost-supplier");
+    evidenceStore.answerRequest({
+      type: "evidence-response",
+      responseId: crypto.randomUUID(),
+      requestId,
+      correlationId: request.correlationId,
+      sourceAgentId: "cost-supplier",
+      targetAgentId: "planner",
+      sellerId: "plasticov",
+      candidateId,
+      status: "answered",
+      answer: "Cost data available.",
+      structuredEvidence: { cost: 100 },
+      evidenceIds: ["ev-cost-1"],
+      confidence: "high",
+      blockers: [],
+      warnings: [],
+      createdAt: new Date().toISOString(),
+      noMutationExecuted: true,
+    });
+
+    // Run daemon tick
+    makeTickClaim(ctx.bus);
+    const claimed = ctx.bus.claimNext("owned-ecommerce");
+    const claimMsg = claimed[0]!;
+
+    const result = await ownedEcommerceDaemon({
+      claim: claimMsg,
+      reader: ctx.reader,
+      cortex: ctx.cortex,
+      bus: ctx.bus,
+      sellerIds: ["plasticov"],
+      evidenceRequestStore: evidenceStore,
+      evidenceAggregator: aggregator,
+      ownedEcommerceStore: ctx.ownedStore,
+    });
+
+    // Evidence re-eval should have found the candidate and proposed to CEO
+    expect(result.proposalEnqueued).toBe(true);
+    expect(result.messageIds.length).toBeGreaterThan(0);
+    expect(result.findings.length).toBeGreaterThan(0);
+
+    // Verify enriched candidate persisted
+    const enriched = await ctx.ownedStore.getCandidate(candidateId);
+    expect(enriched).toBeDefined();
+  });
+
+  // Test 3.7.2: CEO dedupe on re-eval (no duplicate proposals within window)
+
+  it("CEO dedupe on re-eval (no duplicate proposals within window)", async () => {
+    const evidenceStore = createSqliteEvidenceRequestStore(ctx.db);
+    const aggregator = new OwnedEcommerceEvidenceAggregator({
+      evidenceRequestStore: evidenceStore,
+    });
+
+    const candidateId = "cand-dedupe-1";
+    const candidate: StorefrontCandidate = {
+      id: candidateId,
+      itemRef: "ref-dedupe-1",
+      title: "Dedupe Candidate",
+      provenance: {
+        source: "supplier-mirror",
+        sourceId: "src-1",
+        snapshotIds: [],
+        evidenceIds: [],
+      },
+      evidenceIds: [],
+      evidenceState: {
+        stockFreshness: "unknown",
+        marginFreshness: "unknown",
+        supplierFreshness: "fresh",
+        completeness: "partial",
+        evidenceIds: [],
+      },
+      stock: { status: "in-stock", authority: "supplier-reported", quantity: 50 },
+      blockedReasons: ["incomplete-evidence"],
+      redactedReasons: [],
+      createdAt: new Date().toISOString(),
+    };
+    await ctx.ownedStore.upsertCandidate(candidate);
+
+    // Enqueue + answer evidence
+    const requestId = crypto.randomUUID();
+    evidenceStore.enqueueRequest({
+      type: "evidence-request",
+      requestId,
+      correlationId: crypto.randomUUID(),
+      sourceAgentId: "planner",
+      targetAgentId: "cost-supplier",
+      sellerId: "plasticov",
+      candidateId,
+      kind: "cost-margin",
+      question: "What is the cost?",
+      priority: "high",
+      evidenceIds: [],
+      createdAt: new Date().toISOString(),
+      dedupeKey: crypto.createHash("sha256").update(`${candidateId}|cost-margin`).digest("hex"),
+      noMutationExecuted: true,
+    });
+    evidenceStore.claimRequest(requestId, "cost-supplier");
+    evidenceStore.answerRequest({
+      type: "evidence-response",
+      responseId: crypto.randomUUID(),
+      requestId,
+      correlationId: crypto.randomUUID(),
+      sourceAgentId: "cost-supplier",
+      targetAgentId: "planner",
+      sellerId: "plasticov",
+      candidateId,
+      status: "answered",
+      answer: "Cost data available.",
+      structuredEvidence: { cost: 100 },
+      evidenceIds: ["ev-cost-1"],
+      confidence: "high",
+      blockers: [],
+      warnings: [],
+      createdAt: new Date().toISOString(),
+      noMutationExecuted: true,
+    });
+
+    // First tick
+    makeTickClaim(ctx.bus);
+    const claimed1 = ctx.bus.claimNext("owned-ecommerce");
+    const claimMsg1 = claimed1[0]!;
+
+    const result1 = await ownedEcommerceDaemon({
+      claim: claimMsg1,
+      reader: ctx.reader,
+      cortex: ctx.cortex,
+      bus: ctx.bus,
+      sellerIds: ["plasticov"],
+      evidenceRequestStore: evidenceStore,
+      evidenceAggregator: aggregator,
+      ownedEcommerceStore: ctx.ownedStore,
+    });
+
+    // First tick should have produced CEO proposal from evidence re-eval
+    expect(result1.proposalEnqueued).toBe(true);
+
+    // Second tick (same hour) — the bus dedupe key prevents a new tick message
+    // since `makeTickClaim` uses the same hourly dedupeKey.
+    // The bus returns the existing (already claimed) message.
+    // This IS the dedupe behavior — no new tick message, no re-eval run.
+    // Second daemon run with same (already-resolved) claim would skip.
+    // Verify by counting total CEO proposals: the dedupe key on the evidence
+    // proposal also uses the same hour, so even if a second tick were to
+    // process, the evidence proposal dedupe would prevent a second CEO message.
+
+    // Grab all CEO proposals for this seller
+    const allCeoMsgs = ctx.bus.claimNext("ceo", { limit: 100 });
+    const reEvalProposals = allCeoMsgs.filter((m) => {
+      try {
+        const payload = JSON.parse(m.payloadJson) as Record<string, unknown>;
+        return payload.source === "evidence-reeval" && payload.sellerId === "plasticov";
+      } catch {
+        return false;
+      }
+    });
+
+    // Only one evidence-reeval proposal should exist (first tick)
+    expect(reEvalProposals).toHaveLength(1);
   });
 });

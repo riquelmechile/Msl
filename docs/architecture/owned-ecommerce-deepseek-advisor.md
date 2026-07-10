@@ -49,13 +49,28 @@ Blocked candidates remain blocked — advisor does not unblock.
 
 ## Components
 
-| Component                            | Role                                               | File                                                                 |
-| ------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------- |
-| `OwnedEcommerceMerchandisingAdvisor` | 5-method advisor with deterministic fallback       | `packages/agent/src/ecommerce/ownedEcommerceMerchandisingAdvisor.ts` |
-| `OwnedEcommerceAdvisorPrompt`        | 4-block prompt builder with cache-friendly hashing | `packages/agent/src/ecommerce/ownedEcommerceAdvisorPrompt.ts`        |
-| `MerchandisingAdvisorValidator`      | Pure-function output validator                     | `packages/agent/src/ecommerce/merchandisingAdvisorValidator.ts`      |
-| `EcommerceEvidenceRequestPlanner`    | Converts gap reports into inter-agent messages     | `packages/agent/src/ecommerce/ecommerceEvidenceRequestPlanner.ts`    |
-| `OwnedEcommerceIntelligenceService`  | Pipeline host (step 7)                             | `packages/agent/src/ecommerce/ownedEcommerceIntelligenceService.ts`  |
+| Component                            | Role                                                      | File                                                                 |
+| ------------------------------------ | --------------------------------------------------------- | -------------------------------------------------------------------- |
+| `OwnedEcommerceMerchandisingAdvisor` | 5-method advisor with deterministic fallback              | `packages/agent/src/ecommerce/ownedEcommerceMerchandisingAdvisor.ts` |
+| `OwnedEcommerceAdvisorPrompt`        | 4-block prompt builder with cache-friendly hashing        | `packages/agent/src/ecommerce/ownedEcommerceAdvisorPrompt.ts`        |
+| `MerchandisingAdvisorValidator`      | Pure-function output validator                            | `packages/agent/src/ecommerce/merchandisingAdvisorValidator.ts`      |
+| `EcommerceEvidenceRequestPlanner`    | Converts gap reports into inter-agent messages            | `packages/agent/src/ecommerce/ecommerceEvidenceRequestPlanner.ts`    |
+| `OwnedEcommerceIntelligenceService`  | Pipeline host (step 7)                                    | `packages/agent/src/ecommerce/ownedEcommerceIntelligenceService.ts`  |
+| `OwnedEcommerceEvidenceAggregator`   | Aggregates multi-agent evidence into candidate enrichment | `packages/agent/src/ecommerce/ownedEcommerceEvidenceAggregator.ts`   |
+| `EvidenceResponseRouter`             | Dispatches evidence requests to 5 specialized responders  | `packages/agent/src/evidence/evidenceResponseRouter.ts`              |
+| `*EvidenceResponder` (5)             | Specialized agents answering evidence requests            | `packages/agent/src/evidence/responders/*.ts`                        |
+
+## Multi-Agent Evidence Responses
+
+Evidence gap requests (`identifyMissingEvidence`) are no longer text-only. They now flow through a full multi-agent pipeline:
+
+1. **Planner persists to store** and emits `evidence-request` bus messages
+2. **EvidenceResponseRouter** dispatches to the correct specialist responder
+3. **5 responders** (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager) provide structured evidence
+4. **Aggregator** joins responses, computes confidence, updates blockers
+5. **Daemon** re-evaluates candidates when evidence arrives, deducts CEO proposals by hour
+
+See [`docs/architecture/multi-agent-evidence-responses.md`](./multi-agent-evidence-responses.md) for the full architecture.
 
 ## Transport / Fallback Pattern
 
