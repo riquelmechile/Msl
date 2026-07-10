@@ -31,6 +31,7 @@ import { morningReportDaemon } from "./morningReportDaemon.js";
 import { eodSummaryDaemon } from "./eodSummaryDaemon.js";
 import { ownedEcommerceDaemon } from "./ownedEcommerceDaemon.js";
 import { unansweredQuestionsDaemon } from "./unansweredQuestionsDaemon.js";
+import { financeDirectorDaemon } from "./financeDirectorDaemon.js";
 import type { AgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
 import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.js";
 import type { AccountBrainService } from "../conversation/accountBrainService.js";
@@ -103,6 +104,7 @@ const SESSION_LANE_IDS = new Set<LaneId>([
   "operations-manager",
   "morning-report",
   "eod-summary",
+  "finance-director",
 ]);
 
 /** Minimum cooldown between sessions for the same lane+seller (1 hour). */
@@ -124,6 +126,7 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "eod-summary": eodSummaryDaemon,
   "owned-ecommerce": ownedEcommerceDaemon,
   "unanswered-questions": unansweredQuestionsDaemon,
+  "finance-director": financeDirectorDaemon,
 };
 
 // ── Cycle-level cache ───────────────────────────────────────────────

@@ -127,6 +127,7 @@ export { eodSummaryDaemon } from "./workers/eodSummaryDaemon.js";
 export { runSystemHealthCheck } from "./workers/systemHealthDaemon.js";
 export type { SystemHealthCheck } from "./workers/systemHealthDaemon.js";
 export { runDlqMonitor } from "./workers/dlqMonitorDaemon.js";
+export { financeDirectorDaemon } from "./workers/financeDirectorDaemon.js";
 
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";
@@ -193,6 +194,21 @@ export type {
   CostSupplierEnrichmentInput,
   CostSupplierActionableFinding,
 } from "./conversation/costSupplierDeepSeekAdvisor.js";
+
+// ── Finance Director ─────────────────────────────────────────────────
+export { FinanceDirectorAdvisor } from "./finance/FinanceDirectorAdvisor.js";
+export type {
+  AnalyzeInput,
+  AnalyzeResult,
+  SessionContext,
+} from "./finance/FinanceDirectorAdvisor.js";
+export { FinanceDirectorPromptBuilder } from "./finance/FinanceDirectorPromptBuilder.js";
+export type { PromptBuildOpts, PromptResult } from "./finance/FinanceDirectorPromptBuilder.js";
+export { FinanceDirectorValidator } from "./finance/FinanceDirectorValidator.js";
+export type { ValidationResult, ValidationIssue } from "./finance/FinanceDirectorValidator.js";
+export { FinanceDirectorFallback } from "./finance/FinanceDirectorFallback.js";
+export { FinanceDirectorEvidenceAssembler } from "./finance/FinanceDirectorEvidenceAssembler.js";
+export type { FinanceDirectorEvidence } from "./finance/FinanceDirectorEvidenceAssembler.js";
 
 export { createDaemonAdvisorsFromEnv } from "./conversation/createDaemonAdvisors.js";
 export type {

@@ -62,7 +62,7 @@
 
 | Categoría                                 | Componentes                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Implementado y conectado**              | Agent Message Bus, Cortex, 14 daemon handlers, 15 lane contracts, Operational Read Model, EvidenceResponseRouter + 5 responders, Work Sessions, Account Assets + AccountBrain, AgentWorkSessionStore/Runner, CEO Inbox Store, Company Agent Registry, Learning Store, Skill Store, Workforce Cost Cache Ledger, Agent Consensus Store, Escribano, Economic Truth Foundation (Money, EconomicCostComponent, UnitEconomicsSnapshot, EconomicOutcome, EconomicOutcomeStore, 3 inspector tools), Background Ingestion (5 procesadores), Telegram Bot runtime, MCP Server (~40 tools) |
+| **Implementado y conectado**              | Agent Message Bus, Cortex, 14 daemon handlers, 15 lane contracts, Operational Read Model, EvidenceResponseRouter + 5 responders, Work Sessions, Account Assets + AccountBrain, AgentWorkSessionStore/Runner, CEO Inbox Store, Company Agent Registry, Learning Store, Skill Store, Workforce Cost Cache Ledger, Agent Consensus Store, Escribano, Economic Truth Foundation (Money, EconomicCostComponent, UnitEconomicsSnapshot, EconomicOutcome, EconomicOutcomeStore, 3 inspector tools), Finance Director Agent (FinanceDirectorAdvisor, FinanceDirectorPromptBuilder, FinanceDirectorValidator, FinanceDirectorFallback, FinanceDirectorEvidenceAssembler, FinanceDirectorAssessmentStore, 4 CEO advisory tools, daemon handler), Background Ingestion (5 procesadores), Telegram Bot runtime, MCP Server (~40 tools) |
 | **Implementado pero feature-gated**       | Creative Studio (MiniMax), Owned Ecommerce (Medusa write boundary), Supplier Mirror workers                                                                                                                                                                                                                                                                                                                                           |
 | **Implementado con transporte fake/mock** | MercadoLibre OAuth (stub mode), ML API calls (stub mode sin credenciales reales)                                                                                                                                                                                                                                                                                                                                                      |
 | **Preparación solamente, sin mutación**   | sync_product (propuesta preparada, no ejecutada), Supplier Mirror (dry-run, no worker habilitado)                                                                                                                                                                                                                                                                                                                                     |
@@ -165,6 +165,7 @@ User message (Spanish)
 | **Calibrated distrust**              | Agent verifies its own proposals           | Catches hallucinated actions before user sees them. 6 checks per proposal.                                                             |
 | **MCP protocol**                     | Stdio server with ~40 tools                | Compatible clients can exercise read, proposal, approval/status, Cortex, MercadoLibre evidence, workforce, and cost ledger surfaces.   |
 | **Financial truth**                  | Pure domain + SQLite store + CEO tools     | Safe Money type (integer `amountMinor`, CLP+USD), 12 cost component types with provenance, 6-state EconomicOutcome lifecycle, deterministic calculation engine, seller-isolated EconomicOutcomeStore, 3 read-only CEO inspection tools. Missing data ≠ zero. No floating point. Only `verified` outcomes eligible for future Cortex learning. |
+| **Finance Director Agent**           | DeepSeek-powered financial reasoning     | Transversal financial manager. Interprets economic truth (never calculates). Advisor pipeline: assemble → prompt → reason → validate → fallback. 16 anti-hallucination validation rules. 4 CEO advisory tools (ask_finance_director, review_financial_health, explain_economic_outcome, review_proposal_profitability). SQLite assessment store, cache-friendly 4-block prompt design, sessionized lane with 8 wake reasons. Cortex reinforcement deferred to PR 3/3. |
 | **No framework**                     | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                                           |
 
 ## Directory tree
@@ -259,6 +260,12 @@ Msl/
 │   │       │   ├── creativeDeepSeekAdvisor.ts       # Creative AI advisor
 │   │       │   ├── operationsDeepSeekAdvisor.ts     # Operations AI advisor
 │   │       │   └── tools/                      # Tool handler implementations
+│   │       ├── finance/                        # Finance Director Agent
+│   │       │   ├── FinanceDirectorAdvisor.ts
+│   │       │   ├── FinanceDirectorPromptBuilder.ts
+│   │       │   ├── FinanceDirectorValidator.ts
+│   │       │   ├── FinanceDirectorFallback.ts
+│   │       │   └── FinanceDirectorEvidenceAssembler.ts
 │   │       ├── evidence/
 │   │       │   ├── evidenceResponseRouter.ts    # Dispatches evidence requests
 │   │       │   └── responders/
@@ -289,7 +296,8 @@ Msl/
 │   │       │   ├── morningReportDaemon.ts
 │   │       │   ├── eodSummaryDaemon.ts
 │   │       │   ├── ownedEcommerceDaemon.ts
-│   │       │   └── unansweredQuestionsDaemon.ts
+│   │       │   ├── unansweredQuestionsDaemon.ts
+│   │       │   └── financeDirectorDaemon.ts
 │   │       └── ecommerce/
 │   │           └── ownedEcommerceIntelligenceService.ts
 │   │
@@ -373,9 +381,9 @@ The brain. `createAgentLoop()` orchestrates every conversation turn through 11 s
 
 **Evidence Pipeline:** `EvidenceResponseRouter` dispatches pending evidence requests to 5 specialized responders (CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager). Each responder checks `canHandle()` and returns structured `EvidenceResponsePayload` with confidence levels. The `OwnedEcommerceEvidenceAggregator` enriches CEO candidates by aggregating multi-responder evidence.
 
-**Work Sessions:** `AgentWorkSessionStore` persists session state; `AgentWorkSessionRunner` manages lifecycle with cooldown mechanics. Six sessionized lanes (unanswered-questions, product-ads-profitability, creative-assets, operations-manager, morning-report, eod-summary) route through work sessions for stateful multi-turn reasoning.
+**Work Sessions:** `AgentWorkSessionStore` persists session state; `AgentWorkSessionRunner` manages lifecycle with cooldown mechanics. Seven sessionized lanes (unanswered-questions, product-ads-profitability, creative-assets, operations-manager, morning-report, eod-summary, finance-director) route through work sessions for stateful multi-turn reasoning.
 
-**Daemon Handlers (14):** `marketCatalogDaemon`, `operationsManagerDaemon`, `costSupplierDaemon`, `creativeAssetsDaemon`, `creativeCommercialDaemon`, `creativeStudioDaemon`, `productAdsMonitorDaemon`, `productAdsProfitabilityDaemon`, `ceoProfitabilityHandler`, `supplierManagerDaemon`, `morningReportDaemon`, `eodSummaryDaemon`, `ownedEcommerceDaemon`, `unansweredQuestionsDaemon`. All dispatched by `startDaemonScheduler()` on 15-minute cycles through the Agent Message Bus.
+**Daemon Handlers (15):** `marketCatalogDaemon`, `operationsManagerDaemon`, `costSupplierDaemon`, `creativeAssetsDaemon`, `creativeCommercialDaemon`, `creativeStudioDaemon`, `productAdsMonitorDaemon`, `productAdsProfitabilityDaemon`, `ceoProfitabilityHandler`, `supplierManagerDaemon`, `morningReportDaemon`, `eodSummaryDaemon`, `ownedEcommerceDaemon`, `unansweredQuestionsDaemon`, `financeDirectorDaemon`. All dispatched by `startDaemonScheduler()` on 15-minute cycles through the Agent Message Bus.
 
 **Lane Contracts (15):** `ceo`, `cost-supplier`, `market-catalog`, `creative-assets`, `creative-commercial`, `creative-studio`, `operations-manager`, `owned-ecommerce`, `product-ads-monitor`, `product-ads-ceo-profitability`, `product-ads-profitability`, `supplier-manager`, `morning-report`, `eod-summary`, `unanswered-questions`.
 

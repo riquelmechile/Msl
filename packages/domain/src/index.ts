@@ -31,3 +31,4 @@ export * from "./agentWorkSession.js";
 export * from "./supplierWebSignal.js";
 export * from "./unitEconomics.js";
 export * from "./interAgentEvidence.js";
+export * from "./financialAssessment.js";

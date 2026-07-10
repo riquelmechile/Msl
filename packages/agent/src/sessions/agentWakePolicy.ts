@@ -26,6 +26,75 @@ export type ShouldWakeInput = {
   manual?: boolean;
 };
 
+// ── Wake reason constants ───────────────────────────────────────────────────
+
+/**
+ * Wake reason identifiers for the finance-director lane.
+ * Used to describe what triggered a work session wake-up.
+ */
+export const FINANCE_DIRECTOR_WAKE_REASONS = Object.freeze({
+  CEO_QUESTION: "ceo_question" as const,
+  ECONOMIC_OUTCOME_OBSERVED: "economic_outcome_observed" as const,
+  ECONOMIC_OUTCOME_DISPUTED: "economic_outcome_disputed" as const,
+  NEW_UNIT_ECONOMICS_SNAPSHOT: "new_unit_economics_snapshot" as const,
+  PROFIT_ANOMALY: "profit_anomaly" as const,
+  MISSING_INPUT_RESOLVED: "missing_input_resolved" as const,
+  EVIDENCE_RESPONSE_RECEIVED: "evidence_response_received" as const,
+  PROPOSAL_REVIEW_REQUESTED: "proposal_review_requested" as const,
+});
+
+/** Union type of all finance-director wake reason strings. */
+export type FinanceDirectorWakeReason =
+  (typeof FINANCE_DIRECTOR_WAKE_REASONS)[keyof typeof FINANCE_DIRECTOR_WAKE_REASONS];
+
+/**
+ * Map a raw signal type string to a finance-director wake reason.
+ * Returns undefined if the signal does not match any known wake reason.
+ */
+export function resolveFinanceDirectorWakeReason(
+  signalType: string,
+): FinanceDirectorWakeReason | undefined {
+  const lowered = signalType.toLowerCase();
+  if (lowered === "ceo_question" || lowered === "ceo-question") {
+    return FINANCE_DIRECTOR_WAKE_REASONS.CEO_QUESTION;
+  }
+  if (lowered.includes("economic_outcome") || lowered.includes("economic-outcome")) {
+    if (lowered.includes("dispute")) {
+      return FINANCE_DIRECTOR_WAKE_REASONS.ECONOMIC_OUTCOME_DISPUTED;
+    }
+    return FINANCE_DIRECTOR_WAKE_REASONS.ECONOMIC_OUTCOME_OBSERVED;
+  }
+  if (
+    lowered.includes("unit_economics") ||
+    lowered.includes("unit-economics") ||
+    lowered.includes("snapshot")
+  ) {
+    return FINANCE_DIRECTOR_WAKE_REASONS.NEW_UNIT_ECONOMICS_SNAPSHOT;
+  }
+  if (
+    lowered.includes("profit") &&
+    (lowered.includes("anomaly") || lowered.includes("negative") || lowered.includes("loss"))
+  ) {
+    return FINANCE_DIRECTOR_WAKE_REASONS.PROFIT_ANOMALY;
+  }
+  if (lowered.includes("missing_input") || lowered.includes("missing-input")) {
+    return FINANCE_DIRECTOR_WAKE_REASONS.MISSING_INPUT_RESOLVED;
+  }
+  if (
+    lowered.includes("evidence_response") ||
+    lowered.includes("evidence-response")
+  ) {
+    return FINANCE_DIRECTOR_WAKE_REASONS.EVIDENCE_RESPONSE_RECEIVED;
+  }
+  if (
+    lowered.includes("proposal_review") ||
+    lowered.includes("proposal-review")
+  ) {
+    return FINANCE_DIRECTOR_WAKE_REASONS.PROPOSAL_REVIEW_REQUESTED;
+  }
+  return undefined;
+}
+
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /** Minimum cooldown in milliseconds — skip wake if last completed session is within this window. */

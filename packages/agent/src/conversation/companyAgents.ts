@@ -1,6 +1,6 @@
 import { LANE_CONTRACTS, type LaneContract, type LaneId } from "./lanes.js";
 
-export type CompanyDepartmentId = "executive" | "operations" | "commercial";
+export type CompanyDepartmentId = "executive" | "operations" | "commercial" | "finance";
 
 export type CompanyAgentId = string;
 
@@ -100,6 +100,7 @@ const laneDepartments: Record<LaneId, CompanyDepartmentId> = {
   "morning-report": "executive",
   "eod-summary": "executive",
   "unanswered-questions": "operations",
+  "finance-director": "finance",
 };
 
 function toCompanyAgent(contract: LaneContract): CompanyAgent {

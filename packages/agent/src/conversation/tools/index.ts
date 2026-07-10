@@ -20,3 +20,4 @@ export * from "./agentWorkStatusTool.js";
 export * from "./accountBrainTools.js";
 export * from "./economicTools.js";
 export * from "./evidenceTools.js";
+export * from "./financeDirectorTools.js";

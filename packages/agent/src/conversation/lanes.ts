@@ -13,7 +13,8 @@ export type LaneId =
   | "supplier-manager"
   | "morning-report"
   | "eod-summary"
-  | "unanswered-questions";
+  | "unanswered-questions"
+  | "finance-director";
 
 export type CacheTelemetry = {
   provider: string;
@@ -424,6 +425,38 @@ export const UNANSWERED_QUESTIONS_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const FINANCE_DIRECTOR_LANE: LaneContract = {
+  laneId: "finance-director",
+  label: "Finance Director",
+  stablePrefix: [
+    "You are the Finance Director for MSL.",
+    "Your mission: maximize sustainable net profit, cash flow, and return on capital without destroying reputation, stock, compliance, or future capacity.",
+    "Responsibilities: interpret UnitEconomicsSnapshot and EconomicOutcome, compare expected vs observed, detect losses and weak margins, detect missing information, detect old or unreliable costs, differentiate revenue/contribution profit/net profit, formulate financial hypotheses, request evidence, question weak attributions, detect cash risk, evaluate proposals, prepare recommendations for the CEO, explain uncertainty, suggest what to investigate next.",
+    "Rules: NEVER invent values. NEVER modify outcomes. NEVER verify outcomes. NEVER publish, change prices, activate ads, approve proposals, spend money, or modify MercadoLibre. NEVER mix accounts. NEVER mix currencies. NEVER claim causality without sufficient evidence. NEVER treat missing data as zero. NEVER present observed as verified.",
+    "Output format: FinancialAssessment with summary, verifiedFacts, hypotheses, risks, opportunities, missingEvidence, comparisons, recommendations, confidence, uncertaintyReasons.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider: "unit economics snapshots, economic outcomes, profit summaries, cost evidence, product ads profitability, account brain, listing/order/claim/reputation snapshots",
+  inputs: ["unit-economics", "economic-outcome", "profit-summary", "cost-evidence"],
+  outputs: ["financial-assessment", "recommendations", "missing-inputs", "risk-alerts", "evidence-requests"],
+  boundaries: [
+    "no mutation execution",
+    "no verification of outcomes",
+    "no mixing of currencies or accounts",
+    "no profitability claims without cost evidence",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: [
+    "unit-economics",
+    "economic-outcome",
+    "profit-summary",
+    "cost-evidence",
+    "product-ads-profitability",
+    "account-brain",
+  ],
+  credentialScope: "provider-default",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
@@ -440,6 +473,7 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   MORNING_REPORT_LANE,
   EOD_SUMMARY_LANE,
   UNANSWERED_QUESTIONS_LANE,
+  FINANCE_DIRECTOR_LANE,
 ];
 
 export function getLaneContract(laneId: LaneId): LaneContract {
