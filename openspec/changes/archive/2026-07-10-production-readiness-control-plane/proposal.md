@@ -2,7 +2,7 @@
 
 > **Phase:** P0, PR 1/4 (Production Readiness)
 > **Date:** 2026-07-10
-> **Status:** Proposed
+> **Status:** Implemented
 
 ## Intent
 

@@ -1,6 +1,8 @@
 # Proposal: Audit Production Readiness Control Plane
 
-**Status**: Implemented (audit executed and corrections applied)
+> **Date:** 2026-07-11
+> **Status:** Archived
+> **Code baseline:** `11469f8` — fix(runtime): audit and harden production readiness control plane
 
 ## Summary
 
