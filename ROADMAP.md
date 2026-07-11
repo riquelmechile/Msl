@@ -13,31 +13,31 @@
 
 ## Implemented at HEAD
 
-| Capability                               | Status                   | Notes                                                                                    |
-| ---------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
-| Agent enterprise kernel                  | Implementado             | Company agent registry, learning store, skill store, admin lifecycle tools               |
-| Cortex neural graph + Darwinian learning | Implementado             | SQLite + recursive CTEs, Hebbian + pruning, constellation propagation                    |
-| DeepSeek integration                     | Implementado             | Real client, cache-friendly blocks, requires `DEEPSEEK_API_KEY`                          |
-| Agent Message Bus                        | Implementado             | SQLite-backed async queue, claim/resolve/fail, dedup, priority                           |
+| Capability                               | Status                   | Notes                                                                                                                                                   |
+| ---------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent enterprise kernel                  | Implementado             | Company agent registry, learning store, skill store, admin lifecycle tools                                                                              |
+| Cortex neural graph + Darwinian learning | Implementado             | SQLite + recursive CTEs, Hebbian + pruning, constellation propagation                                                                                   |
+| DeepSeek integration                     | Implementado             | Real client, cache-friendly blocks, requires `DEEPSEEK_API_KEY`                                                                                         |
+| Agent Message Bus                        | Implementado             | SQLite-backed async queue, claim/resolve/fail, dedup, priority                                                                                          |
 | 16 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache (economic-learning daemon registered, gated by `MSL_ECONOMIC_LEARNING_ENABLED`) |
-| 16 lane contracts                        | Implementado             | Typed `LANE_CONTRACTS` in `lanes.ts` with stable prefixes                                |
-| Work Sessions                            | Implementado             | `AgentWorkSessionStore` + `AgentWorkSessionRunner`, 7 sessionized lanes                  |
-| Account Assets + Account Brain           | Implementado             | `AccountAssetStore`, `AccountBrainService`, per-seller strategic tracking                |
-| Evidence Response Router                 | Implementado             | 5 responders: CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager |
-| Multi-agent evidence responses           | Implementado             | Inter-agent evidence request/response protocol, `OwnedEcommerceEvidenceAggregator`       |
-| Supplier Intelligence + Supplier Mirror  | Implementado             | Local-first, DeepSeek advisor, Jinpeng dry-run, disabled-by-default workers              |
-| Owned ecommerce runtime                  | Implementado (env-gated) | Medusa write boundary (fail-closed), preview adapter, requires env creds                 |
-| DeepSeek merchandising advisor           | Implementado             | `OwnedEcommerceMerchandisingAdvisor` for storefront recommendations                      |
-| Approval gates + "dale" execution        | Implementado             | Prepare → approve → execute → audit pipeline                                             |
-| Seller/account isolation                 | Implementado             | Column-scoped `seller_id` throughout operational model and Cortex                        |
-| Operational Read Model                   | Implementado             | 8 entity kinds, SQLite snapshots + checkpoints, per-seller isolation                     |
-| Background ingestion                     | Implementado             | 5 processors with checkpoint-based pagination                                            |
-| Telegram bot runtime                     | Implementado             | grammY, CEO-only, multi-seller (single-instance dale limitation)                         |
-| MCP server                               | Implementado             | ~40 tools, stdio, zod validation                                                         |
-| Creative Studio (MiniMax)                | Implementado (env-gated) | Image/video generation, policy engine, cost caps                                         |
-| CEO Inbox Store                          | Implementado             | Persists daemon proposals for CEO review                                                 |
-| Workforce Cost Cache Ledger              | Implementado             | Dual-table rollups, per-agent budget warnings                                            |
-| Agent Consensus Store                    | Implementado             | Multi-agent review with quorum for high-risk proposals                                   |
+| 16 lane contracts                        | Implementado             | Typed `LANE_CONTRACTS` in `lanes.ts` with stable prefixes                                                                                               |
+| Work Sessions                            | Implementado             | `AgentWorkSessionStore` + `AgentWorkSessionRunner`, 7 sessionized lanes                                                                                 |
+| Account Assets + Account Brain           | Implementado             | `AccountAssetStore`, `AccountBrainService`, per-seller strategic tracking                                                                               |
+| Evidence Response Router                 | Implementado             | 5 responders: CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager                                                                |
+| Multi-agent evidence responses           | Implementado             | Inter-agent evidence request/response protocol, `OwnedEcommerceEvidenceAggregator`                                                                      |
+| Supplier Intelligence + Supplier Mirror  | Implementado             | Local-first, DeepSeek advisor, Jinpeng dry-run, disabled-by-default workers                                                                             |
+| Owned ecommerce runtime                  | Implementado (env-gated) | Medusa write boundary (fail-closed), preview adapter, requires env creds                                                                                |
+| DeepSeek merchandising advisor           | Implementado             | `OwnedEcommerceMerchandisingAdvisor` for storefront recommendations                                                                                     |
+| Approval gates + "dale" execution        | Implementado             | Prepare → approve → execute → audit pipeline                                                                                                            |
+| Seller/account isolation                 | Implementado             | Column-scoped `seller_id` throughout operational model and Cortex                                                                                       |
+| Operational Read Model                   | Implementado             | 8 entity kinds, SQLite snapshots + checkpoints, per-seller isolation                                                                                    |
+| Background ingestion                     | Implementado             | 5 processors with checkpoint-based pagination                                                                                                           |
+| Telegram bot runtime                     | Implementado             | grammY, CEO-only, multi-seller (single-instance dale limitation)                                                                                        |
+| MCP server                               | Implementado             | ~40 tools, stdio, zod validation                                                                                                                        |
+| Creative Studio (MiniMax)                | Implementado (env-gated) | Image/video generation, policy engine, cost caps                                                                                                        |
+| CEO Inbox Store                          | Implementado             | Persists daemon proposals for CEO review                                                                                                                |
+| Workforce Cost Cache Ledger              | Implementado             | Dual-table rollups, per-agent budget warnings                                                                                                           |
+| Agent Consensus Store                    | Implementado             | Multi-agent review with quorum for high-risk proposals                                                                                                  |
 
 ---
 
@@ -45,16 +45,16 @@
 
 **Propósito:** Hacer que MSL opere sobre datos reales con credenciales reales.
 
-**Estado:** **Parcial** — PR 1/4, 2/4, y 3/4 completadas. Production Readiness Control Plane operativo. Durable Runtime Operations implementado. ML Dual-Account Production Connection (OAuth real con read-only production) implementado.
+**Estado:** **Completo** — PR 1/4, 2/4, 3/4 y 4/4 completadas. Production Readiness Control Plane operativo. Durable Runtime Operations implementado. ML Dual-Account Production Connection (OAuth real con read-only production) implementado. Real Ingestion & Economic Adapters implementado.
 
 ### PRs
 
-| PR | Descripción | Estado |
-|----|-------------|--------|
-| 1/4 | Production Readiness Control Plane | ✅ Complete |
+| PR  | Descripción                                                     | Estado      |
+| --- | --------------------------------------------------------------- | ----------- |
+| 1/4 | Production Readiness Control Plane                              | ✅ Complete |
 | 2/4 | Durable Runtime Operations (backups, migrations, observability) | ✅ Complete |
-| 3/4 | ML Dual-Account Production Connection (OAuth real) | ✅ Complete |
-| 4/4 | Real Ingestion & Economic Adapters | 🔲 Planificada |
+| 3/4 | ML Dual-Account Production Connection (OAuth real)              | ✅ Complete |
+| 4/4 | Real Ingestion & Economic Adapters                              | ✅ Complete |
 
 ### Capacidades implementadas en PR 1/4
 
@@ -104,6 +104,26 @@
 
 **Read está operativo. Write continúa bloqueado.** `mercadolibre-read-plasticov` y `mercadolibre-read-maustian` pueden alcanzar `ready`. `mercadolibre-write-*` permanecen `blocked` con razón `write-capability-not-implemented`.
 
+### Capacidades implementadas en PR 4/4
+
+- ✅ Domains types: `NormalizedCommerceTransaction`, `EconomicEvidenceReference`, `EconomicIngestionRun`, `EconomicDataCoverage`
+- ✅ Cost component store: `insertCostComponent` (idempotent), `upsertCostComponent` (supersede), `listCostComponents`, `listBySourceRecord`, `reverseCostComponent` (soft-delete)
+- ✅ Normalization: ML orders/items/payments → `NormalizedCommerceTransaction[]` (PII-stripped, multi-item, cancelled)
+- ✅ Economic adapters (5 real + 6 stubs): `OrderRevenue`, `MarketplaceFee`, `ShippingCost`, `SellerDiscount`, `RefundReturn`, `AdvertisingCost`, `ProductCost`, `LandedCost`, `Packaging`, `Financing`, `Tax`, `Other`
+- ✅ Ingestion Pipeline: 16-stage flow (resolve seller → verify readiness → acquire lock → fetch → normalize → strip PII → build evidence refs → run adapters → evaluate missing inputs → compute snapshot → persist → reconcile → advance checkpoint → emit metrics → release lock)
+- ✅ `EconomicReconciliationService`: source totals vs computed (balanced | balanced-with-tolerance | incomplete | mismatched | disputed)
+- ✅ `EconomicIngestionRun`: state machine (pending → fetching → normalizing → adapting → computing → persisting → completed | failed)
+- ✅ Worker/Daemon: `createEconomicIngestionDaemon` registered in daemonScheduler, feature-gated by `MSL_ECONOMIC_INGESTION_ENABLED`
+- ✅ CLI: `economic:ingest`, `economic:status`, `economic:coverage`, `economic:reconcile`, `economic:missing`
+- ✅ Finance Director tools: `inspect_cost_components`, `inspect_evidence_references`, `inspect_coverage`, `reconcile_seller_economics` (wired into AgentLoop)
+- ✅ Production readiness: `real-economic-ingestion` capability, `MSL_ECONOMIC_INGESTION_ENABLED` env var in config inventory, feature gate readiness check
+- ✅ Runtime health: economic ingestion health event in `systemHealthDaemon`
+- ✅ Operational runbook: `docs/operations/real-ingestion-economic-adapters.md`
+- ✅ SDD archive docs: source-mapping, economic-semantics, data-quality-policy, reconciliation-policy, idempotency-policy, pii-and-secrets-policy, backfill-plan, production-runbook, threat-model
+- ✅ 9 SDD policy documents for operational transparency
+
+**Infrastructure complete.** Product cost and landed cost remain partial (stub adapters — require Supplier Mirror and customs data). Next: P1 product cost completion and Product Launch Intelligence.
+
 ---
 
 ## P1 — Financial Truth & Economic Outcomes
@@ -131,10 +151,10 @@
 
 ### PRs completadas
 
-| PR | Descripción | Estado |
-|----|-------------|--------|
-| 1/3 | Economic Domain, Calculation & Persistence Foundation | ✅ Complete |
-| 2/3 | Finance Director Agent (DeepSeek reasoning) | ✅ Complete |
+| PR  | Descripción                                                                 | Estado      |
+| --- | --------------------------------------------------------------------------- | ----------- |
+| 1/3 | Economic Domain, Calculation & Persistence Foundation                       | ✅ Complete |
+| 2/3 | Finance Director Agent (DeepSeek reasoning)                                 | ✅ Complete |
 | 3/3 | Cortex Economic Reinforcement Loop (verified outcomes → Darwinian learning) | ✅ Complete |
 
 ### Dependencias

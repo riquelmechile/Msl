@@ -32,7 +32,7 @@ Verificado contra el baseline `acaa64c` (P0 PR 3/4 MercadoLibre dual-account pro
 | Componente                     | Estado                                                      |
 | ------------------------------ | ----------------------------------------------------------- |
 | Agent Message Bus              | Cola asíncrona SQLite, claim/resolve/fail, deduplicación    |
-| 16 daemon handlers             | Ciclos de 15 min, solo lectura, proponen al CEO (gated)    |
+| 16 daemon handlers             | Ciclos de 15 min, solo lectura, proponen al CEO (gated)     |
 | 16 lane contracts              | Contratos tipados con prefijos estables para caché          |
 | Evidence Response Router       | 5 responders que responden solicitudes de evidencia         |
 | Work Sessions                  | Sesiones persistentes con cooldown para 7 lanes             |
@@ -174,14 +174,15 @@ npm run dev                   # http://127.0.0.1:3000
 
 Ver [`.env.example`](.env.example) para la referencia completa. Grupos principales:
 
-| Grupo                | Requerido para                                 |
-| -------------------- | ---------------------------------------------- |
-| `DEEPSEEK_API_KEY`   | Respuestas reales del LLM                      |
-| `BOT_TOKEN`          | Bot de Telegram                                |
-| `MINIMAX_API_KEY`    | Creative Studio (imagen/video)                 |
-| MercadoLibre OAuth   | Acceso a API de ML (listings, órdenes, claims) |
-| Supplier Mirror      | Bootstrap de Jinpeng, evidencia de proveedores |
-| `MSL_ENCRYPTION_KEY` | Cifrado de tokens OAuth                        |
+| Grupo                            | Requerido para                                 |
+| -------------------------------- | ---------------------------------------------- |
+| `DEEPSEEK_API_KEY`               | Respuestas reales del LLM                      |
+| `BOT_TOKEN`                      | Bot de Telegram                                |
+| `MINIMAX_API_KEY`                | Creative Studio (imagen/video)                 |
+| MercadoLibre OAuth               | Acceso a API de ML (listings, órdenes, claims) |
+| Supplier Mirror                  | Bootstrap de Jinpeng, evidencia de proveedores |
+| `MSL_ENCRYPTION_KEY`             | Cifrado de tokens OAuth                        |
+| `MSL_ECONOMIC_INGESTION_ENABLED` | Ingesta económica real (costos, snapshots)     |
 
 ---
 
@@ -195,54 +196,59 @@ npm test              # Vitest (unitarios + integración)
 npm run test:e2e      # Playwright E2E
 npm run build         # Build completo del workspace
 npm run production:readiness  # Diagnóstico de production readiness
+npm run economic:ingest      # Ejecutar ingesta económica (leer ML, calcular costos)
+npm run economic:status      # Estado de la última ingesta
+npm run economic:coverage    # Cobertura de datos económicos por seller
+npm run economic:reconcile   # Reconciliar costos vs snapshots
+npm run economic:missing     # Listar inputs económicos faltantes
 ```
 
 ---
 
 ## Estado de producción
 
-| Componente             | Estado                                            |
-| ---------------------- | ------------------------------------------------- |
-| Agent Loop + DeepSeek  | ✅ Listo (requiere `DEEPSEEK_API_KEY`)            |
-| Agent Message Bus      | ✅ Listo (SQLite)                                 |
-| 16 Daemon Handlers     | ✅ Listo (15-min cycles, economic-learning gated) |
-| Evidence Responses     | ✅ Listo (5 responders)                           |
-| Work Sessions          | ✅ Listo                                          |
-| Cortex                 | ✅ Listo (SQLite)                                 |
-| Operational Read Model | ✅ Listo (8 entity kinds)                         |
-| SQLite Durability      | ✅ Listo (backups, WAL, integrity, gated)         |
-| Observability Pipeline | ✅ Listo (JSON logger + sanitization, gated)      |
-| Operational Health     | ✅ Listo (DB checks, backup freshness, gated)     |
-| Telegram Bot           | ✅ Runtime listo (requiere `BOT_TOKEN`)           |
-| MCP Server             | ✅ Runtime listo (~40 tools)                      |
-| Supplier Mirror        | ✅ Foundation listo (workers disabled by default) |
-| Owned Ecommerce        | ✅ Runtime listo (env-gated)                      |
-| Creative Studio        | ✅ Runtime listo (env-gated)                      |
-| ML OAuth               | ✅ Listo (dual-account, read-only production) |
-| OAuth dual Plasticov/Maustian | ✅ Listo (apps separadas, tokens independientes) |
-| Refresh automático seller-scoped | ✅ Listo (con lock, métricas, error classification) |
-| Health por cuenta ML   | ✅ Listo (4 modos: inspect, refresh, smoke, no-network) |
-| Smoke tests read-only  | ✅ Listo (identity + orders + items, sin mutaciones) |
-| Environment loader común | ✅ Listo (sin symlink, funciona desde cualquier cwd) |
-| Escrituras ML          | ❌ Bloqueadas (`assertMercadoLibreWriteDisabled()`) |
-| Ingesta real           | ❌ Requiere P0 PR 4/4 (integración económica)     |
-| Ecommerce productivo   | ❌ Requiere credenciales Medusa + aprobación      |
-| Canales sociales       | 🔲 No implementado                                |
-| Expansión multicanal   | 🔲 No implementado                                |
+| Componente                       | Estado                                                  |
+| -------------------------------- | ------------------------------------------------------- |
+| Agent Loop + DeepSeek            | ✅ Listo (requiere `DEEPSEEK_API_KEY`)                  |
+| Agent Message Bus                | ✅ Listo (SQLite)                                       |
+| 16 Daemon Handlers               | ✅ Listo (15-min cycles, economic-learning gated)       |
+| Evidence Responses               | ✅ Listo (5 responders)                                 |
+| Work Sessions                    | ✅ Listo                                                |
+| Cortex                           | ✅ Listo (SQLite)                                       |
+| Operational Read Model           | ✅ Listo (8 entity kinds)                               |
+| SQLite Durability                | ✅ Listo (backups, WAL, integrity, gated)               |
+| Observability Pipeline           | ✅ Listo (JSON logger + sanitization, gated)            |
+| Operational Health               | ✅ Listo (DB checks, backup freshness, gated)           |
+| Telegram Bot                     | ✅ Runtime listo (requiere `BOT_TOKEN`)                 |
+| MCP Server                       | ✅ Runtime listo (~40 tools)                            |
+| Supplier Mirror                  | ✅ Foundation listo (workers disabled by default)       |
+| Owned Ecommerce                  | ✅ Runtime listo (env-gated)                            |
+| Creative Studio                  | ✅ Runtime listo (env-gated)                            |
+| ML OAuth                         | ✅ Listo (dual-account, read-only production)           |
+| OAuth dual Plasticov/Maustian    | ✅ Listo (apps separadas, tokens independientes)        |
+| Refresh automático seller-scoped | ✅ Listo (con lock, métricas, error classification)     |
+| Health por cuenta ML             | ✅ Listo (4 modos: inspect, refresh, smoke, no-network) |
+| Smoke tests read-only            | ✅ Listo (identity + orders + items, sin mutaciones)    |
+| Environment loader común         | ✅ Listo (sin symlink, funciona desde cualquier cwd)    |
+| Escrituras ML                    | ❌ Bloqueadas (`assertMercadoLibreWriteDisabled()`)     |
+| Ingesta real                     | ✅ Listo (feature-gated, infra completa)                |
+| Ecommerce productivo             | ❌ Requiere credenciales Medusa + aprobación            |
+| Canales sociales                 | 🔲 No implementado                                      |
+| Expansión multicanal             | 🔲 No implementado                                      |
 
 ---
 
 ## Roadmap resumido
 
-| Prioridad | Fase                                | Estado                |
-| --------- | ----------------------------------- | --------------------- |
-| P0        | Operational Truth & Production      | Parcial (PR 3/4 completa, PR 4/4 planificada) |
-| P1        | Financial Truth & Economic Outcomes | Fundación completa    |
-| P2        | Full Product Launch Cycle           | Pendiente |
-| P3        | Social Growth                       | Pendiente |
-| P4        | Portfolio, Pricing, Inventory       | Pendiente |
-| P5        | Experimentation & Org Intelligence  | Pendiente |
-| P6        | Multichannel Expansion              | Pendiente |
+| Prioridad | Fase                                | Estado             |
+| --------- | ----------------------------------- | ------------------ |
+| P0        | Operational Truth & Production      | Completo (4/4 PRs) |
+| P1        | Financial Truth & Economic Outcomes | Fundación completa |
+| P2        | Full Product Launch Cycle           | Pendiente          |
+| P3        | Social Growth                       | Pendiente          |
+| P4        | Portfolio, Pricing, Inventory       | Pendiente          |
+| P5        | Experimentation & Org Intelligence  | Pendiente          |
+| P6        | Multichannel Expansion              | Pendiente          |
 
 Ver [`ROADMAP.md`](ROADMAP.md) para el detalle completo con capacidades, dependencias, criterios de aceptación y riesgos de cada fase.
 

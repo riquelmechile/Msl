@@ -76,6 +76,7 @@ module.exports = {
       out_file: path.join(logDir, "agent-daemons.out.log"),
       env: {
         NODE_ENV: "production",
+        MSL_ECONOMIC_INGESTION_ENABLED: process.env.MSL_ECONOMIC_INGESTION_ENABLED ?? "false",
       },
     },
   ],

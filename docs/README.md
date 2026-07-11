@@ -52,12 +52,13 @@ Documentos que establecen la visión de producto estable y no deben divergir del
 
 ### Operación
 
-| Documento                                                      | Propósito                                 |
-| -------------------------------------------------------------- | ----------------------------------------- |
-| [`vps-deployment.md`](./vps-deployment.md)                     | Guía de deploy en VPS con PM2             |
-| [`production-secrets-setup.md`](./production-secrets-setup.md) | Configuración de secretos para producción |
-| [`operations/production-readiness-control-plane.md`](./operations/production-readiness-control-plane.md) | Production Readiness Control Plane (P0, PR 1/4) |
+| Documento                                                                                                                          | Propósito                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [`vps-deployment.md`](./vps-deployment.md)                                                                                         | Guía de deploy en VPS con PM2                                |
+| [`production-secrets-setup.md`](./production-secrets-setup.md)                                                                     | Configuración de secretos para producción                    |
+| [`operations/production-readiness-control-plane.md`](./operations/production-readiness-control-plane.md)                           | Production Readiness Control Plane (P0, PR 1/4)              |
 | [`operations/mercadolibre-dual-account-production-connection.md`](./operations/mercadolibre-dual-account-production-connection.md) | MercadoLibre Dual-Account Production Connection (P0, PR 3/4) |
+| [`operations/real-ingestion-economic-adapters.md`](./operations/real-ingestion-economic-adapters.md)                               | Real Ingestion & Economic Adapters (P0, PR 4/4)              |
 
 Documentos orientados a la operación del sistema en producción: deploy, configuración, secretos y monitoreo.
 
@@ -67,20 +68,20 @@ Documentos orientados a la operación del sistema en producción: deploy, config
 
 Documentos que detallan componentes específicos de la arquitectura, integraciones o flujos de diseño.
 
-| Documento                                                                                                | Componente                            |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| [`architecture/multi-agent-evidence-responses.md`](./architecture/multi-agent-evidence-responses.md)     | Evidencia entre agentes               |
-| [`architecture/agent-work-sessions-cache.md`](./architecture/agent-work-sessions-cache.md)               | Work Sessions y caché                 |
-| [`architecture/financial-truth-foundation.md`](./architecture/financial-truth-foundation.md)             | Financial Truth Foundation (P1, PR 1/3) |
-| [`architecture/finance-director-agent.md`](./architecture/finance-director-agent.md)                     | Finance Director Agent (P1, PR 2/3)     |
+| Documento                                                                                                    | Componente                                      |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| [`architecture/multi-agent-evidence-responses.md`](./architecture/multi-agent-evidence-responses.md)         | Evidencia entre agentes                         |
+| [`architecture/agent-work-sessions-cache.md`](./architecture/agent-work-sessions-cache.md)                   | Work Sessions y caché                           |
+| [`architecture/financial-truth-foundation.md`](./architecture/financial-truth-foundation.md)                 | Financial Truth Foundation (P1, PR 1/3)         |
+| [`architecture/finance-director-agent.md`](./architecture/finance-director-agent.md)                         | Finance Director Agent (P1, PR 2/3)             |
 | [`architecture/cortex-economic-reinforcement-loop.md`](./architecture/cortex-economic-reinforcement-loop.md) | Cortex Economic Reinforcement Loop (P1, PR 3/3) |
-| [`architecture/owned-ecommerce-deepseek-advisor.md`](./architecture/owned-ecommerce-deepseek-advisor.md) | DeepSeek Merchandising Advisor        |
-| [`architecture/owned-ecommerce-intelligence.md`](./architecture/owned-ecommerce-intelligence.md)         | Owned Ecommerce Intelligence          |
-| [`architecture/ceo-account-brain-dashboard.md`](./architecture/ceo-account-brain-dashboard.md)           | Account Brain Dashboard               |
-| [`creative-studio-minimax-integration.md`](./creative-studio-minimax-integration.md)                     | Integración MiniMax (Creative Studio) |
-| [`supplier-to-owned-ecommerce-cortex-bridge.md`](./supplier-to-owned-ecommerce-cortex-bridge.md)         | Puente Supplier → Cortex → Ecommerce  |
-| [`supplier-mirror.md`](./supplier-mirror.md)                                                             | Supplier Mirror                       |
-| [`PHILOSOPHY.md`](./PHILOSOPHY.md)                                                                       | Filosofía de ingeniería               |
+| [`architecture/owned-ecommerce-deepseek-advisor.md`](./architecture/owned-ecommerce-deepseek-advisor.md)     | DeepSeek Merchandising Advisor                  |
+| [`architecture/owned-ecommerce-intelligence.md`](./architecture/owned-ecommerce-intelligence.md)             | Owned Ecommerce Intelligence                    |
+| [`architecture/ceo-account-brain-dashboard.md`](./architecture/ceo-account-brain-dashboard.md)               | Account Brain Dashboard                         |
+| [`creative-studio-minimax-integration.md`](./creative-studio-minimax-integration.md)                         | Integración MiniMax (Creative Studio)           |
+| [`supplier-to-owned-ecommerce-cortex-bridge.md`](./supplier-to-owned-ecommerce-cortex-bridge.md)             | Puente Supplier → Cortex → Ecommerce            |
+| [`supplier-mirror.md`](./supplier-mirror.md)                                                                 | Supplier Mirror                                 |
+| [`PHILOSOPHY.md`](./PHILOSOPHY.md)                                                                           | Filosofía de ingeniería                         |
 
 ---
 
