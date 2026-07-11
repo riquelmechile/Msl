@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { runEconomicIngestion } from "./EconomicIngestionPipeline.js";
 import type { DataFetcher, FetchedData } from "./EconomicIngestionPipeline.js";
 import type { EconomicOutcomeStore } from "@msl/memory";
+import { DeterministicRunIdFactory } from "@msl/domain";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,19 @@ function makeSampleFetcher(data?: Partial<FetchedData>): DataFetcher {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("EconomicIngestionPipeline", () => {
+  const runIdFactory = new DeterministicRunIdFactory([
+    "economic-ingestion-00000000-0000-4000-a000-000000000001",
+    "economic-ingestion-00000000-0000-4000-a000-000000000002",
+    "economic-ingestion-00000000-0000-4000-a000-000000000003",
+    "economic-ingestion-00000000-0000-4000-a000-000000000004",
+    "economic-ingestion-00000000-0000-4000-a000-000000000005",
+    "economic-ingestion-00000000-0000-4000-a000-000000000006",
+    "economic-ingestion-00000000-0000-4000-a000-000000000007",
+    "economic-ingestion-00000000-0000-4000-a000-000000000008",
+    "economic-ingestion-00000000-0000-4000-a000-000000000009",
+    "economic-ingestion-00000000-0000-4000-a000-000000000010",
+  ]);
+
   describe("basic pipeline flow", () => {
     it("completes a successful run for plasticov", async () => {
       const store = mockStore();
@@ -69,6 +83,7 @@ describe("EconomicIngestionPipeline", () => {
         { sellerId: "plasticov", mode: "incremental" },
         store,
         fetcher,
+        runIdFactory,
       );
 
       expect(result.run.status).toBe("completed");
@@ -85,6 +100,7 @@ describe("EconomicIngestionPipeline", () => {
         { sellerId: "maustian", mode: "incremental" },
         store,
         fetcher,
+        runIdFactory,
       );
 
       expect(result.run.status).toBe("completed");
@@ -99,6 +115,7 @@ describe("EconomicIngestionPipeline", () => {
         { sellerId: "unknown", mode: "incremental" },
         store,
         fetcher,
+        runIdFactory,
       );
 
       expect(result.run.status).toBe("failed");
@@ -115,6 +132,7 @@ describe("EconomicIngestionPipeline", () => {
         { sellerId: "plasticov", mode: "dry-run", dryRun: true },
         store,
         fetcher,
+        runIdFactory,
       );
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -129,6 +147,7 @@ describe("EconomicIngestionPipeline", () => {
         { sellerId: "plasticov", mode: "dry-run", dryRun: true },
         store,
         fetcher,
+        runIdFactory,
       );
 
       expect(result.snapshots.length).toBeGreaterThan(0);
@@ -143,7 +162,7 @@ describe("EconomicIngestionPipeline", () => {
       await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental", noPersist: true },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -167,7 +186,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental", abortSignal: controller.signal },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.run.status).toBe("failed");
@@ -190,7 +209,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental", abortSignal: controller.signal },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.run.status).toBe("failed");
@@ -207,7 +226,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.reconciliation.status).toMatch(/balanced/);
@@ -227,7 +246,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.reconciliation.status).toBe("mismatched");
@@ -244,7 +263,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       const partialCount = result.snapshots.filter(
@@ -264,7 +283,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.snapshots.length).toBe(0);
@@ -291,7 +310,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.snapshots.length).toBe(3);
@@ -312,7 +331,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.run.status).toBe("completed");
@@ -330,12 +349,12 @@ describe("EconomicIngestionPipeline", () => {
         runEconomicIngestion(
           { sellerId: "plasticov", mode: "incremental" },
           store,
-          fetcher,
+          fetcher, runIdFactory,
         ),
         runEconomicIngestion(
           { sellerId: "plasticov", mode: "incremental" },
           store,
-          fetcher,
+          fetcher, runIdFactory,
         ),
       ]);
 
@@ -357,7 +376,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "backfill" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.run.mode).toBe("backfill");
@@ -371,7 +390,7 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "reconcile" },
         store,
-        fetcher,
+        fetcher, runIdFactory,
       );
 
       expect(result.run.mode).toBe("reconcile");

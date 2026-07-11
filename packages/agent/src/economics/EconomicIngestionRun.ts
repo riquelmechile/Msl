@@ -57,6 +57,7 @@ export function transitionRun(
   const now = Date.now();
 
   const result = createEconomicIngestionRun({
+    runId: run.runId,
     sellerId: run.sellerId,
     mode: run.mode,
     sourceKinds: run.sourceKinds,

@@ -15,6 +15,8 @@ import {
   migrateEconomicIngestionRunStore,
 } from "@msl/memory";
 import type { EconomicOutcomeStore, EconomicIngestionRunStore } from "@msl/memory";
+import { CryptoRunIdFactory } from "@msl/domain";
+import type { RunIdFactory } from "@msl/domain";
 import { createProductionDataFetcher } from "./dataFetcher.js";
 import { runEconomicIngestion } from "./EconomicIngestionPipeline.js";
 import type { DataFetcher, PipelineConfig, PipelineResult } from "./EconomicIngestionPipeline.js";
@@ -31,6 +33,7 @@ export type SellerSlug = "source" | "target";
 export type RuntimeOverrides = {
   store?: EconomicOutcomeStore;
   runStore?: EconomicIngestionRunStore;
+  runIdFactory?: RunIdFactory;
   dataFetcher?: DataFetcher;
   pipeline?: (config: PipelineConfig) => Promise<PipelineResult>;
   mlClient?: MlcApiClient;
@@ -121,6 +124,9 @@ export function createEconomicIngestionRuntime(
   if (!overrides?.store) migrateEconomicOutcomeStore(db);
   if (!overrides?.runStore) migrateEconomicIngestionRunStore(db);
 
+  // ── 5b. RunIdFactory ────────────────────────────────────────────────────
+  const runIdFactory = overrides?.runIdFactory ?? new CryptoRunIdFactory();
+
   // ── 6. DataFetcher ──────────────────────────────────────────────────────
   const sellerIdMap: Record<string, string> = {
     plasticov: roleConfig.sourceSellerId,
@@ -144,7 +150,7 @@ export function createEconomicIngestionRuntime(
   const pipeline =
     overrides?.pipeline ??
     (async (config: PipelineConfig) => {
-      return runEconomicIngestion(config, store, dataFetcher, runStore);
+      return runEconomicIngestion(config, store, dataFetcher, runIdFactory, runStore);
     });
 
   // ── 9. Health ───────────────────────────────────────────────────────────

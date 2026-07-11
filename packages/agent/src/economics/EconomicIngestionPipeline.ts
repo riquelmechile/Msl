@@ -3,6 +3,7 @@ import type {
   EconomicEvidenceReference,
   EconomicIngestionRun,
   IngestionRunMode,
+  RunIdFactory,
   UnitEconomicsSnapshot,
 } from "@msl/domain";
 import { createEconomicIngestionRun, createEconomicEvidenceReference } from "@msl/domain";
@@ -142,6 +143,7 @@ export async function runEconomicIngestion(
   config: PipelineConfig,
   store: EconomicOutcomeStore,
   dataFetcher: DataFetcher,
+  runIdFactory?: RunIdFactory,
   runStore?: EconomicIngestionRunStore,
 ): Promise<PipelineResult> {
   const startTime = Date.now();
@@ -171,6 +173,7 @@ export async function runEconomicIngestion(
 
       // 4. Create run
       const initialRunResult = createEconomicIngestionRun({
+        ...(runIdFactory !== undefined ? { runIdFactory } : {}),
         sellerId: config.sellerId,
         mode: config.mode,
         sourceKinds: ["orders", "items", "claims", "ads"],
@@ -505,6 +508,7 @@ export async function runEconomicIngestion(
       const endTime = Date.now();
       const isTerminal = run.status === "completed" || run.status === "failed";
       const finalRunResult = createEconomicIngestionRun({
+        ...(runIdFactory !== undefined ? { runIdFactory } : {}),
         sellerId: config.sellerId,
         mode: config.mode,
         sourceKinds: ["orders", "items", "claims", "ads"],
@@ -556,6 +560,7 @@ export async function runEconomicIngestion(
 
     // Create a failed run record
     const failedRunResult = createEconomicIngestionRun({
+      ...(runIdFactory !== undefined ? { runIdFactory } : {}),
       sellerId: config.sellerId,
       mode: config.mode,
       sourceKinds: ["orders", "items", "claims", "ads"],
