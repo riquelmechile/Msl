@@ -27,12 +27,12 @@ MSL combina razonamiento (DeepSeek), memoria (Cortex, grafo neuronal en SQLite) 
 
 ## Qué funciona actualmente
 
-Verificado contra el baseline `11469f8` (P0 PR 1/4 audit and hardening):
+Verificado contra el baseline `90efd8d` (P0 PR 2/4 durable runtime operations):
 
 | Componente                     | Estado                                                      |
 | ------------------------------ | ----------------------------------------------------------- |
 | Agent Message Bus              | Cola asíncrona SQLite, claim/resolve/fail, deduplicación    |
-| 15 daemon handlers             | Ciclos de 15 minutos, solo lectura, proponen al CEO         |
+| 16 daemon handlers             | Ciclos de 15 min, solo lectura, proponen al CEO (gated)    |
 | 16 lane contracts              | Contratos tipados con prefijos estables para caché          |
 | Evidence Response Router       | 5 responders que responden solicitudes de evidencia         |
 | Work Sessions                  | Sesiones persistentes con cooldown para 7 lanes             |
@@ -40,6 +40,12 @@ Verificado contra el baseline `11469f8` (P0 PR 1/4 audit and hardening):
 | Cortex                         | Grafo neuronal con aprendizaje hebbiano y poda darwiniana   |
 | DeepSeek                       | Cliente real, bloques de caché, requiere `DEEPSEEK_API_KEY` |
 | Operational Read Model         | Snapshots SQLite de 8 tipos de entidad                      |
+| SQLite Durability              | Backups, verificación, restauración, WAL, integrity check   |
+| Migration Framework            | Migraciones versionadas, transaccionales e idempotentes     |
+| Observability Pipeline         | Logger JSON + correlation IDs + sanitización de secretos    |
+| Operational Health             | Checks de integridad, WAL, migraciones, backup freshness    |
+| Degraded Capability Policy     | Capacidades degradadas → WARN, no bloquean producción       |
+| Finance Director Validation    | Detección de figuras inventadas con evidencia cruzada       |
 | Supplier Mirror                | Evidencia de proveedores local-first, dry-run Jinpeng       |
 | Owned Ecommerce                | Write boundary Medusa (fail-closed), env-gated              |
 | Creative Studio                | MiniMax imagen/video, env-gated                             |
@@ -99,7 +105,7 @@ Telegram / Web Console
         │
         ▼
    @msl/agent (DeepSeek v4)
-   Agent Loop · Guardrails · 14 Daemons · Evidence Router
+   Agent Loop · Guardrails · 16 Daemons · Evidence Router
         │
    ┌────┼────────────┬──────────────┐
    ▼    ▼            ▼              ▼
@@ -135,7 +141,7 @@ Nada se publica, modifica, cancela o gasta sin un "dale" explícito. Las herrami
 
 | Package                 | Rol                                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------------ |
-| `@msl/agent`            | CEO agent loop, DeepSeek, 15 daemons, evidence router, work sessions, account brain  |
+| `@msl/agent`            | CEO agent loop, DeepSeek, 16 daemons, evidence router, work sessions, account brain  |
 | `@msl/memory`           | Cortex neural graph, operational read model, evidence request store, supplier mirror |
 | `@msl/mercadolibre`     | ML API client (OAuth), sync engine, supplier source adapters                         |
 | `@msl/creative-studio`  | MiniMax image/video generation, policy engine, cost controls                         |
@@ -199,11 +205,14 @@ npm run production:readiness  # Diagnóstico de production readiness
 | ---------------------- | ------------------------------------------------- |
 | Agent Loop + DeepSeek  | ✅ Listo (requiere `DEEPSEEK_API_KEY`)            |
 | Agent Message Bus      | ✅ Listo (SQLite)                                 |
-| 15 Daemon Handlers             | ✅ Listo (15-min cycles)                          |
+| 16 Daemon Handlers     | ✅ Listo (15-min cycles, economic-learning gated) |
 | Evidence Responses     | ✅ Listo (5 responders)                           |
 | Work Sessions          | ✅ Listo                                          |
 | Cortex                 | ✅ Listo (SQLite)                                 |
 | Operational Read Model | ✅ Listo (8 entity kinds)                         |
+| SQLite Durability      | ✅ Listo (backups, WAL, integrity, gated)         |
+| Observability Pipeline | ✅ Listo (JSON logger + sanitization, gated)      |
+| Operational Health     | ✅ Listo (DB checks, backup freshness, gated)     |
 | Telegram Bot           | ✅ Runtime listo (requiere `BOT_TOKEN`)           |
 | MCP Server             | ✅ Runtime listo (~40 tools)                      |
 | Supplier Mirror        | ✅ Foundation listo (workers disabled by default) |
@@ -219,10 +228,10 @@ npm run production:readiness  # Diagnóstico de production readiness
 
 ## Roadmap resumido
 
-| Prioridad | Fase                                | Estado    |
-| --------- | ----------------------------------- | --------- |
-| P0        | Operational Truth & Production      | Pendiente |
-| P1        | Financial Truth & Economic Outcomes | Pendiente |
+| Prioridad | Fase                                | Estado                |
+| --------- | ----------------------------------- | --------------------- |
+| P0        | Operational Truth & Production      | Parcial (PR 2/4)     |
+| P1        | Financial Truth & Economic Outcomes | Fundación completa    |
 | P2        | Full Product Launch Cycle           | Pendiente |
 | P3        | Social Growth                       | Pendiente |
 | P4        | Portfolio, Pricing, Inventory       | Pendiente |

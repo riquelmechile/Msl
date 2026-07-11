@@ -10,11 +10,8 @@ Hardened MSL's operational base for safe production: added scheduled SQLite back
 
 ## Delivery Strategy
 
-- **4 chained PRs** (stacked-to-main) — `feature/durable-runtime-operations` tracker branch
-- PR 1: Migration Framework + DatabaseManager core
-- PR 2: Backup Scheduler + Health + Readiness
-- PR 3: Observability Pipeline
-- PR 4: Finance Validator + Economic Learning + Final Wiring
+- **Merged directly to `main`** — 5 commits pushed at `90efd8d` (stacked-to-main, no intermediate PR branches needed). Feature flags default `false` — safe to merge directly.
+- Commit sequence: PR 1 (migration+DB core) → PR 2 (backup+health) → PR 3 (observability) → PR 4 (finance+wiring) → archive docs
 
 ## Specs Synced
 
@@ -105,13 +102,13 @@ Hardened MSL's operational base for safe production: added scheduled SQLite back
 
 ## Next Steps
 
-1. Create the 4 stacked PRs from the `feature/durable-runtime-operations` branch chain
-2. Review and merge PRs in order (PR 1 → PR 2 → PR 3 → PR 4)
-3. Enable feature flags incrementally in production:
+1. ✅ Code pushed to `main` (`73e7b67`–`90efd8d`)
+2. 🔲 Enable feature flags incrementally in production:
    - Start with `MSL_STRUCTURED_LOGGING_ENABLED=true` (lowest risk)
    - Then `MSL_MIGRATION_ENABLED=true` after verifying migration rollback
    - Then `MSL_DURABILITY_ENABLED=true` after verifying backup dir writable
    - `MSL_ECONOMIC_LEARNING_ENABLED=true` last, with shadow-mode logging first
+3. 🔲 P0 PR 3/4: ML Dual-Account Production Connection (OAuth real) — next planned work
 
 ## Archive Contents
 

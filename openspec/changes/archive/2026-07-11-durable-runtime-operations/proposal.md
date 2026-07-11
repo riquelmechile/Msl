@@ -1,5 +1,9 @@
 # Proposal: Durable Runtime Operations
 
+## Status: Implemented / Archived (2026-07-11)
+
+**Delivered:** 25/25 tasks, 3045 tests, 67/67 scenarios, 5 commits pushed to `main` (`73e7b67`–`90efd8d`). All 11 capabilities behind 4 feature flags (default `false`). See `archive-report.md` for full detail.
+
 ## Intent
 
 MSL's 26 SQLite stores run without backups, integrity checks, or unified migrations. 4 of 40+ components use structured logging. The economic learning daemon is dead code. This hardens the operational base for safe production.

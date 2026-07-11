@@ -1,8 +1,8 @@
 # ROADMAP — MSL Agent Enterprise
 
 > **Review date:** 2026-07-11
-> **Last verified code baseline:** `11469f8` — fix(runtime): audit and harden production readiness control plane
-> **Verification scope:** Production Readiness PR 1/4 audit and hardening
+> **Last verified code baseline:** `90efd8d` — docs(sdd): archive durable-runtime-operations (P0 PR 2/4)
+> **Verification scope:** Production Readiness PR 2/4 implementation and archive
 > **State definitions:**
 >
 > - **Implementado** — merged, tested, available at HEAD.
@@ -19,7 +19,7 @@
 | Cortex neural graph + Darwinian learning | Implementado             | SQLite + recursive CTEs, Hebbian + pruning, constellation propagation                    |
 | DeepSeek integration                     | Implementado             | Real client, cache-friendly blocks, requires `DEEPSEEK_API_KEY`                          |
 | Agent Message Bus                        | Implementado             | SQLite-backed async queue, claim/resolve/fail, dedup, priority                           |
-| 15 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache (economic-learning daemon wired but not yet registered in scheduler — pending P0 PR 2/4) |
+| 16 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache (economic-learning daemon registered, gated by `MSL_ECONOMIC_LEARNING_ENABLED`) |
 | 16 lane contracts                        | Implementado             | Typed `LANE_CONTRACTS` in `lanes.ts` with stable prefixes                                |
 | Work Sessions                            | Implementado             | `AgentWorkSessionStore` + `AgentWorkSessionRunner`, 7 sessionized lanes                  |
 | Account Assets + Account Brain           | Implementado             | `AccountAssetStore`, `AccountBrainService`, per-seller strategic tracking                |
@@ -45,14 +45,14 @@
 
 **Propósito:** Hacer que MSL opere sobre datos reales con credenciales reales.
 
-**Estado:** **Parcial** — PR 1/4 completada. Production Readiness Control Plane operativo.
+**Estado:** **Parcial** — PR 1/4 y 2/4 completadas. Production Readiness Control Plane operativo. Durable Runtime Operations implementado.
 
 ### PRs
 
 | PR | Descripción | Estado |
 |----|-------------|--------|
 | 1/4 | Production Readiness Control Plane | ✅ Complete |
-| 2/4 | Durable Runtime Operations (backups, migrations, observability) | 🔲 Planificada |
+| 2/4 | Durable Runtime Operations (backups, migrations, observability) | ✅ Complete |
 | 3/4 | ML Dual-Account Production Connection (OAuth real) | 🔲 Planificada |
 | 4/4 | Real Ingestion & Economic Adapters | 🔲 Planificada |
 
@@ -63,11 +63,27 @@
 - ✅ Evaluación independiente Plasticov/Maustian
 - ✅ Sanitización de secretos (nunca expone valores reales)
 - ✅ ProductionReadinessService con 7 checkers especializados
-- ✅ Checks SQLite (rutas, permisos, cross-seller; schema/WAL checks pendientes para PR 2/4)
+- ✅ Checks SQLite (rutas, permisos, cross-seller; schema/WAL checks ✅ PR 2/4)
 - ✅ Fail-closed runtime gates (dev preserva mocks, prod bloquea blocked)
 - ✅ CLI: `npm run production:readiness` (--json, --strict)
 - ✅ CEO tool: `inspect_production_readiness` (read-only, wired into AgentLoop)
 - ✅ Cero HTTP, cero mutaciones, cero credenciales reales
+
+### Capacidades implementadas en PR 2/4
+
+- ✅ `DatabaseManager`: backup, verifyBackup, restoreFrom (atómico), checkIntegrity, checkpointWAL
+- ✅ `MigrationRegistry`: migraciones versionadas, transaccionales e idempotentes (Cortex + 5 stores)
+- ✅ `BackupScheduler`: backup programado (24h), verificación, retención (7d), exclusión OAuth DB
+- ✅ WAL checkpoint: intervalo 1h `wal_checkpoint(TRUNCATE)` + umbral 200MB
+- ✅ `observabilityPipeline`: logger JSON con correlation IDs + `sanitizeContext` (redacción de secrets)
+- ✅ `systemHealthDaemon`: checks de integridad, WAL, versión de migraciones, backup freshness (48h)
+- ✅ Política explícita `degraded`: WARN log, no throw (blocked preserva throw)
+- ✅ `DatabaseReadinessChecker`: `PRAGMA integrity_check` + tamaño WAL por DB gestionada
+- ✅ `FinanceDirectorValidator.checkInventedFigures`: detección de métricas fabricadas, precisión sospechosa, amounts no documentados, currency mismatch, evidencia cruzada
+- ✅ Economic learning daemon registrado en `daemonHandlerMap` (`MSL_ECONOMIC_LEARNING_ENABLED`)
+- ✅ 3 conexiones `createDatabase()` consolidadas a 1 `getSharedDb()` en producción
+- ✅ 4 feature flags: `MSL_DURABILITY_ENABLED`, `MSL_MIGRATION_ENABLED`, `MSL_STRUCTURED_LOGGING_ENABLED`, `MSL_ECONOMIC_LEARNING_ENABLED` (todos default `false`)
+- ✅ +94 tests, 3045 total, 0 regresiones, 67/67 spec scenarios compliant
 
 ---
 
