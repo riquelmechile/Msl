@@ -1,3 +1,6 @@
+import type { RunIdFactory } from "./runIdFactory.js";
+import { CryptoRunIdFactory } from "./runIdFactory.js";
+
 // ── Run mode ────────────────────────────────────────────────────────────────
 
 export const INGESTION_RUN_MODES = [
@@ -73,8 +76,6 @@ function isValidRunStatus(value: unknown): value is IngestionRunStatus {
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
-let runCounter = 0;
-
 export type CreateEconomicIngestionRunInput = {
   readonly sellerId: string;
   readonly mode: IngestionRunMode;
@@ -92,6 +93,11 @@ export type CreateEconomicIngestionRunInput = {
   readonly disputedSnapshots: number;
   readonly errors: readonly string[];
   readonly status: IngestionRunStatus;
+  /** Optional factory for generating run IDs. If neither runId nor runIdFactory
+   * is provided, a default CryptoRunIdFactory is used. */
+  readonly runIdFactory?: RunIdFactory;
+  /** Optional explicit run ID override. Takes precedence over runIdFactory. */
+  readonly runId?: string;
 };
 
 export type CreateEconomicIngestionRunResult =
@@ -167,8 +173,10 @@ export function createEconomicIngestionRun(
     }
   }
 
-  runCounter++;
-  const runId = `ingestion-run-${runCounter}`;
+  const runId =
+    input.runId ??
+    input.runIdFactory?.createRunId() ??
+    new CryptoRunIdFactory().createRunId();
 
   return {
     success: true,

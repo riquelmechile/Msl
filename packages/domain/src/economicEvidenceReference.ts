@@ -58,8 +58,6 @@ function isValidVerification(v: unknown): v is CostVerification {
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
-let evidenceCounter = 0;
-
 export type CreateEconomicEvidenceReferenceInput = {
   readonly sellerId: string;
   readonly sourceSystem: string;
@@ -181,8 +179,7 @@ export function createEconomicEvidenceReference(
     };
   }
 
-  evidenceCounter++;
-  const evidenceId = `evidence-${evidenceCounter}`;
+  const evidenceId = `evidence-${crypto.randomUUID()}`;
 
   return {
     success: true,
