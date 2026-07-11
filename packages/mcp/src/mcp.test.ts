@@ -336,10 +336,10 @@ describe("MCP Server", () => {
     );
   });
 
-  it("registers exactly 9 tools", () => {
+  it("registers exactly 12 tools (9 base + 3 connection)", () => {
     createMcpServer();
-    expect(mockMcpServer.registerTool).toHaveBeenCalledTimes(9);
-    expect(registeredTools.size).toBe(9);
+    expect(mockMcpServer.registerTool).toHaveBeenCalledTimes(12);
+    expect(registeredTools.size).toBe(12);
 
     // Verify tool names via the registerTool mock arguments.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -484,7 +484,7 @@ describe("MCP Server", () => {
       },
     });
 
-    expect(registeredTools.size).toBe(31);
+    expect(registeredTools.size).toBe(34);
     expect(registeredTools.has("read_mercadolibre_listings")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_listing_prices")).toBe(true);
     expect(registeredTools.has("read_mercadolibre_orders")).toBe(true);

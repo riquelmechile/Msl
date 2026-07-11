@@ -12,7 +12,11 @@ import {
   createOAuthMlcApiClient,
   getMlAccountRoleConfig,
   resolveOAuthConfigs,
+  createMercadoLibreAccountRegistry,
+  createMercadoLibreConnectionHealthService,
+  createMercadoLibreReadOnlySmokeService,
   type MlAccountRoleConfig,
+  type MercadoLibreConnectionHealthService,
 } from "@msl/mercadolibre";
 import type {
   MlcApiClient,
@@ -20,6 +24,7 @@ import type {
   MlWriteSnapshot,
   NewItem,
   OAuthManager,
+  OAuthManagerConfig,
   Strategy,
 } from "@msl/mercadolibre";
 import type { McpServerConfig } from "./index.js";
@@ -156,8 +161,9 @@ function getOptionalRoleConfig(env: RuntimeEnv): MlAccountRoleConfig | undefined
 }
 
 function createRuntimeReadClient(env: RuntimeEnv): {
-  client?: MlcApiClient;
-  writeClient?: MlClient;
+  client?: MlcApiClient | undefined;
+  writeClient?: MlClient | undefined;
+  connectionHealthService?: MercadoLibreConnectionHealthService | undefined;
   close(): void;
 } {
   assertOAuthConfigPresentInProduction(env);
@@ -175,7 +181,63 @@ function createRuntimeReadClient(env: RuntimeEnv): {
   }
 
   const configs = resolveOAuthConfigs(env);
+
+  // Wire onTokenRefresh callback into every seller's OAuth config
+  for (const [sellerId, config] of configs) {
+    const sellerConfig: OAuthManagerConfig = config;
+    const originalCallback = sellerConfig.onTokenRefresh;
+    sellerConfig.onTokenRefresh = (sid: string) => {
+      // Structured log event
+      console.log(
+        JSON.stringify({
+          level: "info",
+          component: "mcp-oauth",
+          msg: "meli-refresh-succeeded",
+          sellerId: sid,
+          ts: new Date().toISOString(),
+        }),
+      );
+      // Call original if present
+      originalCallback?.(sid);
+    };
+  }
+
   const oauthManager: OAuthManager = createMultiAppOAuthManager(configs);
+
+  // Build connection health service for CEO MCP tools
+  let connectionHealthSvc: MercadoLibreConnectionHealthService | undefined;
+  try {
+    const sourceSellerId = nonEmpty(env.MERCADOLIBRE_SOURCE_SELLER_ID);
+    const targetSellerId = nonEmpty(env.MERCADOLIBRE_TARGET_SELLER_ID);
+    if (sourceSellerId || targetSellerId) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createTokenStore: mkTokenStore } = require("@msl/mercadolibre") as {
+        createTokenStore: typeof import("@msl/mercadolibre").createTokenStore;
+      };
+      const dbPath = nonEmpty(env.MSL_MERCADOLIBRE_OAUTH_DB_PATH) ?? ".msl/mcp-oauth.db";
+      const tokenStore = mkTokenStore(dbPath);
+
+      const registry = createMercadoLibreAccountRegistry({
+        env,
+        oauthConfigs: configs,
+        tokenStore,
+      });
+
+      const smokeService = createMercadoLibreReadOnlySmokeService({
+        oauthManager,
+        store: tokenStore,
+      });
+
+      connectionHealthSvc = createMercadoLibreConnectionHealthService({
+        registry,
+        oauthManager,
+        store: tokenStore,
+        smokeService,
+      });
+    }
+  } catch {
+    // If health service creation fails, leave undefined — tools will report gracefully.
+  }
 
   const now = () => new Date();
 
@@ -187,6 +249,7 @@ function createRuntimeReadClient(env: RuntimeEnv): {
       allowedSellerIds: [roleConfig.sourceSellerId, roleConfig.targetSellerId],
     }),
     writeClient: createMlClient({ oauthManager, now: new Date() }),
+    connectionHealthService: connectionHealthSvc,
     close: () => oauthManager.close(),
   };
 }
@@ -199,6 +262,17 @@ function createRuntimeStrategyProvider(env: RuntimeEnv): (() => Promise<Strategy
 }
 
 export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): RuntimeDependencies {
+  // Ensure shared repo env is loaded before reading any config.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { loadRepositoryEnvironment } = require("../../mercadolibre/src/env.js") as {
+      loadRepositoryEnvironment: () => void;
+    };
+    loadRepositoryEnvironment();
+  } catch {
+    // env loader may not be available in all contexts — non-fatal.
+  }
+
   if (isProduction(env)) {
     assertProductionSecrets(env);
   }
@@ -211,9 +285,13 @@ export function createMcpRuntimeDependencies(env: RuntimeEnv = process.env): Run
   const getStrategies = createRuntimeStrategyProvider(env);
   let closed = false;
 
+  // Connection health service for MCP CEO tools — created by readRuntime.
+  const connectionHealthService = readRuntime.connectionHealthService ?? undefined;
+
   return {
     ...(runtimeClient ? { mlcClient: runtimeClient } : {}),
     ...(accountRoles ? { accountRoles } : {}),
+    ...(connectionHealthService ? { connectionHealthService } : {}),
     ...(runtimeClient && accountRoles && getStrategies
       ? {
           syncPreview: {

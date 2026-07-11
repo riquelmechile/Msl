@@ -3,13 +3,25 @@ import { describe, expect, it } from "vitest";
 import { assessProductionReadiness } from "./ProductionReadinessService.js";
 import type { AssessReadinessInput } from "./ProductionReadinessService.js";
 import { checkEnvironmentReadiness } from "./EnvironmentReadinessChecker.js";
-import { checkSellerAccountReadiness } from "./SellerAccountReadinessChecker.js";
+import {
+  checkSellerAccountReadiness,
+  checkMercadoLibreLiveConnection,
+  type HealthServiceFactory,
+} from "./SellerAccountReadinessChecker.js";
 import { checkDatabaseReadiness } from "./DatabaseReadinessChecker.js";
 import { checkProviderReadiness } from "./ProviderReadinessChecker.js";
 import { checkRuntimeReadiness } from "./RuntimeReadinessChecker.js";
 import { checkFeatureGateReadiness } from "./FeatureGateReadinessChecker.js";
 import { checkSecurityReadiness } from "./SecurityReadinessChecker.js";
+import {
+  assertMercadoLibreWriteDisabled,
+  MercadoLibreWriteBlockedError,
+} from "./runtimeGates.js";
 import type { ReadinessContext } from "./types.js";
+import type {
+  MercadoLibreConnectionHealthService,
+  MercadoLibreAccountConnectionHealth,
+} from "@msl/mercadolibre";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -482,5 +494,356 @@ describe("assessProductionReadiness (integration)", () => {
     const blockedCaps = new Set(report.blockers.map((b) => b.capability));
     const allReported = new Set([...allCaps, ...blockedCaps]);
     expect(allReported.size).toBeGreaterThan(0);
+  });
+});
+
+// ── Live Connection Readiness (T5.3) ────────────────────────────────
+
+function fakeHealth(
+  overrides: Partial<MercadoLibreAccountConnectionHealth> & { sellerId: string; accountRole: "source" | "target"; accountName: string },
+): MercadoLibreAccountConnectionHealth {
+  return {
+    status: "ready",
+    tokenStatus: "valid",
+    checkedAt: new Date().toISOString(),
+    tokenExpiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    readReady: true,
+    writeReady: false,
+    reasonCodes: [],
+    noExternalMutationExecuted: true,
+    ...overrides,
+  };
+}
+
+function fakeHealthService(
+  sellers: Map<string, MercadoLibreAccountConnectionHealth>,
+): MercadoLibreConnectionHealthService {
+  return {
+    inspect: async (sellerId: string) => {
+      const health = sellers.get(sellerId);
+      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
+      return health;
+    },
+    inspectAll: async () => Array.from(sellers.values()),
+    refreshIfNeeded: async (sellerId: string) => {
+      const health = sellers.get(sellerId);
+      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
+      return health;
+    },
+    smokeRead: async (sellerId: string) => {
+      const health = sellers.get(sellerId);
+      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
+      return health;
+    },
+    healthByMode: async (sellerId: string) => {
+      const health = sellers.get(sellerId);
+      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
+      return health;
+    },
+  };
+}
+
+function liveEnv(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> {
+  return {
+    MSL_RUNTIME_MODE: "production",
+    MERCADOLIBRE_SOURCE_SELLER_ID: "123456789",
+    MERCADOLIBRE_TARGET_SELLER_ID: "987654321",
+    MERCADOLIBRE_SOURCE_CLIENT_ID: "src-client-id",
+    MERCADOLIBRE_SOURCE_CLIENT_SECRET: "src-secret",
+    MERCADOLIBRE_SOURCE_REDIRECT_URI: "https://src.example.com/callback",
+    MERCADOLIBRE_TARGET_CLIENT_ID: "tgt-client-id",
+    MERCADOLIBRE_TARGET_CLIENT_SECRET: "tgt-secret",
+    MERCADOLIBRE_TARGET_REDIRECT_URI: "https://tgt.example.com/callback",
+    MSL_ENCRYPTION_KEY: "real-key",
+    MSL_MERCADOLIBRE_OAUTH_DB_PATH: "/tmp/oauth.db",
+    ...overrides,
+  };
+}
+
+function liveCtx(overrides: Partial<ReadinessContext> = {}): ReadinessContext {
+  const env = liveEnv(overrides.env as Record<string, string | undefined> | undefined);
+  return makeCtx({ env, ...overrides });
+}
+
+describe("checkMercadoLibreLiveConnection", () => {
+  it("reports ready for healthy live connection", async () => {
+    const ctx = liveCtx();
+    const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
+    const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
+    const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+    sellers.set(sourceSellerId!, fakeHealth({
+      sellerId: sourceSellerId!,
+      accountRole: "source",
+      accountName: "Plasticov",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+    sellers.set(targetSellerId!, fakeHealth({
+      sellerId: targetSellerId!,
+      accountRole: "target",
+      accountName: "Maustian",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+
+    const factory: HealthServiceFactory = () => fakeHealthService(sellers);
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovLive = results.find((r) => r.checkId === "seller-plasticov-live-connection");
+    expect(plasticovLive?.status).toBe("ready");
+    expect(plasticovLive?.capability).toBe("mercadolibre-read-plasticov");
+
+    const maustianLive = results.find((r) => r.checkId === "seller-maustian-live-connection");
+    expect(maustianLive?.status).toBe("ready");
+  });
+
+  it("maps degraded health to degraded readiness", async () => {
+    const ctx = liveCtx();
+    const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
+    const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
+    const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+    sellers.set(sourceSellerId!, fakeHealth({
+      sellerId: sourceSellerId!,
+      accountRole: "source",
+      accountName: "Plasticov",
+      status: "degraded",
+      tokenStatus: "expiring",
+      reasonCodes: ["token_expiring"],
+      reason: "Token expires soon",
+    }));
+    sellers.set(targetSellerId!, fakeHealth({
+      sellerId: targetSellerId!,
+      accountRole: "target",
+      accountName: "Maustian",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+
+    const factory: HealthServiceFactory = () => fakeHealthService(sellers);
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovLive = results.find((r) => r.checkId === "seller-plasticov-live-connection");
+    expect(plasticovLive?.status).toBe("degraded");
+    expect(plasticovLive?.reasonCode).toBe("token_expiring");
+  });
+
+  it("maps blocked health to blocked readiness", async () => {
+    const ctx = liveCtx();
+    const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
+    const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
+    const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+    sellers.set(sourceSellerId!, fakeHealth({
+      sellerId: sourceSellerId!,
+      accountRole: "source",
+      accountName: "Plasticov",
+      status: "blocked",
+      tokenStatus: "decryption-failed",
+      reasonCodes: ["decryption_failed"],
+      reason: "Token decryption failed",
+    }));
+    sellers.set(targetSellerId!, fakeHealth({
+      sellerId: targetSellerId!,
+      accountRole: "target",
+      accountName: "Maustian",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+
+    const factory: HealthServiceFactory = () => fakeHealthService(sellers);
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovLive = results.find((r) => r.checkId === "seller-plasticov-live-connection");
+    expect(plasticovLive?.status).toBe("blocked");
+  });
+
+  it("write capabilities remain blocked even when read is ready", async () => {
+    const ctx = liveCtx();
+    const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
+    const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
+    const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+    sellers.set(sourceSellerId!, fakeHealth({
+      sellerId: sourceSellerId!,
+      accountRole: "source",
+      accountName: "Plasticov",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+    sellers.set(targetSellerId!, fakeHealth({
+      sellerId: targetSellerId!,
+      accountRole: "target",
+      accountName: "Maustian",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+
+    const factory: HealthServiceFactory = () => fakeHealthService(sellers);
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovWrite = results.find((r) => r.checkId === "seller-plasticov-write-disabled");
+    expect(plasticovWrite?.status).toBe("blocked");
+    expect(plasticovWrite?.reasonCode).toBe("write-capability-not-implemented");
+    expect(plasticovWrite?.capability).toBe("mercadolibre-write-plasticov");
+
+    const maustianWrite = results.find((r) => r.checkId === "seller-maustian-write-disabled");
+    expect(maustianWrite?.status).toBe("blocked");
+    expect(maustianWrite?.capability).toBe("mercadolibre-write-maustian");
+  });
+
+  it("gracefully skips live checks when factory returns undefined (no OAuth)", async () => {
+    const ctx = liveCtx();
+    const factory: HealthServiceFactory = () => undefined;
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovSkip = results.find((r) => r.checkId === "seller-plasticov-live-skip");
+    expect(plasticovSkip?.status).toBe("degraded");
+    expect(plasticovSkip?.reasonCode).toBe("live-check-skipped-no-oauth");
+
+    const maustianSkip = results.find((r) => r.checkId === "seller-maustian-live-skip");
+    expect(maustianSkip?.status).toBe("degraded");
+  });
+
+  it("gracefully skips when no factory provided", async () => {
+    const ctx = liveCtx();
+    const results = await checkMercadoLibreLiveConnection(ctx);
+
+    // Should still produce write-blocked results
+    const writeResults = results.filter((r) => r.reasonCode === "write-capability-not-implemented");
+    expect(writeResults).toHaveLength(2);
+  });
+
+  it("reports blocked when health service throws", async () => {
+    const ctx = liveCtx();
+    const errorService: MercadoLibreConnectionHealthService = {
+      inspect: async () => { throw new Error("Simulated failure"); },
+      inspectAll: async () => { throw new Error("Simulated failure"); },
+      refreshIfNeeded: async () => { throw new Error("Simulated failure"); },
+      smokeRead: async () => { throw new Error("Simulated failure"); },
+      healthByMode: async () => { throw new Error("Simulated failure"); },
+    };
+
+    const factory: HealthServiceFactory = () => errorService;
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovError = results.find((r) => r.checkId === "seller-plasticov-live-error");
+    expect(plasticovError?.status).toBe("blocked");
+    expect(plasticovError?.reasonCode).toBe("live-check-error");
+
+    const maustianError = results.find((r) => r.checkId === "seller-maustian-live-error");
+    expect(maustianError?.status).toBe("blocked");
+  });
+
+  it("reports disconnected as blocked readiness", async () => {
+    const ctx = liveCtx();
+    const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
+    const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
+    const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+    sellers.set(sourceSellerId!, fakeHealth({
+      sellerId: sourceSellerId!,
+      accountRole: "source",
+      accountName: "Plasticov",
+      status: "disconnected",
+      tokenStatus: "missing",
+      reasonCodes: ["token_missing"],
+      reason: "No stored token",
+    }));
+    sellers.set(targetSellerId!, fakeHealth({
+      sellerId: targetSellerId!,
+      accountRole: "target",
+      accountName: "Maustian",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+
+    const factory: HealthServiceFactory = () => fakeHealthService(sellers);
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovLive = results.find((r) => r.checkId === "seller-plasticov-live-connection");
+    expect(plasticovLive?.status).toBe("blocked");
+  });
+
+  it("reports reauthorization-required as blocked readiness", async () => {
+    const ctx = liveCtx();
+    const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
+    const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
+    const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
+    sellers.set(sourceSellerId!, fakeHealth({
+      sellerId: sourceSellerId!,
+      accountRole: "source",
+      accountName: "Plasticov",
+      status: "reauthorization-required",
+      tokenStatus: "refresh-rejected",
+      reasonCodes: ["invalid_grant"],
+      reason: "Refresh rejected",
+    }));
+    sellers.set(targetSellerId!, fakeHealth({
+      sellerId: targetSellerId!,
+      accountRole: "target",
+      accountName: "Maustian",
+      status: "ready",
+      tokenStatus: "valid",
+    }));
+
+    const factory: HealthServiceFactory = () => fakeHealthService(sellers);
+    const results = await checkMercadoLibreLiveConnection(ctx, factory);
+
+    const plasticovLive = results.find((r) => r.checkId === "seller-plasticov-live-connection");
+    expect(plasticovLive?.status).toBe("blocked");
+  });
+});
+
+// ── Write Block Gate (T5.3) ────────────────────────────────────────
+
+describe("assertMercadoLibreWriteDisabled", () => {
+  it("throws MercadoLibreWriteBlockedError", () => {
+    expect(() => assertMercadoLibreWriteDisabled("publishItem")).toThrow(
+      MercadoLibreWriteBlockedError,
+    );
+  });
+
+  it("message includes operation name", () => {
+    expect(() => assertMercadoLibreWriteDisabled("publishItem")).toThrow(
+      /Attempted: publishItem/,
+    );
+  });
+
+  it("message includes sellerId when provided", () => {
+    expect(() =>
+      assertMercadoLibreWriteDisabled("updateItem", "123456789"),
+    ).toThrow(/for seller 123456789/);
+  });
+
+  it("message is descriptive and clear", () => {
+    let caught: Error | null = null;
+    try {
+      assertMercadoLibreWriteDisabled("syncProduct", "plasticov-id");
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(MercadoLibreWriteBlockedError);
+    expect(caught!.message).toContain("MercadoLibre write operations are blocked");
+    expect(caught!.message).toContain("syncProduct");
+    expect(caught!.message).toContain("plasticov-id");
+  });
+
+  it("error has operation and sellerId properties", () => {
+    let caught: MercadoLibreWriteBlockedError | null = null;
+    try {
+      assertMercadoLibreWriteDisabled("adjustPrice", "987654321");
+    } catch (err) {
+      caught = err as MercadoLibreWriteBlockedError;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught!.operation).toBe("adjustPrice");
+    expect(caught!.sellerId).toBe("987654321");
+  });
+
+  it("error name is MercadoLibreWriteBlockedError", () => {
+    let caught: Error | null = null;
+    try {
+      assertMercadoLibreWriteDisabled("publishItem");
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught!.name).toBe("MercadoLibreWriteBlockedError");
   });
 });

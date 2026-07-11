@@ -15,6 +15,7 @@ import type {
   WorkforceCostCacheLedgerStore,
 } from "@msl/agent";
 import { createMcpRuntimeDependencies } from "./runtimeDependencies.js";
+import type { MercadoLibreConnectionHealthService } from "@msl/mercadolibre";
 import {
   registerActorTools,
   registerSyncTools,
@@ -26,6 +27,7 @@ import {
   registerProductAdsTools,
   registerWriteTools,
   registerWorkforceTools,
+  registerConnectionTools,
 } from "./tools/index.js";
 import type { ExactChange } from "@msl/domain";
 
@@ -78,6 +80,7 @@ export type McpServerConfig = {
   readinessEvidence?: SyncProductReadinessEvidenceProviders;
   accountRoles?: MlAccountRoleConfig;
   approvalStorage?: "memory" | "sqlite" | "sqlite-unavailable";
+  connectionHealthService?: MercadoLibreConnectionHealthService | undefined;
   prepareWrite?: {
     repository: ApprovalQueueRepository;
     clock: Clock;
@@ -120,6 +123,7 @@ export function createMcpServer(config: McpServerConfig = {}) {
   registerProductAdsTools(server, toolDeps);
   registerWriteTools(server, toolDeps);
   registerWorkforceTools(server, toolDeps);
+  registerConnectionTools(server, toolDeps);
 
   // mlcClient-dependent tools (moderation, claims, images)
   if (config.mlcClient) {

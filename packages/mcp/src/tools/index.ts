@@ -9,6 +9,7 @@ export { registerCortexTools } from "./cortexTools.js";
 export { registerProductAdsTools } from "./productAdsTools.js";
 export { registerWriteTools } from "./writeTools.js";
 export { registerWorkforceTools } from "./workforceTools.js";
+export { registerConnectionTools } from "./connectionTools.js";
 
 // Shared utilities
 export {

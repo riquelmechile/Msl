@@ -317,6 +317,23 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     const roleConfig = getMlAccountRoleConfig(env);
     const configs = resolveOAuthConfigs(env);
     if (configs.size > 0) {
+      // Wire onTokenRefresh callback into every seller's OAuth config
+      for (const [, config] of configs) {
+        const originalCallback = config.onTokenRefresh;
+        config.onTokenRefresh = (sellerId: string) => {
+          console.log(
+            JSON.stringify({
+              level: "info",
+              component: "bot-oauth",
+              msg: "meli-refresh-succeeded",
+              sellerId,
+              ts: new Date().toISOString(),
+            }),
+          );
+          originalCallback?.(sellerId);
+        };
+      }
+
       oauthManager = createMultiAppOAuthManager(configs);
       const now = () => new Date();
       mlcClient = createOAuthMlcApiClient({
