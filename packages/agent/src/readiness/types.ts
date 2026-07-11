@@ -34,6 +34,10 @@ export type ReadinessContext = {
     creativeStudioEnabled: boolean;
     supplierMirrorEnabled: boolean;
     companyAgentAdminEnabled: boolean;
+    /** Whether database integrity checks run during readiness. */
+    databaseIntegrityEnabled: boolean;
+    /** Whether WAL health checks run during readiness. */
+    walHealthEnabled: boolean;
   };
 };
 

@@ -31,6 +31,8 @@ function resolveFeatures(env: Record<string, string | undefined>): ReadinessCont
     creativeStudioEnabled: isTruthy(env.MSL_CREATIVE_STUDIO_ENABLED),
     supplierMirrorEnabled: isTruthy(env.MSL_SUPPLIER_MIRROR_WORKER_ENABLED),
     companyAgentAdminEnabled: isTruthy(env.MSL_COMPANY_AGENT_ADMIN_ENABLED),
+    databaseIntegrityEnabled: isTruthy(env.MSL_DURABILITY_ENABLED),
+    walHealthEnabled: isTruthy(env.MSL_DURABILITY_ENABLED),
   };
 }
 

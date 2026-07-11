@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   assertProductionCapabilityReady,
@@ -51,6 +51,36 @@ function makeReadyReport(): ProductionReadinessReport {
       ProductionCapability,
       "ready"
     >,
+  });
+}
+
+function makeDegradedReport(): ProductionReadinessReport {
+  const warnings = [
+    createReadinessCheckResult({
+      checkId: "test-degraded",
+      capability: "deepseek-reasoning",
+      status: "degraded",
+      safeMessage: "DB integrity check failed for cortex",
+      remediation: "Run PRAGMA integrity_check manually",
+    }),
+  ];
+  return createProductionReadinessReport({
+    runtimeMode: "production",
+    overallStatus: "degraded",
+    warnings,
+    capabilities: { "deepseek-reasoning": "degraded", "telegram-ceo": "ready" } as Record<
+      ProductionCapability,
+      "degraded" | "ready"
+    >,
+    sellerReports: [
+      createSellerReadinessReport({
+        sellerId: "plasticov",
+        accountName: "Plasticov",
+        overallStatus: "degraded",
+        capabilities: { "deepseek-reasoning": "degraded" },
+        checks: warnings,
+      }),
+    ],
   });
 }
 
@@ -116,6 +146,33 @@ describe("assertProductionCapabilityReady", () => {
       }),
     ).not.toThrow();
   });
+
+  it("logs WARN in production when capability is degraded", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const report = makeDegradedReport();
+    try {
+      assertProductionCapabilityReady("deepseek-reasoning", undefined, report, {
+        runtimeMode: "production",
+      });
+      expect(spy).toHaveBeenCalled();
+      expect(spy.mock.calls[0]![0]).toContain("degraded");
+      expect(spy.mock.calls[0]![0]).toContain("DB integrity check failed");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not throw in prod when capability is degraded (no warnings in report)", () => {
+    const report = createProductionReadinessReport({
+      runtimeMode: "production",
+      capabilities: { "deepseek-reasoning": "degraded" } as Record<ProductionCapability, "degraded">,
+    });
+    expect(() =>
+      assertProductionCapabilityReady("deepseek-reasoning", undefined, report, {
+        runtimeMode: "production",
+      }),
+    ).not.toThrow();
+  });
 });
 
 // ── assertSellerCapabilityReady ─────────────────────────────────────
@@ -170,5 +227,28 @@ describe("assertSellerCapabilityReady", () => {
         runtimeMode: "production",
       }),
     ).not.toThrow();
+  });
+
+  it("does not throw when seller capability is degraded", () => {
+    const report = makeDegradedReport();
+    expect(() =>
+      assertSellerCapabilityReady("deepseek-reasoning", "plasticov", report, {
+        runtimeMode: "production",
+      }),
+    ).not.toThrow();
+  });
+
+  it("logs WARN when seller capability is degraded", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const report = makeDegradedReport();
+    try {
+      assertSellerCapabilityReady("deepseek-reasoning", "plasticov", report, {
+        runtimeMode: "production",
+      });
+      expect(spy).toHaveBeenCalled();
+      expect(spy.mock.calls[0]![0]).toContain("degraded");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -4,7 +4,10 @@ import type { ProductionCapability, ProductionReadinessReport, RuntimeGatePolicy
  * Assert that a production capability is ready before allowing operations.
  *
  * In development/test mode, this is a no-op to preserve mocks and local flows.
- * In production mode, this throws if the capability is blocked.
+ * In production mode:
+ *   - `blocked`  → throws (process must not continue)
+ *   - `degraded` → logs WARN and allows the process to start
+ *   - `ready` / `not-applicable` → no action
  *
  * @throws {Error} if the capability is blocked in production mode
  */
@@ -27,11 +30,25 @@ export function assertProductionCapabilityReady(
       `Production capability "${capability}" is blocked: ${messages || "No details available."}`,
     );
   }
+
+  if (capStatus === "degraded") {
+    const warnings = report.warnings.filter(
+      (w) => w.capability === capability && w.status === "degraded",
+    );
+    const messages = warnings.map((w) => w.safeMessage).join("; ");
+    console.warn(
+      `Production capability "${capability}" is degraded: ${messages || "No details available."}`,
+    );
+    // Degraded capabilities do NOT block the process.
+    return;
+  }
 }
 
 /**
  * Assert that a seller-specific capability is ready.
  * Same behavior as assertProductionCapabilityReady but scoped to a seller.
+ *
+ * @throws {Error} if the capability is blocked in production mode
  */
 export function assertSellerCapabilityReady(
   capability: ProductionCapability,
@@ -56,5 +73,17 @@ export function assertSellerCapabilityReady(
     throw new Error(
       `Seller "${sellerId}" capability "${capability}" is blocked: ${messages || "No details available."}`,
     );
+  }
+
+  if (capStatus === "degraded") {
+    const sellerWarnings = sellerReport.checks.filter(
+      (c) => c.capability === capability && c.status === "degraded",
+    );
+    const messages = sellerWarnings.map((w) => w.safeMessage).join("; ");
+    console.warn(
+      `Seller "${sellerId}" capability "${capability}" is degraded: ${messages || "No details available."}`,
+    );
+    // Degraded capabilities do NOT block the process.
+    return;
   }
 }
