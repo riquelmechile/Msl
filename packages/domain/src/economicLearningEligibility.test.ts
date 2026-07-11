@@ -4,7 +4,6 @@ import type { EconomicOutcome } from "./economicOutcome.js";
 import type { UnitEconomicsSnapshot } from "./unitEconomics.js";
 import {
   evaluateEconomicLearningEligibility,
-  type EligibilityInput,
 } from "./economicLearningEligibility.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -295,7 +294,7 @@ describe("evaluateEconomicLearningEligibility", () => {
     const { observedEconomicImpactId: _drop, ...cleaned } = outcome as EconomicOutcome & { observedEconomicImpactId?: string };
 
     const result = evaluateEconomicLearningEligibility({
-      outcome: cleaned as EconomicOutcome,
+      outcome: cleaned,
       snapshot: makeSnapshot(),
       hasAttributionTargets: false,
       alreadyProcessed: true,

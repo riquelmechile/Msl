@@ -4,7 +4,6 @@ import type {
   EconomicLearningEvent,
   EconomicOutcome,
   AppliedAdjustment,
-  LearningEventStatus,
 } from "@msl/domain";
 import { createEconomicLearningEvent } from "@msl/domain";
 
@@ -113,7 +112,7 @@ export class CortexEconomicReinforcementBridge {
     const adjustments: AppliedAdjustment[] = [];
 
     // Create/upsert outcome concept node
-    for (const target of plan.targetNodes) {
+    for (const _target of plan.targetNodes) {
       const existingNode = engine.getOrCreateNode(
         `economic_outcome:${plan.outcomeId}`,
         {
@@ -269,7 +268,7 @@ export class CortexEconomicReinforcementBridge {
       adjustments: inversedAdjustments,
       beforeStateHash: latestNonReversed.afterStateHash,
       afterStateHash: latestNonReversed.beforeStateHash,
-      status: "reversed" as LearningEventStatus,
+      status: "reversed",
       reversedAt: Date.now(),
     });
 
@@ -303,6 +302,7 @@ export class CortexEconomicReinforcementBridge {
 
   private noop = (_event: EconomicLearningEvent): void => {
     // No-op persist for internal tracking
+    void _event;
   };
 
   /**
@@ -325,6 +325,8 @@ export class CortexEconomicReinforcementBridge {
     // deltas. This is a placeholder that would need engine-level support.
     // For now, we record the intent in the AppliedAdjustment and the
     // engine's existing Hebbian primitives handle positive reinforcement.
+    void engine;
+    void delta;
     //
     // When engine gains `setActivation(id, value)` or similar, this
     // method will apply the actual delta.

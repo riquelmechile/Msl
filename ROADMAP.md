@@ -1,7 +1,7 @@
 # ROADMAP — MSL Agent Enterprise
 
 > **Review date:** 2026-07-10
-> **Verified commit:** `413248c`
+> **Verified commit:** `277467c`
 > **State definitions:**
 >
 > - **Implementado** — merged, tested, available at HEAD.
@@ -20,9 +20,9 @@ Verified against commit `413248c`:
 | Cortex neural graph + Darwinian learning | Implementado             | SQLite + recursive CTEs, Hebbian + pruning, constellation propagation                    |
 | DeepSeek integration                     | Implementado             | Real client, cache-friendly blocks, requires `DEEPSEEK_API_KEY`                          |
 | Agent Message Bus                        | Implementado             | SQLite-backed async queue, claim/resolve/fail, dedup, priority                           |
-| 14 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache                  |
-| 15 lane contracts                        | Implementado             | Typed `LANE_CONTRACTS` in `lanes.ts` with stable prefixes                                |
-| Work Sessions                            | Implementado             | `AgentWorkSessionStore` + `AgentWorkSessionRunner`, 6 sessionized lanes                  |
+| 15 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache                  |
+| 16 lane contracts                        | Implementado             | Typed `LANE_CONTRACTS` in `lanes.ts` with stable prefixes                                |
+| Work Sessions                            | Implementado             | `AgentWorkSessionStore` + `AgentWorkSessionRunner`, 7 sessionized lanes                  |
 | Account Assets + Account Brain           | Implementado             | `AccountAssetStore`, `AccountBrainService`, per-seller strategic tracking                |
 | Evidence Response Router                 | Implementado             | 5 responders: CostSupplier, MarketCatalog, CreativeAssets, AccountBrain, SupplierManager |
 | Multi-agent evidence responses           | Implementado             | Inter-agent evidence request/response protocol, `OwnedEcommerceEvidenceAggregator`       |
@@ -46,41 +46,29 @@ Verified against commit `413248c`:
 
 **Propósito:** Hacer que MSL opere sobre datos reales con credenciales reales.
 
-### Capacidades
+**Estado:** **Parcial** — PR 1/4 completada. Production Readiness Control Plane operativo.
 
-- Credenciales reales de ML OAuth para ambas cuentas (Plasticov y Maustian)
-- Ingesta real reemplazando el modo stub en todos los procesadores
-- Transporte real donde hoy existe fake/mock
-- Backups de las bases de datos SQLite
-- Migraciones versionadas
-- Observabilidad (logs estructurados, métricas, alertas)
-- CI verificable con gates de seguridad
-- Política de producción documentada (deploy, rollback, secretos, monitoreo)
+### PRs
 
-### Dependencias
+| PR | Descripción | Estado |
+|----|-------------|--------|
+| 1/4 | Production Readiness Control Plane | ✅ Complete |
+| 2/4 | Durable Runtime Operations (backups, migrations, observability) | 🔲 Planificada |
+| 3/4 | ML Dual-Account Production Connection (OAuth real) | 🔲 Planificada |
+| 4/4 | Real Ingestion & Economic Adapters | 🔲 Planificada |
 
-- OAuth apps registradas en MercadoLibre para ambas cuentas
-- `MERCADOLIBRE_CLIENT_ID`/`MERCADOLIBRE_CLIENT_SECRET` configurados
-- `MSL_ENCRYPTION_KEY` configurada
+### Capacidades implementadas en PR 1/4
 
-### Criterios de aceptación
-
-- La ingesta corre con datos reales de ML sin errores
-- El OAuth manager obtiene y refresca tokens reales
-- Los backups se ejecutan automáticamente
-- CI pasa con gates de seguridad activos
-
-### Riesgos
-
-- Rate limiting de ML API durante la ingesta inicial
-- Datos inconsistentes si la ingesta falla parcialmente
-- Rotación de tokens que interrumpa la operación
-
-### Lo que la empresa aprende
-
-- El volumen real de datos que maneja el negocio
-- La latencia y confiabilidad real de ML API
-- Patrones de acceso que informan la estrategia de caché
+- ✅ Modelo tipado de ProductionReadiness con 16 capabilities
+- ✅ Inventario central de configuración (75+ env vars)
+- ✅ Evaluación independiente Plasticov/Maustian
+- ✅ Sanitización de secretos (nunca expone valores reales)
+- ✅ ProductionReadinessService con 7 checkers especializados
+- ✅ Checks SQLite (rutas, permisos, schema, WAL, cross-seller)
+- ✅ Fail-closed runtime gates (dev preserva mocks, prod bloquea blocked)
+- ✅ CLI: `npm run production:readiness` (--json, --strict)
+- ✅ CEO tool: `inspect_production_readiness` (read-only)
+- ✅ Cero HTTP, cero mutaciones, cero credenciales reales
 
 ---
 
@@ -88,7 +76,7 @@ Verified against commit `413248c`:
 
 **Propósito:** Probar qué acciones generan rentabilidad real.
 
-**Estado:** **Fundación completa** — PR 1/3, 2/3, y 3/3 completadas. Real financial data, landed cost, y cash flow pendientes de datos de producción (P0).
+**Estado:** **Fundación técnica completa** — PR 1/3, 2/3, y 3/3 completadas. Datos financieros productivos, landed cost, y cash flow pendientes de credenciales de producción (P0).
 
 ### Capacidades
 
@@ -350,7 +338,7 @@ Verified against commit `413248c`:
 | Protocol          | MCP for tool exposure    | ~40 MCP tools across MercadoLibre reads, proposals, approvals, Cortex, claims, shipping, moderation, workforce, and cost ledger                                                                             |
 | Testing           | Vitest + Playwright      | Unit/integration and E2E gates; exact counts should come from the latest local/CI run, not static docs                                                                                                      |
 | Operational DB    | SQLite (better-sqlite3)  | 8 entity kinds (listings, claims, questions, orders, messages, reputation, product-ads-insights, pricing) with per-seller lane isolation, freshness TTLs, and ingestion checkpoints                         |
-| CEO Lanes         | 15 lane contracts        | 15 typed `LANE_CONTRACTS` in `@msl/agent/conversation/lanes.ts` with stable token-0 DeepSeek prefixes, `delegate_to_subagent` tool. Telegram remains CEO-only; workers are internal orchestration resources |
+| CEO Lanes         | 16 lane contracts        | 16 typed `LANE_CONTRACTS` in `@msl/agent/conversation/lanes.ts` with stable token-0 DeepSeek prefixes, `delegate_to_subagent` tool. Telegram remains CEO-only; workers are internal orchestration resources |
 | Owned Ecommerce   | `@msl/ecommerce-medusa`  | Medusa write boundary (fail-closed), preview adapter for static storefront projections, blocking check collection for readiness validation, env-gated production activation                                 |
-| Daemon scheduling | Agent Message Bus        | 14 daemon handlers dispatched on 15-min cycles with per-cycle reader cache, per-seller account contexts, and work-session routing for 6 sessionized lanes                                                   |
+| Daemon scheduling | Agent Message Bus        | 15 daemon handlers dispatched on 15-min cycles with per-cycle reader cache, per-seller account contexts, and work-session routing for 7 sessionized lanes                                                   |
 | Evidence protocol | EvidenceResponseRouter   | 5 specialized responders answer inter-agent evidence requests. Bounded, structured, confidence-rated. Reduces CEO interruptions for routine evidence collection                                             |

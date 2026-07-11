@@ -32,10 +32,10 @@ Verificado contra el commit `413248c` en `main`:
 | Componente                     | Estado                                                      |
 | ------------------------------ | ----------------------------------------------------------- |
 | Agent Message Bus              | Cola asíncrona SQLite, claim/resolve/fail, deduplicación    |
-| 14 daemon handlers             | Ciclos de 15 minutos, solo lectura, proponen al CEO         |
-| 15 lane contracts              | Contratos tipados con prefijos estables para caché          |
+| 15 daemon handlers             | Ciclos de 15 minutos, solo lectura, proponen al CEO         |
+| 16 lane contracts              | Contratos tipados con prefijos estables para caché          |
 | Evidence Response Router       | 5 responders que responden solicitudes de evidencia         |
-| Work Sessions                  | Sesiones persistentes con cooldown para 6 lanes             |
+| Work Sessions                  | Sesiones persistentes con cooldown para 7 lanes             |
 | Account Assets + Account Brain | Tracking estratégico por cuenta, scoring, comparación       |
 | Cortex                         | Grafo neuronal con aprendizaje hebbiano y poda darwiniana   |
 | DeepSeek                       | Cliente real, bloques de caché, requiere `DEEPSEEK_API_KEY` |
@@ -135,7 +135,7 @@ Nada se publica, modifica, cancela o gasta sin un "dale" explícito. Las herrami
 
 | Package                 | Rol                                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------------ |
-| `@msl/agent`            | CEO agent loop, DeepSeek, 14 daemons, evidence router, work sessions, account brain  |
+| `@msl/agent`            | CEO agent loop, DeepSeek, 15 daemons, evidence router, work sessions, account brain  |
 | `@msl/memory`           | Cortex neural graph, operational read model, evidence request store, supplier mirror |
 | `@msl/mercadolibre`     | ML API client (OAuth), sync engine, supplier source adapters                         |
 | `@msl/creative-studio`  | MiniMax image/video generation, policy engine, cost controls                         |
@@ -188,6 +188,7 @@ npm run format:check  # Prettier
 npm test              # Vitest (unitarios + integración)
 npm run test:e2e      # Playwright E2E
 npm run build         # Build completo del workspace
+npm run production:readiness  # Diagnóstico de production readiness
 ```
 
 ---
@@ -198,7 +199,7 @@ npm run build         # Build completo del workspace
 | ---------------------- | ------------------------------------------------- |
 | Agent Loop + DeepSeek  | ✅ Listo (requiere `DEEPSEEK_API_KEY`)            |
 | Agent Message Bus      | ✅ Listo (SQLite)                                 |
-| 14 Daemon Handlers     | ✅ Listo (15-min cycles)                          |
+| 15 Daemon Handlers             | ✅ Listo (15-min cycles)                          |
 | Evidence Responses     | ✅ Listo (5 responders)                           |
 | Work Sessions          | ✅ Listo                                          |
 | Cortex                 | ✅ Listo (SQLite)                                 |

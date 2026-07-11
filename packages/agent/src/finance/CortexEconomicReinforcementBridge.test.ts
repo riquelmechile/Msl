@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createEconomicOutcome, transitionOutcome } from "@msl/domain";
 import type {
   EconomicOutcome,
@@ -7,7 +7,6 @@ import type {
   EconomicSignal,
 } from "@msl/domain";
 import { CortexEconomicReinforcementBridge } from "./CortexEconomicReinforcementBridge.js";
-import type { BridgeInput } from "./CortexEconomicReinforcementBridge.js";
 
 // ── Fake GraphEngine ────────────────────────────────────────────────────────
 
@@ -77,13 +76,6 @@ class FakeGraphEngine {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function makeOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
-  const base = createEconomicOutcome({
-    sellerId: "plasticov",
-  });
-  return { ...base, ...overrides };
-}
 
 function makeVerifiedOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
   const base = createEconomicOutcome({
@@ -167,11 +159,9 @@ describe("CortexEconomicReinforcementBridge", () => {
     const plan = makePlan({ outcomeId: outcome.outcomeId });
 
     const persisted: EconomicLearningEvent[] = [];
-    let callCount = 0;
 
     // First call: not processed
     const isProcessedFirst = (_key: string) => {
-      callCount++;
       return false;
     };
 

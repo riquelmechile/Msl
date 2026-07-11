@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEconomicOutcome, transitionOutcome, computeEconomicSignal, createUnitEconomicsSnapshot } from "@msl/domain";
+import { createEconomicOutcome, transitionOutcome } from "@msl/domain";
 import type {
   EconomicOutcome,
   EconomicSignal,
@@ -10,13 +10,6 @@ import { EconomicReinforcementPlanner } from "./EconomicReinforcementPlanner.js"
 import type { PlannerInput } from "./EconomicReinforcementPlanner.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function makeOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
-  const base = createEconomicOutcome({
-    sellerId: "plasticov",
-  });
-  return { ...base, ...overrides };
-}
 
 function makeVerifiedOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
   const base = createEconomicOutcome({

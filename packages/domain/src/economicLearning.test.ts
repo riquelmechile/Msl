@@ -1,18 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   ATTRIBUTION_STRENGTHS,
-  ATTRIBUTION_TARGET_TYPES,
   createEconomicAttributionAssessment,
   createEconomicLearningEligibility,
   createEconomicLearningEvent,
   createEconomicReinforcementPlan,
   ECONOMIC_LEARNING_BLOCK_REASONS,
-  LEARNING_EVENT_STATUSES,
-  PLAN_STATUSES,
-  type EconomicLearningEligibility,
-  type EconomicAttributionAssessment,
-  type EconomicReinforcementPlan,
-  type EconomicLearningEvent,
   type EconomicSignal,
 } from "./economicLearning.js";
 

@@ -2,7 +2,7 @@
 
 > **Phase:** P1, PR 3/3 (Financial Truth)
 > **Date:** 2026-07-10
-> **Status:** Proposed
+> **Status:** Implemented
 
 ## Intent
 

@@ -6,13 +6,6 @@ import type { AttributionInput } from "./EconomicAttributionEvaluator.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
-  const base = createEconomicOutcome({
-    sellerId: "plasticov",
-  });
-  return { ...base, ...overrides };
-}
-
 function makeVerifiedOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
   const base = createEconomicOutcome({
     sellerId: "plasticov",

@@ -46,11 +46,8 @@ export class EconomicLearningPipeline {
    * Process a verified outcome through the full economic reinforcement
    * learning pipeline.
    */
-  async processVerifiedOutcome(input: PipelineInput): Promise<PipelineResult> {
-    const { outcome, economicStore, learningStore, engine, snapshot } = input;
-
-    // ── Step 0: Idempotency check ─────────────────────────────────────────
-    const idempotencyKey = `${outcome.outcomeId}-${outcome.sellerId}-${POLICY_VERSION}`;
+  processVerifiedOutcome(input: PipelineInput): PipelineResult {
+    const { outcome, learningStore, engine, snapshot } = input;    
     if (learningStore.isAlreadyProcessed(outcome.outcomeId, outcome.sellerId, POLICY_VERSION)) {
       const existingEvents = learningStore.listByOutcome(outcome.outcomeId, outcome.sellerId);
       const latest = existingEvents[0];
@@ -181,7 +178,7 @@ export class EconomicLearningPipeline {
    * Handle disputed or invalidated outcomes — find prior learning events
    * and reverse them via the bridge.
    */
-  async handleDisputedOutcome(input: PipelineInput): Promise<PipelineResult> {
+  handleDisputedOutcome(input: PipelineInput): PipelineResult {
     const { outcome, learningStore } = input;
 
     const bridgeResult = this.bridge.reverseLearning(

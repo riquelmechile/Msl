@@ -170,7 +170,7 @@ describe("computeEconomicSignal", () => {
     expect(signal.confidence).not.toBe(Infinity);
 
     // Check sourceValues too
-    for (const [key, value] of Object.entries(signal.sourceValues)) {
+    for (const [, value] of Object.entries(signal.sourceValues)) {
       expect(Number.isFinite(value)).toBe(true);
       expect(Number.isNaN(value)).toBe(false);
     }

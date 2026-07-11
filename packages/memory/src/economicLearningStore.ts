@@ -63,12 +63,6 @@ type PlanRow = {
   created_at: number;
 };
 
-type IdempotencyRow = {
-  idempotency_key: string;
-  seller_id: string;
-  claimed_at: number;
-};
-
 // ── Public type ──────────────────────────────────────────────────────────────
 
 export type EconomicLearningStore = {
@@ -413,12 +407,6 @@ export function createSqliteEconomicLearningStore(
     LIMIT 1
   `);
 
-  const getAttributionByTargetStmt = db.prepare(`
-    SELECT * FROM economic_attribution_assessments
-    WHERE target_id = ? AND seller_id = ?
-    LIMIT 100
-  `);
-
   const getEligibilityStmt = db.prepare(`
     SELECT * FROM economic_learning_eligibility
     WHERE outcome_id = ? AND seller_id = ?
@@ -517,7 +505,7 @@ export function createSqliteEconomicLearningStore(
       return {
         ...eventFromRow(row),
         reversedAt: now,
-        status: "reversed" as LearningEventStatus,
+        status: "reversed",
       };
     },
 
@@ -567,7 +555,7 @@ export function createSqliteEconomicLearningStore(
 
     savePlan(plan) {
       // Store full plan as JSON, but exclude the fields stored as columns
-      const { planId, outcomeId, sellerId, status, createdAt, noExternalMutationExecuted, ...rest } = plan;
+      const { planId, outcomeId, sellerId, status: _status, createdAt: _createdAt, noExternalMutationExecuted: _nm, ...rest } = plan;
       const planData = { ...rest, planId, outcomeId, sellerId };
 
       const tx = db.transaction(() => {

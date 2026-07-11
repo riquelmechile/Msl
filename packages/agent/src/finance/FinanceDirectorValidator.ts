@@ -21,6 +21,41 @@ const GUARANTEED_PROFIT_PATTERN = /\b(guaranteed?\s+profit|profit\s+is\s+(guaran
 const OBSERVED_AS_VERIFIED_PATTERN = /\bobserved.*?(confirm\w*|verif\w+)|verif\w+.*?by\s+observation\b/i;
 const PARTIAL_AS_COMPLETE_PATTERN = /\b(all\s+costs?\s+(are\s+)?(included|covered|captured|accounted)|complete\s+picture|full\s+data|datos?\s+completos?)\b/i;
 
+// Budget violation patterns
+const EXCESSIVE_SPEND_PATTERN = /\b(invest|spend|allocate|increase\s+budget\s+by)\s+(?:USD|CLP|\$)?[\d,]{2,}(?:k|K|M|m(?:illion|illones)?|mil)?(?:\s*(?:USD|CLP|dollars|d[oó]lares|pesos))?\b/i;
+const BOOST_AD_SPEND_PATTERN = /\bboost\s+ad\s+spend\b/i;
+const BUDGET_INCREASE_PERCENT = /\bincrease\s+budget\s+by\s+(\d+)\s*%/i;
+const LARGE_AMOUNT_THRESHOLD = 100000;
+const BUDGET_PERCENT_THRESHOLD = 50;
+
+function extractNumericAmount(text: string): number | null {
+  // Match formatted numbers like "200,000" or "200000"
+  const numMatch = text.match(/(?:USD|CLP|\$)?\s*([\d,]{3,})/);
+  if (!numMatch || !numMatch[1]) return null;
+  const cleaned = numMatch[1].replace(/,/g, "");
+  const value = parseInt(cleaned, 10);
+  return Number.isNaN(value) ? null : value;
+}
+
+function hasCostEvidence(assessment: Partial<FinancialAssessment>): boolean {
+  const evidenceIds = assessment.evidenceIds ?? [];
+  const missingEvidence = assessment.missingEvidence ?? [];
+  // Cost-related evidence kinds that indicate the assessment has actual cost data
+  const costKinds = new Set([
+    "cost-evidence",
+    "unit-economics",
+    "product_cost",
+    "advertising",
+    "landed_cost",
+    "shipping",
+  ]);
+  const evidenceKinds = missingEvidence.filter((me) => costKinds.has(me.kind));
+  // If cost evidence is explicitly missing, we lack evidence
+  if (evidenceKinds.length > 0) return false;
+  // At least one evidenceId suggests data exists
+  return evidenceIds.length > 0;
+}
+
 // ── Validator ──────────────────────────────────────────────────────────────
 
 export class FinanceDirectorValidator {
@@ -308,13 +343,44 @@ export class FinanceDirectorValidator {
   }
 
   private checkBudgetViolation(
-    _assessment: Partial<FinancialAssessment>,
-    _issues: ValidationIssue[],
+    assessment: Partial<FinancialAssessment>,
+    issues: ValidationIssue[],
   ): void {
-    // Budget limits not yet defined in the system — placeholder
-    // In future: check recommendation spending against policy limits
-    void _assessment;
-    void (_issues.length);
+    const costEvidenceAvailable = hasCostEvidence(assessment);
+    const text = this.assessmentText(assessment);
+
+    // Check for large spending recommendations without cost evidence
+    if (EXCESSIVE_SPEND_PATTERN.test(text)) {
+      const amount = extractNumericAmount(text);
+      if (amount !== null && amount >= LARGE_AMOUNT_THRESHOLD) {
+        if (!costEvidenceAvailable) {
+          issues.push({
+            rule: "budget-violation",
+            detail: `Recommendation suggests spending ${amount.toLocaleString()} without corresponding cost evidence in evidence bag.`,
+          });
+        }
+      }
+    }
+
+    // Check for "boost ad spend" without cost evidence
+    if (BOOST_AD_SPEND_PATTERN.test(text) && !costEvidenceAvailable) {
+      issues.push({
+        rule: "budget-violation",
+        detail: 'Recommendation suggests boosting ad spend without cost evidence.',
+      });
+    }
+
+    // Check for budget increase recommendations exceeding percentage threshold
+    const budgetPctMatch = text.match(BUDGET_INCREASE_PERCENT);
+    if (budgetPctMatch && budgetPctMatch[1]) {
+      const pct = parseInt(budgetPctMatch[1], 10);
+      if (pct >= BUDGET_PERCENT_THRESHOLD && !costEvidenceAvailable) {
+        issues.push({
+          rule: "budget-violation",
+          detail: `Recommendation suggests increasing budget by ${pct}% without cost evidence.`,
+        });
+      }
+    }
   }
 
   private checkInvalidFormat(

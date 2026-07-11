@@ -218,7 +218,6 @@ export type EconomicLearningEventInput = Omit<
 
 // ── Factories ───────────────────────────────────────────────────────────────
 
-let eligibilityCounter = 0;
 export function createEconomicLearningEligibility(
   input: EconomicLearningEligibilityInput,
 ): EconomicLearningEligibility {
@@ -227,7 +226,6 @@ export function createEconomicLearningEligibility(
     evaluatedAt: Date.now(),
   };
 }
-// Note: eligibilityCounter is reserved for idempotent re-evaluation tracking.
 
 let attributionCounter = 0;
 export function createEconomicAttributionAssessment(

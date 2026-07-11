@@ -25,8 +25,6 @@ function createStore(): EconomicLearningStore {
   return createSqliteEconomicLearningStore(db);
 }
 
-const NOW = Date.now();
-
 function makeEvent(
   overrides: Partial<EconomicLearningEventInput> & { sellerId: string },
 ): EconomicLearningEventInput {

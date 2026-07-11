@@ -278,4 +278,90 @@ describe("FinanceDirectorValidator", () => {
     expect(result.valid).toBe(false);
     expect(result.issues.some((i) => i.rule === "invalid-format")).toBe(true);
   });
+
+  // ── Budget violation ────────────────────────────────────────────────────
+
+  it("flags recommendation suggesting large spending without cost evidence", () => {
+    const evidence = makeValidEvidence();
+    // Remove evidence IDs to simulate missing cost evidence
+    evidence.snapshots = [];
+    evidence.missingInputs = ["product_cost", "advertising"];
+    evidence.profitSummary = null;
+
+    const partial = makeValidPartial();
+    partial.evidenceIds = [];
+    partial.recommendations = [
+      {
+        action: "invest $200,000 in ads to boost visibility",
+        rationale: "More ads will increase sales",
+        urgency: "escalate",
+      },
+    ];
+
+    const result = validator.validate(partial as Partial<FinancialAssessment>, evidence);
+    expect(result.issues.some((i) => i.rule === "budget-violation")).toBe(true);
+  });
+
+  it("does NOT flag normal recommendation without excessive spending", () => {
+    const partial = makeValidPartial();
+    partial.recommendations = [
+      {
+        action: "review pricing strategy for high-cost items",
+        rationale: "Some items may be underpriced relative to costs",
+        urgency: "escalate",
+      },
+    ];
+
+    const result = validator.validate(partial as Partial<FinancialAssessment>, makeValidEvidence());
+    expect(result.issues.some((i) => i.rule === "budget-violation")).toBe(false);
+  });
+
+  it("does NOT flag recommendation when cost evidence is present", () => {
+    const partial = makeValidPartial();
+    partial.recommendations = [
+      {
+        action: "invest $200,000 in targeted advertising",
+        rationale: "ROI data shows strong conversion on these channels",
+        urgency: "escalate",
+      },
+    ];
+    // evidenceIds include snap-1 and out-1, which indicate cost evidence exists
+
+    const result = validator.validate(partial as Partial<FinancialAssessment>, makeValidEvidence());
+    expect(result.issues.some((i) => i.rule === "budget-violation")).toBe(false);
+  });
+
+  it("flags 'boost ad spend' without cost evidence", () => {
+    const evidence = makeValidEvidence();
+    evidence.snapshots = [];
+    evidence.missingInputs = ["advertising"];
+    evidence.profitSummary = null;
+
+    const partial = makeValidPartial();
+    partial.evidenceIds = [];
+    partial.summary = "We should boost ad spend to capture more market share.";
+
+    const result = validator.validate(partial as Partial<FinancialAssessment>, evidence);
+    expect(result.issues.some((i) => i.rule === "budget-violation")).toBe(true);
+  });
+
+  it("flags budget increase exceeding 50% without cost evidence", () => {
+    const evidence = makeValidEvidence();
+    evidence.snapshots = [];
+    evidence.missingInputs = ["advertising"];
+    evidence.profitSummary = null;
+
+    const partial = makeValidPartial();
+    partial.evidenceIds = [];
+    partial.recommendations = [
+      {
+        action: "increase budget by 75% on seasonal campaigns",
+        rationale: "Competitors are spending more",
+        urgency: "escalate",
+      },
+    ];
+
+    const result = validator.validate(partial as Partial<FinancialAssessment>, evidence);
+    expect(result.issues.some((i) => i.rule === "budget-violation")).toBe(true);
+  });
 });

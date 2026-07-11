@@ -139,7 +139,7 @@ class FakeGraphEngine {
 // ── Tests ─────────────────────────────────────────────────────────────
 
 describe("EconomicLearningPipeline", () => {
-  it("verified outcome → full pipeline: eligibility→attribution→plan→event", async () => {
+  it("verified outcome → full pipeline: eligibility→attribution→plan→event", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -154,7 +154,7 @@ describe("EconomicLearningPipeline", () => {
     const snapshot = makeSnapshot(outcome);
 
     const pipeline = new EconomicLearningPipeline();
-    const result = await pipeline.processVerifiedOutcome({
+    const result = pipeline.processVerifiedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -172,7 +172,7 @@ describe("EconomicLearningPipeline", () => {
     expect(result.event!.status).toBe("processed");
   });
 
-  it("non-verified outcome → blocked", async () => {
+  it("non-verified outcome → blocked", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -191,7 +191,7 @@ describe("EconomicLearningPipeline", () => {
     };
 
     const pipeline = new EconomicLearningPipeline();
-    const result = await pipeline.processVerifiedOutcome({
+    const result = pipeline.processVerifiedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -201,7 +201,7 @@ describe("EconomicLearningPipeline", () => {
     expect(result.reasonCodes).toContain("outcome-not-verified");
   });
 
-  it("incomplete outcome (no observed impact) → blocked", async () => {
+  it("incomplete outcome (no observed impact) → blocked", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -214,7 +214,7 @@ describe("EconomicLearningPipeline", () => {
     });
 
     const pipeline = new EconomicLearningPipeline();
-    const result = await pipeline.processVerifiedOutcome({
+    const result = pipeline.processVerifiedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -224,7 +224,7 @@ describe("EconomicLearningPipeline", () => {
     expect(result.reasonCodes).toContain("missing-observed-impact");
   });
 
-  it("disputed outcome → reversal", async () => {
+  it("disputed outcome → reversal", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -241,7 +241,7 @@ describe("EconomicLearningPipeline", () => {
     };
 
     const pipeline = new EconomicLearningPipeline();
-    const result = await pipeline.handleDisputedOutcome({
+    const result = pipeline.handleDisputedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -252,7 +252,7 @@ describe("EconomicLearningPipeline", () => {
     expect(result.reasonCodes).toContain("disputed-evidence");
   });
 
-  it("invalidated outcome → reversal", async () => {
+  it("invalidated outcome → reversal", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -269,7 +269,7 @@ describe("EconomicLearningPipeline", () => {
     };
 
     const pipeline = new EconomicLearningPipeline();
-    const result = await pipeline.handleDisputedOutcome({
+    const result = pipeline.handleDisputedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -280,7 +280,7 @@ describe("EconomicLearningPipeline", () => {
     expect(result.reasonCodes).toContain("invalidated-outcome");
   });
 
-  it("cortex unavailable → failed but no crash", async () => {
+  it("cortex unavailable → failed but no crash", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -295,7 +295,7 @@ describe("EconomicLearningPipeline", () => {
 
     const pipeline = new EconomicLearningPipeline();
     // No engine → bridge returns failed event
-    const result = await pipeline.processVerifiedOutcome({
+    const result = pipeline.processVerifiedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -309,7 +309,7 @@ describe("EconomicLearningPipeline", () => {
     expect(result.reasonCodes).toContain("cortex-unavailable");
   });
 
-  it("idempotent re-processing", async () => {
+  it("idempotent re-processing", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -326,7 +326,7 @@ describe("EconomicLearningPipeline", () => {
     const pipeline = new EconomicLearningPipeline();
 
     // First pass
-    const first = await pipeline.processVerifiedOutcome({
+    const first = pipeline.processVerifiedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -337,7 +337,7 @@ describe("EconomicLearningPipeline", () => {
     expect(first.event).toBeDefined();
 
     // Second pass — same outcome
-    const second = await pipeline.processVerifiedOutcome({
+    const second = pipeline.processVerifiedOutcome({
       outcome,
       economicStore,
       learningStore,
@@ -349,7 +349,7 @@ describe("EconomicLearningPipeline", () => {
     expect(second.event).toBeDefined();
   });
 
-  it("seller isolation maintained", async () => {
+  it("seller isolation maintained", () => {
     const db1 = new Database(":memory:");
     const db2 = new Database(":memory:");
     const economicStore = createOutcomeStore(db1);
@@ -365,7 +365,7 @@ describe("EconomicLearningPipeline", () => {
     const snapshotA = makeSnapshot(outcomeA);
 
     const pipeline = new EconomicLearningPipeline();
-    const resultA = await pipeline.processVerifiedOutcome({
+    const resultA = pipeline.processVerifiedOutcome({
       outcome: outcomeA,
       economicStore,
       learningStore,
@@ -382,7 +382,7 @@ describe("EconomicLearningPipeline", () => {
     });
     const snapshotB = makeSnapshot(outcomeB);
 
-    const resultB = await pipeline.processVerifiedOutcome({
+    const resultB = pipeline.processVerifiedOutcome({
       outcome: outcomeB,
       economicStore,
       learningStore,
