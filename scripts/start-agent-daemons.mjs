@@ -35,7 +35,7 @@ for (const warning of envCheck.warnings) {
 }
 
 // ── Imports ────────────────────────────────────────────────────
-const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonScheduler, createEconomicLearningDaemon, createDaemonLogger } =
+const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonScheduler, createEconomicLearningDaemon, createEconomicIngestionDaemon, createDaemonLogger } =
   await import("@msl/agent");
 const { createGraphEngine, getSharedDb, createSqliteOperationalReadModel, getSharedManager, BackupScheduler, createSqliteEconomicOutcomeStore, createSqliteEconomicLearningStore } =
   await import("@msl/memory");
@@ -116,6 +116,28 @@ if (env.MSL_ECONOMIC_LEARNING_ENABLED?.trim() === "true") {
     engine,
   );
   console.log("[agent-daemons] Economic learning daemon registered");
+}
+
+// ── Economic ingestion daemon (optional) ──────────────────────
+let economicIngestionDaemon = undefined;
+if (env.MSL_ECONOMIC_INGESTION_ENABLED?.trim() === "true") {
+  try {
+    const { createEconomicIngestionRuntime } = await import("@msl/agent");
+    const sourceRuntime = createEconomicIngestionRuntime("source");
+
+    economicIngestionDaemon = createEconomicIngestionDaemon({
+      enabled: true,
+      store: sourceRuntime.store,
+      dataFetcher: sourceRuntime.dataFetcher,
+      defaultSellerId: sourceRuntime.health.sellerId,
+    });
+    console.log("[agent-daemons] Economic ingestion daemon registered (source)");
+  } catch (err) {
+    console.warn(
+      "[agent-daemons] Economic ingestion daemon: failed to create runtime:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 // ── CEO handler Telegram context ────────────────────────────────
@@ -226,6 +248,7 @@ const handle = startDaemonScheduler({
   ...advisors,
   intervalMs: 15 * 60 * 1000, // 15 minutes
   ...(economicLearningDaemon ? { economicLearningDaemon } : {}),
+  ...(economicIngestionDaemon ? { economicIngestionDaemon } : {}),
 });
 
 // ── Proactive monitors (independent of message-driven scheduler) ──

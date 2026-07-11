@@ -468,17 +468,25 @@ export function createInspectCostComponentsTool(store?: EconomicOutcomeStore): T
 
 // ── Inspect Evidence References ─────────────────────────────────────────
 
-export function createInspectEvidenceReferencesTool(_store?: EconomicOutcomeStore): ToolDefinition {
+export function createInspectEvidenceReferencesTool(store?: EconomicOutcomeStore): ToolDefinition {
   return {
     name: "inspect_evidence_references",
     description:
-      "Read-only inspection of evidence references for a specific seller's economic data. Evidence references provide provenance chains linking cost components to their source systems. Currently a stub — the evidence reference store is not yet implemented. No external mutations are executed.",
+      "Read-only inspection of evidence references for a specific seller's economic data. Evidence references provide provenance chains linking cost components to their source systems. Queries the real cost component store for source records and verification status. No external mutations are executed.",
     parameters: {
       type: "object",
       properties: {
         sellerId: {
           type: "string",
           description: "Seller ID whose evidence references to inspect.",
+        },
+        sourceRecordId: {
+          type: "string",
+          description: "Optional specific source record ID (e.g., order ID) to inspect.",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum evidence references to return. Default: 20.",
         },
       },
       required: ["sellerId"],
@@ -493,14 +501,57 @@ export function createInspectEvidenceReferencesTool(_store?: EconomicOutcomeStor
         };
       }
 
-      // Stub: evidence reference store not yet implemented.
-      // Use cost components for provenance until full evidence chain is available.
+      if (!store) {
+        return {
+          status: "unavailable",
+          data: {
+            sellerId,
+            message:
+              "Economic Outcome Store no está disponible. Configure MSL_ECONOMIC_INGESTION_ENABLED=true para activar la ingesta económica.",
+          },
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const sourceRecordId = safeString(args.sourceRecordId);
+      const limit =
+        typeof args.limit === "number" && args.limit > 0 ? Math.min(args.limit, 100) : 20;
+
+      let components;
+      if (sourceRecordId) {
+        components = store.listBySourceRecord(sellerId, sourceRecordId);
+      } else {
+        components = store.listCostComponents(sellerId, { limit });
+      }
+
+      // Map cost components to evidence references
+      const evidenceRefs = components.slice(0, limit).map((c) => ({
+        sourceSystem: "mercadolibre",
+        sourceEntityType: "order",
+        sourceRecordId: c.sourceRecordId ?? null,
+        componentId: c.id,
+        type: c.type,
+        verification: c.verification,
+        confidence: c.confidence,
+        occurredAt: c.occurredAt,
+        observedAt: c.observedAt,
+        amount: {
+          minorUnits: c.amount.amountMinor,
+          currency: c.amount.currency,
+        },
+      }));
+
       return {
         status: "ok",
         data: {
           sellerId,
-          message:
-            "Evidence reference store not yet available. Use inspect_cost_components for per-component provenance information (source system, source record ID, verification status).",
+          evidenceReferences: evidenceRefs,
+          total: evidenceRefs.length,
+          provenanceSummary: {
+            sources: [...new Set(components.map((c) => c.source))],
+            verificationStatuses: [...new Set(components.map((c) => c.verification))],
+            totalComponents: components.length,
+          },
         },
         noExternalMutationExecuted: true,
       };

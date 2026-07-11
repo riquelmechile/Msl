@@ -343,13 +343,14 @@ describe("inspect_cost_components", () => {
 // ── inspect_evidence_references tests ───────────────────────────────────────
 
 describe("inspect_evidence_references", () => {
-  it("returns stub message (evidence store not yet implemented)", async () => {
+  it("returns unavailable when store is not provided", async () => {
     const tool = createInspectEvidenceReferencesTool(undefined);
     const result = await tool.execute({ sellerId: "plasticov" });
-    expect(result.status).toBe("ok");
+    expect(result.status).toBe("unavailable");
     expect(result.noExternalMutationExecuted).toBe(true);
-    const data = result.data as { message: string };
-    expect(data.message).toContain("not yet available");
+    const data = result.data as { message: string; sellerId: string };
+    expect(data.message).toContain("no está disponible");
+    expect(data.sellerId).toBe("plasticov");
   });
 
   it("returns error when sellerId is missing", async () => {
