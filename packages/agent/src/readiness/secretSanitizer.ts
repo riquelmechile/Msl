@@ -46,6 +46,20 @@ export function sanitizeSecret(key: string, value: string | undefined): string {
     lower.includes("cooldown") ||
     lower.includes("profile")
   ) {
+    // Strip embedded credentials from URLs before returning
+    if ((lower.includes("url") || lower.includes("host")) && value.includes("@")) {
+      try {
+        const u = new URL(value);
+        if (u.username || u.password) {
+          u.username = "";
+          u.password = "";
+          return u.toString().replace("://@", "://");
+        }
+      } catch {
+        // Not a valid URL — redact to avoid leaking credential-like values
+        return "[redacted-url]";
+      }
+    }
     return value;
   }
 

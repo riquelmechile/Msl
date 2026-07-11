@@ -112,6 +112,7 @@ import type { AccountBrainService } from "./accountBrainService.js";
 import { createGetAccountBrainStatusTool, createCompareAccountAssetsTool } from "./tools.js";
 import { createFinanceDirectorTools } from "./tools/financeDirectorTools.js";
 import { createEconomicLearningTools } from "./tools/economicLearningTools.js";
+import { createInspectProductionReadinessTool } from "./tools/productionReadinessTools.js";
 import { FinanceDirectorAdvisor } from "../finance/FinanceDirectorAdvisor.js";
 
 // Import extracted loop module functions
@@ -265,6 +266,12 @@ export function createAgentLoop(config: AgentLoopConfig) {
 
   let pendingDecoyProposal: DecoyProposal | null = null;
 
+  if (!toolMap.has("inspect_production_readiness")) {
+    toolMap.set(
+      "inspect_production_readiness",
+      createInspectProductionReadinessTool(process.env),
+    );
+  }
   if (!toolMap.has("detect_probes")) {
     toolMap.set("detect_probes", createDetectProbesTool());
   }

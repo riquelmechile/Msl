@@ -73,15 +73,40 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
     features: resolveFeatures(env),
   };
 
-  // ── Run all checkers ────────────────────────────────────────────
+  // ── Run all checkers with isolation ─────────────────────────────
+  function safeCheck(
+    fn: (c: ReadinessContext) => ReadinessCheckResult[],
+    checkerName: string,
+  ): ReadinessCheckResult[] {
+    try {
+      return fn(ctx);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown error";
+      return [
+        {
+          checkId: `checker-failure-${checkerName}`,
+          capability: "background-workers",
+          status: "degraded",
+          severity: "warning",
+          safeMessage: `Checker "${checkerName}" failed: ${message}`,
+          remediation: `Investigate checker "${checkerName}" failure.`,
+          checkedAt: new Date().toISOString(),
+          metadata: {},
+          reasonCode: `checker-${checkerName}-failure`,
+          noMutationExecuted: true,
+        },
+      ];
+    }
+  }
+
   const allCheckerResults: ReadinessCheckResult[] = [
-    ...checkEnvironmentReadiness(ctx),
-    ...checkSellerAccountReadiness(ctx),
-    ...checkDatabaseReadiness(ctx),
-    ...checkProviderReadiness(ctx),
-    ...checkRuntimeReadiness(ctx),
-    ...checkFeatureGateReadiness(ctx),
-    ...checkSecurityReadiness(ctx),
+    ...safeCheck(checkEnvironmentReadiness, "environment"),
+    ...safeCheck(checkSellerAccountReadiness, "seller-account"),
+    ...safeCheck(checkDatabaseReadiness, "database"),
+    ...safeCheck(checkProviderReadiness, "provider"),
+    ...safeCheck(checkRuntimeReadiness, "runtime"),
+    ...safeCheck(checkFeatureGateReadiness, "feature-gate"),
+    ...safeCheck(checkSecurityReadiness, "security"),
   ];
 
   // ── Aggregate by capability ─────────────────────────────────────

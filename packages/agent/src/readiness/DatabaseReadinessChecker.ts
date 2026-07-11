@@ -91,10 +91,10 @@ export function checkDatabaseReadiness(ctx: ReadinessContext): ReadinessCheckRes
     let parentExists = false;
     let parentWritable = false;
     try {
-      accessSync(dirPath, constants.F_OK);
+      accessSync(dirPath, constants.F_OK | constants.R_OK);
       parentExists = true;
     } catch {
-      // Directory does not exist
+      // Directory does not exist or is not readable
     }
 
     if (!parentExists) {
@@ -103,7 +103,7 @@ export function checkDatabaseReadiness(ctx: ReadinessContext): ReadinessCheckRes
           checkId: `${CHECK_PREFIX}-${name.toLowerCase().replace(/_/g, "-")}-parent-dir`,
           capability: capability as ReadinessCheckResult["capability"],
           status: "degraded",
-          safeMessage: `Parent directory for ${name} does not exist.`,
+          safeMessage: `Parent directory for ${name} does not exist or is not readable.`,
           remediation: `Create the directory for ${name} before starting MSL.`,
         }),
       );
@@ -112,9 +112,16 @@ export function checkDatabaseReadiness(ctx: ReadinessContext): ReadinessCheckRes
 
     // ── Write permission check (create temp file) ─────────────────
     try {
-      const testFile = path.join(dirPath, `.msl-readiness-test-${Date.now().toString(36)}.tmp`);
+      const testFile = path.join(
+        dirPath,
+        `.msl-readiness-test-${Date.now().toString(36)}.tmp`,
+      );
       writeFileSync(testFile, "readiness-check", { encoding: "utf-8" });
-      unlinkSync(testFile);
+      try {
+        unlinkSync(testFile);
+      } catch {
+        // Best-effort cleanup — file may be left behind but is harmless
+      }
       parentWritable = true;
     } catch {
       parentWritable = false;
