@@ -19,6 +19,7 @@
     "test:e2e": "node scripts/run-e2e.mjs",
     "smoke:deepseek:tool": "npm run build --workspace @msl/agent && node scripts/deepseek-tool-smoke.mjs",
     "check:production-secrets": "npm run build --workspace @msl/agent && node scripts/check-production-secrets.mjs",
+    "production:readiness": "npx tsx packages/agent/src/readiness/cli.ts",
     "supplier-mirror:jinpeng:dry-run": "npm run build --workspace @msl/workers && node scripts/supplier-mirror-jinpeng-bootstrap.mjs --dry-run",
     "seed:account-assets": "node scripts/seed-account-assets.mjs",
     "lint": "TSESTREE_SINGLE_RUN=true eslint .",
@@ -40,6 +41,7 @@
     "eslint-config-next": "^16.2.9",
     "prettier": "^3.6.2",
     "rollup": "npm:@rollup/wasm-node@^4.62.2",
+    "tsx": "^4.23.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.35.0",
     "vitest": "^3.2.4"

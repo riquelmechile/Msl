@@ -131,7 +131,7 @@ describe("ceoProfitabilityHandler", () => {
       ["unit-economics", "review-campaign-structure", "info", false],
     ])(
       "maps signal '%s' to proposalType '%s' severity '%s' requiresApproval %s",
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       async (signal, _expectedProposalType, _expectedSeverity, _requiresApproval) => {
         const preparedActions: Array<Record<string, unknown>> = [];
         const ceoCtx = makeCeoContext({
@@ -353,7 +353,7 @@ describe("ceoProfitabilityHandler", () => {
           });
           return Promise.resolve();
         },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         createForumTopic: (_chatId, _name) => {
           return Promise.resolve({ message_thread_id: 42 });
         },

@@ -367,7 +367,7 @@ async function handleEvidenceReEvaluation(params: {
 export const ownedEcommerceDaemon: DaemonHandler = async ({
   claim,
   reader,
-  cortex: _cortex, // eslint-disable-line @typescript-eslint/no-unused-vars
+  cortex: _cortex,  
   bus,
   sellerIds,
   sessionStore,

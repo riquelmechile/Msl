@@ -76,11 +76,11 @@ function getPreviousHourKey(capturedAt: string): string {
  * empty findings without error.
  */
 export const supplierManagerDaemon: DaemonHandler = async ({
-  claim: _claim, // eslint-disable-line @typescript-eslint/no-unused-vars
-  reader: _reader, // eslint-disable-line @typescript-eslint/no-unused-vars
+  claim: _claim,  
+  reader: _reader,  
   cortex,
   bus,
-  sellerIds: _sellerIds, // eslint-disable-line @typescript-eslint/no-unused-vars
+  sellerIds: _sellerIds,  
   supplierMirrorStore,
   advisor,
 }) => {

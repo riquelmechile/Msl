@@ -104,7 +104,7 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects object missing type", () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { type: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });
@@ -118,7 +118,7 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects missing supplierId", () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { supplierId: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });
@@ -128,7 +128,7 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects missing supplierItemId", () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { supplierItemId: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });
@@ -166,7 +166,7 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects missing capturedAt", () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { capturedAt: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });
