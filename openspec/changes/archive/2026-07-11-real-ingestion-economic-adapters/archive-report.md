@@ -68,3 +68,12 @@ PR 4/4 of P0 — Production Readiness. Connected real MercadoLibre read-only dat
 ## Next Phase
 
 P1 — Product Launch Intelligence: Use verified economic data to inform pricing, promotion, and catalog decisions.
+
+## Correction (2026-07-11)
+
+An independent audit and hardening change (`complete-real-economic-ingestion-wiring`) found that while the core engine was genuinely production-ready, the CLI economic handlers were 100% stubs and the daemon was not wired. These gaps were corrected:
+
+- CLI handlers (ingest, status, coverage, reconcile, missing) → real implementations
+- Economic ingestion daemon → wired in start-agent-daemons.mjs
+- inspect_evidence_references CEO tool → real store queries
+- Real smoke test executed: Plasticov (279 snapshots), Maustian (349 snapshots)

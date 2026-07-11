@@ -1,8 +1,8 @@
 # ROADMAP — MSL Agent Enterprise
 
 > **Review date:** 2026-07-11
-> **Last verified code baseline:** `acaa64c` — feat(runtime): integrate MercadoLibre account readiness and health (P0 PR 3/4)
-> **Verification scope:** P0 PR 3/4 MercadoLibre Dual-Account Production Connection
+> **Last verified code baseline:** `6fd769f` — docs(sdd): archive real ingestion economic adapters (P0 PR 4/4, hardened with `complete-real-economic-ingestion-wiring`)
+> **Verification scope:** P0 PR 4/4 Real Ingestion & Economic Adapters (hardened: CLI wiring, daemon wiring, real smoke test)
 > **State definitions:**
 >
 > - **Implementado** — merged, tested, available at HEAD.

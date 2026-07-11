@@ -27,7 +27,7 @@ MSL combina razonamiento (DeepSeek), memoria (Cortex, grafo neuronal en SQLite) 
 
 ## Qué funciona actualmente
 
-Verificado contra el baseline `acaa64c` (P0 PR 3/4 MercadoLibre dual-account production connection):
+Verificado contra el baseline `6fd769f` (P0 PR 4/4 Real Ingestion & Economic Adapters, hardened):
 
 | Componente                     | Estado                                                      |
 | ------------------------------ | ----------------------------------------------------------- |
@@ -53,13 +53,16 @@ Verificado contra el baseline `acaa64c` (P0 PR 3/4 MercadoLibre dual-account pro
 | MCP Server                     | ~40 herramientas para clientes MCP                          |
 | Aprobación "dale"              | Pipeline prepare → approve → execute → audit                |
 | Background Ingestion           | 5 procesadores con paginación por checkpoint                |
+| Economic Ingestion Pipeline    | Pipeline real con DataFetcher ML (read-only), 93+ snapshots |
+| Economic CLI                   | `npm run economic:ingest/status/coverage/reconcile/missing` |
+| Economic Store                 | SQLite: cost components, snapshots, evidence refs, runs     |
 
 ---
 
 ## Qué todavía no está en producción
 
 - **Escritura productiva de ML**: las operaciones de escritura (publicar, actualizar, stock, precio) están bloqueadas por `assertMercadoLibreWriteDisabled()`. Implementadas como read-only production (P0 PR 3/4).
-- **Ingesta real**: los procesadores existen y están conectados con OAuth, pero pendientes de integración con el pipeline económico (P0 PR 4/4).
+- **Costos completos**: product cost y landed cost requieren fuentes externas (proveedor, aduana). Los snapshots económicos son parciales por diseño — los costos faltantes se declaran como `missingInput`, no se inventan.
 - **Ecommerce productivo**: el write boundary de Medusa está implementado pero no activo sin credenciales y aprobación.
 - **Canales sociales**: no implementados.
 - **Expansión a otros marketplaces**: no implementada.
