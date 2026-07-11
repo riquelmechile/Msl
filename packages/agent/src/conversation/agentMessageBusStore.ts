@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import Database from "better-sqlite3";
+import { createMigrationRegistry } from "@msl/memory";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -184,8 +185,28 @@ function rowToAgentMessage(row: AgentMessageBusRow): AgentMessage {
 // ── Factory ──────────────────────────────────────────────────────────
 
 export function createAgentMessageBusStore(db: Database.Database): AgentMessageBusStore {
-  db.exec(SCHEMA_SQL);
-  migrateBusSchema(db);
+  if (process.env.MSL_MIGRATION_ENABLED === "true") {
+    const registry = createMigrationRegistry();
+    registry.register({
+      version: 1,
+      name: "agent_message_bus_base",
+      up: (d) => {
+        d.exec(SCHEMA_SQL);
+      },
+    });
+    registry.register({
+      version: 2,
+      name: "agent_message_bus_extensions",
+      up: (d) => {
+        migrateBusSchema(d);
+      },
+    });
+    registry.apply(db);
+  } else {
+    // Legacy path (MSL_MIGRATION_ENABLED !== "true")
+    db.exec(SCHEMA_SQL);
+    migrateBusSchema(db);
+  }
 
   // ── Prepared statements ────────────────────────────────────
 

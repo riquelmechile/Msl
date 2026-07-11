@@ -85,8 +85,23 @@ export {
 } from "./ownedEcommerceStore.js";
 
 // Re-export shared connection pool and backup utilities.
-export { getSharedDb, closeSharedDb } from "./connectionPool.js";
+export { getSharedDb, closeSharedDb, getSharedManager } from "./connectionPool.js";
 export { backupDatabase } from "./backup.js";
+export { createMigrationRegistry } from "./migrationRegistry.js";
+export type { MigrationRegistry, MigrationStep, MigrationApplyResult } from "./migrationRegistry.js";
+export { createDatabaseManager } from "./databaseManager.js";
+export type {
+  DatabaseManager,
+  BackupVerifyResult,
+  IntegrityResult,
+  WalCheckpointResult,
+} from "./databaseManager.js";
+export { BackupScheduler, createBackupScheduler } from "./backupScheduler.js";
+export type {
+  DbEntry,
+  BackupSchedulerConfig,
+  BackupMetadata,
+} from "./backupScheduler.js";
 
 export type LocalDataResidency = "local-only" | "selective-remote-sync";
 

@@ -1,4 +1,6 @@
 import Database from "better-sqlite3";
+import { createDatabaseManager } from "./databaseManager.js";
+import type { DatabaseManager } from "./databaseManager.js";
 
 /**
  * Singleton connection pool for SQLite instances.
@@ -54,4 +56,24 @@ export function closeSharedDb(): void {
     sharedDb = null;
     sharedPath = null;
   }
+}
+
+/**
+ * Return a {@link DatabaseManager} wrapping the shared connection pool
+ * for the given database file path.
+ *
+ * When `MSL_DURABILITY_ENABLED` is `"true"`, the returned manager
+ * provides backup, restore, integrity check, WAL checkpoint, and
+ * migration features. When disabled, a no-op wrapper is returned
+ * instead.
+ *
+ * The manager coordinates with {@link getSharedDb} and
+ * {@link closeSharedDb} — in particular, {@link DatabaseManager.restoreFrom}
+ * will close the shared connection and reopen it against the restored file.
+ *
+ * @param path — absolute SQLite file path. Must not be `":memory:"`,
+ *   as durability operations require a persistent file.
+ */
+export function getSharedManager(path: string): DatabaseManager {
+  return createDatabaseManager(path, () => getSharedDb(path));
 }

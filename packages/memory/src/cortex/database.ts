@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import type { MigrationRegistry } from "../migrationRegistry.js";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -117,7 +118,10 @@ export function migrate(
   return { applied, skipped };
 }
 
-export function createDatabase(path = ":memory:"): Database.Database {
+export function createDatabase(
+  path = ":memory:",
+  migrationRegistry?: MigrationRegistry,
+): Database.Database {
   const db = new Database(path);
 
   // Enable WAL mode for concurrent read performance
@@ -143,7 +147,30 @@ export function createDatabase(path = ":memory:"): Database.Database {
   `);
 
   // Run any pending migrations
-  migrate(db);
+  if (migrationRegistry && process.env.MSL_MIGRATION_ENABLED === "true") {
+    // Register Cortex migrations on the shared registry.
+    // v1: baseline — all tables created by SCHEMA_SQL above.
+    // v2: seller-scoped Cortex columns — applied via columnExists guards below.
+    // Both steps are no-ops because the tables/columns are managed elsewhere;
+    // the registry only records the version for future incremental migrations.
+    migrationRegistry.register({
+      version: 1,
+      name: "cortex_baseline",
+      up: () => {
+        /* tables created by SCHEMA_SQL */
+      },
+    });
+    migrationRegistry.register({
+      version: 2,
+      name: "cortex_seller_scoped",
+      up: () => {
+        /* column migrations handled by columnExists guards below */
+      },
+    });
+    migrationRegistry.apply(db);
+  } else {
+    migrate(db);
+  }
 
   // ── Idempotent column migrations: seller-scoped Cortex (PRAGMA table_info guard) ──
   if (!columnExists(db, "nodes", "seller_id")) {

@@ -10,6 +10,7 @@ import type {
   SellerId,
 } from "@msl/domain";
 import Database from "better-sqlite3";
+import { createMigrationRegistry } from "./migrationRegistry.js";
 
 // ── Row types ─────────────────────────────────────────────────────────
 
@@ -144,6 +145,59 @@ function operationalEvidenceFromRow(row: SnapshotRow): OperationalEvidence {
 // ── Migration ─────────────────────────────────────────────────────────
 
 export function migrateOperationalStore(db: Database.Database): void {
+  if (process.env.MSL_MIGRATION_ENABLED === "true") {
+    const registry = createMigrationRegistry();
+    registry.register({
+      version: 1,
+      name: "operational_store_base",
+      up: (d) => {
+        d.exec(`
+          CREATE TABLE IF NOT EXISTS operational_snapshots (
+            seller_id TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            source TEXT NOT NULL,
+            captured_at TEXT NOT NULL,
+            freshness TEXT NOT NULL,
+            completeness TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            evidence_id TEXT NOT NULL UNIQUE,
+            PRIMARY KEY (seller_id, item_id, kind)
+          );
+
+          CREATE TABLE IF NOT EXISTS ingestion_checkpoints (
+            seller_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            last_captured_at TEXT NOT NULL,
+            PRIMARY KEY (seller_id, kind)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_snapshots_kind ON operational_snapshots(kind);
+
+          CREATE INDEX IF NOT EXISTS idx_snapshots_kind_captured
+            ON operational_snapshots(kind, captured_at DESC);
+
+          CREATE INDEX IF NOT EXISTS idx_snapshots_seller_kind_captured
+            ON operational_snapshots(seller_id, kind, captured_at DESC);
+
+          CREATE INDEX IF NOT EXISTS idx_snapshots_seller_item
+            ON operational_snapshots(seller_id, item_id);
+        `);
+      },
+    });
+    registry.register({
+      version: 2,
+      name: "operational_store_generated_columns",
+      up: (d) => {
+        addGeneratedColumnsIfMissing(d);
+      },
+    });
+    registry.apply(db);
+    return;
+  }
+
+  // Legacy path (MSL_MIGRATION_ENABLED !== "true")
   db.exec(`
     CREATE TABLE IF NOT EXISTS operational_snapshots (
       seller_id TEXT NOT NULL,
