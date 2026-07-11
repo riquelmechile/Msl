@@ -1,8 +1,8 @@
 # ROADMAP — MSL Agent Enterprise
 
 > **Review date:** 2026-07-11
-> **Last verified code baseline:** `90efd8d` — docs(sdd): archive durable-runtime-operations (P0 PR 2/4)
-> **Verification scope:** Production Readiness PR 2/4 implementation and archive
+> **Last verified code baseline:** `acaa64c` — feat(runtime): integrate MercadoLibre account readiness and health (P0 PR 3/4)
+> **Verification scope:** P0 PR 3/4 MercadoLibre Dual-Account Production Connection
 > **State definitions:**
 >
 > - **Implementado** — merged, tested, available at HEAD.
@@ -83,7 +83,26 @@
 - ✅ Economic learning daemon registrado en `daemonHandlerMap` (`MSL_ECONOMIC_LEARNING_ENABLED`)
 - ✅ 3 conexiones `createDatabase()` consolidadas a 1 `getSharedDb()` en producción
 - ✅ 4 feature flags: `MSL_DURABILITY_ENABLED`, `MSL_MIGRATION_ENABLED`, `MSL_STRUCTURED_LOGGING_ENABLED`, `MSL_ECONOMIC_LEARNING_ENABLED` (todos default `false`)
-- ✅ +94 tests, 3045 total, 0 regresiones, 67/67 spec scenarios compliant
+- ✅ +119 tests, 3164 total, 0 regresiones, 21/21 spec scenarios compliant
+
+### Capacidades implementadas en PR 3/4
+
+- ✅ `loadRepositoryEnvironment()`: loader de entorno compartido, determinista, sin dependencia de dotenv, funciona desde cualquier cwd
+- ✅ Eliminación de symlink `apps/web/.env.local` — Next.js usa `instrumentation.ts` con loader inline
+- ✅ `MercadoLibreAccountRegistry`: registro canónico tipado Plasticov (source) + Maustian (target) con validación de cross-binding
+- ✅ `MercadoLibreConnectionHealthService`: 4 modos (inspect-only, refresh-if-needed, smoke-read, no-network), health por cuenta, seller isolation
+- ✅ `MercadoLibreReadOnlySmokeService`: smoke tests acotados (identity + orders + items), PII sanitization, sin mutaciones
+- ✅ `MercadoLibreRefreshError`: clasificación de errores de refresh (invalid_grant → reauthorization-required, network_error → retryable, rate_limited)
+- ✅ Refresh automático seller-scoped con lock, clock inyectable, `onTokenRefresh` → métricas + structured logs
+- ✅ `assertMercadoLibreWriteDisabled()`: gate fail-closed que bloquea publish, update, stock, price, ads, questions, messages, cancellations
+- ✅ CLI commands: `meli:connection:status`, `meli:refresh`, `meli:smoke`, `meli:connect:url` con `--seller source|target` y `--json`
+- ✅ CEO MCP tools: `inspect_mercadolibre_connections`, `inspect_mercadolibre_account_health`, `run_mercadolibre_read_smoke`
+- ✅ Ingest script hardening: `--limit`, `--max-pages`, `--dry-run`, `--no-persist`, `--seller`, `--json`, AbortSignal, rate limit awareness
+- ✅ Observability: eventos `meli-refresh-succeeded/failed`, `meli-identity-verified/mismatch`, `meli-smoke-*`, `meli-reauthorization-required`
+- ✅ Real smoke local verificado: Plasticov ✅, Maustian ✅ — ambas read-ready, write-blocked, zero mutaciones
+- ✅ Cero secretos en Git, cero SQLite en Git, symlink no requerido
+
+**Read está operativo. Write continúa bloqueado.** `mercadolibre-read-plasticov` y `mercadolibre-read-maustian` pueden alcanzar `ready`. `mercadolibre-write-*` permanecen `blocked` con razón `write-capability-not-implemented`.
 
 ---
 

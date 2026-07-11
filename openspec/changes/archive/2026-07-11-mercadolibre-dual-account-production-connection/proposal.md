@@ -1,5 +1,9 @@
 # Proposal: MercadoLibre Dual-Account Production Connection (P0 PR 3/4)
 
+**Status:** Implemented / Archived
+**Archived:** 2026-07-11
+**Functional baseline:** `acaa64c`
+
 ## Intent
 
 Plasticov and Maustian OAuth tokens work locally, but every script reimplements its own env loader, Next.js needs a symlink workaround, and there is zero connection observability — no refresh monitoring, no smoke testing, no guard against silent token expiry. This PR brings dual-account OAuth into production-grade health, hardening, and observability.

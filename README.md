@@ -27,7 +27,7 @@ MSL combina razonamiento (DeepSeek), memoria (Cortex, grafo neuronal en SQLite) 
 
 ## Qué funciona actualmente
 
-Verificado contra el baseline `90efd8d` (P0 PR 2/4 durable runtime operations):
+Verificado contra el baseline `acaa64c` (P0 PR 3/4 MercadoLibre dual-account production connection):
 
 | Componente                     | Estado                                                      |
 | ------------------------------ | ----------------------------------------------------------- |
@@ -219,7 +219,13 @@ npm run production:readiness  # Diagnóstico de production readiness
 | Owned Ecommerce        | ✅ Runtime listo (env-gated)                      |
 | Creative Studio        | ✅ Runtime listo (env-gated)                      |
 | ML OAuth               | ✅ Listo (dual-account, read-only production) |
-| Ingesta real           | ❌ Requiere P0 (credenciales ML)                  |
+| OAuth dual Plasticov/Maustian | ✅ Listo (apps separadas, tokens independientes) |
+| Refresh automático seller-scoped | ✅ Listo (con lock, métricas, error classification) |
+| Health por cuenta ML   | ✅ Listo (4 modos: inspect, refresh, smoke, no-network) |
+| Smoke tests read-only  | ✅ Listo (identity + orders + items, sin mutaciones) |
+| Environment loader común | ✅ Listo (sin symlink, funciona desde cualquier cwd) |
+| Escrituras ML          | ❌ Bloqueadas (`assertMercadoLibreWriteDisabled()`) |
+| Ingesta real           | ❌ Requiere P0 PR 4/4 (integración económica)     |
 | Ecommerce productivo   | ❌ Requiere credenciales Medusa + aprobación      |
 | Canales sociales       | 🔲 No implementado                                |
 | Expansión multicanal   | 🔲 No implementado                                |
@@ -230,7 +236,7 @@ npm run production:readiness  # Diagnóstico de production readiness
 
 | Prioridad | Fase                                | Estado                |
 | --------- | ----------------------------------- | --------------------- |
-| P0        | Operational Truth & Production      | Parcial (PR 3/4)      |
+| P0        | Operational Truth & Production      | Parcial (PR 3/4 completa, PR 4/4 planificada) |
 | P1        | Financial Truth & Economic Outcomes | Fundación completa    |
 | P2        | Full Product Launch Cycle           | Pendiente |
 | P3        | Social Growth                       | Pendiente |
