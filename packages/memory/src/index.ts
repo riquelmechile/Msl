@@ -101,6 +101,12 @@ export { getSharedDb, closeSharedDb, getSharedManager } from "./connectionPool.j
 export { backupDatabase } from "./backup.js";
 export { createMigrationRegistry } from "./migrationRegistry.js";
 export type { MigrationRegistry, MigrationStep, MigrationApplyResult } from "./migrationRegistry.js";
+export type { EconomicEvidenceStore, ListEvidenceOptions } from "./economicEvidenceStore.js";
+export {
+  createSqliteEconomicEvidenceStore,
+  migrateEconomicEvidenceStore,
+  migrateEconomicDurabilityColumns,
+} from "./economicEvidenceStore.js";
 export { createDatabaseManager } from "./databaseManager.js";
 export type {
   DatabaseManager,

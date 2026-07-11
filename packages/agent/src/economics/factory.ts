@@ -11,10 +11,12 @@ import {
   getSharedDb,
   createSqliteEconomicOutcomeStore,
   createSqliteEconomicIngestionRunStore,
+  createSqliteEconomicEvidenceStore,
   migrateEconomicOutcomeStore,
   migrateEconomicIngestionRunStore,
+  migrateEconomicDurabilityColumns,
 } from "@msl/memory";
-import type { EconomicOutcomeStore, EconomicIngestionRunStore } from "@msl/memory";
+import type { EconomicOutcomeStore, EconomicIngestionRunStore, EconomicEvidenceStore } from "@msl/memory";
 import { CryptoRunIdFactory } from "@msl/domain";
 import type { RunIdFactory } from "@msl/domain";
 import { createProductionDataFetcher } from "./dataFetcher.js";
@@ -33,6 +35,7 @@ export type SellerSlug = "source" | "target";
 export type RuntimeOverrides = {
   store?: EconomicOutcomeStore;
   runStore?: EconomicIngestionRunStore;
+  evidenceStore?: EconomicEvidenceStore;
   runIdFactory?: RunIdFactory;
   dataFetcher?: DataFetcher;
   pipeline?: (config: PipelineConfig) => Promise<PipelineResult>;
@@ -43,6 +46,7 @@ export type RuntimeOverrides = {
 export type EconomicIngestionRuntime = {
   store: EconomicOutcomeStore;
   runStore: EconomicIngestionRunStore;
+  evidenceStore: EconomicEvidenceStore;
   pipeline: (config: PipelineConfig) => Promise<PipelineResult>;
   reconciliation: typeof reconcileEconomics;
   dataFetcher: DataFetcher;
@@ -58,6 +62,7 @@ export type EconomicIngestionHealth = {
   sellerSlug: SellerSlug;
   storeReady: boolean;
   runStoreReady: boolean;
+  evidenceStoreReady: boolean;
   dataFetcherReady: boolean;
   featureGateEnabled: boolean;
 };
@@ -119,10 +124,12 @@ export function createEconomicIngestionRuntime(
 
   const store = overrides?.store ?? createSqliteEconomicOutcomeStore(db);
   const runStore = overrides?.runStore ?? createSqliteEconomicIngestionRunStore(db);
+  const evidenceStore = overrides?.evidenceStore ?? createSqliteEconomicEvidenceStore(db);
 
   // Ensure economic tables exist before any operations
   if (!overrides?.store) migrateEconomicOutcomeStore(db);
   if (!overrides?.runStore) migrateEconomicIngestionRunStore(db);
+  if (!overrides?.evidenceStore) migrateEconomicDurabilityColumns(db);
 
   // ── 5b. RunIdFactory ────────────────────────────────────────────────────
   const runIdFactory = overrides?.runIdFactory ?? new CryptoRunIdFactory();
@@ -150,7 +157,7 @@ export function createEconomicIngestionRuntime(
   const pipeline =
     overrides?.pipeline ??
     (async (config: PipelineConfig) => {
-      return runEconomicIngestion(config, store, dataFetcher, runIdFactory, runStore);
+      return runEconomicIngestion(config, store, dataFetcher, runIdFactory, runStore, evidenceStore);
     });
 
   // ── 9. Health ───────────────────────────────────────────────────────────
@@ -160,6 +167,7 @@ export function createEconomicIngestionRuntime(
     sellerSlug: seller,
     storeReady: true,
     runStoreReady: true,
+    evidenceStoreReady: true,
     dataFetcherReady: mlClient !== undefined || overrides?.dataFetcher !== undefined,
     featureGateEnabled,
   };
@@ -175,6 +183,7 @@ export function createEconomicIngestionRuntime(
   return {
     store,
     runStore,
+    evidenceStore,
     pipeline,
     reconciliation: reconcileEconomics,
     dataFetcher,

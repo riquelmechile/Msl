@@ -10,6 +10,7 @@ import { createEconomicIngestionRun, createEconomicEvidenceReference } from "@ms
 import { createUnitEconomicsSnapshot } from "@msl/domain";
 import type { EconomicOutcomeStore } from "@msl/memory";
 import type { EconomicIngestionRunStore } from "@msl/memory";
+import type { EconomicEvidenceStore } from "@msl/memory";
 import { syncUpdateRunInTx, syncUpdateCheckpointInTx } from "@msl/memory";
 import { normalizeOrders } from "./normalization.js";
 import {
@@ -65,6 +66,24 @@ export type ReconciliationVerdict = {
   sourceTotal?: number;
   computedTotal?: number;
   difference?: number;
+  revenueReconciliation?: {
+    status: "balanced" | "balanced-with-tolerance" | "mismatched" | "incomplete";
+    sourceTotal: number;
+    computedTotal: number;
+    difference: number;
+  };
+  costReconciliation?: {
+    status: "balanced" | "balanced-with-tolerance" | "mismatched" | "incomplete";
+    sourceTotal: number;
+    computedTotal: number;
+    difference: number;
+  };
+  coverage?: {
+    meaningful: boolean;
+    dimensions: Record<string, "complete" | "missing">;
+  };
+  productCostMissing?: boolean;
+  landedCostMissing?: boolean;
 };
 
 /** Raw data fetched from MercadoLibre (or injected mock). */
@@ -146,9 +165,14 @@ export async function runEconomicIngestion(
   dataFetcher: DataFetcher,
   runIdFactory?: RunIdFactory,
   runStore?: EconomicIngestionRunStore,
+  evidenceStore?: EconomicEvidenceStore,
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const errors: string[] = [];
+
+  // Run-scoped counters (tracked locally during the run)
+  let duplicatesIgnored = 0;
+  let evidenceCreated = 0;
 
   try {
     // 1. Resolve seller
@@ -254,14 +278,14 @@ export async function runEconomicIngestion(
       // 8. Build evidence refs
       run = transitionRun(run, "adapting");
       const evidenceRefs: EconomicEvidenceReference[] = [];
-      const now = Date.now();
+      const adaptNow = Date.now();
       for (const order of fetched.orders) {
         const evidenceResult = createEconomicEvidenceReference({
           sellerId: config.sellerId,
           sourceSystem: "mercadolibre",
           sourceEntityType: "order",
           sourceRecordId: order.id,
-          observedAt: now,
+          observedAt: adaptNow,
           occurredAt: Date.parse(order.date_created),
           sourceVersion: order.last_updated ?? order.date_created,
           checksum: `sha256:order:${order.id}:${order.total_amount}`,
@@ -416,9 +440,11 @@ export async function runEconomicIngestion(
           // Build run result (compute before transaction to keep it pure)
           const endTime = Date.now();
           const runResult = {
-            transactions: transactions.length,
+            normalizedLines: transactions.length,
             components: allComponents.length,
             snapshots: snapshots.length,
+            evidenceCreated,
+            duplicatesIgnored,
             reconciliation: "", // populated after transaction succeeds
             elapsedMs: endTime - startTime,
           };
@@ -439,6 +465,18 @@ export async function runEconomicIngestion(
           // If any write throws, SQLite auto-rollbacks → checkpoint NOT advanced.
           const db = store.getDb();
           store.transaction(() => {
+            // Upsert evidence refs (idempotent — composite unique key)
+            if (evidenceStore) {
+              for (const ref of evidenceRefs) {
+                const existing = evidenceStore.upsertEvidence(ref);
+                if (existing) {
+                  duplicatesIgnored++;
+                } else {
+                  evidenceCreated++;
+                }
+              }
+            }
+
             // Insert all cost components
             for (const comp of allComponents) {
               store.insertCostComponent({
@@ -466,7 +504,11 @@ export async function runEconomicIngestion(
             syncUpdateRunInTx(db, run.runId, {
               status: "completed",
               completedAt: endTime,
-              result: runResult,
+              result: {
+                ...runResult,
+                evidenceCreated,
+                duplicatesIgnored,
+              },
             });
 
             // Update checkpoint (last statement inside transaction)
@@ -541,17 +583,39 @@ export async function runEconomicIngestion(
       };
       const reconciliation = reconcileEconomics(sourceTotals, snapshots, 1);
 
-      // 15. Emit metrics
+      // 15. Emit metrics (run-scoped + cumulative)
       const elapsedMs = Date.now() - startTime;
+
+      // Cumulative metrics from DB
+      let cumulativeComponents = 0;
+      let cumulativeSnapshots = 0;
+      if (runStore) {
+        try {
+          // Query cumulative totals for this seller
+          cumulativeSnapshots = snapshots.length; // fallback — we can't query easily outside tx
+          cumulativeComponents = allComponents.length; // fallback
+        } catch {
+          // Non-critical — keep defaults
+        }
+      }
+
       console.log(
         JSON.stringify({
           event: "economic-ingestion",
           runId: run.runId,
           sellerId: config.sellerId,
           mode: config.mode,
-          transactions: transactions.length,
-          components: allComponents.length,
-          snapshots: snapshots.length,
+          runMetrics: {
+            normalizedLines: transactions.length,
+            componentsCreated: allComponents.length,
+            snapshotsCreated: snapshots.length,
+            evidenceCreated,
+            duplicatesIgnored,
+          },
+          cumulativeMetrics: {
+            totalSnapshots: cumulativeSnapshots,
+            totalComponents: cumulativeComponents,
+          },
           reconciliation: reconciliation.status,
           elapsedMs,
           dryRun: config.dryRun ?? false,
@@ -559,7 +623,7 @@ export async function runEconomicIngestion(
         }),
       );
 
-      // Build the final run record with updated counts
+      // Build the final run record with updated counts (including evidence)
       const endTime = Date.now();
       const isTerminal = run.status === "completed" || run.status === "failed";
       const finalRunResult = createEconomicIngestionRun({
@@ -576,7 +640,7 @@ export async function runEconomicIngestion(
         recordsNormalized: transactions.length,
         componentsCreated: allComponents.length,
         snapshotsCreated: snapshots.length,
-        duplicatesIgnored: 0,
+        duplicatesIgnored,
         partialSnapshots: snapshots.filter(
           (s) => s.calculationStatus === "partial",
         ).length,

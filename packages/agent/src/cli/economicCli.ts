@@ -4,11 +4,12 @@
  * Economic CLI — ingests, reconciles, and reports on economic data.
  *
  * Commands:
- *   ingest     Run the economic ingestion pipeline
- *   status     Show last run status
- *   coverage   Show data coverage report
- *   reconcile  Run reconciliation
- *   missing    List missing inputs
+ *   ingest            Run the economic ingestion pipeline
+ *   status            Show last run status
+ *   coverage          Show data coverage report
+ *   reconcile         Run reconciliation
+ *   missing           List missing inputs
+ *   inspect-evidence   Inspect evidence references
  *
  * Flags:
  *   --seller source|target   Seller slug (default: "source")
@@ -22,6 +23,9 @@
  *   --resume                 Resume from checkpoint (incremental mode)
  *   --strict                 Exit non-zero on partial/reconciliation issues
  *   --json                   Output as JSON
+ *   --run <id>               Filter by ingestion run ID (inspect-evidence)
+ *   --source <id>            Filter by source record ID (inspect-evidence)
+ *   --verification <v>       Filter by verification status (inspect-evidence)
  */
 
 import { createEconomicIngestionRuntime } from "../economics/factory.js";
@@ -31,7 +35,7 @@ import type { PipelineConfig } from "../economics/EconomicIngestionPipeline.js";
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type CliArgs = {
-  command: "ingest" | "status" | "coverage" | "reconcile" | "missing";
+  command: "ingest" | "status" | "coverage" | "reconcile" | "missing" | "inspect-evidence";
   seller: SellerSlug;
   dryRun: boolean;
   noPersist: boolean;
@@ -43,6 +47,10 @@ type CliArgs = {
   resume: boolean;
   strict: boolean;
   json: boolean;
+  // inspect-evidence flags
+  runId?: string | undefined;
+  sourceRecordId?: string | undefined;
+  verification?: string | undefined;
 };
 
 type CliOutput = {
@@ -57,7 +65,7 @@ type CliOutput = {
 // ── Argument parsing ───────────────────────────────────────────────────────
 
 const VALID_SELLER_SLUGS = new Set(["source", "target"]);
-const VALID_COMMANDS = new Set(["ingest", "status", "coverage", "reconcile", "missing"]);
+const VALID_COMMANDS = new Set(["ingest", "status", "coverage", "reconcile", "missing", "inspect-evidence"]);
 
 export function parseArgs(raw: string[]): CliArgs {
   const args = raw.slice(2);
@@ -115,6 +123,9 @@ export function parseArgs(raw: string[]): CliArgs {
     resume: flags.resume === "true" || flags.resume === "",
     strict: flags.strict === "true" || flags.strict === "",
     json: flags.json === "true" || flags.json === "",
+    runId: flags.run || undefined,
+    sourceRecordId: flags.source || undefined,
+    verification: flags.verification || undefined,
   };
 }
 
@@ -374,6 +385,67 @@ async function handleMissing(
   return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
 }
 
+async function handleInspectEvidence(
+  args: CliArgs,
+  runtime: EconomicIngestionRuntime,
+): Promise<CliOutput> {
+  const evidenceStore = runtime.evidenceStore;
+  const sellerId = runtime.health.sellerId;
+
+  // Validate seller
+  if (!sellerId) {
+    return {
+      status: "error",
+      command: args.command,
+      seller: args.seller,
+      timestamp: new Date().toISOString(),
+      error: "Cannot determine seller ID from runtime.",
+    };
+  }
+
+  const limit = args.limit > 0 ? Math.min(args.limit, 100) : 20;
+
+  let refs;
+  if (args.sourceRecordId) {
+    refs = evidenceStore.listBySourceRecord(args.sourceRecordId, sellerId);
+  } else if (args.runId) {
+    // If run is specified, list by seller with run filter
+    refs = evidenceStore.listBySeller(sellerId, {
+      ingestionRunId: args.runId,
+      ...(args.verification ? { verification: args.verification } : {}),
+      limit,
+    });
+  } else {
+    refs = evidenceStore.listBySeller(sellerId, {
+      ...(args.verification ? { verification: args.verification } : {}),
+      limit,
+    });
+  }
+
+  const evidenceRows = refs.slice(0, limit).map((ref) => ({
+    evidenceId: ref.evidenceId,
+    sourceSystem: ref.sourceSystem,
+    sourceEntityType: ref.sourceEntityType,
+    sourceRecordId: ref.sourceRecordId,
+    sourceVersion: ref.sourceVersion,
+    checksum: ref.checksum.length > 12 ? ref.checksum.slice(0, 12) : ref.checksum,
+    verification: ref.verification,
+    confidence: ref.confidence,
+    ingestionRunId: ref.ingestionRunId,
+    observedAt: ref.observedAt,
+    occurredAt: ref.occurredAt,
+    createdAt: ref.observedAt, // approximate — created_at is internal
+  }));
+
+  const result: Record<string, unknown> = {
+    sellerId,
+    totalReferences: evidenceRows.length,
+    references: evidenceRows,
+  };
+
+  return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
+}
+
 // ── Seller slug validation ─────────────────────────────────────────────────
 
 function rejectUnknownSeller(seller: string): never {
@@ -436,6 +508,9 @@ export async function runCli(
         break;
       case "missing":
         output = await handleMissing(args, runtime);
+        break;
+      case "inspect-evidence":
+        output = await handleInspectEvidence(args, runtime);
         break;
       default:
         output = errOutput(args, `Unknown command: ${String(args.command)}`);
