@@ -36,3 +36,7 @@ export * from "./economicLearning.js";
 export * from "./economicLearningEligibility.js";
 export * from "./economicSignal.js";
 export * from "./productionReadiness.js";
+export * from "./normalizedCommerceTransaction.js";
+export * from "./economicEvidenceReference.js";
+export * from "./economicIngestionRun.js";
+export * from "./economicDataCoverage.js";

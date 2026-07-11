@@ -1,5 +1,8 @@
 import type {
   CostComponentType,
+  CostDataSource,
+  CostVerification,
+  EconomicCostComponent,
   EconomicOutcome,
   EconomicOutcomeStatus,
   UnitEconomicsSnapshot,
@@ -57,6 +60,26 @@ type UnitEconomicsRow = {
   calculated_at: number;
 };
 
+type CostComponentRow = {
+  id: string;
+  seller_id: string;
+  type: string;
+  amount_minor: number;
+  currency: string;
+  source: string;
+  source_record_id: string | null;
+  economic_meaning: string | null;
+  source_version: string | null;
+  occurred_at: number;
+  observed_at: number;
+  verification: string;
+  confidence: number;
+  metadata_json: string | null;
+  superseded_at: number | null;
+  reversed_at: number | null;
+  reversed_reason: string | null;
+};
+
 // ── Public types ───────────────────────────────────────────────────────────
 
 export type ProfitSummary = {
@@ -71,7 +94,30 @@ export type ProfitSummary = {
   periodEnd?: number;
 };
 
+export type CostComponentInsertInput = {
+  sellerId: string;
+  type: CostComponentType;
+  amount: { amountMinor: number; currency: Currency };
+  source: CostDataSource;
+  sourceRecordId?: string;
+  economicMeaning?: string;
+  sourceVersion?: string;
+  occurredAt: number;
+  observedAt: number;
+  verification: CostVerification;
+  confidence: number;
+  metadata?: Readonly<Record<string, unknown>>;
+};
+
+export type ListCostComponentsOptions = {
+  type?: CostComponentType;
+  includeReversed?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
 export type EconomicOutcomeStore = {
+  // ── Outcome methods ─────────────────────────────────────────────────
   insertOutcome(outcome: EconomicOutcome): EconomicOutcome;
   updateOutcomeStatus(outcomeId: string, newStatus: EconomicOutcomeStatus): EconomicOutcome;
   verifyOutcome(outcomeId: string, reason: string): EconomicOutcome;
@@ -94,6 +140,16 @@ export type EconomicOutcomeStore = {
     currency: Currency,
     opts?: { startDate?: number; endDate?: number },
   ): ProfitSummary;
+
+  // ── Cost component methods ──────────────────────────────────────────
+  insertCostComponent(input: CostComponentInsertInput): EconomicCostComponent;
+  upsertCostComponent(input: CostComponentInsertInput): EconomicCostComponent;
+  listCostComponents(sellerId: string, opts?: ListCostComponentsOptions): EconomicCostComponent[];
+  listBySourceRecord(sellerId: string, sourceRecordId: string): EconomicCostComponent[];
+  reverseCostComponent(
+    id: string,
+    reason: string,
+  ): EconomicCostComponent | null;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -166,6 +222,52 @@ function snapshotFromRow(row: UnitEconomicsRow): UnitEconomicsSnapshot {
     currency: row.currency as Currency,
     calculatedAt: row.calculated_at,
   } as unknown as UnitEconomicsSnapshot;
+}
+
+function costComponentFromRow(row: CostComponentRow): EconomicCostComponent {
+  return {
+    id: row.id,
+    sellerId: row.seller_id,
+    type: row.type as CostComponentType,
+    amount: { amountMinor: row.amount_minor, currency: row.currency as Currency },
+    currency: row.currency as Currency,
+    source: row.source as CostDataSource,
+    ...(row.source_record_id ? { sourceRecordId: row.source_record_id } : {}),
+    occurredAt: row.occurred_at,
+    observedAt: row.observed_at,
+    verification: row.verification as CostVerification,
+    confidence: row.confidence,
+    ...(row.metadata_json
+      ? { metadata: JSON.parse(row.metadata_json) as Readonly<Record<string, unknown>> }
+      : {}),
+  };
+}
+
+// ── ID generation ──────────────────────────────────────────────────────────
+
+let costComponentIdCounter = 0;
+
+function nextCostComponentId(): string {
+  costComponentIdCounter++;
+  return `costcomp-db-${costComponentIdCounter}`;
+}
+
+// ── Idempotency key ────────────────────────────────────────────────────────
+
+function buildIdempotencyKey(input: CostComponentInsertInput): {
+  sellerId: string;
+  source: string;
+  sourceRecordId: string;
+  economicMeaning: string;
+  sourceVersion: string;
+} {
+  return {
+    sellerId: input.sellerId,
+    source: input.source,
+    sourceRecordId: input.sourceRecordId ?? "",
+    economicMeaning: input.economicMeaning ?? "",
+    sourceVersion: input.sourceVersion ?? "",
+  };
 }
 
 // ── Migration ──────────────────────────────────────────────────────────────
@@ -243,6 +345,33 @@ export function migrateEconomicOutcomeStore(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_unit_economics_seller ON unit_economics_snapshots(seller_id);
     CREATE INDEX IF NOT EXISTS idx_unit_economics_order ON unit_economics_snapshots(order_id);
+  `);
+
+  // ── Add new columns to economic_cost_components (idempotent via try/catch) ─
+
+  const newColumns = [
+    { name: "source_version", type: "TEXT" },
+    { name: "economic_meaning", type: "TEXT" },
+    { name: "superseded_at", type: "INTEGER" },
+    { name: "reversed_at", type: "INTEGER" },
+    { name: "reversed_reason", type: "TEXT" },
+  ];
+
+  for (const col of newColumns) {
+    try {
+      db.exec(
+        `ALTER TABLE economic_cost_components ADD COLUMN ${col.name} ${col.type}`,
+      );
+    } catch {
+      // Column already exists from a prior migration — ignore.
+    }
+  }
+
+  // ── Composite unique index for idempotency ───────────────────────────────
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_component_idempotency
+      ON economic_cost_components(seller_id, source, source_record_id, economic_meaning, source_version)
+      WHERE reversed_at IS NULL AND superseded_at IS NULL;
   `);
 }
 
@@ -365,6 +494,66 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
     WHERE seller_id = ? AND sku = ?
     ORDER BY calculated_at DESC
     LIMIT ?
+  `);
+
+  // ── Cost component prepared statements ────────────────────────────────
+
+  const findActiveByDedupBaseStmt = db.prepare(`
+    SELECT * FROM economic_cost_components
+    WHERE seller_id = ?
+      AND source = ?
+      AND COALESCE(source_record_id, '') = ?
+      AND COALESCE(economic_meaning, '') = ?
+      AND reversed_at IS NULL
+      AND superseded_at IS NULL
+    LIMIT 1
+  `);
+
+  const findActiveExactStmt = db.prepare(`
+    SELECT * FROM economic_cost_components
+    WHERE seller_id = ?
+      AND source = ?
+      AND COALESCE(source_record_id, '') = ?
+      AND COALESCE(economic_meaning, '') = ?
+      AND COALESCE(source_version, '') = ?
+      AND reversed_at IS NULL
+      AND superseded_at IS NULL
+    LIMIT 1
+  `);
+
+  const supersedeByDedupBaseStmt = db.prepare(`
+    UPDATE economic_cost_components
+    SET superseded_at = ?
+    WHERE seller_id = ?
+      AND source = ?
+      AND COALESCE(source_record_id, '') = ?
+      AND COALESCE(economic_meaning, '') = ?
+      AND reversed_at IS NULL
+      AND superseded_at IS NULL
+  `);
+
+  const insertCostCompStmt = db.prepare(`
+    INSERT INTO economic_cost_components
+      (id, seller_id, type, amount_minor, currency, source, source_record_id,
+       economic_meaning, source_version, occurred_at, observed_at,
+       verification, confidence, metadata_json, superseded_at, reversed_at, reversed_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+  `);
+
+  const getCostCompByIdStmt = db.prepare(
+    "SELECT * FROM economic_cost_components WHERE id = ?",
+  );
+
+  const reverseCostCompStmt = db.prepare(`
+    UPDATE economic_cost_components
+    SET reversed_at = ?, reversed_reason = ?
+    WHERE id = ? AND reversed_at IS NULL
+  `);
+
+  const listCostCompsBySourceRecordStmt = db.prepare(`
+    SELECT * FROM economic_cost_components
+    WHERE seller_id = ? AND source_record_id = ?
+    ORDER BY occurred_at DESC
   `);
 
   return {
@@ -633,6 +822,164 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
         ...(opts.startDate !== undefined ? { periodStart: opts.startDate } : {}),
         ...(opts.endDate !== undefined ? { periodEnd: opts.endDate } : {}),
       };
+    },
+
+    // ── Cost component methods ──────────────────────────────────────────
+
+    insertCostComponent(input) {
+      const key = buildIdempotencyKey(input);
+
+      // Check if ANY active component exists with the same dedup base
+      // (same seller, source, sourceRecordId, economicMeaning — regardless of sourceVersion)
+      const existingByBase = findActiveByDedupBaseStmt.get(
+        key.sellerId,
+        key.source,
+        key.sourceRecordId,
+        key.economicMeaning,
+      ) as CostComponentRow | undefined;
+
+      if (existingByBase) {
+        // Component exists — check if it's an exact match (same version)
+        const existingExact = findActiveExactStmt.get(
+          key.sellerId,
+          key.source,
+          key.sourceRecordId,
+          key.economicMeaning,
+          key.sourceVersion,
+        ) as CostComponentRow | undefined;
+
+        if (existingExact) {
+          // Exact key match — check if business data is the same
+          const sameData =
+            existingExact.type === input.type &&
+            existingExact.amount_minor === input.amount.amountMinor &&
+            existingExact.currency === input.amount.currency &&
+            existingExact.occurred_at === input.occurredAt &&
+            existingExact.verification === input.verification &&
+            existingExact.confidence === input.confidence;
+
+          if (sameData) {
+            return costComponentFromRow(existingExact);
+          }
+
+          // Same key, different data → call upsert
+          return this.upsertCostComponent(input);
+        }
+
+        // Different sourceVersion — call upsert to supersede old and insert new
+        return this.upsertCostComponent(input);
+      }
+
+      // No active component exists — insert a new one
+      const id = nextCostComponentId();
+      const now = Date.now();
+
+      insertCostCompStmt.run(
+        id,
+        input.sellerId,
+        input.type,
+        input.amount.amountMinor,
+        input.amount.currency,
+        input.source,
+        input.sourceRecordId ?? null,
+        input.economicMeaning ?? null,
+        input.sourceVersion ?? null,
+        input.occurredAt,
+        input.observedAt ?? now,
+        input.verification,
+        input.confidence,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+      );
+
+      const row = getCostCompByIdStmt.get(id) as CostComponentRow;
+      return costComponentFromRow(row);
+    },
+
+    upsertCostComponent(input) {
+      const key = buildIdempotencyKey(input);
+      const now = Date.now();
+
+      // Supersede all active versions matching the dedup base
+      supersedeByDedupBaseStmt.run(
+        now,
+        key.sellerId,
+        key.source,
+        key.sourceRecordId,
+        key.economicMeaning,
+      );
+
+      // Insert the new version
+      const id = nextCostComponentId();
+      insertCostCompStmt.run(
+        id,
+        input.sellerId,
+        input.type,
+        input.amount.amountMinor,
+        input.amount.currency,
+        input.source,
+        input.sourceRecordId ?? null,
+        input.economicMeaning ?? null,
+        input.sourceVersion ?? null,
+        input.occurredAt,
+        input.observedAt ?? now,
+        input.verification,
+        input.confidence,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+      );
+
+      const row = getCostCompByIdStmt.get(id) as CostComponentRow;
+      return costComponentFromRow(row);
+    },
+
+    listCostComponents(sellerId, opts = {}) {
+      const limit = Math.max(1, Math.min(opts.limit ?? 1000, 5000));
+      const offset = opts.offset ?? 0;
+
+      // Build WHERE clause dynamically
+      let sql =
+        "SELECT * FROM economic_cost_components WHERE seller_id = ? AND reversed_at IS NULL AND superseded_at IS NULL";
+      const params: (string | number)[] = [sellerId];
+
+      if (opts.type !== undefined) {
+        sql += " AND type = ?";
+        params.push(opts.type);
+      }
+
+      if (opts.includeReversed !== true) {
+        // reversed_at IS NULL is already in the base query
+        // Only add reversed if explicitly requested
+      } else {
+        // If includeReversed, remove the reversed_at IS NULL filter
+        sql = sql.replace("AND reversed_at IS NULL ", "");
+      }
+
+      sql += " ORDER BY occurred_at DESC LIMIT ? OFFSET ?";
+      params.push(limit, offset);
+
+      const stmt = db.prepare(sql);
+      const rows = stmt.all(...params) as CostComponentRow[];
+      return rows.map(costComponentFromRow);
+    },
+
+    listBySourceRecord(sellerId, sourceRecordId) {
+      const rows = listCostCompsBySourceRecordStmt.all(
+        sellerId,
+        sourceRecordId,
+      ) as CostComponentRow[];
+      return rows.map(costComponentFromRow);
+    },
+
+    reverseCostComponent(id, reason) {
+      const now = Date.now();
+
+      const existing = getCostCompByIdStmt.get(id) as CostComponentRow | undefined;
+      if (!existing) return null;
+      if (existing.reversed_at !== null) return costComponentFromRow(existing); // Already reversed
+
+      reverseCostCompStmt.run(now, reason, id);
+
+      const updated = getCostCompByIdStmt.get(id) as CostComponentRow;
+      return costComponentFromRow(updated);
     },
   };
 }
