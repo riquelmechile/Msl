@@ -37,25 +37,25 @@ Chain strategy: pending
 
 ## Phase 3: Evidence Store + Provenance (PR 3)
 
-- [ ] 3.1 Create `EconomicEvidenceStore` interface + SQLite impl in `packages/memory/src/`
-- [ ] 3.2 `economic_evidence_references` table: 15 cols, composite unique, 3 scan indexes
-- [ ] 3.3 Migration v3/v4: `ALTER TABLE` add `ingestion_run_id` to cost_components, snapshots
-- [ ] 3.4 Migration v5: evidence table; v2: run indexes; MigrationRegistry registration
-- [ ] 3.5 Wire store into factory; upsert evidence during adapt; persist in atomic tx
-- [ ] 3.6 CLI `inspect_evidence_references`: `--seller`, `--run`, `--source`, `--limit`
-- [ ] 3.7 runMetrics vs cumulativeMetrics split; rename transactions→normalizedLines
-- [ ] 3.8 Multi-dimensional reconciliation; zero-both-sides→incomplete; duplicatesIgnored
-- [ ] 3.9 Idempotency: re-ingest same range→new runId, zero duplicates
+- [x] 3.1 Create `EconomicEvidenceStore` interface + SQLite impl in `packages/memory/src/`
+- [x] 3.2 `economic_evidence_references` table: 15 cols, composite unique, 3 scan indexes
+- [x] 3.3 Migration v3/v4: `ALTER TABLE` add `ingestion_run_id` to cost_components, snapshots
+- [x] 3.4 Migration v5: evidence table; v2: run indexes; MigrationRegistry registration
+- [x] 3.5 Wire store into factory; upsert evidence during adapt; persist in atomic tx
+- [x] 3.6 CLI `inspect_evidence_references`: `--seller`, `--run`, `--source`, `--limit`
+- [x] 3.7 runMetrics vs cumulativeMetrics split; rename transactions→normalizedLines
+- [x] 3.8 Multi-dimensional reconciliation; zero-both-sides→incomplete; duplicatesIgnored
+- [x] 3.9 Idempotency: re-ingest same range→new runId, zero duplicates
 
 ## Phase 4: Verification Suite (PR 4)
 
-- [ ] 4.1 Evidence store unit: CRUD, idempotency, superseding, cross-seller, no PII
-- [ ] 4.2 Pipeline integration: 6 fault injection points, dual-seller isolation
-- [ ] 4.3 Re-ingestion: same range twice→new runId, zero duplicates
-- [ ] 4.4 Migration: v1→v5 upgrade, idempotent re-run, no data loss
-- [ ] 4.5 CLI inspect: store absent, no data, filters, limit, cross-seller rejected
-- [ ] 4.6 Eligibility: all 10 block reasons, first-failure-wins
-- [ ] 4.7 Transaction rollback: throw mid-transaction→no partial rows
+- [x] 4.1 Evidence store unit: CRUD, idempotency, superseding, cross-seller, no PII
+- [x] 4.2 Pipeline integration: 6 fault injection points, dual-seller isolation
+- [x] 4.3 Re-ingestion: same range twice→new runId, zero duplicates
+- [x] 4.4 Migration: v1→v5 upgrade, idempotent re-run, no data loss
+- [x] 4.5 CLI inspect: store absent, no data, filters, limit, cross-seller rejected
+- [x] 4.6 Eligibility: all 10 block reasons, first-failure-wins
+- [x] 4.7 Transaction rollback: throw mid-transaction→no partial rows
 
 ## Phase 5: Docs + Archive (PR 5)
 

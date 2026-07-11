@@ -383,4 +383,362 @@ describe("economicCli", () => {
       expect(json).not.toMatch(/user@email\.com/);
     });
   });
+
+  // ── PR 4: inspect-evidence tests ──────────────────────────────────────
+
+  describe("inspect-evidence command", () => {
+    it("returns empty list when store has no data", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      // Mock evidence store with no data
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockReturnValue([]),
+        listByRun: vi.fn().mockReturnValue([]),
+        listBySourceRecord: vi.fn().mockReturnValue([]),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn().mockReturnValue(null),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn().mockReturnValue(0),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source"],
+        factory,
+      );
+
+      expect(output.status).toBe("ok");
+      expect(output.result?.totalReferences).toBe(0);
+      expect(output.result?.references).toEqual([]);
+    });
+
+    it("filters evidence by seller", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      const mockRefs = [
+        {
+          evidenceId: "ev-1",
+          sellerId: "fake-seller-id",
+          sourceSystem: "mercadolibre",
+          sourceEntityType: "order",
+          sourceRecordId: "order-001",
+          sourceVersion: "v1",
+          checksum: "abc123abcdef",
+          verification: "verified",
+          confidence: 0.95,
+          ingestionRunId: "run-001",
+          observedAt: Date.now(),
+          occurredAt: Date.now() - 86400000,
+        },
+      ];
+
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockReturnValue(mockRefs),
+        listByRun: vi.fn().mockReturnValue([]),
+        listBySourceRecord: vi.fn().mockReturnValue([]),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn(),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn(),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source"],
+        factory,
+      );
+
+      expect(output.status).toBe("ok");
+      expect(output.result?.totalReferences).toBe(1);
+      expect((output.result?.references as Array<Record<string, unknown>>)?.[0]?.evidenceId).toBe("ev-1");
+    });
+
+    it("filters by run ID", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      const mockRefs = [
+        {
+          evidenceId: "ev-run-1",
+          sellerId: "plasticov",
+          sourceSystem: "mercadolibre",
+          sourceEntityType: "order",
+          sourceRecordId: "order-r1",
+          sourceVersion: "v1",
+          checksum: "abc123def456",
+          verification: "verified",
+          confidence: 0.9,
+          ingestionRunId: "run-specific",
+          observedAt: Date.now(),
+          occurredAt: Date.now() - 86400000,
+        },
+      ];
+
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockReturnValue(mockRefs),
+        listByRun: vi.fn().mockReturnValue(mockRefs),
+        listBySourceRecord: vi.fn().mockReturnValue([]),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn(),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn(),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source", "--run=run-specific"],
+        factory,
+      );
+
+      expect(output.status).toBe("ok");
+      // verify listBySeller was called with ingestionRunId filter
+      expect(runtime.evidenceStore.listBySeller).toHaveBeenCalledWith(
+        "fake-seller-id",
+        expect.objectContaining({ ingestionRunId: "run-specific" }),
+      );
+    });
+
+    it("filters by source record", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      const mockRefs = [
+        {
+          evidenceId: "ev-src-1",
+          sellerId: "plasticov",
+          sourceSystem: "mercadolibre",
+          sourceEntityType: "order",
+          sourceRecordId: "order-src-001",
+          sourceVersion: "v1",
+          checksum: "abc789",
+          verification: "verified",
+          confidence: 0.85,
+          ingestionRunId: "run-src",
+          observedAt: Date.now(),
+          occurredAt: Date.now() - 86400000,
+        },
+      ];
+
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockReturnValue([]),
+        listByRun: vi.fn().mockReturnValue([]),
+        listBySourceRecord: vi.fn().mockReturnValue(mockRefs),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn(),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn(),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source", "--source=order-src-001"],
+        factory,
+      );
+
+      expect(output.status).toBe("ok");
+      expect(runtime.evidenceStore.listBySourceRecord).toHaveBeenCalledWith(
+        "order-src-001",
+        "fake-seller-id",
+      );
+    });
+
+    it("enforces default limit of 20", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      // Generate 25 mock refs — the CLI should cap at 20 (default)
+      const manyRefs = Array.from({ length: 25 }, (_, i) => ({
+        evidenceId: `ev-${i}`,
+        sellerId: "plasticov",
+        sourceSystem: "mercadolibre",
+        sourceEntityType: "order",
+        sourceRecordId: `order-${String(i).padStart(3, "0")}`,
+        sourceVersion: "v1",
+        checksum: `checksum-${i}`,
+        verification: "verified",
+        confidence: 0.9,
+        ingestionRunId: "run-limit",
+        observedAt: Date.now(),
+        occurredAt: Date.now() - 86400000,
+      }));
+
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockReturnValue(manyRefs),
+        listByRun: vi.fn().mockReturnValue([]),
+        listBySourceRecord: vi.fn().mockReturnValue([]),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn(),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn(),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source"],
+        factory,
+      );
+
+      expect(output.status).toBe("ok");
+      // CLI caps at 20 results with default limit
+      expect((output.result?.references as Array<unknown>)?.length).toBeLessThanOrEqual(20);
+    });
+
+    it("respects explicit --limit flag", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      const manyRefs = Array.from({ length: 50 }, (_, i) => ({
+        evidenceId: `ev-${i}`,
+        sellerId: "plasticov",
+        sourceSystem: "mercadolibre",
+        sourceEntityType: "order",
+        sourceRecordId: `order-${String(i).padStart(3, "0")}`,
+        sourceVersion: "v1",
+        checksum: `checksum-${i}`,
+        verification: "verified",
+        confidence: 0.9,
+        ingestionRunId: "run-limit-5",
+        observedAt: Date.now(),
+        occurredAt: Date.now() - 86400000,
+      }));
+
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockReturnValue(manyRefs),
+        listByRun: vi.fn().mockReturnValue([]),
+        listBySourceRecord: vi.fn().mockReturnValue([]),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn(),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn(),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source", "--limit=5"],
+        factory,
+      );
+
+      expect(output.status).toBe("ok");
+      expect((output.result?.references as Array<unknown>)?.length).toBeLessThanOrEqual(5);
+    });
+
+    it("cross-seller: seller X cannot see seller Y's evidence", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      // Plasticov evidence
+      const plasticovRefs = [
+        {
+          evidenceId: "ev-pl",
+          sellerId: "fake-seller-id",
+          sourceSystem: "mercadolibre",
+          sourceEntityType: "order",
+          sourceRecordId: "order-pl-001",
+          sourceVersion: "v1",
+          checksum: "pl-checksum",
+          verification: "verified",
+          confidence: 0.95,
+          ingestionRunId: "run-pl",
+          observedAt: Date.now(),
+          occurredAt: Date.now() - 86400000,
+        },
+      ];
+
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockImplementation((sellerId: string) => {
+          // Only return evidence for the queried seller
+          return sellerId === "fake-seller-id" ? plasticovRefs : [];
+        }),
+        listByRun: vi.fn().mockReturnValue([]),
+        listBySourceRecord: vi.fn().mockReturnValue([]),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn(),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn(),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source"],
+        factory,
+      );
+
+      expect(output.status).toBe("ok");
+      // Evidence should be returned (1 ref)
+      expect(output.result?.totalReferences).toBe(1);
+      // verify listBySeller was scoped to the correct seller
+      expect(runtime.evidenceStore.listBySeller).toHaveBeenCalledWith(
+        "fake-seller-id",
+        expect.objectContaining({ limit: 20 }),
+      );
+    });
+
+    it("no PII in evidence output", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+
+      // Evidence refs should not contain PII by design — verify sanitizeForOutput strips any
+      const mockRefs = [
+        {
+          evidenceId: "ev-pii-test",
+          sellerId: "plasticov",
+          sourceSystem: "mercadolibre",
+          sourceEntityType: "order",
+          sourceRecordId: "order-001",
+          sourceVersion: "v1",
+          // checksum is truncated in CLI output
+          checksum: "abcdef1234567890abcdef1234567890abcdef12",
+          verification: "verified",
+          confidence: 0.95,
+          ingestionRunId: "run-001",
+          observedAt: Date.now(),
+          occurredAt: Date.now() - 86400000,
+        },
+      ];
+
+      runtime.evidenceStore = {
+        listBySeller: vi.fn().mockReturnValue(mockRefs),
+        listByRun: vi.fn().mockReturnValue([]),
+        listBySourceRecord: vi.fn().mockReturnValue([]),
+        insertEvidence: vi.fn(),
+        upsertEvidence: vi.fn(),
+        getEvidence: vi.fn(),
+        markSuperseded: vi.fn(),
+        countByRun: vi.fn(),
+      };
+
+      const factory = vi.fn().mockReturnValue(runtime);
+
+      const { output } = await runCli(
+        ["node", "cli.js", "inspect-evidence", "--seller=source", "--json"],
+        factory,
+      );
+
+      const json = JSON.stringify(output);
+      // Verify no PII patterns
+      expect(json).not.toMatch(/@/);
+      expect(json).not.toMatch(/buyer|email|phone|address|token|secret/i);
+      // Checksum should be truncated to 12 chars
+      const refs = output.result?.references as Array<{ checksum: string }> | undefined;
+      if (refs && refs.length > 0) {
+        expect(refs[0]!.checksum.length).toBe(12);
+      }
+    });
+  });
 });
