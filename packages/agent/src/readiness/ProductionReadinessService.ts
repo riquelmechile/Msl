@@ -55,6 +55,7 @@ const ALL_CAPABILITIES: ProductionCapability[] = [
   "web-chat",
   "background-workers",
   "daemon-scheduler",
+  "real-economic-ingestion",
 ];
 
 // ── Service ─────────────────────────────────────────────────────────

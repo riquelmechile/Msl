@@ -45,7 +45,11 @@ function validateEnvValue(
   required: boolean,
 ): ValidationResult {
   if (isNextPublicKey(name) && value !== undefined && value.trim() !== "") {
-    return { valid: false, status: "next-public-exposed", reason: `NEXT_PUBLIC_ secret "${name}" is exposed to the client bundle` };
+    return {
+      valid: false,
+      status: "next-public-exposed",
+      reason: `NEXT_PUBLIC_ secret "${name}" is exposed to the client bundle`,
+    };
   }
   if (value === undefined || value.trim() === "") {
     if (required) {
@@ -55,9 +59,17 @@ function validateEnvValue(
   }
   if (isPlaceholderValue(value)) {
     if (required) {
-      return { valid: false, status: "placeholder", reason: `${name} contains a placeholder value` };
+      return {
+        valid: false,
+        status: "placeholder",
+        reason: `${name} contains a placeholder value`,
+      };
     }
-    return { valid: true, status: "placeholder", reason: `${name} contains a placeholder value (optional)` };
+    return {
+      valid: true,
+      status: "placeholder",
+      reason: `${name} contains a placeholder value (optional)`,
+    };
   }
   return { valid: true, status: "filled", reason: `${name} is set` };
 }
@@ -74,15 +86,24 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: false,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_RUNTIME_MODE not set, defaulting to development" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_RUNTIME_MODE not set, defaulting to development",
+        };
       }
       if (v.trim() !== "production" && v.trim() !== "development") {
-        return { valid: false, status: "malformed", reason: `MSL_RUNTIME_MODE must be "production" or "development", got "${v.trim()}"` };
+        return {
+          valid: false,
+          status: "malformed",
+          reason: `MSL_RUNTIME_MODE must be "production" or "development", got "${v.trim()}"`,
+        };
       }
       return { valid: true, status: "filled", reason: `Runtime mode: ${v.trim()}` };
     },
     placeholderPatterns: [],
-    remediation: "Set MSL_RUNTIME_MODE=production for production readiness. Set to development for local work.",
+    remediation:
+      "Set MSL_RUNTIME_MODE=production for production readiness. Set to development for local work.",
   },
   {
     name: "MSL_APP_DIR",
@@ -123,7 +144,8 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: false,
     validate: (v) => validateEnvValue("DEEPSEEK_API_KEY", v, true),
     placeholderPatterns: [],
-    remediation: "Set DEEPSEEK_API_KEY with your DeepSeek API key from https://platform.deepseek.com",
+    remediation:
+      "Set DEEPSEEK_API_KEY with your DeepSeek API key from https://platform.deepseek.com",
   },
   {
     name: "DEEPSEEK_BASE_URL",
@@ -214,12 +236,17 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_COMPANY_AGENT_ADMIN_ENABLED not set, admin tools disabled" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_COMPANY_AGENT_ADMIN_ENABLED not set, admin tools disabled",
+        };
       }
       return { valid: true, status: "filled", reason: "Company agent admin flag set" };
     },
     placeholderPatterns: [],
-    remediation: "Set MSL_COMPANY_AGENT_ADMIN_ENABLED=true to enable company-agent admin tools in Telegram.",
+    remediation:
+      "Set MSL_COMPANY_AGENT_ADMIN_ENABLED=true to enable company-agent admin tools in Telegram.",
   },
   // ── MiniMax / Creative Studio ─────────────────────────────────────
   {
@@ -295,11 +322,19 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MINIMAX_REQUEST_TIMEOUT_MS not set, using default 120000ms" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MINIMAX_REQUEST_TIMEOUT_MS not set, using default 120000ms",
+        };
       }
       const ms = Number(v);
       if (!Number.isFinite(ms) || ms < 0) {
-        return { valid: false, status: "malformed", reason: `MINIMAX_REQUEST_TIMEOUT_MS must be a positive number, got "${v}"` };
+        return {
+          valid: false,
+          status: "malformed",
+          reason: `MINIMAX_REQUEST_TIMEOUT_MS must be a positive number, got "${v}"`,
+        };
       }
       return { valid: true, status: "filled", reason: `MiniMax timeout: ${ms}ms` };
     },
@@ -314,11 +349,19 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_CREATIVE_STUDIO_MAX_DAILY_USD not set, using default 5.00" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_CREATIVE_STUDIO_MAX_DAILY_USD not set, using default 5.00",
+        };
       }
       const usd = Number(v);
       if (!Number.isFinite(usd) || usd <= 0) {
-        return { valid: false, status: "malformed", reason: `MSL_CREATIVE_STUDIO_MAX_DAILY_USD must be a positive number, got "${v}"` };
+        return {
+          valid: false,
+          status: "malformed",
+          reason: `MSL_CREATIVE_STUDIO_MAX_DAILY_USD must be a positive number, got "${v}"`,
+        };
       }
       return { valid: true, status: "filled", reason: `Max daily: $${usd}` };
     },
@@ -333,11 +376,19 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_CREATIVE_STUDIO_MAX_JOB_USD not set, using default 0.50" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_CREATIVE_STUDIO_MAX_JOB_USD not set, using default 0.50",
+        };
       }
       const usd = Number(v);
       if (!Number.isFinite(usd) || usd <= 0) {
-        return { valid: false, status: "malformed", reason: `MSL_CREATIVE_STUDIO_MAX_JOB_USD must be a positive number, got "${v}"` };
+        return {
+          valid: false,
+          status: "malformed",
+          reason: `MSL_CREATIVE_STUDIO_MAX_JOB_USD must be a positive number, got "${v}"`,
+        };
       }
       return { valid: true, status: "filled", reason: `Max per-job: $${usd}` };
     },
@@ -352,7 +403,8 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => validateEnvValue("MSL_CREATIVE_STUDIO_STORAGE_PATH", v, false),
     placeholderPatterns: [],
-    remediation: "Set MSL_CREATIVE_STUDIO_STORAGE_PATH to the local storage path for creative assets.",
+    remediation:
+      "Set MSL_CREATIVE_STUDIO_STORAGE_PATH to the local storage path for creative assets.",
   },
   {
     name: "MSL_CREATIVE_STUDIO_ML_AUTO_DIAGNOSE",
@@ -367,7 +419,8 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
       return { valid: true, status: "filled", reason: `ML auto-diagnose: ${v.trim()}` };
     },
     placeholderPatterns: [],
-    remediation: "Set MSL_CREATIVE_STUDIO_ML_AUTO_DIAGNOSE=false to disable automatic ML image diagnosis.",
+    remediation:
+      "Set MSL_CREATIVE_STUDIO_ML_AUTO_DIAGNOSE=false to disable automatic ML image diagnosis.",
   },
   {
     name: "ML_API_TOKEN",
@@ -387,16 +440,25 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS not set, using default 3" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS not set, using default 3",
+        };
       }
       const n = Number(v);
       if (!Number.isFinite(n) || n < 1) {
-        return { valid: false, status: "malformed", reason: `MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS must be >= 1, got "${v}"` };
+        return {
+          valid: false,
+          status: "malformed",
+          reason: `MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS must be >= 1, got "${v}"`,
+        };
       }
       return { valid: true, status: "filled", reason: `Max concurrent jobs: ${n}` };
     },
     placeholderPatterns: [],
-    remediation: "Set MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS to the maximum number of concurrent creative jobs.",
+    remediation:
+      "Set MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS to the maximum number of concurrent creative jobs.",
   },
   {
     name: "MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS",
@@ -406,16 +468,25 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS not set, using default 2000" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS not set, using default 2000",
+        };
       }
       const ms = Number(v);
       if (!Number.isFinite(ms) || ms < 0) {
-        return { valid: false, status: "malformed", reason: `MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS must be >= 0, got "${v}"` };
+        return {
+          valid: false,
+          status: "malformed",
+          reason: `MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS must be >= 0, got "${v}"`,
+        };
       }
       return { valid: true, status: "filled", reason: `Min cooldown: ${ms}ms` };
     },
     placeholderPatterns: [],
-    remediation: "Set MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS to the minimum cooldown between jobs (ms).",
+    remediation:
+      "Set MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS to the minimum cooldown between jobs (ms).",
   },
   {
     name: "MSL_CREATIVE_STUDIO_DB_PATH",
@@ -617,7 +688,8 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: false,
     validate: (v) => validateEnvValue("MSL_AGENT_BUS_DB_PATH", v, false),
     placeholderPatterns: [],
-    remediation: "Set MSL_AGENT_BUS_DB_PATH or MSL_CHAT_SQLITE_PATH for agent message bus persistence.",
+    remediation:
+      "Set MSL_AGENT_BUS_DB_PATH or MSL_CHAT_SQLITE_PATH for agent message bus persistence.",
   },
   {
     name: "MSL_APPROVAL_QUEUE_DB_PATH",
@@ -658,12 +730,17 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_ALLOW_INSECURE_DEV_SECRETS not set — dev fallback disabled" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_ALLOW_INSECURE_DEV_SECRETS not set — dev fallback disabled",
+        };
       }
       return { valid: true, status: "filled", reason: "Insecure dev secrets allowed (dev only)" };
     },
     placeholderPatterns: [],
-    remediation: "Do NOT set MSL_ALLOW_INSECURE_DEV_SECRETS in production. This is a dev escape hatch only.",
+    remediation:
+      "Do NOT set MSL_ALLOW_INSECURE_DEV_SECRETS in production. This is a dev escape hatch only.",
   },
   {
     name: "MSL_ALLOW_UNAUTHENTICATED_LOCAL",
@@ -673,9 +750,17 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     alwaysOptional: true,
     validate: (v) => {
       if (!v || v.trim() === "") {
-        return { valid: true, status: "missing", reason: "MSL_ALLOW_UNAUTHENTICATED_LOCAL not set — authentication required" };
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_ALLOW_UNAUTHENTICATED_LOCAL not set — authentication required",
+        };
       }
-      return { valid: true, status: "filled", reason: "Unauthenticated local access allowed (dev only)" };
+      return {
+        valid: true,
+        status: "filled",
+        reason: "Unauthenticated local access allowed (dev only)",
+      };
     },
     placeholderPatterns: [],
     remediation: "Do NOT set MSL_ALLOW_UNAUTHENTICATED_LOCAL in production.",
@@ -774,7 +859,8 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
       return { valid: true, status: "filled", reason: `Supplier Mirror worker ${v.trim()}` };
     },
     placeholderPatterns: [],
-    remediation: "Set MSL_SUPPLIER_MIRROR_WORKER_ENABLED=true to enable the Supplier Mirror worker.",
+    remediation:
+      "Set MSL_SUPPLIER_MIRROR_WORKER_ENABLED=true to enable the Supplier Mirror worker.",
   },
   {
     name: "MSL_JINPENG_ML_SELLER_ID",
@@ -815,6 +901,43 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     validate: (v) => validateEnvValue("MSL_JINPENG_XKP_URL", v, false),
     placeholderPatterns: [],
     remediation: "Set MSL_JINPENG_XKP_URL for XKP enrichment source.",
+  },
+  // ── Economic Ingestion ──────────────────────────────────────────────
+  {
+    name: "MSL_ECONOMIC_INGESTION_ENABLED",
+    sensitivity: "public",
+    capability: "real-economic-ingestion",
+    isRequiredFor: "",
+    alwaysOptional: true,
+    validate: (v) => {
+      if (!v || v.trim() === "") {
+        return {
+          valid: true,
+          status: "missing",
+          reason: "Economic ingestion disabled (MSL_ECONOMIC_INGESTION_ENABLED not set)",
+        };
+      }
+      const normalized = v.trim().toLowerCase();
+      if (
+        normalized !== "true" &&
+        normalized !== "false" &&
+        normalized !== "1" &&
+        normalized !== "0"
+      ) {
+        return {
+          valid: false,
+          status: "malformed",
+          reason: `MSL_ECONOMIC_INGESTION_ENABLED must be "true" or "false", got "${v.trim()}"`,
+        };
+      }
+      return {
+        valid: true,
+        status: "filled",
+        reason: `Economic ingestion: ${normalized === "true" || normalized === "1" ? "enabled" : "disabled"}`,
+      };
+    },
+    placeholderPatterns: [],
+    remediation: "Set MSL_ECONOMIC_INGESTION_ENABLED=true to activate economic ingestion.",
   },
 ];
 

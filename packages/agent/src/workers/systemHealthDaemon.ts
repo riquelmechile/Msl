@@ -11,7 +11,7 @@ export type SystemHealthCheck = {
 /**
  * Describes a managed database for health-check purposes.
  */
-export interface HealthDbEntry {
+export type HealthDbEntry = {
   manager: DatabaseManager;
   /** Human-readable name for the database (e.g. "cortex", "bus"). */
   name: string;
@@ -19,7 +19,7 @@ export interface HealthDbEntry {
   dbPath: string;
   /** Optional migration registry to compare schema version against. */
   migrationRegistry?: MigrationRegistry;
-}
+};
 
 /**
  * A callback that returns whether a database's backup is fresh.
@@ -118,6 +118,9 @@ export function runSystemHealthCheck(
     runDbHealthChecks(checks, dbEntries, backupFreshness);
   }
 
+  // 8. Economic ingestion health check (feature-gated)
+  runEconomicIngestionHealthCheck(checks);
+
   const ok = checks.every((c) => c.status === "ok");
   return { ok, checks };
 }
@@ -204,9 +207,8 @@ function runDbHealthChecks(
       let backupDb: Database.Database | null = null;
       try {
         backupDb = new Database(entry.dbPath, { readonly: true });
-        const row = backupDb
-          .prepare("SELECT MAX(version) as v FROM schema_version")
-          .get() as { v: number | null } | undefined;
+        const row = backupDb.prepare("SELECT MAX(version) as v FROM schema_version").get() as
+          { v: number | null } | undefined;
         current = row?.v ?? 0;
       } finally {
         backupDb?.close();
@@ -261,4 +263,29 @@ function runDbHealthChecks(
       }
     }
   }
+}
+
+// ── Economic ingestion health check ──────────────────────────────────────
+
+function runEconomicIngestionHealthCheck(checks: SystemHealthCheck["checks"]): void {
+  const enabled =
+    process.env.MSL_ECONOMIC_INGESTION_ENABLED?.trim().toLowerCase() === "true" ||
+    process.env.MSL_ECONOMIC_INGESTION_ENABLED?.trim() === "1";
+
+  if (!enabled) {
+    checks.push({
+      name: "economic-ingestion-enabled",
+      status: "ok",
+      detail: "Economic ingestion disabled (feature gate off). No health data available.",
+    });
+    return;
+  }
+
+  // Check last successful run (stub — actual tracking requires ingestion run store)
+  checks.push({
+    name: "economic-ingestion-last-run",
+    status: "warning",
+    detail:
+      "Economic ingestion enabled but last successful run: not yet tracked. Run npm run economic:ingest to initialize.",
+  });
 }

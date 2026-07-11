@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import type { UnitEconomicsSnapshot } from "@msl/domain";
-import { createEconomicOutcome, createUnitEconomicsSnapshot } from "@msl/domain";
+import {
+  createEconomicCostComponent,
+  createEconomicOutcome,
+  createUnitEconomicsSnapshot,
+} from "@msl/domain";
 import type { EconomicOutcomeStore } from "@msl/memory";
 import { createSqliteEconomicOutcomeStore } from "@msl/memory";
 import {
@@ -9,6 +13,10 @@ import {
   createInspectEconomicOutcomeTool,
   createListMissingEconomicInputsTool,
   createSummarizeProfitTool,
+  createInspectCostComponentsTool,
+  createInspectEvidenceReferencesTool,
+  createInspectCoverageTool,
+  createReconcileSellerEconomicsTool,
 } from "./economicTools.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -26,11 +34,13 @@ function makeOutcome(sellerId: string, overrides: Record<string, string> = {}) {
   });
 }
 
-function makeSnapshot(overrides: Partial<UnitEconomicsSnapshot> & { sellerId: string }): UnitEconomicsSnapshot {
+function makeSnapshot(
+  overrides: Partial<UnitEconomicsSnapshot> & { sellerId: string },
+): UnitEconomicsSnapshot {
   return createUnitEconomicsSnapshot({
     sellerId: overrides.sellerId,
     grossRevenue: 100000,
-    currency: (overrides.currency ?? "CLP"),
+    currency: overrides.currency ?? "CLP",
     costComponents: [],
     ...(overrides.sku !== undefined ? { sku: overrides.sku } : {}),
     ...(overrides.orderId !== undefined ? { orderId: overrides.orderId } : {}),
@@ -261,5 +271,257 @@ describe("summarize_profit", () => {
     expect(data.currency).toBe("CLP");
     expect(typeof data.totalRevenue).toBe("number");
     expect(typeof data.netProfit).toBe("number");
+  });
+});
+
+// ── inspect_cost_components tests ───────────────────────────────────────────
+
+describe("inspect_cost_components", () => {
+  it("returns unavailable when store is missing", async () => {
+    const tool = createInspectCostComponentsTool(undefined);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("unavailable");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns error when sellerId is missing", async () => {
+    const store = createStore();
+    const tool = createInspectCostComponentsTool(store);
+    const result = await tool.execute({});
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("rejects invalid type filter", async () => {
+    const store = createStore();
+    const tool = createInspectCostComponentsTool(store);
+    const result = await tool.execute({ sellerId: "plasticov", type: "invalid_type" });
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns empty list when no components exist", async () => {
+    const store = createStore();
+    const tool = createInspectCostComponentsTool(store);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { components: unknown[]; total: number };
+    expect(data.components).toEqual([]);
+    expect(data.total).toBe(0);
+  });
+
+  it("respects limit parameter", async () => {
+    const store = createStore();
+    // Insert multiple cost components
+    for (let i = 0; i < 10; i++) {
+      store.insertCostComponent({
+        sellerId: "plasticov",
+        type: "shipping",
+        amount: { amountMinor: 1000 + i * 100, currency: "CLP" },
+        source: "mercadolibre",
+        sourceRecordId: `order-${i}`,
+        economicMeaning: "shipping_cost",
+        sourceVersion: "v1",
+        occurredAt: Date.now(),
+        observedAt: Date.now(),
+        verification: "verified",
+        confidence: 0.9,
+      });
+    }
+
+    const tool = createInspectCostComponentsTool(store);
+    const result = await tool.execute({ sellerId: "plasticov", limit: 3 });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { components: unknown[]; total: number };
+    expect(data.components.length).toBe(3);
+    expect(data.total).toBe(3);
+  });
+});
+
+// ── inspect_evidence_references tests ───────────────────────────────────────
+
+describe("inspect_evidence_references", () => {
+  it("returns stub message (evidence store not yet implemented)", async () => {
+    const tool = createInspectEvidenceReferencesTool(undefined);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { message: string };
+    expect(data.message).toContain("not yet available");
+  });
+
+  it("returns error when sellerId is missing", async () => {
+    const tool = createInspectEvidenceReferencesTool(undefined);
+    const result = await tool.execute({});
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+});
+
+// ── inspect_coverage tests ──────────────────────────────────────────────────
+
+describe("inspect_coverage", () => {
+  it("returns unavailable when store is missing", async () => {
+    const tool = createInspectCoverageTool(undefined);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("unavailable");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns error when sellerId is missing", async () => {
+    const store = createStore();
+    const tool = createInspectCoverageTool(store);
+    const result = await tool.execute({});
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns coverage report for seller with no data", async () => {
+    const store = createStore();
+    const tool = createInspectCoverageTool(store);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { coverage: Record<string, unknown> };
+    expect(data.coverage.sellerId).toBe("plasticov");
+    expect(data.coverage.overallStatus).toBe("partial");
+  });
+
+  it("returns coverage report with cost components present", async () => {
+    const store = createStore();
+    store.insertCostComponent({
+      sellerId: "plasticov",
+      type: "marketplace_fee",
+      amount: { amountMinor: 500, currency: "CLP" },
+      source: "mercadolibre",
+      sourceRecordId: "order-1",
+      economicMeaning: "sale_fee",
+      sourceVersion: "v1",
+      occurredAt: Date.now(),
+      observedAt: Date.now(),
+      verification: "verified",
+      confidence: 1.0,
+    });
+
+    const tool = createInspectCoverageTool(store);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { coverage: Record<string, unknown> };
+    expect(data.coverage.sellerId).toBe("plasticov");
+    // marketplace_fee should be complete
+    const dims = data.coverage.dimensions as Record<string, string>;
+    expect(dims.marketplace_fee).toBe("complete");
+  });
+});
+
+// ── reconcile_seller_economics tests ────────────────────────────────────────
+
+describe("reconcile_seller_economics", () => {
+  it("returns unavailable when store is missing", async () => {
+    const tool = createReconcileSellerEconomicsTool(undefined);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("unavailable");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns error when sellerId is missing", async () => {
+    const store = createStore();
+    const tool = createReconcileSellerEconomicsTool(store);
+    const result = await tool.execute({});
+    expect(result.status).toBe("error");
+    expect(result.noExternalMutationExecuted).toBe(true);
+  });
+
+  it("returns incomplete when no snapshots exist", async () => {
+    const store = createStore();
+    const tool = createReconcileSellerEconomicsTool(store);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { verdict: string };
+    expect(data.verdict).toBe("incomplete");
+  });
+
+  it("returns incomplete when only one side has data", async () => {
+    const store = createStore();
+    store.insertCostComponent({
+      sellerId: "plasticov",
+      type: "shipping",
+      amount: { amountMinor: 1000, currency: "CLP" },
+      source: "mercadolibre",
+      economicMeaning: "shipping",
+      sourceVersion: "v1",
+      occurredAt: Date.now(),
+      observedAt: Date.now(),
+      verification: "verified",
+      confidence: 0.9,
+    });
+
+    const tool = createReconcileSellerEconomicsTool(store);
+    const result = await tool.execute({ sellerId: "plasticov" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { verdict: string };
+    expect(data.verdict).toBe("incomplete");
+  });
+
+  it("returns balanced when no data on either side", async () => {
+    const store = createStore();
+    // No snapshots, no cost components → both empty → balanced
+    const tool = createReconcileSellerEconomicsTool(store);
+    const result = await tool.execute({ sellerId: "maustian" });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { verdict: string };
+    expect(data.verdict).toBe("incomplete");
+  });
+
+  it("returns balanced-with-tolerance for minor difference", async () => {
+    const store = createStore();
+    // Insert a cost component
+    store.insertCostComponent({
+      sellerId: "plasticov",
+      type: "shipping",
+      amount: { amountMinor: 1000, currency: "CLP" },
+      source: "mercadolibre",
+      economicMeaning: "shipping",
+      sourceVersion: "v1",
+      occurredAt: Date.now(),
+      observedAt: Date.now(),
+      verification: "verified",
+      confidence: 0.9,
+    });
+
+    // Create a snapshot with matching cost component (will compute shipping=1000)
+    const compResult = createEconomicCostComponent({
+      sellerId: "plasticov",
+      type: "shipping",
+      amount: { amountMinor: 1000, currency: "CLP" },
+      source: "mercadolibre",
+      occurredAt: Date.now(),
+      observedAt: Date.now(),
+      verification: "verified",
+      confidence: 0.9,
+    });
+    expect(compResult.success).toBe(true);
+
+    const snapshot = createUnitEconomicsSnapshot({
+      sellerId: "plasticov",
+      currency: "CLP",
+      grossRevenue: 10000,
+      costComponents: compResult.success ? [compResult.component] : [],
+    });
+    store.insertUnitEconomicsSnapshot(snapshot);
+
+    const tool = createReconcileSellerEconomicsTool(store);
+    const result = await tool.execute({ sellerId: "plasticov", tolerance: 5 });
+    expect(result.status).toBe("ok");
+    expect(result.noExternalMutationExecuted).toBe(true);
+    const data = result.data as { verdict: string };
+    // Store has 1000 shipping cost, snapshot computed with 1000 shipping cost → balanced
+    expect(data.verdict).toBe("balanced");
   });
 });

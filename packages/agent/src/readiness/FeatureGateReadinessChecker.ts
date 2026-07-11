@@ -32,7 +32,8 @@ export function checkFeatureGateReadiness(ctx: ReadinessContext): ReadinessCheck
           checkId: `${CHECK_PREFIX}-creative-studio-storage-missing`,
           capability: "creative-studio",
           status: "degraded",
-          safeMessage: "Creative Studio is enabled but MSL_CREATIVE_STUDIO_STORAGE_PATH is not set.",
+          safeMessage:
+            "Creative Studio is enabled but MSL_CREATIVE_STUDIO_STORAGE_PATH is not set.",
           remediation: "Set MSL_CREATIVE_STUDIO_STORAGE_PATH for asset storage.",
         }),
       );
@@ -50,7 +51,8 @@ export function checkFeatureGateReadiness(ctx: ReadinessContext): ReadinessCheck
           capability: "supplier-mirror",
           status: "blocked",
           safeMessage: "Supplier Mirror is enabled but MSL_JINPENG_ML_SELLER_ID is not set.",
-          remediation: "Set MSL_JINPENG_ML_SELLER_ID to Jinpeng's ML seller ID or disable Supplier Mirror.",
+          remediation:
+            "Set MSL_JINPENG_ML_SELLER_ID to Jinpeng's ML seller ID or disable Supplier Mirror.",
         }),
       );
     }
@@ -70,6 +72,35 @@ export function checkFeatureGateReadiness(ctx: ReadinessContext): ReadinessCheck
     }
   }
 
+  // ── Economic Ingestion gate ──────────────────────────────────────
+  const economicIngestionEnabled = env.MSL_ECONOMIC_INGESTION_ENABLED;
+  const isEconEnabled =
+    economicIngestionEnabled?.trim().toLowerCase() === "true" ||
+    economicIngestionEnabled?.trim() === "1";
+
+  if (isEconEnabled) {
+    results.push(
+      createReadinessCheckResult({
+        checkId: `${CHECK_PREFIX}-economic-ingestion-enabled`,
+        capability: "real-economic-ingestion",
+        status: "ready",
+        safeMessage: "Economic ingestion is enabled and feature-gate check passed.",
+        remediation: "MSL_ECONOMIC_INGESTION_ENABLED is true. Ingestion pipeline is active.",
+      }),
+    );
+  } else {
+    results.push(
+      createReadinessCheckResult({
+        checkId: `${CHECK_PREFIX}-economic-ingestion-disabled`,
+        capability: "real-economic-ingestion",
+        status: "not-applicable",
+        safeMessage: "Economic ingestion is disabled (MSL_ECONOMIC_INGESTION_ENABLED is not true).",
+        remediation:
+          "Set MSL_ECONOMIC_INGESTION_ENABLED=true to enable the economic ingestion pipeline.",
+      }),
+    );
+  }
+
   // ── Chat dependencies ───────────────────────────────────────────
   const chatPath = env.MSL_CHAT_SQLITE_PATH;
   const busPath = env.MSL_AGENT_BUS_DB_PATH;
@@ -80,7 +111,8 @@ export function checkFeatureGateReadiness(ctx: ReadinessContext): ReadinessCheck
         capability: "web-chat",
         status: "degraded",
         safeMessage: "Neither MSL_CHAT_SQLITE_PATH nor MSL_AGENT_BUS_DB_PATH is set.",
-        remediation: "Set at least one of MSL_CHAT_SQLITE_PATH or MSL_AGENT_BUS_DB_PATH for chat/agent persistence.",
+        remediation:
+          "Set at least one of MSL_CHAT_SQLITE_PATH or MSL_AGENT_BUS_DB_PATH for chat/agent persistence.",
       }),
     );
   } else {

@@ -112,6 +112,16 @@ import type { AccountBrainService } from "./accountBrainService.js";
 import { createGetAccountBrainStatusTool, createCompareAccountAssetsTool } from "./tools.js";
 import { createFinanceDirectorTools } from "./tools/financeDirectorTools.js";
 import { createEconomicLearningTools } from "./tools/economicLearningTools.js";
+import {
+  createInspectUnitEconomicsTool,
+  createInspectEconomicOutcomeTool,
+  createListMissingEconomicInputsTool,
+  createSummarizeProfitTool,
+  createInspectCostComponentsTool,
+  createInspectEvidenceReferencesTool,
+  createInspectCoverageTool,
+  createReconcileSellerEconomicsTool,
+} from "./tools/economicTools.js";
 import { createInspectProductionReadinessTool } from "./tools/productionReadinessTools.js";
 import { FinanceDirectorAdvisor } from "../finance/FinanceDirectorAdvisor.js";
 
@@ -267,10 +277,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
   let pendingDecoyProposal: DecoyProposal | null = null;
 
   if (!toolMap.has("inspect_production_readiness")) {
-    toolMap.set(
-      "inspect_production_readiness",
-      createInspectProductionReadinessTool(process.env),
-    );
+    toolMap.set("inspect_production_readiness", createInspectProductionReadinessTool(process.env));
   }
   if (!toolMap.has("detect_probes")) {
     toolMap.set("detect_probes", createDetectProbesTool());
@@ -583,6 +590,23 @@ export function createAgentLoop(config: AgentLoopConfig) {
     }
   }
 
+  // ── Economic Truth Tools ──────────────────────────────────────────
+  if (config.economicStore) {
+    const economicTools = [
+      createInspectUnitEconomicsTool(config.economicStore),
+      createInspectEconomicOutcomeTool(config.economicStore),
+      createListMissingEconomicInputsTool(config.economicStore),
+      createSummarizeProfitTool(config.economicStore),
+      createInspectCostComponentsTool(config.economicStore),
+      createInspectEvidenceReferencesTool(config.economicStore),
+      createInspectCoverageTool(config.economicStore),
+      createReconcileSellerEconomicsTool(config.economicStore),
+    ];
+    for (const tool of economicTools) {
+      if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
+    }
+  }
+
   // ── Finance Director Tools ───────────────────────────────────────
   if (config.economicStore) {
     let advisorFactory: (() => FinanceDirectorAdvisor | null) | undefined;
@@ -595,9 +619,7 @@ export function createAgentLoop(config: AgentLoopConfig) {
     }
     for (const tool of createFinanceDirectorTools({
       economicStore: config.economicStore,
-      ...(config.assessmentStore !== undefined
-        ? { assessmentStore: config.assessmentStore }
-        : {}),
+      ...(config.assessmentStore !== undefined ? { assessmentStore: config.assessmentStore } : {}),
       ...(advisorFactory !== undefined ? { advisorFactory } : {}),
     })) {
       if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);

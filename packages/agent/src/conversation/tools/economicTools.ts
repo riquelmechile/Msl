@@ -1,6 +1,8 @@
 import type { ToolDefinition } from "./types.js";
 import { safeString } from "./types.js";
 import type { EconomicOutcomeStore } from "@msl/memory";
+import type { CostComponentType, EconomicDataCoverage } from "@msl/domain";
+import { COVERAGE_DIMENSIONS } from "@msl/domain";
 
 // ── Inspect Unit Economics ──────────────────────────────────────────────────
 
@@ -350,7 +352,9 @@ export function createSummarizeProfitTool(store?: EconomicOutcomeStore): ToolDef
       }
 
       const startDate =
-        typeof args.startDate === "number" && !Number.isNaN(args.startDate) ? args.startDate : undefined;
+        typeof args.startDate === "number" && !Number.isNaN(args.startDate)
+          ? args.startDate
+          : undefined;
       const endDate =
         typeof args.endDate === "number" && !Number.isNaN(args.endDate) ? args.endDate : undefined;
 
@@ -363,6 +367,412 @@ export function createSummarizeProfitTool(store?: EconomicOutcomeStore): ToolDef
       return {
         status: "ok",
         data: summary,
+        noExternalMutationExecuted: true,
+      };
+    },
+  };
+}
+
+// ── Inspect Cost Components ─────────────────────────────────────────────
+
+export function createInspectCostComponentsTool(store?: EconomicOutcomeStore): ToolDefinition {
+  return {
+    name: "inspect_cost_components",
+    description:
+      "Read-only inspection of economic cost components for a specific seller. Lists individual cost records (marketplace fees, shipping, advertising, etc.) with provenance information. Supports type filtering. No external mutations are executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "Seller ID whose cost components to inspect.",
+        },
+        type: {
+          type: "string",
+          description:
+            "Optional cost component type filter. One of: product_cost, marketplace_fee, shipping, advertising, seller_discount, refund, return, tax, financing, landed_cost, packaging, other.",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum components to return. Default: 50.",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute(args: Record<string, unknown>): Record<string, unknown> {
+      const sellerId = safeString(args.sellerId);
+      if (!sellerId) {
+        return {
+          status: "error",
+          error: "sellerId es obligatorio",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!store) {
+        return {
+          status: "unavailable",
+          data: {
+            components: [],
+            total: 0,
+          },
+          message:
+            "Economic Outcome Store no está disponible. Configure MSL_ECONOMIC_INGESTION_ENABLED=true para activar la ingesta de costos.",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const typeFilter = safeString(args.type);
+      const validTypes = new Set([
+        "product_cost",
+        "marketplace_fee",
+        "shipping",
+        "advertising",
+        "seller_discount",
+        "refund",
+        "return",
+        "tax",
+        "financing",
+        "landed_cost",
+        "packaging",
+        "other",
+      ]);
+
+      if (typeFilter && !validTypes.has(typeFilter)) {
+        return {
+          status: "error",
+          error: `Tipo inválido: "${typeFilter}". Tipos válidos: ${[...validTypes].join(", ")}`,
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const limit =
+        typeof args.limit === "number" && args.limit > 0 ? Math.min(args.limit, 200) : 50;
+
+      const components = store.listCostComponents(sellerId, {
+        ...(typeFilter ? { type: typeFilter as CostComponentType } : {}),
+        limit,
+      });
+
+      return {
+        status: "ok",
+        data: {
+          components,
+          total: components.length,
+        },
+        noExternalMutationExecuted: true,
+      };
+    },
+  };
+}
+
+// ── Inspect Evidence References ─────────────────────────────────────────
+
+export function createInspectEvidenceReferencesTool(_store?: EconomicOutcomeStore): ToolDefinition {
+  return {
+    name: "inspect_evidence_references",
+    description:
+      "Read-only inspection of evidence references for a specific seller's economic data. Evidence references provide provenance chains linking cost components to their source systems. Currently a stub — the evidence reference store is not yet implemented. No external mutations are executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "Seller ID whose evidence references to inspect.",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute(args: Record<string, unknown>): Record<string, unknown> {
+      const sellerId = safeString(args.sellerId);
+      if (!sellerId) {
+        return {
+          status: "error",
+          error: "sellerId es obligatorio",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      // Stub: evidence reference store not yet implemented.
+      // Use cost components for provenance until full evidence chain is available.
+      return {
+        status: "ok",
+        data: {
+          sellerId,
+          message:
+            "Evidence reference store not yet available. Use inspect_cost_components for per-component provenance information (source system, source record ID, verification status).",
+        },
+        noExternalMutationExecuted: true,
+      };
+    },
+  };
+}
+
+// ── Inspect Coverage ────────────────────────────────────────────────────
+
+export function createInspectCoverageTool(store?: EconomicOutcomeStore): ToolDefinition {
+  return {
+    name: "inspect_coverage",
+    description:
+      "Read-only inspection of economic data coverage for a specific seller. Computes which cost component types have data, which are missing, and which are disputed. Returns an EconomicDataCoverage report with per-dimension status and overall confidence. No external mutations are executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "Seller ID whose economic coverage to inspect.",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute(args: Record<string, unknown>): Record<string, unknown> {
+      const sellerId = safeString(args.sellerId);
+      if (!sellerId) {
+        return {
+          status: "error",
+          error: "sellerId es obligatorio",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!store) {
+        return {
+          status: "unavailable",
+          data: {
+            message:
+              "Economic Outcome Store no está disponible. Configure MSL_ECONOMIC_INGESTION_ENABLED=true para activar la ingesta económica y evaluar cobertura.",
+          },
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      // Compute coverage by querying cost components per dimension
+      const dimensions: Record<string, string> = {};
+      const missingDimensions: string[] = [];
+      const disputedDimensions: string[] = [];
+      let totalComponents = 0;
+      let disputedCount = 0;
+
+      for (const dim of COVERAGE_DIMENSIONS) {
+        // Map coverage dimensions to cost component types
+        const costTypes = coverageDimensionToCostTypes(dim);
+        if (!costTypes) {
+          // Non-cost dimensions (currency_consistency, evidence_current, evidence_disputed, reconciliation)
+          continue;
+        }
+
+        let hasData = false;
+        let hasDisputed = false;
+
+        for (const ct of costTypes) {
+          const components = store.listCostComponents(sellerId, {
+            type: ct,
+            limit: 1,
+            includeReversed: false,
+          });
+          totalComponents += components.length;
+          if (components.length > 0) {
+            hasData = true;
+            for (const c of components) {
+              if (c.verification === "disputed") {
+                hasDisputed = true;
+                disputedCount++;
+              }
+            }
+          }
+        }
+
+        if (hasDisputed) {
+          dimensions[dim] = "disputed";
+          disputedDimensions.push(dim);
+        } else if (hasData) {
+          dimensions[dim] = "complete";
+        } else {
+          dimensions[dim] = "partial";
+          missingDimensions.push(dim);
+        }
+      }
+
+      // Evidence & meta dimensions
+      dimensions["evidence_current"] = "partial";
+      dimensions["evidence_disputed"] = disputedCount > 0 ? "disputed" : "complete";
+      dimensions["currency_consistency"] = totalComponents > 0 ? "complete" : "partial";
+      dimensions["reconciliation"] = "partial";
+
+      // Compute overall status
+      let overallStatus = "complete";
+      if (disputedDimensions.length > 0) {
+        overallStatus = "disputed";
+      } else if (missingDimensions.length > 0) {
+        overallStatus = "partial";
+      }
+
+      const coverage = {
+        sellerId,
+        evaluatedAt: Date.now(),
+        dimensions: dimensions as Readonly<
+          Record<string, string>
+        > as unknown as EconomicDataCoverage["dimensions"],
+        overallStatus: overallStatus as EconomicDataCoverage["overallStatus"],
+        confidence:
+          totalComponents > 0
+            ? Math.min(0.95, (totalComponents - disputedCount) / (totalComponents || 1))
+            : 0.5,
+        missingDimensions:
+          missingDimensions as readonly string[] as unknown as EconomicDataCoverage["missingDimensions"],
+        disputedDimensions:
+          disputedDimensions as readonly string[] as unknown as EconomicDataCoverage["disputedDimensions"],
+      };
+
+      return {
+        status: "ok",
+        data: { coverage },
+        noExternalMutationExecuted: true,
+      };
+    },
+  };
+}
+
+// Coverage dimension → cost component type mapping
+function coverageDimensionToCostTypes(dim: string): CostComponentType[] | null {
+  const map: Record<string, CostComponentType[]> = {
+    revenue: [],
+    marketplace_fee: ["marketplace_fee"],
+    shipping: ["shipping"],
+    seller_discount: ["seller_discount"],
+    refund_return: ["refund", "return"],
+    advertising: ["advertising"],
+    product_cost: ["product_cost"],
+    landed_cost: ["landed_cost"],
+  };
+  return map[dim] ?? null;
+}
+
+// ── Reconcile Seller Economics ──────────────────────────────────────────
+
+export function createReconcileSellerEconomicsTool(store?: EconomicOutcomeStore): ToolDefinition {
+  return {
+    name: "reconcile_seller_economics",
+    description:
+      "Read-only reconciliation of a seller's economic data. Compares source totals against computed snapshots to detect inconsistencies. Returns a ReconciliationVerdict (balanced, balanced-with-tolerance, incomplete, mismatched, disputed). Can identify discrepancies but does NOT execute corrections. No external mutations are executed.",
+    parameters: {
+      type: "object",
+      properties: {
+        sellerId: {
+          type: "string",
+          description: "Seller ID whose economics to reconcile.",
+        },
+        tolerance: {
+          type: "number",
+          description:
+            "Tolerance in minor currency units for considering balances 'close enough'. Default: 1 (single minor unit).",
+        },
+      },
+      required: ["sellerId"],
+    },
+    execute(args: Record<string, unknown>): Record<string, unknown> {
+      const sellerId = safeString(args.sellerId);
+      if (!sellerId) {
+        return {
+          status: "error",
+          error: "sellerId es obligatorio",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      if (!store) {
+        return {
+          status: "unavailable",
+          data: {
+            verdict: "incomplete",
+            sellerId,
+          },
+          message: "Economic Outcome Store no está disponible. No hay datos para reconciliar.",
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      const tolerance =
+        typeof args.tolerance === "number" && args.tolerance >= 0 ? args.tolerance : 1;
+
+      // Get unit economics snapshots for the seller
+      const snapshots = store.listUnitEconomicsSnapshots(sellerId, { limit: 500 });
+
+      if (snapshots.length === 0) {
+        return {
+          status: "ok",
+          data: {
+            verdict: "incomplete",
+            sellerId,
+            message:
+              "No hay snapshots de unit economics para este seller. Ejecutá la ingesta primero con npm run economic:ingest.",
+          },
+          noExternalMutationExecuted: true,
+        };
+      }
+
+      // Compute total from snapshots
+      let totalCosts = 0;
+      let snapshotCount = 0;
+
+      for (const snapshot of snapshots) {
+        totalCosts +=
+          snapshot.marketplaceFees +
+          snapshot.sellerShippingCost +
+          snapshot.sellerFundedDiscounts +
+          snapshot.refunds +
+          snapshot.advertisingCost +
+          snapshot.productCost +
+          snapshot.allocatedLandedCost +
+          snapshot.taxes +
+          snapshot.financingCost +
+          snapshot.packagingCost +
+          snapshot.otherCosts;
+        snapshotCount++;
+      }
+
+      // Get cost components directly from store
+      const costComponents = store.listCostComponents(sellerId, { limit: 1000 });
+      let storeTotalCosts = 0;
+      for (const c of costComponents) {
+        storeTotalCosts += c.amount.amountMinor;
+      }
+
+      // Compare totals
+      const diff = Math.abs(totalCosts - storeTotalCosts);
+
+      let verdict: string;
+      if (snapshotCount === 0 && costComponents.length === 0) {
+        verdict = "incomplete";
+      } else if (diff === 0) {
+        verdict = "balanced";
+      } else if (diff <= tolerance) {
+        verdict = "balanced-with-tolerance";
+      } else if (totalCosts === 0 && storeTotalCosts > 0) {
+        verdict = "incomplete";
+      } else if (totalCosts > 0 && storeTotalCosts === 0) {
+        verdict = "incomplete";
+      } else {
+        verdict = "mismatched";
+      }
+
+      return {
+        status: "ok",
+        data: {
+          verdict,
+          sellerId,
+          snapshotCostsTotal: totalCosts,
+          storeCostsTotal: storeTotalCosts,
+          difference: diff,
+          tolerance,
+          snapshotCount,
+          costComponentCount: costComponents.length,
+          ...(verdict === "mismatched"
+            ? {
+                recommendation: `Diferencia de ${diff} unidades menores excede la tolerancia de ${tolerance}. Re-ejecutá la ingesta para este seller o investigá manualmente los componentes de costo.`,
+              }
+            : {}),
+        },
         noExternalMutationExecuted: true,
       };
     },

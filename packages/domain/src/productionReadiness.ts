@@ -21,12 +21,14 @@ export type ProductionCapability =
   | "mcp-server"
   | "web-chat"
   | "background-workers"
-  | "daemon-scheduler";
+  | "daemon-scheduler"
+  | "real-economic-ingestion";
 
 // ── Config metadata ──────────────────────────────────────────────────
 
 export type ConfigSensitivity = "public" | "conditional" | "secret" | "critical-secret";
-export type ConfigValidation = "filled" | "missing" | "placeholder" | "malformed" | "next-public-exposed";
+export type ConfigValidation =
+  "filled" | "missing" | "placeholder" | "malformed" | "next-public-exposed";
 
 // ── Readiness check result ───────────────────────────────────────────
 
@@ -104,7 +106,8 @@ export type RuntimeGatePolicy = {
 // ── Factory functions ────────────────────────────────────────────────
 
 export function createReadinessCheckResult(
-  overrides: Partial<ReadinessCheckResult> & Pick<ReadinessCheckResult, "checkId" | "capability" | "status">,
+  overrides: Partial<ReadinessCheckResult> &
+    Pick<ReadinessCheckResult, "checkId" | "capability" | "status">,
 ): ReadinessCheckResult {
   return {
     safeMessage: "",
@@ -138,7 +141,8 @@ export function createProductionReadinessReport(
 }
 
 export function createSellerReadinessReport(
-  overrides: Partial<SellerReadinessReport> & Pick<SellerReadinessReport, "sellerId" | "accountName">,
+  overrides: Partial<SellerReadinessReport> &
+    Pick<SellerReadinessReport, "sellerId" | "accountName">,
 ): SellerReadinessReport {
   return {
     overallStatus: "not-applicable",
