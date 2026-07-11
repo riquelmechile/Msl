@@ -45,7 +45,7 @@
 
 **Propósito:** Hacer que MSL opere sobre datos reales con credenciales reales.
 
-**Estado:** **Completo** — PR 1/4, 2/4, 3/4 y 4/4 completadas. Production Readiness Control Plane operativo. Durable Runtime Operations implementado. ML Dual-Account Production Connection (OAuth real con read-only production) implementado. Real Ingestion & Economic Adapters implementado.
+**Estado:** **Parcial** — PR 1/4, 2/4, y 3/4 completadas. PR 4/4 completada y posteriormente endurecida con `finalize-economic-ingestion-durability` (UUID IDs, fail-closed, atomic tx, Evidence Store, multi-dimensional reconciliation, run-scoped metrics). Product cost y landed cost permanecen como stubs (missing): requieren datos externos de proveedores y aduana. Después de smoke dual persistente en producción con datos reales → P0 Foundation Complete.
 
 ### PRs
 
@@ -54,7 +54,7 @@
 | 1/4 | Production Readiness Control Plane                              | ✅ Complete |
 | 2/4 | Durable Runtime Operations (backups, migrations, observability) | ✅ Complete |
 | 3/4 | ML Dual-Account Production Connection (OAuth real)              | ✅ Complete |
-| 4/4 | Real Ingestion & Economic Adapters                              | ✅ Complete |
+| 4/4 | Real Ingestion & Economic Adapters + Durability Hardening        | ✅ Hardened  |
 
 ### Capacidades implementadas en PR 1/4
 
@@ -121,6 +121,19 @@
 - ✅ Operational runbook: `docs/operations/real-ingestion-economic-adapters.md`
 - ✅ SDD archive docs: source-mapping, economic-semantics, data-quality-policy, reconciliation-policy, idempotency-policy, pii-and-secrets-policy, backfill-plan, production-runbook, threat-model
 - ✅ 9 SDD policy documents for operational transparency
+- ✅ **Durability hardening** (`finalize-economic-ingestion-durability`):
+  - ✅ `CryptoRunIdFactory` with UUID-based run IDs (`economic-ingestion-{uuid}`, injectable `RunIdFactory` interface)
+  - ✅ Fail-closed persistence: errors abort pipeline (no silent catch), CLI exit ≠ 0
+  - ✅ Atomic transactions: `db.transaction()` wraps evidence+components+snapshots+run+checkpoint writes
+  - ✅ `EconomicEvidenceStore`: 15-column composite-key table, idempotent upsert, version superseding, 8 CRUD methods
+  - ✅ `ingestion_run_id` provenance on cost_components and unit_economics_snapshots
+  - ✅ Run-scoped vs cumulative metrics split; `transactions`→`normalizedLines`; `duplicatesIgnored`
+  - ✅ Multi-dimensional reconciliation: revenue, cost, coverage independently evaluated
+  - ✅ Zero-both-sides (0 revenue AND 0 cost) → `incomplete`, never `balanced`
+  - ✅ Economic tables registered in MigrationRegistry (v1–v5)
+  - ✅ CLI `economic:inspect-evidence`: `--seller`, `--run`, `--source`, `--limit`
+  - ✅ Feature flag: `MSL_ECONOMIC_INGESTION_DURABILITY` (default: enabled)
+  - ✅ 65+ new tests: unit (RunIdFactory, evidence store, eligibility), integration (pipeline fault injection, transaction rollback, dual-seller, re-ingestion), migration (v1→v5 upgrade)
 
 **Infrastructure complete.** Product cost and landed cost remain partial (stub adapters — require Supplier Mirror and customs data). Next: P1 product cost completion and Product Launch Intelligence.
 

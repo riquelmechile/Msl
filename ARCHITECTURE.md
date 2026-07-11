@@ -169,6 +169,7 @@ User message (Spanish)
 | **Cortex Economic Reinforcement**    | Verified outcomes → Darwinian learning     | Closes the Financial Truth cycle. Three-tier deterministic architecture: eligibility gate (10 block reasons) → economic signal (direction/magnitude/confidence) → 5-level attribution (none→causal) → separated reinforcement plan → idempotent Cortex bridge with before/after hashes. SQLite learning ledger with seller isolation and full reversal support. Four memory types (episodic/semantic/procedural/economic). Policy versioning. Finance Director read-only learning inspection tools. EconomicLearningTrigger wired to outcome transitions with daemon handler. |
 | **Production Readiness**             | Environment validation & fail-closed gates | Central configuration inventory (75+ env vars), 7 specialized checkers, per-seller readiness (Plasticov/Maustian), SQLite diagnostics, `assertProductionCapabilityReady()` gate, `npm run production:readiness` CLI, `inspect_production_readiness` CEO tool, secret sanitizer. Zero HTTP, zero mutations.                                                                                                                                                                                                                                                                    |
 | **Economic Ingestion**               | Six-layer read-only pipeline               | ML API → normalization (PII-stripped `NormalizedCommerceTransaction`) → 11 pure-function adapters (5 real, 6 stubs) → deterministic unit economics calculation → idempotent persistence in `EconomicOutcomeStore` → Finance Director inspection tools. Seller-isolated, feature-gated by `MSL_ECONOMIC_INGESTION_ENABLED`. Reconcilable with tolerance, never mutates ML. Located in `packages/agent/src/economics/`.                                                                                                                                                         |
+| **Economic Ingestion Durability**    | UUID IDs, fail-closed, atomic tx, evidence store | `CryptoRunIdFactory` (injectable via `RunIdFactory` interface) in `@msl/domain`. `EconomicEvidenceStore` in `@msl/memory` with 15-column composite-key table and 3 scan indexes. `db.transaction()` wraps evidence+components+snapshots+run+checkpoint writes atomically. Multi-dimensional reconciliation (revenue, cost, coverage independently). Run-scoped vs cumulative metrics split. Idempotent re-ingestion. `ingestion_run_id` provenance on components and snapshots. Fail-closed: errors abort pipeline (no silent catch), CLI exit ≠ 0. Feature-gated by `MSL_ECONOMIC_INGESTION_DURABILITY`. |
 | **No framework**                     | Plain TypeScript + OpenAI SDK              | No LangChain, no Mastra, no abstractions. Direct API access.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## Directory tree
@@ -189,6 +190,8 @@ Msl/
 ├── packages/
 │   ├── domain/                   # Hexagonal core — pure TypeScript
 │   │   └── src/
+│   │       ├── runIdFactory.ts    # UUID-based RunIdFactory interface + impl
+│   │       ├── economicEvidenceReference.ts  # Evidence reference domain type
 │   │       ├── seller.ts         # Seller identity, risk levels
 │   │       ├── listing.ts        # Product listings
 │   │       ├── order.ts          # Orders with status lifecycle
@@ -211,6 +214,7 @@ Msl/
 │   │       ├── evidenceRequestStore.ts  # Evidence request persistence
 │   │       ├── supplierMirrorStore.ts   # Supplier Mirror SQLite store
 │   │       ├── ownedEcommerceStore.ts   # Owned ecommerce persistence
+│   │       ├── economicEvidenceStore.ts  # Evidence references with provenance
 │   │       └── cortex/
 │   │           ├── types.ts      # GraphNode, GraphEdge, Activation Snapshot
 │   │           ├── engine.ts     # Graph engine: CRUD, spread, prune, Hebbian

@@ -128,8 +128,9 @@ SQLite store with 3 tables:
 | Table | Purpose |
 |-------|---------|
 | `economic_outcomes` | Outcome lifecycle, status, correlation IDs, attribution links |
-| `economic_cost_components` | Individual cost records with provenance |
-| `unit_economics_snapshots` | Full snapshots stored as JSON |
+| `economic_cost_components` | Individual cost records with provenance and `ingestion_run_id` |
+| `unit_economics_snapshots` | Full snapshots stored as JSON with `ingestion_run_id` |
+| `economic_evidence_references` | Evidence chain-of-custody with 15-column composite key |
 
 All tables have `seller_id TEXT NOT NULL` with indexes. All queries use parameterized `WHERE seller_id = ?`. Zero SQL string interpolation.
 
@@ -140,6 +141,59 @@ Key methods:
 - `getOutcome`, `listOutcomesBySeller`, `listOutcomesByProposal`, `listOutcomesByOrder`, `listOutcomesByCorrelationId`
 - `listMissingInputs` — identifies gaps across all outcomes
 - `summarizeProfit` — aggregates by currency (never mixes CLP/USD)
+
+### EconomicEvidenceStore (`packages/memory/src/economicEvidenceStore.ts`)
+
+Durable chain-of-custody for economic evidence references with provenance tracking:
+
+- **Table**: `economic_evidence_references` — 15 columns (evidence_id, seller_id, source_system, source_entity_type, source_record_id, source_field, observed_at, occurred_at, source_version, checksum, verification, confidence, superseded_by, ingestion_run_id, created_at)
+- **Composite unique key**: `(seller_id, source_system, source_entity_type, source_record_id, source_version, checksum)`
+- **Scan indexes**: `(ingestion_run_id)`, `(seller_id)`, `(source_record_id)`
+- **8 CRUD methods**: `insertEvidence`, `upsertEvidence`, `getEvidence`, `listBySeller`, `listByRun`, `listBySourceRecord`, `markSuperseded`, `countByRun`
+- **Idempotency**: `INSERT ON CONFLICT DO NOTHING` — safe to re-ingest the same data
+- **Superseding**: `markSuperseded(evidenceId, supersededBy)` preserves old rows for audit
+- **Cross-seller isolation**: every method requires `sellerId`
+- **No PII**: stores only metadata (checksums, versions, verification status) — no raw payloads or buyer data
+
+### Atomic Transaction Boundary
+
+All final persistence writes execute in a single `db.transaction()`:
+
+```
+db.transaction(() => {
+  evidenceStore.upsertEvidence(e)       // for each evidence ref
+  store.insertCostComponent(c)          // for each cost component
+  store.insertUnitEconomicsSnapshot(s)  // for each snapshot
+  runStore.updateRun(runId, {...})      // run → completed
+  runStore.updateCheckpoint(sellerId)   // only after commit
+})
+```
+
+If any write inside the transaction throws, SQLite automatically rolls back all pending writes — no partial data is committed. The error propagates to mark the run `failed` and the CLI exits non-zero.
+
+### Ingestion Run Provenance
+
+Every cost component and unit economics snapshot carries an `ingestion_run_id TEXT NOT NULL` column. This enables:
+
+- Filtering components/snapshots by the run that produced them
+- Audit queries linking evidence, components, and snapshots to a specific ingestion
+- Idempotent re-ingestion: same data range, new run ID, zero duplicate evidence rows
+- Run-scoped metrics: `normalizedLines`, `componentsCreated`, `snapshotsCreated`, `duplicatesIgnored`
+
+### Missing Cost Types
+
+The following cost component types remain partial (stub adapters returning empty + `missingInputs`):
+
+| Type | Missing Reason | Resolution Path |
+|------|---------------|-----------------|
+| `product_cost` | Requires supplier cost data | Supplier Mirror integration |
+| `landed_cost` | Requires customs and freight data | Import documentation, carrier APIs |
+| `packaging` | Requires packaging cost tracking | Operational data collection |
+| `financing` | Requires credit/installment tracking | Mercado Crédito API access |
+| `tax` | Requires tax calculation rules | Accounting integration |
+| `other` | Any other verified cost | Manual entry or future integrations |
+
+Missing ≠ zero. Snapshots with missing inputs are marked `calculationStatus: "partial"` and the missing types are declared explicitly.
 
 ## Tools
 
@@ -221,12 +275,19 @@ When grossRevenue is zero, margin returns 0 (no division by zero).
 | `unitEconomics.ts` | domain | Per-unit economics snapshot |
 | `economicOutcome.ts` | domain | Outcome lifecycle state machine |
 | `economicCalculation.ts` | domain | Deterministic calculation engine |
-| `economicOutcomeStore.ts` | memory | SQLite persistence |
+| `runIdFactory.ts` | domain | UUID-based RunIdFactory (Crypto + Deterministic) |
+| `economicEvidenceReference.ts` | domain | Evidence reference domain types |
+| `economicLearningEligibility.ts` | domain | 10-block-reason eligibility evaluator |
+| `economicOutcomeStore.ts` | memory | SQLite persistence (cost components, snapshots, outcomes) |
+| `economicEvidenceStore.ts` | memory | Evidence chain-of-custody with provenance |
+| `economicIngestionRunStore.ts` | memory | Ingestion run lifecycle + checkpoints |
 | `economicTools.ts` | agent/tools | CEO read-only inspection tools |
+| `EconomicIngestionPipeline.ts` | agent/economics | Durability-hardened ingestion pipeline |
 
 ## Tests
 
-120 new tests across 7 test files:
-- 89 domain tests (money, cost, outcome, calculation, unit economics)
+120+ tests across 7+ test files (domain + store + tools), plus 65+ durability-specific tests:
+- 89 domain tests (money, cost, outcome, calculation, unit economics, eligibility)
 - 17 store tests (SQLite persistence, isolation, transitions)
 - 14 tool tests (read-only, seller isolation, error handling)
+- Durability: RunIdFactory unit tests, evidence store CRUD, pipeline fault injection (6 points), transaction rollback, dual-seller isolation, re-ingestion idempotency, migration upgrade (v1→v5), CLI inspect

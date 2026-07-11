@@ -1,8 +1,50 @@
 # economic-learning Specification
 
-Verified economic outcomes feeding Cortex Darwinian learning through a three-tier deterministic architecture: eligibility gating, attribution evaluation, and idempotent reinforcement with full audit and reversal support.
+Verified economic outcomes feeding Cortex Darwinian learning through a three-tier deterministic architecture: eligibility gating, attribution evaluation, and idempotent reinforcement with full audit and reversal support. Ingestion run provenance on cost components and snapshots enables audit-grade traceability. Multi-dimensional reconciliation evaluates revenue, cost, and coverage independently.
 
 ## Requirements
+
+### Requirement: Ingestion Run Provenance on Cost Components and Snapshots
+
+The system SHALL add `ingestion_run_id TEXT NOT NULL` to `economic_cost_components` and `unit_economics_snapshots` tables. Every component and snapshot created during ingestion MUST carry the run ID that produced it.
+
+#### Scenario: Component carries run provenance
+
+- GIVEN an ingestion run with `runId = 'r-abc'`
+- WHEN cost components are persisted
+- THEN every component row MUST have `ingestion_run_id = 'r-abc'`
+
+#### Scenario: Snapshot carries run provenance
+
+- GIVEN an ingestion run with `runId = 'r-abc'`
+- WHEN unit economics snapshots are persisted
+- THEN every snapshot row MUST have `ingestion_run_id = 'r-abc'`
+
+---
+
+### Requirement: Reconciliation — Multi-Dimensional with Incomplete Semantics
+
+The system MUST reconcile economic outcomes across three independent dimensions: `revenueReconciliation`, `costReconciliation`, and `coverage`. Each dimension SHALL produce its own status independently. An outcome with zero revenue AND zero cost SHALL be classified as `incomplete`, NOT `balanced`.
+
+#### Scenario: Revenue balanced but cost mismatched
+
+- GIVEN an outcome where revenue delta is zero but cost delta is non-zero
+- WHEN reconciliation evaluates
+- THEN `revenueReconciliation.status` MUST be `balanced` AND `costReconciliation.status` MUST be `mismatched` AND overall status MUST NOT be `balanced`
+
+#### Scenario: Zero-both-sides is incomplete
+
+- GIVEN an outcome with 0 revenue AND 0 cost
+- WHEN reconciliation runs
+- THEN overall status MUST be `incomplete` AND `coverage.meaningful` MUST be `false`
+
+#### Scenario: All dimensions balanced
+
+- GIVEN an outcome where revenue, cost, and coverage all reconcile within tolerance
+- WHEN reconciliation runs
+- THEN overall status MUST be `balanced` AND each dimension status MUST be `balanced`
+
+---
 
 ### Requirement: Economic Learning Eligibility — Only Verified Outcomes
 

@@ -1,8 +1,9 @@
 # Real Ingestion & Economic Adapters — Operational Runbook
 
 > **SDD Change:** `real-ingestion-economic-adapters`
+> **SDD Hardening:** `finalize-economic-ingestion-durability`
 > **P0 PR 4/4:** Tools + Readiness + Documentation
-> **Status:** Complete — infrastructure ready, product cost and landed cost remain partial (stub adapters)
+> **Status:** Complete — infrastructure ready, hardened with durability (UUID IDs, fail-closed, atomic tx, Evidence Store), product cost and landed cost remain partial (stub adapters)
 
 ---
 
@@ -43,6 +44,24 @@ All commands support `--json` for machine-readable output.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MSL_ECONOMIC_INGESTION_ENABLED` | `false` | Enable the economic ingestion pipeline and daemon |
+| `MSL_ECONOMIC_INGESTION_DURABILITY` | `true` | Enable durability features: UUID IDs, fail-closed, atomic tx, Evidence Store |
+
+When `MSL_ECONOMIC_INGESTION_DURABILITY=true` (default):
+- `CryptoRunIdFactory` generates UUID-based run IDs (`economic-ingestion-{uuid}`)
+- Persistence errors abort the pipeline (fail-closed) — no silent catch
+- All final writes execute in a single `db.transaction()` — atomic commit
+- `EconomicEvidenceStore` persists evidence references with provenance
+- `ingestion_run_id` is written on every cost component and snapshot
+- Run-scoped metrics track `normalizedLines`, `duplicatesIgnored` per ingestion
+- Multi-dimensional reconciliation evaluates revenue, cost, and coverage independently
+- Checkpoint advances only after successful commit
+
+When `false` (legacy path):
+- Sequential `runCounter`-based run IDs
+- Silent catch on persistence errors
+- No atomic transaction boundary (writes not grouped)
+- No evidence store, no ingestion_run_id provenance
+- Single-dimension reconciliation (balanced/mismatched)
 
 When `false` (default):
 - The daemon no-ops immediately
@@ -103,11 +122,18 @@ All data is fetched through the MercadoLibre OAuth connection with real credenti
 - Deterministic: gross revenue − sum of cost component amounts
 - Never substitutes zero for missing data — declares `missingInputs`
 
-### Layer E: Persistence
-- `EconomicOutcomeStore` (SQLite)
+### Layer E: Persistence (Durability-Hardened)
+- `EconomicOutcomeStore` (SQLite) for cost components and snapshots
+- `EconomicEvidenceStore` (SQLite) for evidence references with provenance
+- `EconomicIngestionRunStore` (SQLite) for run lifecycle tracking
+- Atomic transaction boundary: `db.transaction()` wraps evidence inserts, component inserts, snapshot inserts, run update, and checkpoint update
 - Idempotent inserts: dedup key = `sellerId + source + sourceRecordId + economicMeaning + sourceVersion`
+- Evidence composite key: `(seller_id, source_system, source_entity_type, source_record_id, source_version, checksum)`
+- `ingestion_run_id` provenance on all components and snapshots
 - Supersede mechanism for updated versions
 - Soft-delete via `reversedAt` (never hard-delete)
+- Fail-closed: any write failure inside the transaction rolls back all writes, run marked `failed`, CLI exit ≠ 0
+- Checkpoint advances only after successful commit
 - Seller isolation enforced at the query level
 
 ### Layer F: Consumption
@@ -138,6 +164,73 @@ Every query and mutation is seller-scoped:
 - Seller A's economic data is never visible to Seller B through any tool or API
 
 ---
+
+## Run IDs and Provenance
+
+Every ingestion run is assigned a globally unique UUID-based identifier:
+
+- `CryptoRunIdFactory` generates `economic-ingestion-{uuid}` using `crypto.randomUUID()`
+- Collision detection: if PK conflict on `createRun`, retries with new UUID up to 3 attempts
+- `DeterministicRunIdFactory` available for test injection (sequential, predictable IDs)
+- `ingestion_run_id` is written on every `economic_cost_components` row and `unit_economics_snapshots` row
+- Evidence IDs also use UUID: `evidence-{uuid}`, replacing the old sequential counter
+
+### Run Provenance Query
+
+```sql
+-- All cost components produced by a specific run
+SELECT * FROM economic_cost_components WHERE ingestion_run_id = 'economic-ingestion-abc-123';
+```
+
+## Evidence Store
+
+The `EconomicEvidenceStore` persists metadata about economic evidence references with provenance:
+
+- **Table**: `economic_evidence_references` — 15 columns, composite unique key, 3 scan indexes
+- **Composite key**: `(seller_id, source_system, source_entity_type, source_record_id, source_version, checksum)`
+- **Idempotency**: `upsertEvidence` uses `INSERT ON CONFLICT DO NOTHING` — re-ingestion never creates duplicates
+- **Superseding**: `markSuperseded(evidenceId, supersededBy)` preserves old rows
+- **Cross-seller isolation**: every query method scopes to `sellerId`
+- **No PII**: stores only metadata (type, checksum, version, verification) — no raw payloads, buyer data, or amounts
+
+### CLI: inspect-evidence
+
+```bash
+npm run economic:inspect-evidence -- --seller plasticov
+npm run economic:inspect-evidence -- --seller plasticov --run economic-ingestion-abc-123
+npm run economic:inspect-evidence -- --seller plasticov --source ML-ORDER-123
+npm run economic:inspect-evidence -- --seller plasticov --limit 50
+npm run economic:inspect-evidence -- --seller plasticov --json
+```
+
+## Migration Commands
+
+The MigrationRegistry manages schema versions for economic tables:
+
+```bash
+# View current migration state
+npm run economic:migration:status
+
+# Apply pending migrations (v1 → v5)
+# v1: base tables (existing)
+# v2: indexes on economic_ingestion_runs
+# v3: ALTER TABLE economic_cost_components ADD COLUMN ingestion_run_id
+# v4: ALTER TABLE unit_economics_snapshots ADD COLUMN ingestion_run_id
+# v5: CREATE TABLE economic_evidence_references
+
+# Migrations are additive DDL — no destructive changes
+# Idempotent: re-running applies only pending versions
+```
+
+## Feature Flags
+
+| Flag | Default | Controls |
+|------|---------|----------|
+| `MSL_ECONOMIC_INGESTION_ENABLED` | `false` | Enable the ingestion pipeline and daemon |
+| `MSL_ECONOMIC_INGESTION_DURABILITY` | `true` | UUID IDs, fail-closed, atomic tx, Evidence Store |
+| `MSL_MIGRATION_ENABLED` | `false` | MigrationRegistry vs legacy `CREATE TABLE IF NOT EXISTS` |
+
+The two economic flags are independent: durability can be enabled without the pipeline being enabled. `MSL_ECONOMIC_INGESTION_DURABILITY=true` requires the evidence table — if `MSL_MIGRATION_ENABLED=false`, the store falls back to `CREATE TABLE IF NOT EXISTS`.
 
 ## PII Protection
 

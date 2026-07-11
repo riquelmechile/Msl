@@ -59,6 +59,6 @@ Chain strategy: pending
 
 ## Phase 5: Docs + Archive (PR 5)
 
-- [ ] 5.1 Update `README.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `docs/` pages
-- [ ] 5.2 OpenSpec specs delta files for all 4 capability specs
-- [ ] 5.3 Archive SDD change
+- [x] 5.1 Update `README.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `docs/` pages
+- [x] 5.2 OpenSpec specs delta files for all 4 capability specs
+- [x] 5.3 Archive SDD change

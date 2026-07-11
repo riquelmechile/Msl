@@ -54,8 +54,9 @@ Verificado contra el baseline `6fd769f` (P0 PR 4/4 Real Ingestion & Economic Ada
 | Aprobación "dale"              | Pipeline prepare → approve → execute → audit                |
 | Background Ingestion           | 5 procesadores con paginación por checkpoint                |
 | Economic Ingestion Pipeline    | Pipeline real con DataFetcher ML (read-only), 93+ snapshots |
-| Economic CLI                   | `npm run economic:ingest/status/coverage/reconcile/missing` |
+| Economic CLI                   | `npm run economic:ingest/status/coverage/reconcile/missing/inspect-evidence` |
 | Economic Store                 | SQLite: cost components, snapshots, evidence refs, runs     |
+| Economic Ingestion Durability  | RunIdFactory UUID, fail-closed, atomic tx, Evidence Store, run-scoped metrics |
 
 ---
 
@@ -186,6 +187,7 @@ Ver [`.env.example`](.env.example) para la referencia completa. Grupos principal
 | Supplier Mirror                  | Bootstrap de Jinpeng, evidencia de proveedores |
 | `MSL_ENCRYPTION_KEY`             | Cifrado de tokens OAuth                        |
 | `MSL_ECONOMIC_INGESTION_ENABLED` | Ingesta económica real (costos, snapshots)     |
+| `MSL_ECONOMIC_INGESTION_DURABILITY` | Durabilidad de ingesta (UUID IDs, fail-closed, atomic tx, Evidence Store) |
 
 ---
 
@@ -204,6 +206,7 @@ npm run economic:status      # Estado de la última ingesta
 npm run economic:coverage    # Cobertura de datos económicos por seller
 npm run economic:reconcile   # Reconciliar costos vs snapshots
 npm run economic:missing     # Listar inputs económicos faltantes
+npm run economic:inspect-evidence  # Inspeccionar referencias de evidencia por run/seller
 ```
 
 ---
@@ -235,6 +238,7 @@ npm run economic:missing     # Listar inputs económicos faltantes
 | Environment loader común         | ✅ Listo (sin symlink, funciona desde cualquier cwd)    |
 | Escrituras ML                    | ❌ Bloqueadas (`assertMercadoLibreWriteDisabled()`)     |
 | Ingesta real                     | ✅ Listo (feature-gated, infra completa)                |
+| Ingesta económica durable         | ✅ Listo (UUID IDs, fail-closed, atomic tx, Evidence Store) |
 | Ecommerce productivo             | ❌ Requiere credenciales Medusa + aprobación            |
 | Canales sociales                 | 🔲 No implementado                                      |
 | Expansión multicanal             | 🔲 No implementado                                      |
