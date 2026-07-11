@@ -1,7 +1,7 @@
 # ROADMAP — MSL Agent Enterprise
 
-> **Review date:** 2026-07-10
-> **Verified commit:** `277467c`
+> **Review date:** 2026-07-11
+> **Verified commit:** `4e7ef83`
 > **State definitions:**
 >
 > - **Implementado** — merged, tested, available at HEAD.
@@ -12,7 +12,7 @@
 
 ## Implemented at HEAD
 
-Verified against commit `413248c`:
+Verified against commit `4e7ef83`:
 
 | Capability                               | Status                   | Notes                                                                                    |
 | ---------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
@@ -20,7 +20,7 @@ Verified against commit `413248c`:
 | Cortex neural graph + Darwinian learning | Implementado             | SQLite + recursive CTEs, Hebbian + pruning, constellation propagation                    |
 | DeepSeek integration                     | Implementado             | Real client, cache-friendly blocks, requires `DEEPSEEK_API_KEY`                          |
 | Agent Message Bus                        | Implementado             | SQLite-backed async queue, claim/resolve/fail, dedup, priority                           |
-| 15 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache                  |
+| 15 daemon handlers (15-min cycles)       | Implementado             | Dispatched through `startDaemonScheduler()` with per-cycle reader cache (economic-learning daemon wired but not yet registered in scheduler — pending P0 PR 2/4) |
 | 16 lane contracts                        | Implementado             | Typed `LANE_CONTRACTS` in `lanes.ts` with stable prefixes                                |
 | Work Sessions                            | Implementado             | `AgentWorkSessionStore` + `AgentWorkSessionRunner`, 7 sessionized lanes                  |
 | Account Assets + Account Brain           | Implementado             | `AccountAssetStore`, `AccountBrainService`, per-seller strategic tracking                |
@@ -60,14 +60,14 @@ Verified against commit `413248c`:
 ### Capacidades implementadas en PR 1/4
 
 - ✅ Modelo tipado de ProductionReadiness con 16 capabilities
-- ✅ Inventario central de configuración (75+ env vars)
+- ✅ Inventario central de configuración (66 env vars)
 - ✅ Evaluación independiente Plasticov/Maustian
 - ✅ Sanitización de secretos (nunca expone valores reales)
 - ✅ ProductionReadinessService con 7 checkers especializados
-- ✅ Checks SQLite (rutas, permisos, schema, WAL, cross-seller)
+- ✅ Checks SQLite (rutas, permisos, cross-seller; schema/WAL checks pendientes para PR 2/4)
 - ✅ Fail-closed runtime gates (dev preserva mocks, prod bloquea blocked)
 - ✅ CLI: `npm run production:readiness` (--json, --strict)
-- ✅ CEO tool: `inspect_production_readiness` (read-only)
+- ✅ CEO tool: `inspect_production_readiness` (read-only, wired into AgentLoop)
 - ✅ Cero HTTP, cero mutaciones, cero credenciales reales
 
 ---
