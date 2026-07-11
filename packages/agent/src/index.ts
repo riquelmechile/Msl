@@ -152,6 +152,15 @@ export type {
 } from "./economics/EconomicIngestionPipeline.js";
 export { reconcileEconomics } from "./economics/EconomicReconciliationService.js";
 export { transitionRun } from "./economics/EconomicIngestionRun.js";
+export { createEconomicIngestionRuntime } from "./economics/factory.js";
+export type {
+  SellerSlug,
+  RuntimeOverrides,
+  EconomicIngestionRuntime,
+  EconomicIngestionHealth,
+} from "./economics/factory.js";
+export { createProductionDataFetcher } from "./economics/dataFetcher.js";
+export type { ProductionDataFetcherOptions } from "./economics/dataFetcher.js";
 
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";

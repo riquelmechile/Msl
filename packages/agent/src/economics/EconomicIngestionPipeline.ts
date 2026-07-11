@@ -8,6 +8,7 @@ import type {
 import { createEconomicIngestionRun, createEconomicEvidenceReference } from "@msl/domain";
 import { createUnitEconomicsSnapshot } from "@msl/domain";
 import type { EconomicOutcomeStore } from "@msl/memory";
+import type { EconomicIngestionRunStore } from "@msl/memory";
 import { normalizeOrders } from "./normalization.js";
 import {
   adaptMarketplaceFee,
@@ -141,6 +142,7 @@ export async function runEconomicIngestion(
   config: PipelineConfig,
   store: EconomicOutcomeStore,
   dataFetcher: DataFetcher,
+  runStore?: EconomicIngestionRunStore,
 ): Promise<PipelineResult> {
   const startTime = Date.now();
   const errors: string[] = [];
@@ -189,6 +191,22 @@ export async function runEconomicIngestion(
       }
 
       let run = initialRunResult.run;
+
+      // Persist the initial run record (if runStore is available)
+      if (runStore && !config.dryRun && !config.noPersist) {
+        try {
+          await runStore.createRun({
+            runId: run.runId,
+            sellerId: run.sellerId,
+            status: run.status,
+            mode: run.mode,
+            startedAt: run.startedAt,
+            params: { maxPages: config.maxPages, mode: config.mode },
+          });
+        } catch {
+          // Run persistence is best-effort; don't block the pipeline
+        }
+      }
 
       checkAborted(config.abortSignal);
 
@@ -428,6 +446,41 @@ export async function runEconomicIngestion(
         reconciliation.status === "balanced-with-tolerance"
       ) {
         run = transitionRun(run, "completed");
+      }
+
+      // Persist final run state
+      if (runStore && !config.dryRun && !config.noPersist) {
+        try {
+          const endTime = Date.now();
+          await runStore.updateRun(run.runId, {
+            status: run.status,
+            completedAt: run.completedAt ?? endTime,
+            result: {
+              transactions: transactions.length,
+              components: allComponents.length,
+              snapshots: snapshots.length,
+              reconciliation: reconciliation.status,
+              elapsedMs: endTime - startTime,
+            },
+          });
+
+          // Update checkpoint on success
+          if (run.status === "completed") {
+            const lastOrder = fetched.orders[fetched.orders.length - 1];
+            const checkpointData: {
+              lastOrderDate: string;
+              lastOrderId?: string;
+              lastRunId: string;
+            } = {
+              lastOrderDate: lastOrder?.date_created ?? new Date().toISOString(),
+              lastRunId: run.runId,
+            };
+            if (lastOrder?.id) checkpointData.lastOrderId = lastOrder.id;
+            await runStore.updateCheckpoint(run.sellerId, checkpointData);
+          }
+        } catch {
+          // Run persistence is best-effort
+        }
       }
 
       // 15. Emit metrics

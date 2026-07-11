@@ -443,6 +443,26 @@ function normalizeOrders(input: {
     pushOptional(summary, "createdAt", stringValue(record.date_created));
     pushOptional(summary, "buyerId", buyerId);
 
+    // Extract sanitized order items — strip titles, keep only economic fields
+    const rawItems = asArray(record.order_items);
+    if (rawItems.length > 0) {
+      const sanitizedItems: Array<{ itemId: string; quantity: number; unitPrice: number }> = [];
+      for (const oi of rawItems) {
+        const oiRec = asRecord(oi);
+        const item = asRecord(oiRec?.item);
+        const itemId = stringValue(item?.id) ?? (numberValue(item?.id) !== undefined ? String(item?.id) : undefined);
+        if (!itemId) continue;
+        sanitizedItems.push({
+          itemId,
+          quantity: numberValue(oiRec?.quantity) ?? 1,
+          unitPrice: numberValue(oiRec?.unit_price) ?? 0,
+        });
+      }
+      if (sanitizedItems.length > 0) {
+        (summary as Record<string, unknown>).orderItems = sanitizedItems;
+      }
+    }
+
     if (summary.status === undefined || summary.totalAmount === undefined) {
       complete = false;
     }

@@ -69,6 +69,16 @@ export {
 } from "./economicLearningStore.js";
 export type { EvidenceRequestStore, EnqueueResult, ClaimResult } from "./evidenceRequestStore.js";
 export { createSqliteEvidenceRequestStore, migrateEvidenceStore } from "./evidenceRequestStore.js";
+export type {
+  EconomicIngestionRunStore,
+  Checkpoint,
+  CreateRunInput,
+  UpdateRunInput,
+} from "./economicIngestionRunStore.js";
+export {
+  createSqliteEconomicIngestionRunStore,
+  migrateEconomicIngestionRunStore,
+} from "./economicIngestionRunStore.js";
 export type { SupplierMirrorStore } from "./supplierMirrorStore.js";
 export {
   createSqliteSupplierMirrorStore,

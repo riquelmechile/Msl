@@ -120,6 +120,12 @@ export type MlcOrderSummary = {
   currencyId?: string;
   createdAt?: string;
   buyerId?: string;
+  /** Sanitized order items — item titles are stripped; only item ID, quantity, and unit price are preserved. */
+  orderItems?: Array<{
+    itemId: string;
+    quantity: number;
+    unitPrice: number;
+  }>;
 };
 
 export type MlcMessageSummary = {
