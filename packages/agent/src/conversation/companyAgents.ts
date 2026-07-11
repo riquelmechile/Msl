@@ -102,6 +102,7 @@ const laneDepartments: Record<LaneId, CompanyDepartmentId> = {
   "unanswered-questions": "operations",
   "finance-director": "finance",
   "economic-learning": "finance",
+  "economic-ingestion": "finance",
 };
 
 function toCompanyAgent(contract: LaneContract): CompanyAgent {

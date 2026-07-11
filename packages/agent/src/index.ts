@@ -137,8 +137,21 @@ export type { DaemonLogger, StoreLogger } from "./workers/observabilityPipeline.
 
 // ── Economic learning daemon ────────────────────────────────────────────
 export { createEconomicLearningDaemon } from "./workers/economicLearningDaemon.js";
+export { createEconomicIngestionDaemon } from "./workers/economicIngestionDaemon.js";
 export { runDlqMonitor } from "./workers/dlqMonitorDaemon.js";
 export { financeDirectorDaemon } from "./workers/financeDirectorDaemon.js";
+
+// ── Economic ingestion pipeline ───────────────────────────────────────
+export { runEconomicIngestion } from "./economics/EconomicIngestionPipeline.js";
+export type {
+  PipelineConfig,
+  PipelineResult,
+  ReconciliationVerdict,
+  FetchedData,
+  DataFetcher,
+} from "./economics/EconomicIngestionPipeline.js";
+export { reconcileEconomics } from "./economics/EconomicReconciliationService.js";
+export { transitionRun } from "./economics/EconomicIngestionRun.js";
 
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";

@@ -15,7 +15,8 @@ export type LaneId =
   | "eod-summary"
   | "unanswered-questions"
   | "finance-director"
-  | "economic-learning";
+  | "economic-learning"
+  | "economic-ingestion";
 
 export type CacheTelemetry = {
   provider: string;

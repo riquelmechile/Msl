@@ -93,6 +93,9 @@ export type DaemonSchedulerConfig = {
   /** Optional economic-learning daemon handler (pre-built). Registered
    *  only when MSL_ECONOMIC_LEARNING_ENABLED is "true". */
   economicLearningDaemon?: DaemonHandler;
+  /** Optional economic-ingestion daemon handler (pre-built). Registered
+   *  only when MSL_ECONOMIC_INGESTION_ENABLED is "true". */
+  economicIngestionDaemon?: DaemonHandler;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -148,6 +151,12 @@ function buildHandlerMap(
     config.economicLearningDaemon
   ) {
     map["economic-learning"] = config.economicLearningDaemon;
+  }
+  if (
+    process.env.MSL_ECONOMIC_INGESTION_ENABLED === "true" &&
+    config.economicIngestionDaemon
+  ) {
+    map["economic-ingestion"] = config.economicIngestionDaemon;
   }
   return map;
 }

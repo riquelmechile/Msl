@@ -28,7 +28,12 @@
     "seed:account-assets": "node scripts/seed-account-assets.mjs",
     "lint": "TSESTREE_SINGLE_RUN=true eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "economic:ingest": "npx tsx packages/agent/src/cli/economicCli.ts ingest",
+    "economic:status": "npx tsx packages/agent/src/cli/economicCli.ts status",
+    "economic:coverage": "npx tsx packages/agent/src/cli/economicCli.ts coverage",
+    "economic:reconcile": "npx tsx packages/agent/src/cli/economicCli.ts reconcile",
+    "economic:missing": "npx tsx packages/agent/src/cli/economicCli.ts missing"
   },
   "dependencies": {
     "next": "^15.5.19",
