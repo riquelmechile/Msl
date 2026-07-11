@@ -9,6 +9,7 @@
  */
 import { resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 
 function loadEnvIfPresent(filePath) {
   if (!existsSync(filePath)) return false;
@@ -51,23 +52,24 @@ for (const warning of envCheck.warnings) {
 }
 
 // ── Imports ────────────────────────────────────────────────────
-const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonScheduler } =
+const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonScheduler, createEconomicLearningDaemon, createDaemonLogger } =
   await import("@msl/agent");
-const { createGraphEngine, createDatabase, createSqliteOperationalReadModel } =
+const { createGraphEngine, getSharedDb, createSqliteOperationalReadModel, getSharedManager, BackupScheduler, createSqliteEconomicOutcomeStore, createSqliteEconomicLearningStore } =
   await import("@msl/memory");
 const { getMlAccountRoleConfig } = await import("@msl/mercadolibre");
 const { createSqliteApprovalQueueRepository, createInMemoryApprovalQueueRepository } =
   await import("@msl/tools");
 
+// ── Shared DB connection (consolidated from 3 createDatabase() calls) ──
+const sharedDb = getSharedDb(cortexPath);
+
 // ── Bus DB (agent message bus uses its own SQLite tables) ──────
-const busDb = createDatabase(cortexPath);
-const bus = createAgentMessageBusStore(busDb);
-const consensusStore = createAgentConsensusStore(busDb);
+const bus = createAgentMessageBusStore(sharedDb);
+const consensusStore = createAgentConsensusStore(sharedDb);
 
 // ── Cortex + operational reader ────────────────────────────────
 const engine = createGraphEngine(cortexPath);
-const readerDb = createDatabase(cortexPath);
-const reader = createSqliteOperationalReadModel(readerDb);
+const reader = createSqliteOperationalReadModel(sharedDb);
 
 // ── Seller config ──────────────────────────────────────────────
 const roleConfig = getMlAccountRoleConfig(env);
@@ -93,6 +95,44 @@ if (supplierMirrorRuntime && workerEnabled) {
     adapters: new Map(),
     intervalMs: 10 * 60 * 1000, // 10 minutes
   });
+}
+
+// ── Durability: BackupScheduler ────────────────────────────────
+const backupDir = env.MSL_BACKUP_DIR?.trim() || resolve(import.meta.dirname, "..", "backups");
+const durabilityEnabled = env.MSL_DURABILITY_ENABLED?.trim() === "true";
+let backupScheduler = undefined;
+
+if (durabilityEnabled) {
+  const cortexManager = getSharedManager(cortexPath);
+  backupScheduler = new BackupScheduler({
+    entries: [{ manager: cortexManager, dbPath: cortexPath, dbType: "cortex" }],
+    backupDir,
+    backupIntervalMs: 24 * 60 * 60 * 1000, // 24h
+    walCheckpointIntervalMs: 60 * 60 * 1000,  // 1h
+    integrityCheckIntervalMs: 6 * 60 * 60 * 1000, // 6h
+  });
+  backupScheduler.start();
+  console.log("[agent-daemons] BackupScheduler started (backups → " + backupDir + ")");
+}
+
+// ── Observability: structured logging ──────────────────────────
+let daemonLogger = undefined;
+if (env.MSL_STRUCTURED_LOGGING_ENABLED?.trim() === "true") {
+  daemonLogger = createDaemonLogger("agent-daemons", randomUUID());
+  console.log("[agent-daemons] Structured logging enabled");
+}
+
+// ── Economic learning daemon (optional) ────────────────────────
+let economicLearningDaemon = undefined;
+if (env.MSL_ECONOMIC_LEARNING_ENABLED?.trim() === "true") {
+  const economicOutcomeStore = createSqliteEconomicOutcomeStore(sharedDb);
+  const economicLearningStore = createSqliteEconomicLearningStore(sharedDb);
+  economicLearningDaemon = createEconomicLearningDaemon(
+    economicOutcomeStore,
+    economicLearningStore,
+    engine,
+  );
+  console.log("[agent-daemons] Economic learning daemon registered");
 }
 
 // ── CEO handler Telegram context ────────────────────────────────
@@ -202,6 +242,7 @@ const handle = startDaemonScheduler({
   supplierMirrorStore,
   ...advisors,
   intervalMs: 15 * 60 * 1000, // 15 minutes
+  ...(economicLearningDaemon ? { economicLearningDaemon } : {}),
 });
 
 // ── Proactive monitors (independent of message-driven scheduler) ──
@@ -211,7 +252,13 @@ const { runDlqMonitor } = await import("@msl/agent");
 // Health check every 30 minutes
 const healthInterval = setInterval(
   () => {
-    const health = runSystemHealthCheck(bus, engine);
+    const dbEntries = durabilityEnabled
+      ? [{ manager: getSharedManager(cortexPath), name: "cortex", dbPath: cortexPath }]
+      : undefined;
+    const backupFreshness = backupScheduler
+      ? (name) => backupScheduler.isBackupFresh(name)
+      : undefined;
+    const health = runSystemHealthCheck(bus, engine, dbEntries, backupFreshness);
     if (!health.ok && ceoContext?.adminChatIds && ceoContext.sendProactiveMessage) {
       const alertMsg = health.checks
         .filter((c) => c.status !== "ok")
@@ -242,10 +289,10 @@ const shutdown = () => {
   clearInterval(dlqInterval);
   console.log("\n[agent-daemons] Stopping daemon scheduler...");
   handle.stop();
+  backupScheduler?.stop();
   webhookHandle?.stop();
   supplierMirrorHandle?.stop();
-  busDb.close();
-  readerDb.close();
+  sharedDb.close();
   approvalRepo?.close?.();
   supplierMirrorRuntime?.close();
   process.exit(0);

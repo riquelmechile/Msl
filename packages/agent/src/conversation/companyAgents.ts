@@ -101,6 +101,7 @@ const laneDepartments: Record<LaneId, CompanyDepartmentId> = {
   "eod-summary": "executive",
   "unanswered-questions": "operations",
   "finance-director": "finance",
+  "economic-learning": "finance",
 };
 
 function toCompanyAgent(contract: LaneContract): CompanyAgent {

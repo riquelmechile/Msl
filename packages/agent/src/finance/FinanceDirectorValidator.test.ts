@@ -364,4 +364,188 @@ describe("FinanceDirectorValidator", () => {
     const result = validator.validate(partial as Partial<FinancialAssessment>, evidence);
     expect(result.issues.some((i) => i.rule === "budget-violation")).toBe(true);
   });
+
+  // ── checkInventedFigures hardening (5.1) ──────────────────────────────────
+
+  describe("checkInventedFigures hardening", () => {
+    it("passes when all numeric claims match evidence values", () => {
+      const assessment = makeValidPartial();
+      assessment.summary = "Net profit is 50000 with margin 0.5 on revenue 100000.";
+      assessment.verifiedFacts = ["Revenue 100000 CLP"];
+      assessment.hypotheses = [
+        { statement: "Ad spend of 2000 CLP drives sales", confidence: 0.7, evidence: "snap-1" },
+      ];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // All numbers (100000, 50000, 0.5, 2000) should be in evidence — no invented-figure issues
+      const figIssues = result.issues.filter((i) => i.rule === "invented-figure");
+      expect(figIssues).toHaveLength(0);
+    });
+
+    it("flags unsubstantiated numeric claims not found in evidence", () => {
+      const assessment = makeValidPartial();
+      assessment.summary = "Revenue reached 999999 CLP this quarter.";
+      assessment.verifiedFacts = ["Sales up by 75000 units"];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // 999999 and 75000 are NOT in evidence (evidence has 100000 revenue, etc.)
+      const figIssues = result.issues.filter((i) => i.rule === "invented-figure");
+      expect(figIssues.length).toBeGreaterThanOrEqual(1);
+      expect(figIssues.some((i) => i.detail.includes("Unsubstantiated") || i.detail.includes("Undocumented"))).toBe(true);
+    });
+
+    it("flags fabricated metric — ROAS claimed without ad cost data", () => {
+      const evidence = makeValidEvidence();
+      // Strip advertising cost to make ROAS underivable
+      evidence.snapshots = [
+        {
+          ...evidence.snapshots[0]!,
+          advertisingCost: 0,
+        },
+      ];
+
+      const assessment = makeValidPartial();
+      assessment.summary = "Our ROAS is 4.7 which indicates strong campaign performance.";
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        evidence,
+      );
+      expect(result.issues.some((i) => i.detail.includes("Fabricated metric") && i.detail.includes("ROAS"))).toBe(true);
+    });
+
+    it("flags fabricated metric — CAC claimed without acquisition data", () => {
+      const assessment = makeValidPartial();
+      assessment.recommendations = [
+        {
+          action: "CAC is $2.47 per customer",
+          rationale: "Customer acquisition cost is low",
+          urgency: "escalate",
+        },
+      ];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // CAC of 2.47 should be flagged — evidence has no clicks/customer counts
+      expect(result.issues.some((i) => i.detail.includes("Fabricated metric") && i.detail.includes("CAC"))).toBe(true);
+    });
+
+    it("flags suspicious precision — 3+ decimal places from integer Money", () => {
+      const assessment = makeValidPartial();
+      assessment.verifiedFacts = ["Profit margin is 47.831% based on calculations."];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      expect(result.issues.some((i) => i.detail.includes("Suspicious precision"))).toBe(true);
+    });
+
+    it("does NOT flag reasonable precision (0-2 decimal places)", () => {
+      const assessment = makeValidPartial();
+      assessment.verifiedFacts = ["Profit margin is 32% and unit cost 14.50 CLP."];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // 32 and 14.50 have ≤2 decimal places — should NOT trigger suspicious precision
+      const precisionIssues = result.issues.filter((i) => i.detail.includes("Suspicious precision"));
+      expect(precisionIssues).toHaveLength(0);
+    });
+
+    it("flags undocumented amount — CLP claim not in evidence", () => {
+      const assessment = makeValidPartial();
+      assessment.recommendations = [
+        {
+          action: "Shipping cost increased by 12000 CLP due to logistics changes",
+          rationale: "Costs are rising",
+          urgency: "escalate",
+        },
+      ];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // 12000 should be flagged — evidence snap has sellerShippingCost=5000, not 12000
+      expect(result.issues.some((i) => i.detail.includes("Undocumented amount"))).toBe(true);
+    });
+
+    it("flags currency mismatch — USD claim against CLP evidence", () => {
+      const assessment = makeValidPartial();
+      assessment.summary = "Revenue reached $50000 USD this month with strong growth.";
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // Evidence currency is CLP, claim references USD
+      expect(result.issues.some((i) => i.detail.includes("Currency mismatch"))).toBe(true);
+    });
+
+    it("passes assessment with no numeric claims (qualitative only)", () => {
+      const assessment = makeValidPartial();
+      assessment.summary = "Financial health is stable and improving across all accounts.";
+      assessment.verifiedFacts = ["Seller is maintaining good standing"];
+      assessment.hypotheses = [
+        { statement: "Market conditions are favorable", confidence: 0.6, evidence: "out-1" },
+      ];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // No numeric claims → no invented-figure issues from hardening (confidence check may still fire if needed)
+      const figIssues = result.issues.filter((i) => i.rule === "invented-figure");
+      expect(figIssues).toHaveLength(0);
+    });
+
+    it("aggregates multiple issues in one assessment", () => {
+      const assessment = makeValidPartial();
+      assessment.summary = "ROAS is 5.2 and margin is 47.831% with undocumented 50000 CLP bonus.";
+      assessment.recommendations = [
+        {
+          action: "Undocumented cost of 99999 USD needs investigation",
+          rationale: "Suspicious cost",
+          urgency: "escalate",
+        },
+      ];
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      const figIssues = result.issues.filter((i) => i.rule === "invented-figure");
+      // Should have at least 3 issues: fabricated ROAS (no ad cost), suspicious precision (47.831), undocumented/currency-mismatch
+      expect(figIssues.length).toBeGreaterThanOrEqual(3);
+      // Each should have rule "invented-figure" with distinct detail
+      const details = figIssues.map((i) => i.detail);
+      expect(new Set(details).size).toBe(figIssues.length); // all distinct
+    });
+
+    it("preserves existing confidence validation alongside hardening", () => {
+      const assessment = makeValidPartial();
+      assessment.confidence = 1.5; // Invalid
+      assessment.summary = "Revenue is 100000 CLP with ROAS of 3.2.";
+
+      const result = validator.validate(
+        assessment as Partial<FinancialAssessment>,
+        makeValidEvidence(),
+      );
+      // Should still catch invalid confidence
+      expect(result.issues.some((i) => i.detail.includes("not a valid 0-1 number"))).toBe(true);
+      // AND catch fabricated ROAS (advertisingCost is 2000, revenue is 100000 — ROAS is derivable actually)
+      // Actually ROAS IS derivable here (advertisingCost=2000, grossRevenue=100000), so no ROAS issue
+      // But confidence is still caught
+    });
+  });
 });

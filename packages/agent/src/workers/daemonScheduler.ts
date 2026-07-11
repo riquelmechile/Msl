@@ -90,6 +90,9 @@ export type DaemonSchedulerConfig = {
   /** Optional OwnedEcommerceStore for persisting projection snapshots
    *  and candidate state. */
   ownedEcommerceStore?: OwnedEcommerceStore;
+  /** Optional economic-learning daemon handler (pre-built). Registered
+   *  only when MSL_ECONOMIC_LEARNING_ENABLED is "true". */
+  economicLearningDaemon?: DaemonHandler;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -110,7 +113,8 @@ const SESSION_LANE_IDS = new Set<LaneId>([
 /** Minimum cooldown between sessions for the same lane+seller (1 hour). */
 const SESSION_COOLDOWN_MS = 60 * 60 * 1000;
 
-/** Static mapping from LaneId → daemon handler. Unknown lanes are skipped silently. */
+/** Static mapping from LaneId → daemon handler. Unknown lanes are skipped silently.
+ *  Extended at runtime with economic-learning when enabled via `buildHandlerMap()`. */
 const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "market-catalog": marketCatalogDaemon,
   "operations-manager": operationsManagerDaemon,
@@ -128,6 +132,34 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "unanswered-questions": unansweredQuestionsDaemon,
   "finance-director": financeDirectorDaemon,
 };
+
+// ── Handler-map builder ─────────────────────────────────────────────
+
+/**
+ * Build the effective handler map, adding economic-learning when
+ * both the env flag and the pre-built daemon handler are present.
+ */
+function buildHandlerMap(
+  config: DaemonSchedulerConfig,
+): Partial<Record<LaneId, DaemonHandler>> {
+  const map: Partial<Record<LaneId, DaemonHandler>> = { ...daemonHandlerMap };
+  if (
+    process.env.MSL_ECONOMIC_LEARNING_ENABLED === "true" &&
+    config.economicLearningDaemon
+  ) {
+    map["economic-learning"] = config.economicLearningDaemon;
+  }
+  return map;
+}
+
+/**
+ * Return the lane IDs that the scheduler knows about (base mapping).
+ * Callers iterating the handler map at runtime should use the map
+ * built by {@link buildHandlerMap} instead.
+ */
+export function getRegisteredLaneIds(): string[] {
+  return Object.keys(daemonHandlerMap);
+}
 
 // ── Cycle-level cache ───────────────────────────────────────────────
 
@@ -160,11 +192,19 @@ function createCachingReader(reader: OperationalReadModelReader): OperationalRea
  * Dedupe keys include `sellerId` to prevent cross-account dedupe collisions.
  * Each tick carries an ISO-8601 `cycleTimestamp` so daemons can check
  * hour gates.
+ *
+ * @param extraLaneIds — additional lane IDs to enqueue ticks for (used when
+ *   the handler map is extended at runtime, e.g. economic-learning).
  */
-export function enqueueDaemonTick(bus: AgentMessageBusStore, sellerIds: string[]): void {
+export function enqueueDaemonTick(
+  bus: AgentMessageBusStore,
+  sellerIds: string[],
+  extraLaneIds?: string[],
+): void {
+  const laneIds = [...Object.keys(daemonHandlerMap), ...(extraLaneIds ?? [])];
   const now = new Date();
   const hourKey = now.toISOString().slice(0, 13); // "2026-07-09T14"
-  for (const laneId of Object.keys(daemonHandlerMap)) {
+  for (const laneId of laneIds) {
     for (const sellerId of sellerIds) {
       bus.enqueue({
         senderAgentId: "system",
@@ -192,6 +232,12 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
   const intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
 
   const run = async () => {
+    // ── Build effective handler map (extended with economic-learning when enabled) ──
+    const handlerMap = buildHandlerMap(config);
+    const extraLaneIds = Object.keys(handlerMap).filter(
+      (k) => !(k in daemonHandlerMap),
+    );
+
     // ── Build per-seller account contexts ──
     const accountContexts = new Map<string, AgentAccountContext>();
     for (const sellerId of config.sellerIds) {
@@ -199,12 +245,12 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
     }
 
     // ── Enqueue autonomous ticks before claim loop ──
-    enqueueDaemonTick(config.bus, config.sellerIds);
+    enqueueDaemonTick(config.bus, config.sellerIds, extraLaneIds);
 
     const agents = listCompanyAgents();
     const activeAgents = agents.filter(
       (agent) =>
-        agent.profile.laneId && daemonHandlerMap[agent.profile.laneId] && agent.status === "active",
+        agent.profile.laneId && handlerMap[agent.profile.laneId] && agent.status === "active",
     );
 
     // ── Wrap reader with per-cycle cache to avoid redundant data reads ──
@@ -225,7 +271,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
     await Promise.all(
       activeAgents.map(async (agent) => {
         const laneId = agent.profile.laneId!;
-        const handler = daemonHandlerMap[laneId]!;
+        const handler = handlerMap[laneId]!;
 
         const claimed = config.bus.claimNext(laneId);
         if (claimed.length === 0) return;

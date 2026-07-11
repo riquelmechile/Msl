@@ -13,6 +13,14 @@ export type ValidationResult = {
   issues: ValidationIssue[];
 };
 
+/** Internal representation of a numeric claim extracted from assessment text. */
+interface NumericClaim {
+  value: number;
+  raw: string;
+  isPercentage: boolean;
+  context: string;
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const VALID_SELLERS = new Set(["plasticov", "maustian"]);
@@ -120,12 +128,19 @@ export class FinanceDirectorValidator {
 
   // ── Private check methods ────────────────────────────────────────────────
 
+  // ── Numeric claim types ──────────────────────────────────────────────
+
+  private readonly NUMERIC_PATTERN =
+    /\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b|\b\d+(?:\.\d+)?\b/g;
+
+  // ── checkInventedFigures ──────────────────────────────────────────────
+
   private checkInventedFigures(
     assessment: Partial<FinancialAssessment>,
-    _evidence: FinanceDirectorEvidence,
+    evidence: FinanceDirectorEvidence,
     issues: ValidationIssue[],
   ): void {
-    // Check that confidence is a valid number between 0 and 1
+    // 1. Confidence validation (PRESERVED from existing)
     if (assessment.confidence !== undefined) {
       if (typeof assessment.confidence !== "number" || Number.isNaN(assessment.confidence) || assessment.confidence < 0 || assessment.confidence > 1) {
         issues.push({
@@ -133,6 +148,249 @@ export class FinanceDirectorValidator {
           detail: `Confidence ${JSON.stringify(assessment.confidence)} is not a valid 0-1 number.`,
         });
       }
+    }
+
+    // 2. Extract numeric claims from assessment text
+    const text = this.assessmentText(assessment);
+    const claims = this.extractNumericClaims(text);
+    if (claims.length === 0) return;
+
+    // 3. Collect evidence numeric values for cross-reference
+    const evidenceValues = this.collectEvidenceValues(evidence);
+
+    // 4. Analyze each claim
+    for (const claim of claims) {
+      this.analyzeNumericClaim(claim, evidence, evidenceValues, issues);
+    }
+  }
+
+  // ── Numeric extraction helpers ───────────────────────────────────────
+
+  private extractNumericClaims(text: string): NumericClaim[] {
+    const claims: NumericClaim[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = this.NUMERIC_PATTERN.exec(text)) !== null) {
+      const numStr = match[0].replace(/,/g, "");
+      const value = parseFloat(numStr);
+      if (Number.isNaN(value)) continue;
+
+      // Check whether a % sign follows immediately (possibly with whitespace)
+      const afterMatch = text.slice(match.index + match[0].length);
+      const pctMatch = afterMatch.match(/^\s*%/);
+      const isPercentage = pctMatch !== null;
+      // Build the raw representation including trailing % for precision analysis
+      const raw = isPercentage ? match[0] + pctMatch![0] : match[0];
+
+      // Extract surrounding context (~60 chars before/after)
+      const start = Math.max(0, match.index - 60);
+      const end = Math.min(text.length, match.index + raw.length + 60);
+      const context = text.slice(start, end).replace(/\s+/g, " ").trim();
+
+      claims.push({ value, raw, isPercentage, context });
+    }
+    return claims;
+  }
+
+  private collectEvidenceValues(evidence: FinanceDirectorEvidence): number[] {
+    const values: number[] = [];
+
+    for (const snap of evidence.snapshots) {
+      const numericFields = [
+        snap.grossRevenue,
+        snap.netProfit,
+        snap.netMargin,
+        snap.contributionProfit,
+        snap.contributionMargin,
+        snap.marketplaceFees,
+        snap.advertisingCost,
+        snap.productCost,
+        snap.sellerShippingCost,
+        snap.allocatedLandedCost,
+        snap.taxes,
+        snap.financingCost,
+        snap.packagingCost,
+        snap.otherCosts,
+        snap.sellerFundedDiscounts,
+        snap.refunds,
+      ];
+      for (const v of numericFields) {
+        if (typeof v === "number" && Number.isFinite(v)) values.push(v);
+      }
+    }
+
+    if (evidence.profitSummary) {
+      const ps = evidence.profitSummary;
+      values.push(ps.totalRevenue, ps.totalCosts, ps.netProfit, ps.netMargin);
+    }
+
+    // Also collect outcome-related numeric context if present
+    for (const outcome of evidence.outcomes) {
+      if (typeof outcome.confidence === "number") values.push(outcome.confidence);
+      if (typeof outcome.completeness === "number") values.push(outcome.completeness);
+    }
+
+    return values;
+  }
+
+  // ── Per-claim analysis ────────────────────────────────────────────────
+
+  private analyzeNumericClaim(
+    claim: NumericClaim,
+    evidence: FinanceDirectorEvidence,
+    evidenceValues: number[],
+    issues: ValidationIssue[],
+  ): void {
+    // 1. Detect fabricated metrics (ROAS, CAC, margin %, conversion rate)
+    const metric = this.detectMetric(claim.context);
+    if (metric !== null && !this.isMetricDerivable(metric, evidence)) {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Fabricated metric: "${metric}" = ${claim.raw} claimed but not derivable from available evidence.`,
+      });
+      return; // Already flagged — skip further checks for this claim
+    }
+
+    // 2. Check suspicious precision (> 2 decimal places)
+    const decimals = this.countDecimalPlaces(claim.raw);
+    if (decimals > 2) {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Suspicious precision: "${claim.raw}" has ${decimals} decimal places — unrealistic for integer-currency evidence. Context: "${claim.context}"`,
+      });
+      // Continue checking — a claim can be both precise AND unsubstantiated
+    }
+
+    // 3. Check currency mismatch BEFORE value cross-reference
+    //    (currency check also validates evidence linkage)
+    const hasUsd = /\bUSD\b/i.test(claim.context);
+    const hasClp = /\bCLP\b/i.test(claim.context);
+    const evidenceCurrency = evidence.sellerCurrency;
+
+    if (hasUsd && evidenceCurrency === "CLP") {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Currency mismatch: claim "${claim.context}" references USD but evidence currency is ${evidenceCurrency}.`,
+      });
+      return; // Currency mismatch is decisive
+    }
+    if (hasClp && evidenceCurrency === "USD") {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Currency mismatch: claim "${claim.context}" references CLP but evidence currency is ${evidenceCurrency}.`,
+      });
+      return;
+    }
+
+    // 4. Cross-reference value against evidence
+    const found = this.numberInEvidence(claim.value, evidenceValues, claim.isPercentage);
+    if (!found) {
+      if (hasUsd || hasClp) {
+        issues.push({
+          rule: "invented-figure",
+          detail: `Undocumented amount: ${claim.raw} in "${claim.context}" not found in evidence.`,
+        });
+      } else {
+        issues.push({
+          rule: "invented-figure",
+          detail: `Unsubstantiated claim: numeric value ${claim.raw} in "${claim.context}" has no supporting evidence.`,
+        });
+      }
+    }
+  }
+
+  // ── Metric detection ──────────────────────────────────────────────────
+
+  private detectMetric(context: string): string | null {
+    if (/\bROAS\b/i.test(context)) return "ROAS";
+    if (/\bCAC\b/i.test(context)) return "CAC";
+    if (/\b(?:profit\s+)?margin\b/i.test(context)) return "margin";
+    if (/\bconversion\s+rate\b/i.test(context)) return "conversion rate";
+    if (/\bCPC\b/i.test(context)) return "CPC";
+    if (/\bCTR\b/i.test(context)) return "CTR";
+    return null;
+  }
+
+  private isMetricDerivable(metric: string, evidence: FinanceDirectorEvidence): boolean {
+    // Check if raw data exists in evidence to derive the metric
+    for (const snap of evidence.snapshots) {
+      switch (metric) {
+        case "ROAS":
+          // ROAS = grossRevenue / advertisingCost — need both non-zero
+          if (snap.grossRevenue > 0 && snap.advertisingCost > 0) return true;
+          break;
+        case "CAC":
+          // CAC = advertisingCost / customerCount — need customer data not in standard evidence
+          return false;
+        case "margin":
+          if (snap.grossRevenue > 0) return true;
+          break;
+        case "conversion rate":
+        case "CPC":
+        case "CTR":
+          // These require click/impression data not in standard snapshots
+          return false;
+      }
+    }
+
+    // Fallback: profit summary provides margin data but not ROAS/CAC breakdowns
+    if (evidence.profitSummary) {
+      if (metric === "margin") return true;
+    }
+
+    return false;
+  }
+
+  // ── Precision helpers ─────────────────────────────────────────────────
+
+  private countDecimalPlaces(raw: string): number {
+    const cleaned = raw.replace(/%/g, "").replace(/,/g, "").trim();
+    const dotIdx = cleaned.indexOf(".");
+    if (dotIdx === -1) return 0;
+    return cleaned.length - dotIdx - 1;
+  }
+
+  private numberInEvidence(
+    value: number,
+    evidenceValues: number[],
+    isPercentage: boolean,
+  ): boolean {
+    // Normalise percentages to fraction form (0–1) for evidence comparison.
+    // Evidence stores margins as fractions (e.g. netMargin 0.5 = 50%).
+    const searchValue = isPercentage ? value / 100 : value;
+    const tolerance = isPercentage ? 0.015 : Math.max(2, Math.abs(searchValue) * 0.02);
+    return evidenceValues.some((ev) => Math.abs(ev - searchValue) <= tolerance);
+  }
+
+  private flagUnsubstantiatedClaim(
+    claim: NumericClaim,
+    evidence: FinanceDirectorEvidence,
+    issues: ValidationIssue[],
+  ): void {
+    const hasUsd = /\bUSD\b/i.test(claim.context);
+    const hasClp = /\bCLP\b/i.test(claim.context);
+    const evidenceCurrency = evidence.sellerCurrency;
+
+    if (hasUsd && evidenceCurrency !== "USD") {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Currency mismatch: claim "${claim.context}" references USD but evidence currency is ${evidenceCurrency}.`,
+      });
+    } else if (hasClp && evidenceCurrency !== "CLP") {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Currency mismatch: claim "${claim.context}" references CLP but evidence currency is ${evidenceCurrency}.`,
+      });
+    } else if (hasUsd || hasClp) {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Undocumented amount: ${claim.raw} in "${claim.context}" not found in evidence.`,
+      });
+    } else {
+      issues.push({
+        rule: "invented-figure",
+        detail: `Unsubstantiated claim: numeric value ${claim.raw} in "${claim.context}" has no supporting evidence.`,
+      });
     }
   }
 

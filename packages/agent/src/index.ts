@@ -125,7 +125,18 @@ export { supplierManagerDaemon } from "./workers/supplierManagerDaemon.js";
 export { morningReportDaemon } from "./workers/morningReportDaemon.js";
 export { eodSummaryDaemon } from "./workers/eodSummaryDaemon.js";
 export { runSystemHealthCheck } from "./workers/systemHealthDaemon.js";
-export type { SystemHealthCheck } from "./workers/systemHealthDaemon.js";
+export type { SystemHealthCheck, HealthDbEntry, BackupFreshnessChecker } from "./workers/systemHealthDaemon.js";
+
+// ── Observability pipeline ──────────────────────────────────────────────
+export {
+  createDaemonLogger,
+  createStoreLogger,
+  sanitizeContext,
+} from "./workers/observabilityPipeline.js";
+export type { DaemonLogger, StoreLogger } from "./workers/observabilityPipeline.js";
+
+// ── Economic learning daemon ────────────────────────────────────────────
+export { createEconomicLearningDaemon } from "./workers/economicLearningDaemon.js";
 export { runDlqMonitor } from "./workers/dlqMonitorDaemon.js";
 export { financeDirectorDaemon } from "./workers/financeDirectorDaemon.js";
 

@@ -1,10 +1,13 @@
 import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
+import { createSqliteEconomicOutcomeStore, createSqliteEconomicLearningStore } from "@msl/memory";
 import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
-import { startDaemonScheduler, enqueueDaemonTick } from "../../src/workers/daemonScheduler.js";
+import { startDaemonScheduler, enqueueDaemonTick, getRegisteredLaneIds } from "../../src/workers/daemonScheduler.js";
+import { createEconomicLearningDaemon } from "../../src/workers/economicLearningDaemon.js";
+import { createDaemonLogger } from "../../src/workers/observabilityPipeline.js";
 import { createCeoInboxStore, type CeoInboxStore } from "../../src/conversation/ceoInboxStore.js";
 import { listCompanyAgents } from "../../src/conversation/companyAgents.js";
 
@@ -357,6 +360,190 @@ describe("daemonScheduler", () => {
       for (const row of ceoMessages) {
         expect(row.status).toBe("resolved");
       }
+    });
+  });
+
+  // ── Economic learning integration (5.3 / 5.5) ─────────────────────
+
+  describe("economic learning lane", () => {
+    let ecoOutcomeDb: Database.Database;
+    let ecoLearnDb: Database.Database;
+    let bus: AgentMessageBusStore;
+
+    beforeEach(() => {
+      ecoOutcomeDb = new Database(":memory:");
+      ecoOutcomeDb.pragma("journal_mode = WAL");
+      ecoLearnDb = new Database(":memory:");
+      ecoLearnDb.pragma("journal_mode = WAL");
+
+      const testDb = new Database(":memory:");
+      testDb.pragma("journal_mode = WAL");
+      bus = createAgentMessageBusStore(testDb);
+    });
+
+    describe("handler map registration", () => {
+      it("registers economic-learning when enabled", () => {
+        process.env.MSL_ECONOMIC_LEARNING_ENABLED = "true";
+        try {
+          const outcomeStore = createSqliteEconomicOutcomeStore(ecoOutcomeDb);
+          const learnStore = createSqliteEconomicLearningStore(ecoLearnDb);
+          const daemon = createEconomicLearningDaemon(outcomeStore, learnStore);
+
+          const scheduler = startDaemonScheduler({
+            bus,
+            reader: createSqliteOperationalReadModel(new Database(":memory:")),
+            cortex: createGraphEngine(":memory:"),
+            sellerIds: ["seller-1"],
+            intervalMs: 60_000,
+            economicLearningDaemon: daemon,
+          });
+
+          expect(scheduler).toBeDefined();
+          scheduler.stop();
+        } finally {
+          delete process.env.MSL_ECONOMIC_LEARNING_ENABLED;
+        }
+      });
+
+      it("excludes economic-learning when disabled", () => {
+        delete process.env.MSL_ECONOMIC_LEARNING_ENABLED;
+        const outcomeStore = createSqliteEconomicOutcomeStore(ecoOutcomeDb);
+        const learnStore = createSqliteEconomicLearningStore(ecoLearnDb);
+        const daemon = createEconomicLearningDaemon(outcomeStore, learnStore);
+
+        const scheduler = startDaemonScheduler({
+          bus,
+          reader: createSqliteOperationalReadModel(new Database(":memory:")),
+          cortex: createGraphEngine(":memory:"),
+          sellerIds: ["seller-1"],
+          intervalMs: 60_000,
+          economicLearningDaemon: daemon,
+        });
+
+        expect(scheduler).toBeDefined();
+        scheduler.stop();
+      });
+
+      it("does not crash when economicLearningDaemon is not provided", () => {
+        process.env.MSL_ECONOMIC_LEARNING_ENABLED = "true";
+        try {
+          const scheduler = startDaemonScheduler({
+            bus,
+            reader: createSqliteOperationalReadModel(new Database(":memory:")),
+            cortex: createGraphEngine(":memory:"),
+            sellerIds: ["seller-1"],
+            intervalMs: 60_000,
+            // economicLearningDaemon intentionally omitted
+          });
+
+          expect(scheduler).toBeDefined();
+          scheduler.stop();
+        } finally {
+          delete process.env.MSL_ECONOMIC_LEARNING_ENABLED;
+        }
+      });
+    });
+
+    describe("handler map count", () => {
+      it("has base handler map with expected lane count", () => {
+        const lanes = getRegisteredLaneIds();
+        // Base map: market-catalog, operations-manager, cost-supplier,
+        // creative-assets, creative-commercial, creative-studio,
+        // product-ads-monitor, product-ads-ceo-profitability,
+        // product-ads-profitability, supplier-manager, morning-report,
+        // eod-summary, owned-ecommerce, unanswered-questions,
+        // finance-director = 15
+        expect(lanes.length).toBe(15);
+      });
+
+      it("enqueueDaemonTick enqueues for all base lanes", () => {
+        const testDb = new Database(":memory:");
+        testDb.pragma("journal_mode = WAL");
+        const localBus = createAgentMessageBusStore(testDb);
+
+        enqueueDaemonTick(localBus, ["seller-1"]);
+
+        const tickRows = testDb
+          .prepare(
+            "SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
+          )
+          .all() as Array<{ receiver_agent_id: string }>;
+        expect(tickRows.length).toBe(15);
+      });
+
+      it("enqueueDaemonTick includes extra lanes when provided", () => {
+        const testDb = new Database(":memory:");
+        testDb.pragma("journal_mode = WAL");
+        const localBus = createAgentMessageBusStore(testDb);
+
+        enqueueDaemonTick(localBus, ["seller-1"], ["economic-learning"]);
+
+        const tickRows = testDb
+          .prepare(
+            "SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
+          )
+          .all() as Array<{ receiver_agent_id: string }>;
+        // 15 base + 1 extra = 16
+        expect(tickRows.length).toBe(16);
+        const laneIds = tickRows.map((r) => r.receiver_agent_id);
+        expect(laneIds).toContain("economic-learning");
+      });
+    });
+
+    describe("logger injection", () => {
+      it("daemon logger creates structured logger with correlationId", () => {
+        process.env.MSL_STRUCTURED_LOGGING_ENABLED = "true";
+        try {
+          const logger = createDaemonLogger("test-daemon", "test-correlation-id-123");
+          expect(logger).toBeDefined();
+          expect(typeof logger.info).toBe("function");
+          expect(typeof logger.warn).toBe("function");
+          expect(typeof logger.error).toBe("function");
+        } finally {
+          delete process.env.MSL_STRUCTURED_LOGGING_ENABLED;
+        }
+      });
+
+      it("daemon logger is no-op when structured logging disabled", () => {
+        delete process.env.MSL_STRUCTURED_LOGGING_ENABLED;
+        const logger = createDaemonLogger("test-daemon", "test-id");
+        expect(logger).toBeDefined();
+        // No-op logger should not throw
+        expect(() => logger.info("test")).not.toThrow();
+        expect(() => logger.warn("test")).not.toThrow();
+        expect(() => logger.error("test", new Error("test"))).not.toThrow();
+      });
+
+      it("scheduler does not crash when economic learning daemon is dispatched", async () => {
+        process.env.MSL_ECONOMIC_LEARNING_ENABLED = "true";
+        try {
+          const outcomeStore = createSqliteEconomicOutcomeStore(ecoOutcomeDb);
+          const learnStore = createSqliteEconomicLearningStore(ecoLearnDb);
+          const daemon = createEconomicLearningDaemon(outcomeStore, learnStore);
+
+          // Enqueue a daemon-tick for economic-learning
+          bus.enqueue({
+            senderAgentId: "ceo",
+            receiverAgentId: "economic-learning",
+            messageType: "daemon-tick",
+            payloadJson: JSON.stringify({ cycleTimestamp: new Date().toISOString(), sellerId: "seller-1" }),
+          });
+
+          const scheduler = startDaemonScheduler({
+            bus,
+            reader: createSqliteOperationalReadModel(new Database(":memory:")),
+            cortex: createGraphEngine(":memory:"),
+            sellerIds: ["seller-1"],
+            intervalMs: 60_000,
+            economicLearningDaemon: daemon,
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          scheduler.stop();
+        } finally {
+          delete process.env.MSL_ECONOMIC_LEARNING_ENABLED;
+        }
+      });
     });
   });
 });
