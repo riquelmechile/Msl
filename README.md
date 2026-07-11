@@ -27,7 +27,7 @@ MSL combina razonamiento (DeepSeek), memoria (Cortex, grafo neuronal en SQLite) 
 
 ## Qué funciona actualmente
 
-Verificado contra el commit `413248c` en `main`:
+Verificado contra el baseline `11469f8` (P0 PR 1/4 audit and hardening):
 
 | Componente                     | Estado                                                      |
 | ------------------------------ | ----------------------------------------------------------- |

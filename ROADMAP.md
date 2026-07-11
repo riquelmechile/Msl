@@ -1,7 +1,8 @@
 # ROADMAP — MSL Agent Enterprise
 
 > **Review date:** 2026-07-11
-> **Verified commit:** `4e7ef83`
+> **Last verified code baseline:** `11469f8` — fix(runtime): audit and harden production readiness control plane
+> **Verification scope:** Production Readiness PR 1/4 audit and hardening
 > **State definitions:**
 >
 > - **Implementado** — merged, tested, available at HEAD.
@@ -11,8 +12,6 @@
 > - **Producción pendiente** — code exists, needs credentials/deployment to run on real data.
 
 ## Implemented at HEAD
-
-Verified against commit `4e7ef83`:
 
 | Capability                               | Status                   | Notes                                                                                    |
 | ---------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
