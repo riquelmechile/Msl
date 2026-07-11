@@ -4,6 +4,7 @@ import type { EconomicOutcomeStore } from "@msl/memory";
 import type { EconomicCostComponent } from "@msl/domain";
 import type { DataFetcher } from "../economics/EconomicIngestionPipeline.js";
 import type { AgentMessage } from "../conversation/agentMessageBusStore.js";
+import Database from "better-sqlite3";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -23,8 +24,24 @@ function makeDummyComponent(): EconomicCostComponent {
 }
 
 function mockStore(): EconomicOutcomeStore {
+  // Create a real in-memory DB so the transaction path works
+  const db = new Database(":memory:");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS economic_ingestion_runs (
+      id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, status TEXT NOT NULL,
+      mode TEXT NOT NULL, started_at INTEGER, completed_at INTEGER,
+      params TEXT, result TEXT, error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS economic_ingestion_checkpoints (
+      seller_id TEXT PRIMARY KEY, last_order_date TEXT, last_order_id TEXT,
+      last_run_id TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
   const store: any = {
+    transaction: (fn: () => any) => db.transaction(fn)(),
+    getDb: () => db,
     insertCostComponent: vi.fn(() => makeDummyComponent()),
     upsertCostComponent: vi.fn(() => makeDummyComponent()),
     insertUnitEconomicsSnapshot: vi.fn((snap) => snap),

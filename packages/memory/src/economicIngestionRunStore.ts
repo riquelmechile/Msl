@@ -354,3 +354,65 @@ export function createSqliteEconomicIngestionRunStore(
     },
   };
 }
+
+// ── Sync helpers for use inside external transactions ─────────────────────
+
+/**
+ * Synchronous run update for use inside db.transaction() callbacks.
+ * Writes status, completedAt, result, and error to a run row.
+ */
+export function syncUpdateRunInTx(
+  db: Database.Database,
+  id: string,
+  updates: {
+    status?: string | null;
+    completedAt?: number | null;
+    result?: Record<string, unknown> | null;
+    error?: string | null;
+  },
+): void {
+  const stmt = db.prepare(`
+    UPDATE economic_ingestion_runs
+    SET status = COALESCE(?, status),
+        completed_at = COALESCE(?, completed_at),
+        result = COALESCE(?, result),
+        error = COALESCE(?, error)
+    WHERE id = ?
+  `);
+  const resultJson = updates.result ? JSON.stringify(updates.result) : null;
+  const errorClean = updates.error ? sanitizeError(updates.error) : null;
+  stmt.run(
+    updates.status ?? null,
+    updates.completedAt ?? null,
+    resultJson,
+    errorClean,
+    id,
+  );
+}
+
+/**
+ * Synchronous checkpoint upsert for use inside db.transaction() callbacks.
+ */
+export function syncUpdateCheckpointInTx(
+  db: Database.Database,
+  sellerId: string,
+  data: { lastOrderDate?: string; lastOrderId?: string; lastRunId?: string },
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO economic_ingestion_checkpoints
+      (seller_id, last_order_date, last_order_id, last_run_id, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(seller_id) DO UPDATE SET
+      last_order_date = COALESCE(excluded.last_order_date, economic_ingestion_checkpoints.last_order_date),
+      last_order_id = COALESCE(excluded.last_order_id, economic_ingestion_checkpoints.last_order_id),
+      last_run_id = COALESCE(excluded.last_run_id, economic_ingestion_checkpoints.last_run_id),
+      updated_at = excluded.updated_at
+  `);
+  stmt.run(
+    sellerId,
+    data.lastOrderDate ?? null,
+    data.lastOrderId ?? null,
+    data.lastRunId ?? null,
+    new Date().toISOString(),
+  );
+}

@@ -117,6 +117,15 @@ export type ListCostComponentsOptions = {
 };
 
 export type EconomicOutcomeStore = {
+  // ── Transaction ─────────────────────────────────────────────────────
+  /** Wrap multiple writes in a single atomic transaction.
+   *  Since the outcome store and the run store share the same Database
+   *  instance, writes to both stores are rolled back together on failure. */
+  transaction<T>(fn: () => T): T;
+
+  /** Return the shared Database handle for use with sync update helpers. */
+  getDb(): Database.Database;
+
   // ── Outcome methods ─────────────────────────────────────────────────
   insertOutcome(outcome: EconomicOutcome): EconomicOutcome;
   updateOutcomeStatus(outcomeId: string, newStatus: EconomicOutcomeStatus): EconomicOutcome;
@@ -557,6 +566,14 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
   `);
 
   return {
+    transaction<T>(fn: () => T): T {
+      return db.transaction(fn)();
+    },
+
+    getDb(): Database.Database {
+      return db;
+    },
+
     insertOutcome(outcome) {
       const tx = db.transaction(() => {
         insertOutcomeStmt.run(

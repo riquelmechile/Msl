@@ -10,6 +10,7 @@ import { createEconomicIngestionRun, createEconomicEvidenceReference } from "@ms
 import { createUnitEconomicsSnapshot } from "@msl/domain";
 import type { EconomicOutcomeStore } from "@msl/memory";
 import type { EconomicIngestionRunStore } from "@msl/memory";
+import { syncUpdateRunInTx, syncUpdateCheckpointInTx } from "@msl/memory";
 import { normalizeOrders } from "./normalization.js";
 import {
   adaptMarketplaceFee,
@@ -206,8 +207,19 @@ export async function runEconomicIngestion(
             startedAt: run.startedAt,
             params: { maxPages: config.maxPages, mode: config.mode },
           });
-        } catch {
-          // Run persistence is best-effort; don't block the pipeline
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            JSON.stringify({
+              event: "economic-ingestion-error",
+              runId: run.runId,
+              sellerId: config.sellerId,
+              phase: "create-run",
+              error: msg,
+              timestamp: new Date().toISOString(),
+            }),
+          );
+          throw new Error(`Failed to persist initial run record: ${msg}`);
         }
       }
 
@@ -396,27 +408,113 @@ export async function runEconomicIngestion(
 
       checkAborted(config.abortSignal);
 
-      // 12. Persist
+      // 12. Persist (atomic transaction, fail-closed)
       run = transitionRun(run, "persisting");
+
       if (!config.noPersist && !config.dryRun) {
-        for (const comp of allComponents) {
-          store.insertCostComponent({
-            sellerId: comp.sellerId,
-            type: comp.type,
-            amount: comp.amount,
-            source: comp.source,
-            ...(comp.sourceRecordId !== undefined
-              ? { sourceRecordId: comp.sourceRecordId }
-              : {}),
-            occurredAt: comp.occurredAt,
-            observedAt: comp.observedAt,
-            verification: comp.verification,
-            confidence: comp.confidence,
-            ...(comp.metadata !== undefined ? { metadata: comp.metadata } : {}),
+        try {
+          // Build run result (compute before transaction to keep it pure)
+          const endTime = Date.now();
+          const runResult = {
+            transactions: transactions.length,
+            components: allComponents.length,
+            snapshots: snapshots.length,
+            reconciliation: "", // populated after transaction succeeds
+            elapsedMs: endTime - startTime,
+          };
+
+          // Build checkpoint data
+          const lastOrder = fetched.orders[fetched.orders.length - 1];
+          const checkpointData: {
+            lastOrderDate: string;
+            lastOrderId?: string;
+            lastRunId: string;
+          } = {
+            lastOrderDate: lastOrder?.date_created ?? new Date().toISOString(),
+            lastRunId: run.runId,
+          };
+          if (lastOrder?.id) checkpointData.lastOrderId = lastOrder.id;
+
+          // Wrap all writes in a single atomic transaction.
+          // If any write throws, SQLite auto-rollbacks → checkpoint NOT advanced.
+          const db = store.getDb();
+          store.transaction(() => {
+            // Insert all cost components
+            for (const comp of allComponents) {
+              store.insertCostComponent({
+                sellerId: comp.sellerId,
+                type: comp.type,
+                amount: comp.amount,
+                source: comp.source,
+                ...(comp.sourceRecordId !== undefined
+                  ? { sourceRecordId: comp.sourceRecordId }
+                  : {}),
+                occurredAt: comp.occurredAt,
+                observedAt: comp.observedAt,
+                verification: comp.verification,
+                confidence: comp.confidence,
+                ...(comp.metadata !== undefined ? { metadata: comp.metadata } : {}),
+              });
+            }
+
+            // Insert all unit economics snapshots
+            for (const snap of snapshots) {
+              store.insertUnitEconomicsSnapshot(snap);
+            }
+
+            // Update run record to completed (sync helper — must be inside tx)
+            syncUpdateRunInTx(db, run.runId, {
+              status: "completed",
+              completedAt: endTime,
+              result: runResult,
+            });
+
+            // Update checkpoint (last statement inside transaction)
+            syncUpdateCheckpointInTx(db, run.sellerId, checkpointData);
           });
-        }
-        for (const snap of snapshots) {
-          store.insertUnitEconomicsSnapshot(snap);
+
+          // If we got here, the transaction committed successfully
+          run = transitionRun(run, "completed");
+        } catch (persistErr) {
+          const msg = persistErr instanceof Error ? persistErr.message : String(persistErr);
+
+          // Log the persistence failure
+          console.error(
+            JSON.stringify({
+              event: "economic-ingestion-error",
+              runId: run.runId,
+              sellerId: config.sellerId,
+              phase: "persist",
+              error: msg,
+              timestamp: new Date().toISOString(),
+            }),
+          );
+
+          // Try to mark the run as failed (best-effort; may also fail)
+          if (runStore) {
+            try {
+              await runStore.updateRun(run.runId, {
+                status: "failed",
+                completedAt: Date.now(),
+                error: `Persistence failed: ${msg}`,
+              });
+            } catch {
+              // Secondary write failed — log but don't block the throw
+              console.error(
+                JSON.stringify({
+                  event: "economic-ingestion-error",
+                  runId: run.runId,
+                  sellerId: config.sellerId,
+                  phase: "mark-failed",
+                  error: "Could not mark run as failed after persistence error",
+                  timestamp: new Date().toISOString(),
+                }),
+              );
+            }
+          }
+
+          // Throw so CLI gets exit code 1
+          throw new Error(`Persistence failed: ${msg}`);
         }
       }
 
@@ -442,49 +540,6 @@ export async function runEconomicIngestion(
         ),
       };
       const reconciliation = reconcileEconomics(sourceTotals, snapshots, 1);
-
-      // 14. Advance checkpoint
-      if (
-        reconciliation.status === "balanced" ||
-        reconciliation.status === "balanced-with-tolerance"
-      ) {
-        run = transitionRun(run, "completed");
-      }
-
-      // Persist final run state
-      if (runStore && !config.dryRun && !config.noPersist) {
-        try {
-          const endTime = Date.now();
-          await runStore.updateRun(run.runId, {
-            status: run.status,
-            completedAt: run.completedAt ?? endTime,
-            result: {
-              transactions: transactions.length,
-              components: allComponents.length,
-              snapshots: snapshots.length,
-              reconciliation: reconciliation.status,
-              elapsedMs: endTime - startTime,
-            },
-          });
-
-          // Update checkpoint on success
-          if (run.status === "completed") {
-            const lastOrder = fetched.orders[fetched.orders.length - 1];
-            const checkpointData: {
-              lastOrderDate: string;
-              lastOrderId?: string;
-              lastRunId: string;
-            } = {
-              lastOrderDate: lastOrder?.date_created ?? new Date().toISOString(),
-              lastRunId: run.runId,
-            };
-            if (lastOrder?.id) checkpointData.lastOrderId = lastOrder.id;
-            await runStore.updateCheckpoint(run.sellerId, checkpointData);
-          }
-        } catch {
-          // Run persistence is best-effort
-        }
-      }
 
       // 15. Emit metrics
       const elapsedMs = Date.now() - startTime;

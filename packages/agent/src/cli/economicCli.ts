@@ -215,12 +215,15 @@ async function handleIngest(args: CliArgs, runtime: EconomicIngestionRuntime): P
   };
 
   if (result.run.status === "failed") {
+    const isPersistenceFailure = result.reconciliation.details.includes("Persistence failed");
     return {
       status: "error",
       command: args.command,
       seller: args.seller,
       timestamp: new Date().toISOString(),
-      error: result.reconciliation.details,
+      error: isPersistenceFailure
+        ? `Persistence failure: ${result.reconciliation.details}`
+        : result.reconciliation.details,
     };
   }
 

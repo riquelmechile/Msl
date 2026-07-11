@@ -1,14 +1,36 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { runEconomicIngestion } from "./EconomicIngestionPipeline.js";
 import type { DataFetcher, FetchedData } from "./EconomicIngestionPipeline.js";
 import type { EconomicOutcomeStore } from "@msl/memory";
 import { DeterministicRunIdFactory } from "@msl/domain";
+import Database from "better-sqlite3";
+import { createSqliteEconomicOutcomeStore, createSqliteEconomicIngestionRunStore } from "@msl/memory";
+import type { EconomicIngestionRunStore } from "@msl/memory";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function mockStore(): EconomicOutcomeStore {
+function mockStore(overrides: Partial<Record<keyof EconomicOutcomeStore, unknown>> = {}): EconomicOutcomeStore {
+  // Create a real in-memory SQLite DB so the pipeline's transaction path works.
+  // The mock insert methods don't actually write to it, but getDb() and
+  // transaction() use the real DB so syncUpdateRunInTx/checkpoint work.
+  const db = new Database(":memory:");
+  // Ensure tables exist for sync helpers
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS economic_ingestion_runs (
+      id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, status TEXT NOT NULL,
+      mode TEXT NOT NULL, started_at INTEGER, completed_at INTEGER,
+      params TEXT, result TEXT, error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS economic_ingestion_checkpoints (
+      seller_id TEXT PRIMARY KEY, last_order_date TEXT, last_order_id TEXT,
+      last_run_id TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
   const store: any = {
+    transaction: (fn: () => any) => db.transaction(fn)(),
+    getDb: () => db,
     insertCostComponent: vi.fn(() => ({ id: "cc-0", sellerId: "", type: "other", amount: { amountMinor: 0, currency: "CLP" }, currency: "CLP", source: "derived", occurredAt: 0, observedAt: 0, verification: "unverified", confidence: 0 })),
     upsertCostComponent: vi.fn(() => ({ id: "cc-0", sellerId: "", type: "other", amount: { amountMinor: 0, currency: "CLP" }, currency: "CLP", source: "derived", occurredAt: 0, observedAt: 0, verification: "unverified", confidence: 0 })),
     insertUnitEconomicsSnapshot: vi.fn((snap) => snap),
@@ -27,6 +49,7 @@ function mockStore(): EconomicOutcomeStore {
     listOutcomesByCorrelationId: vi.fn(),
     listMissingInputs: vi.fn(() => []),
     summarizeProfit: vi.fn(() => ({ sellerId: "seller", currency: "CLP", totalRevenue: 0, totalCosts: 0, netProfit: 0, netMargin: 0, snapshotCount: 0 })),
+    ...overrides,
   };
   /* eslint-enable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
   return store as EconomicOutcomeStore;
@@ -394,6 +417,342 @@ describe("EconomicIngestionPipeline", () => {
       );
 
       expect(result.run.mode).toBe("reconcile");
+      expect(result.run.status).toBe("completed");
+    });
+  });
+
+  describe("fail-closed persistence (PR 2)", () => {
+    it("2.6.1 createRun throws → abort, no ML calls, error propagated", async () => {
+      const store = mockStore();
+      const fetcher = vi.fn().mockResolvedValue({
+        orders: [makeSampleOrder()],
+        items: [],
+        claims: [],
+        ads: [],
+      });
+
+      const throwingRunStore: EconomicIngestionRunStore = {
+        createRun: vi.fn().mockRejectedValue(new Error("DB disk full")),
+        updateRun: vi.fn(),
+        getRun: vi.fn(),
+        getLastRunBySeller: vi.fn(),
+        listRunsBySeller: vi.fn(),
+        getActiveRun: vi.fn(),
+        recoverAbandonedRun: vi.fn(),
+        getCheckpoint: vi.fn(),
+        updateCheckpoint: vi.fn(),
+      };
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        store,
+        fetcher,
+        runIdFactory,
+        throwingRunStore,
+      );
+
+      // Pipeline must fail
+      expect(result.run.status).toBe("failed");
+      // ML fetch must NOT have been called
+      expect(fetcher).not.toHaveBeenCalled();
+      // Error message must mention the persistence failure
+      expect(result.reconciliation.details).toContain("Failed to persist initial run record");
+    });
+
+    it("2.6.2 component insert throws → transaction rolls back, no partial data", async () => {
+      const db = new Database(":memory:");
+      const realStore = createSqliteEconomicOutcomeStore(db);
+      const realRunStore = createSqliteEconomicIngestionRunStore(db);
+
+      // Create the initial tables
+      realRunStore;
+
+      // Wrap insertCostComponent to throw on the second call
+      let componentCallCount = 0;
+      const throwingStore: EconomicOutcomeStore = {
+        ...realStore,
+        insertCostComponent: vi.fn((input: unknown) => {
+          componentCallCount++;
+          if (componentCallCount >= 2) {
+            throw new Error("Simulated component insert failure");
+          }
+          return realStore.insertCostComponent(input as Parameters<typeof realStore.insertCostComponent>[0]);
+        }),
+      };
+
+      const fetcher = makeSampleFetcher({
+        orders: [
+          makeSampleOrder({ id: "order-fault-1" }),
+          makeSampleOrder({ id: "order-fault-2" }),
+        ],
+      });
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        throwingStore,
+        fetcher,
+        runIdFactory,
+        realRunStore,
+      );
+
+      // Must have failed
+      expect(result.run.status).toBe("failed");
+
+      // No partial data committed — cost components table must be empty
+      const compCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(compCount.cnt).toBe(0);
+
+      // No snapshots committed
+      const snapCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(snapCount.cnt).toBe(0);
+
+      db.close();
+    });
+
+    it("2.6.3 snapshot insert throws → transaction rolls back", async () => {
+      const db = new Database(":memory:");
+      const realStore = createSqliteEconomicOutcomeStore(db);
+      const realRunStore = createSqliteEconomicIngestionRunStore(db);
+      realRunStore;
+
+      // Wrap insertUnitEconomicsSnapshot to throw
+      const throwingStore: EconomicOutcomeStore = {
+        ...realStore,
+        insertUnitEconomicsSnapshot: vi.fn(() => {
+          throw new Error("Simulated snapshot insert failure");
+        }),
+      };
+
+      const fetcher = makeSampleFetcher();
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        throwingStore,
+        fetcher,
+        runIdFactory,
+        realRunStore,
+      );
+
+      expect(result.run.status).toBe("failed");
+
+      // No partial data
+      const compCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(compCount.cnt).toBe(0);
+
+      const snapCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(snapCount.cnt).toBe(0);
+
+      db.close();
+    });
+
+    it("2.6.4 run update within transaction succeeds → writes committed", async () => {
+      // This test validates that the sync run update helper works correctly
+      // inside the transaction when all tables exist.
+      const db = new Database(":memory:");
+      const realStore = createSqliteEconomicOutcomeStore(db);
+      const realRunStore = createSqliteEconomicIngestionRunStore(db);
+      realRunStore;
+
+      const fetcher = makeSampleFetcher();
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        realStore,
+        fetcher,
+        runIdFactory,
+        realRunStore,
+      );
+
+      // Transaction succeeded with all writes
+      expect(result.run.status).toBe("completed");
+
+      // Verify data persisted
+      const compCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(compCount.cnt).toBeGreaterThan(0);
+
+      const snapCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(snapCount.cnt).toBeGreaterThan(0);
+
+      // Run row is completed
+      const runStatus = db.prepare(
+        "SELECT status FROM economic_ingestion_runs WHERE seller_id = ?",
+      ).get("plasticov") as { status: string };
+      expect(runStatus.status).toBe("completed");
+
+      // Checkpoint was advanced
+      const cpCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_ingestion_checkpoints WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(cpCount.cnt).toBe(1);
+
+      db.close();
+    });
+
+    it("2.6.5 checkpoint update throws → transaction rolls back", async () => {
+      const db = new Database(":memory:");
+      const realStore = createSqliteEconomicOutcomeStore(db);
+      const realRunStore = createSqliteEconomicIngestionRunStore(db);
+      realRunStore;
+
+      // Drop the checkpoints table to make syncUpdateCheckpointInTx throw
+      db.exec("DROP TABLE IF EXISTS economic_ingestion_checkpoints");
+
+      const fetcher = makeSampleFetcher();
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        realStore,
+        fetcher,
+        runIdFactory,
+        realRunStore,
+      );
+
+      expect(result.run.status).toBe("failed");
+
+      // All partial data must be rolled back
+      const compCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(compCount.cnt).toBe(0);
+
+      const snapCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(snapCount.cnt).toBe(0);
+
+      // The initial createRun succeeded before the transaction,
+      // so the run row exists but must NOT be "completed"
+      const runCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_ingestion_runs WHERE seller_id = ?",
+      ).get("plasticov") as { cnt: number };
+      expect(runCount.cnt).toBe(1);
+      const runStatus = db.prepare(
+        "SELECT status FROM economic_ingestion_runs WHERE seller_id = ?",
+      ).get("plasticov") as { status: string };
+      expect(runStatus.status).toBe("failed");
+
+      db.close();
+    });
+
+    it("2.6.6 transaction rollback: throw mid-transaction → verify no partial data committed", async () => {
+      const db = new Database(":memory:");
+      const realStore = createSqliteEconomicOutcomeStore(db);
+      const realRunStore = createSqliteEconomicIngestionRunStore(db);
+      realRunStore;
+
+      // Simulate a mid-transaction failure: the transaction wrapper itself throws
+      // We do this by making insertUnitEconomicsSnapshot throw AFTER some
+      // cost components have already been inserted within the transaction
+      let snapCallCount = 0;
+      const throwingStore: EconomicOutcomeStore = {
+        ...realStore,
+        insertUnitEconomicsSnapshot: vi.fn((snap: unknown) => {
+          snapCallCount++;
+          if (snapCallCount >= 2) {
+            throw new Error("Mid-transaction snapshot failure");
+          }
+          return realStore.insertUnitEconomicsSnapshot(snap as Parameters<typeof realStore.insertUnitEconomicsSnapshot>[0]);
+        }),
+      };
+
+      const fetcher = makeSampleFetcher({
+        orders: [
+          makeSampleOrder({ id: "order-rollback-1" }),
+          makeSampleOrder({ id: "order-rollback-2" }),
+          makeSampleOrder({ id: "order-rollback-3" }),
+        ],
+      });
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        throwingStore,
+        fetcher,
+        runIdFactory,
+        realRunStore,
+      );
+
+      // Pipeline must report failure
+      expect(result.run.status).toBe("failed");
+
+      // ZERO partial data — transaction rollback must have cleaned everything
+      const compCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_cost_components",
+      ).get() as { cnt: number };
+      expect(compCount.cnt).toBe(0);
+
+      const snapCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots",
+      ).get() as { cnt: number };
+      expect(snapCount.cnt).toBe(0);
+
+      const runCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_ingestion_runs WHERE status = 'completed'",
+      ).get() as { cnt: number };
+      expect(runCount.cnt).toBe(0);
+
+      // Checkpoint must NOT be advanced
+      const cpCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM economic_ingestion_checkpoints",
+      ).get() as { cnt: number };
+      expect(cpCount.cnt).toBe(0);
+
+      db.close();
+    });
+
+    it("pipeline throws on persistence failure (not silenced)", async () => {
+      const store = mockStore({
+        insertUnitEconomicsSnapshot: vi.fn(() => {
+          throw new Error("DB write error");
+        }),
+      });
+      const fetcher = makeSampleFetcher();
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        store,
+        fetcher,
+        runIdFactory,
+      );
+
+      // Outer catch returns failed result — pipeline does not throw to caller
+      // but the error is captured and surfaced
+      expect(result.run.status).toBe("failed");
+      expect(result.reconciliation.details).toContain("Persistence failed");
+    });
+
+    it("persisting→completed always after commit (not gated on reconciliation)", async () => {
+      const store = mockStore();
+      // Use orders that will cause mismatched reconciliation
+      const fetcher = makeSampleFetcher({
+        orders: [
+          makeSampleOrder({
+            total_amount: 999999, // will cause mismatch
+            order_items: [{ item: { id: "MLI-123", title: "Test" }, quantity: 1, unit_price: 10000 }],
+          }),
+        ],
+      });
+
+      const result = await runEconomicIngestion(
+        { sellerId: "plasticov", mode: "incremental" },
+        store,
+        fetcher,
+        runIdFactory,
+      );
+
+      // Even though reconciliation is mismatched, the run should be completed
+      expect(result.reconciliation.status).toBe("mismatched");
       expect(result.run.status).toBe("completed");
     });
   });

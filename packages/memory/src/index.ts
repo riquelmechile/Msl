@@ -78,6 +78,8 @@ export type {
 export {
   createSqliteEconomicIngestionRunStore,
   migrateEconomicIngestionRunStore,
+  syncUpdateRunInTx,
+  syncUpdateCheckpointInTx,
 } from "./economicIngestionRunStore.js";
 export type { SupplierMirrorStore } from "./supplierMirrorStore.js";
 export {
