@@ -20,23 +20,30 @@ Secrets are set via the GitHub repository UI:
 | `DEEPSEEK_MODEL`                   | —        | Model selection for inference          | `deepseek-v4-flash`                               |
 | `MINIMAX_API_KEY`                  | ✅¹      | Creative Studio image/video generation | `eyJhbG...`                                       |
 | `MINIMAX_API_HOST`                 | —        | MiniMax API host override              | `https://api.minimaxi.com` (default)              |
-| `MERCADOLIBRE_CLIENT_ID`           | ✅       | MercadoLibre OAuth application         | `1234567890123456`                                |
-| `MERCADOLIBRE_CLIENT_SECRET`       | ✅       | MercadoLibre OAuth secret              | `aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789`            |
-| `MERCADOLIBRE_REDIRECT_URI`        | ✅       | OAuth callback URL                     | `https://yourdomain.com/oauth/callback`           |
-| `MERCADOLIBRE_ACCESS_TOKEN`        | ✅²      | MercadoLibre seller API access         | `APP_USR-1234567890-abcdef`                       |
+| `MERCADOLIBRE_CLIENT_ID`           | ✅¹      | MercadoLibre OAuth application         | `1234567890123456`                                |
+| `MERCADOLIBRE_CLIENT_SECRET`       | ✅¹      | MercadoLibre OAuth secret              | `aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789`            |
+| `MERCADOLIBRE_REDIRECT_URI`        | ✅¹      | OAuth callback URL                     | `https://yourdomain.com/oauth/callback`           |
+| `MERCADOLIBRE_SOURCE_CLIENT_ID`    | ✅²      | Plasticov OAuth app ID (dual-account)  | `1234567890123456`                                |
+| `MERCADOLIBRE_SOURCE_CLIENT_SECRET`| ✅²      | Plasticov OAuth app secret             | `aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789`            |
+| `MERCADOLIBRE_SOURCE_REDIRECT_URI` | ✅²      | Plasticov OAuth callback URL           | `https://yourdomain.com/oauth/callback`           |
+| `MERCADOLIBRE_TARGET_CLIENT_ID`    | ✅²      | Maustian OAuth app ID (dual-account)   | `1234567890123456`                                |
+| `MERCADOLIBRE_TARGET_CLIENT_SECRET`| ✅²      | Maustian OAuth app secret              | `aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789`            |
+| `MERCADOLIBRE_TARGET_REDIRECT_URI` | ✅²      | Maustian OAuth callback URL            | `https://yourdomain.com/oauth/callback`           |
+| `MERCADOLIBRE_SOURCE_SELLER_ID`    | ✅²      | Plasticov MercadoLibre user ID         | `123456789`                                       |
+| `MERCADOLIBRE_TARGET_SELLER_ID`    | ✅²      | Maustian MercadoLibre user ID          | `987654321`                                       |
+| `MERCADOLIBRE_ACCESS_TOKEN`        | —        | Legacy single-seller access token      | `APP_USR-1234567890-abcdef`                       |
 | `BOT_TOKEN`                        | ✅       | Telegram bot authentication            | `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`           |
 | `MSL_TELEGRAM_ADMIN_CHAT_IDS`      | ✅       | Telegram admin chat allowlist          | `12345678,87654321`                               |
 | `MSL_APPROVAL_QUEUE_DB_PATH`       | ✅       | SQLite path for MCP approval queue     | `/home/sebastian/msl-data/approval-queue.db`      |
-| `MSL_CHAT_SQLITE_PATH`             | ✅³      | SQLite path for chat persistence       | `/home/sebastian/msl-data/chat.db`                |
+| `MSL_CHAT_SQLITE_PATH`             | —        | SQLite path for chat persistence       | `/home/sebastian/msl-data/chat.db`                |
 | `MSL_CREATIVE_STUDIO_STORAGE_PATH` | ✅¹      | Creative asset download path           | `/home/sebastian/msl-data/creative-studio/assets` |
 | `MSL_RUNTIME_MODE`                 | ✅       | Runtime mode selector                  | `production`                                      |
 | `MSL_CREATIVE_STUDIO_ENABLED`      | ✅       | Enable Creative Studio agent           | `true`                                            |
 
 **Notes:**
 
-- ¹ Required only when `MSL_CREATIVE_STUDIO_ENABLED=true`
-- ² At least one of `MERCADOLIBRE_ACCESS_TOKEN` or `MERCADOLIBRE_SOURCE_ACCESS_TOKEN` is required
-- ³ At least one of `MSL_CHAT_SQLITE_PATH` or `MSL_AGENT_BUS_DB_PATH` is required
+- ¹ At least one OAuth config is required: either the legacy `MERCADOLIBRE_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI` triplet, or the per-seller dual-account vars.
+- ² Required for dual-account OAuth (Plasticov and Maustian). Must be paired: source vars for Plasticov, target vars for Maustian. Per-seller OAuth takes priority over the legacy single-app config.
 
 ### Additional Secrets (Optional)
 
@@ -68,7 +75,12 @@ Follow these steps in order to safely activate production:
    npm run smoke:deepseek:tool
    ```
 4. **Run Provider Smoke Tests (MiniMax)** — verify Creative Studio generation works
-5. **Run Provider Smoke Tests (both)** — verify end-to-end tool calling with multiple providers
+5. **Run MercadoLibre Connection Health**
+   ```bash
+   npm run meli:connection:status
+   npm run meli:smoke -- --seller source
+   npm run meli:smoke -- --seller target
+   ```
 6. **Activate bot/daemon on VPS** — only after all checks pass
    ```bash
    npm run pm2:start
@@ -82,15 +94,22 @@ Run these on your machine or VPS before deploying:
 # 1. Create your local .env from the example
 cp .env.example .env
 
-# 2. Fill in real secret values (never commit this file)
+# 2. Create .env.local with production secrets
+#    (this file is gitignored — never commit it)
+touch .env.local
 
-# 3. Check production secrets
+# 3. Fill in real secret values in .env.local
+#    The shared env loader loads .env then .env.local from the monorepo root.
+#    No symlink for apps/web/.env.local is needed — instrumentation.ts
+#    calls loadRepositoryEnvironment() at Next.js server startup.
+
+# 4. Check production secrets
 npm run check:production-secrets
 
-# 4. Build the project
+# 5. Build the project
 npm run build
 
-# 5. Run end-to-end tests
+# 6. Run end-to-end tests
 npm run test:e2e
 ```
 
