@@ -1121,6 +1121,8 @@ export type { TokenStore } from "./oauth/tokenStore.js";
 
 export { createOAuthManager } from "./oauth/oauthManager.js";
 
+export { MercadoLibreRefreshError } from "./oauth/oauthManager.js";
+
 export { createMultiAppOAuthManager } from "./oauth/multiAppOAuthManager.js";
 
 export { resolveOAuthConfigs } from "./oauth/oauthConfig.js";
@@ -1130,6 +1132,40 @@ export { generateState, validateState } from "./oauth/oauthState.js";
 export type { OAuthStatePayload } from "./oauth/oauthState.js";
 
 export { createTokenStore } from "./oauth/tokenStore.js";
+
+export { loadRepositoryEnvironment, getRepoRoot } from "./env.js";
+
+export { createMercadoLibreAccountRegistry } from "./connection/registry.js";
+
+export { createMercadoLibreConnectionHealthService, runMlConnectionHealthCheck } from "./connection/healthService.js";
+
+export { createMercadoLibreReadOnlySmokeService } from "./connection/smokeService.js";
+
+export type {
+  MercadoLibreConnectionStatus,
+  OAuthTokenStatus,
+  MercadoLibreAccountConnectionHealth,
+  RefreshErrorCode,
+  MlAccountEntry,
+  SmokeEndpointResult,
+  CreateMercadoLibreAccountRegistryInput,
+} from "./connection/state.js";
+
+export type {
+  HealthServiceMode,
+  HealthServiceOptions,
+  MercadoLibreConnectionHealthService,
+  StructuredLogger,
+  MetricsCollector,
+  MercadoLibreReadOnlySmokeService as SmServiceType,
+  MlConnectionHealthEvent,
+  MlConnectionHealthReport,
+} from "./connection/healthService.js";
+
+export type {
+  SmokeServiceOptions,
+  MercadoLibreReadOnlySmokeService,
+} from "./connection/smokeService.js";
 
 export {
   createMercadoLibreSupplierSourceAdapter,

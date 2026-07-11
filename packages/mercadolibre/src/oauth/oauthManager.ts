@@ -1,6 +1,7 @@
 import type { OAuthTokens, StoredToken } from "../types.js";
 import { assertOAuthAccountMatchesRole } from "../accountRoles.js";
 import { createTokenStore, type TokenStore } from "./tokenStore.js";
+import type { RefreshErrorCode } from "../connection/state.js";
 
 export type OAuthManagerConfig = {
   clientId: string;
@@ -9,7 +10,33 @@ export type OAuthManagerConfig = {
   dbPath?: string;
   /** Called after every token refresh so consumers can record observability metrics. */
   onTokenRefresh?: (sellerId: string) => void;
+  /**
+   * Clock for deterministic expiry calculations in tests.
+   * Defaults to `Date.now`.
+   */
+  clock?: { now(): number };
 };
+
+// ── MercadoLibre Refresh Error ─────────────────────────────────────
+
+export class MercadoLibreRefreshError extends Error {
+  readonly code: RefreshErrorCode;
+  readonly retryable: boolean;
+  readonly sellerId: string;
+
+  constructor(
+    code: RefreshErrorCode,
+    message: string,
+    sellerId: string,
+    retryable?: boolean,
+  ) {
+    super(message);
+    this.name = "MercadoLibreRefreshError";
+    this.code = code;
+    this.retryable = retryable ?? false;
+    this.sellerId = sellerId;
+  }
+}
 
 export type OAuthManager = {
   getAuthorizationUrl(sellerId: string, state: string): string;
@@ -53,6 +80,7 @@ function mockTokens(sellerId: string): OAuthTokens {
 export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
   const store: TokenStore = createTokenStore(config.dbPath ?? ":memory:");
   const stub = isStubCredentials(config);
+  const now = config.clock?.now ?? (() => Date.now());
 
   function getAuthorizationUrl(sellerId: string, state: string): string {
     if (stub) {
@@ -131,29 +159,66 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
       refresh_token: stored.refresh_token,
     });
 
-    const response = await fetch(ML_OAUTH_TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
+    let response: Response;
+    try {
+      response = await fetch(ML_OAUTH_TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+        // Avoid hanging forever on network issues
+        signal: AbortSignal.timeout?.(30_000),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isTimeout = message.includes("timeout") || message.includes("abort");
+      throw new MercadoLibreRefreshError(
+        isTimeout ? "network_error" : "network_error",
+        `OAuth token refresh network error for seller ${sellerId}: ${message}`,
+        sellerId,
+        true,
+      );
+    }
 
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      const errorCode = (body.error as string) ?? "";
-      const errorDesc = (body.error_description as string) ?? "";
+      const responseBody = await response.json().catch(() => ({})) as Record<string, unknown>;
+      const errorCode = (responseBody.error as string) ?? "";
+      const errorDesc = (responseBody.error_description as string) ?? "";
 
-      // Per official docs: invalid_grant means the refresh_token was already
-      // consumed (single-use), expired (6 months), or user revoked authorization.
+      // Per MercadoLibre OAuth docs: classify known error codes
       if (errorCode === "invalid_grant") {
-        throw new Error(
-          `OAuth token refresh failed (invalid_grant) for seller ${sellerId}. ` +
-            `${errorDesc} The refresh_token may have expired, already been consumed, ` +
-            "or the seller may have revoked authorization. Re-authorization through the OAuth flow is required.",
+        throw new MercadoLibreRefreshError(
+          "invalid_grant",
+          `OAuth token refresh failed (invalid_grant) for seller ${sellerId}. ${errorDesc} The refresh_token may have expired, already been consumed, or the seller may have revoked authorization. Re-authorization through the OAuth flow is required.`,
+          sellerId,
+          false,
         );
       }
 
-      throw new Error(
-        `OAuth token refresh failed for seller ${sellerId}: ${response.status} ${errorCode} - ${errorDesc}`,
+      if (errorCode === "invalid_client") {
+        throw new MercadoLibreRefreshError(
+          "invalid_client",
+          `OAuth token refresh failed (invalid_client) for seller ${sellerId}: ${errorDesc}`,
+          sellerId,
+          false,
+        );
+      }
+
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("retry-after");
+        throw new MercadoLibreRefreshError(
+          "rate_limited",
+          `OAuth token refresh rate-limited for seller ${sellerId}${retryAfter ? ` (retry-after: ${retryAfter}s)` : ""}`,
+          sellerId,
+          true,
+        );
+      }
+
+      // Malformed response or unexpected error
+      throw new MercadoLibreRefreshError(
+        "malformed_response",
+        `OAuth token refresh failed for seller ${sellerId}: ${response.status} ${errorCode || "unknown"} - ${errorDesc}`,
+        sellerId,
+        true,
       );
     }
 
@@ -161,13 +226,15 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
 
     // Per official docs: refresh_token is SINGLE-USE.
     // The API MUST return a new refresh_token on every refresh.
-    // If it doesn't, the old token was likely already consumed — do NOT reuse it.
     const newRefreshToken = data.refresh_token as string | undefined;
     if (!newRefreshToken) {
-      throw new Error(
+      throw new MercadoLibreRefreshError(
+        "malformed_response",
         `OAuth token refresh did not return a new refresh_token for seller ${sellerId}. ` +
           "The previous refresh_token may have already been consumed (single-use) or is invalid. " +
           "Re-authorization is required.",
+        sellerId,
+        false,
       );
     }
 
@@ -176,9 +243,12 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
 
     const scope = data.scope as string | undefined;
     if (scope && !scope.includes("offline_access")) {
-      throw new Error(
+      throw new MercadoLibreRefreshError(
+        "malformed_response",
         `OAuth token for seller ${sellerId} lacks offline_access scope. Received: "${scope}". ` +
           "Re-authorize the application with offline_access to receive refresh tokens.",
+        sellerId,
+        false,
       );
     }
 
@@ -192,7 +262,9 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
       ...(scope ? { scope } : {}),
     };
 
+    // Persist BEFORE firing callback — guarantee token is saved on success
     store.saveToken(sellerId, tokens);
+    // Fire callback AFTER successful persistence
     config.onTokenRefresh?.(sellerId);
     return tokens;
   }
@@ -203,7 +275,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
 
     const expiresAt = new Date(stored.expires_at);
     // Consider expired 60 seconds before actual expiration to allow buffer
-    return expiresAt.getTime() - 60_000 <= Date.now();
+    return expiresAt.getTime() - 60_000 <= now();
   }
 
   async function ensureValidToken(sellerId: string): Promise<string> {

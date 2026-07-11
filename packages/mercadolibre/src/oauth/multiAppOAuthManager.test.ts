@@ -235,3 +235,120 @@ describe("createMultiAppOAuthManager", () => {
     expect(token).toContain("mock-access-plasticov");
   });
 });
+
+// ── onTokenRefresh Observability (T6.3) ────────────────────────────
+
+describe("onTokenRefresh observability", () => {
+  it("calls onTokenRefresh callback after successful token refresh", async () => {
+    const refreshCalls: string[] = [];
+    const configs = stubConfigs([
+      [
+        "plasticov",
+        stubConfig({
+          onTokenRefresh: (sellerId) => {
+            refreshCalls.push(sellerId);
+          },
+        }),
+      ],
+    ]);
+    const mgr = createMultiAppOAuthManager(configs);
+
+    await mgr.exchangeCodeForToken("plasticov", "code-1");
+
+    // Stub mode: token is never expired (6-hour window), so ensureValidToken
+    // won't trigger refresh. Force expiration by using a clock.
+    expect(refreshCalls.length).toBe(0); // no refresh triggered yet
+
+    // Now force a refresh by calling refreshAccessToken directly
+    await mgr.refreshAccessToken("plasticov");
+    expect(refreshCalls.length).toBe(1);
+    expect(refreshCalls[0]).toBe("plasticov");
+  });
+
+  it("onTokenRefresh callback receives correct sellerId", async () => {
+    const refreshCalls: string[] = [];
+    const configs = stubConfigs([
+      ["plasticov", stubConfig({ onTokenRefresh: (sid) => refreshCalls.push(sid) })],
+      ["maustian", stubConfig({ onTokenRefresh: (sid) => refreshCalls.push(sid) })],
+    ]);
+    const mgr = createMultiAppOAuthManager(configs);
+
+    await mgr.exchangeCodeForToken("plasticov", "code-1");
+    await mgr.exchangeCodeForToken("maustian", "code-2");
+
+    await mgr.refreshAccessToken("plasticov");
+    await mgr.refreshAccessToken("maustian");
+
+    expect(refreshCalls).toEqual(["plasticov", "maustian"]);
+  });
+
+  it("onTokenRefresh is not called when token is still valid in ensureValidToken", async () => {
+    const refreshCalls: string[] = [];
+    const configs = stubConfigs([
+      [
+        "plasticov",
+        stubConfig({
+          onTokenRefresh: () => refreshCalls.push("called"),
+        }),
+      ],
+    ]);
+    const mgr = createMultiAppOAuthManager(configs);
+
+    await mgr.exchangeCodeForToken("plasticov", "code-1");
+    // ensureValidToken on a non-expired token should NOT trigger refresh
+    await mgr.ensureValidToken("plasticov");
+
+    expect(refreshCalls.length).toBe(0);
+  });
+
+  it("does NOT leak tokens or secrets in onTokenRefresh", async () => {
+    const capturedData: string[] = [];
+    const configs = stubConfigs([
+      [
+        "plasticov",
+        stubConfig({
+          clientId: "TEST-real-app-id",
+          clientSecret: "super-secret-key",
+          onTokenRefresh: (sellerId) => {
+            // Only the sellerId is exposed — never tokens/secrets
+            capturedData.push(sellerId);
+          },
+        }),
+      ],
+    ]);
+    const mgr = createMultiAppOAuthManager(configs);
+
+    await mgr.exchangeCodeForToken("plasticov", "code-1");
+    await mgr.refreshAccessToken("plasticov");
+
+    expect(capturedData.length).toBe(1);
+    expect(capturedData[0]).toBe("plasticov");
+    // No token/secret data leaked
+    expect(capturedData.some((d) => d.includes("token"))).toBe(false);
+    expect(capturedData.some((d) => d.includes("secret"))).toBe(false);
+  });
+
+  it("original onTokenRefresh is preserved when wrapped", async () => {
+    const originalCalls: string[] = [];
+    const wrapperCalls: string[] = [];
+
+    // Simulate the wrapping pattern used in runtimeDependencies
+    const config = stubConfig({
+      onTokenRefresh: (sid) => originalCalls.push(`original:${sid}`),
+    });
+    const original = config.onTokenRefresh;
+    config.onTokenRefresh = (sid) => {
+      wrapperCalls.push(`wrapper:${sid}`);
+      original?.(sid);
+    };
+
+    const configs = stubConfigs([["plasticov", config]]);
+    const mgr = createMultiAppOAuthManager(configs);
+
+    await mgr.exchangeCodeForToken("plasticov", "code-1");
+    await mgr.refreshAccessToken("plasticov");
+
+    expect(wrapperCalls).toEqual(["wrapper:plasticov"]);
+    expect(originalCalls).toEqual(["original:plasticov"]);
+  });
+});
