@@ -58,8 +58,8 @@ Verificado contra el baseline `90efd8d` (P0 PR 2/4 durable runtime operations):
 
 ## Qué todavía no está en producción
 
-- **Credenciales reales de ML OAuth**: sin `MERCADOLIBRE_CLIENT_ID`/`MERCADOLIBRE_CLIENT_SECRET`, la ingesta y las herramientas de ML operan en modo stub.
-- **Ingesta real**: los procesadores existen pero requieren credenciales reales para funcionar con datos de producción.
+- **Escritura productiva de ML**: las operaciones de escritura (publicar, actualizar, stock, precio) están bloqueadas por `assertMercadoLibreWriteDisabled()`. Implementadas como read-only production (P0 PR 3/4).
+- **Ingesta real**: los procesadores existen y están conectados con OAuth, pero pendientes de integración con el pipeline económico (P0 PR 4/4).
 - **Ecommerce productivo**: el write boundary de Medusa está implementado pero no activo sin credenciales y aprobación.
 - **Canales sociales**: no implementados.
 - **Expansión a otros marketplaces**: no implementada.
@@ -218,7 +218,7 @@ npm run production:readiness  # Diagnóstico de production readiness
 | Supplier Mirror        | ✅ Foundation listo (workers disabled by default) |
 | Owned Ecommerce        | ✅ Runtime listo (env-gated)                      |
 | Creative Studio        | ✅ Runtime listo (env-gated)                      |
-| ML OAuth               | ❌ Sin credenciales reales (modo stub)            |
+| ML OAuth               | ✅ Listo (dual-account, read-only production) |
 | Ingesta real           | ❌ Requiere P0 (credenciales ML)                  |
 | Ecommerce productivo   | ❌ Requiere credenciales Medusa + aprobación      |
 | Canales sociales       | 🔲 No implementado                                |
@@ -230,7 +230,7 @@ npm run production:readiness  # Diagnóstico de production readiness
 
 | Prioridad | Fase                                | Estado                |
 | --------- | ----------------------------------- | --------------------- |
-| P0        | Operational Truth & Production      | Parcial (PR 2/4)     |
+| P0        | Operational Truth & Production      | Parcial (PR 3/4)      |
 | P1        | Financial Truth & Economic Outcomes | Fundación completa    |
 | P2        | Full Product Launch Cycle           | Pendiente |
 | P3        | Social Growth                       | Pendiente |

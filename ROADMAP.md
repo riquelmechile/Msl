@@ -45,7 +45,7 @@
 
 **Propósito:** Hacer que MSL opere sobre datos reales con credenciales reales.
 
-**Estado:** **Parcial** — PR 1/4 y 2/4 completadas. Production Readiness Control Plane operativo. Durable Runtime Operations implementado.
+**Estado:** **Parcial** — PR 1/4, 2/4, y 3/4 completadas. Production Readiness Control Plane operativo. Durable Runtime Operations implementado. ML Dual-Account Production Connection (OAuth real con read-only production) implementado.
 
 ### PRs
 
@@ -53,7 +53,7 @@
 |----|-------------|--------|
 | 1/4 | Production Readiness Control Plane | ✅ Complete |
 | 2/4 | Durable Runtime Operations (backups, migrations, observability) | ✅ Complete |
-| 3/4 | ML Dual-Account Production Connection (OAuth real) | 🔲 Planificada |
+| 3/4 | ML Dual-Account Production Connection (OAuth real) | ✅ Complete |
 | 4/4 | Real Ingestion & Economic Adapters | 🔲 Planificada |
 
 ### Capacidades implementadas en PR 1/4

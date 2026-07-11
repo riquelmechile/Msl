@@ -31,6 +31,7 @@ What must wait until the VPS exists:
    Node.js 22, PM2, Nginx, and
    runtime directories.
 4. Clone the repo, create `.env.local` on the VPS only, and copy SQLite databases securely.
+   The shared `loadRepositoryEnvironment()` finds the repo root automatically — no symlink needed.
 5. Run `npm ci`, `npm run build`, `npm run pm2:start`, `pm2 save`, and `pm2 startup`.
 6. Point Cloudflare DNS for `plasticov.cl` to the VPS and place a reverse proxy in front of
    `127.0.0.1:3000`.
@@ -137,6 +138,11 @@ MCP remains a local stdio tool. Do not daemonize it unless a real remote MCP cli
 - [ ] Set `DEEPSEEK_API_KEY` if the bot should use the real LLM client.
 - [ ] Set `MSL_ENCRYPTION_KEY` to a long random value before using OAuth tokens.
 - [ ] Set MercadoLibre OAuth app credentials and seller ids for Plasticov/Maustian.
+  - `MERCADOLIBRE_SOURCE_CLIENT_ID`, `MERCADOLIBRE_SOURCE_CLIENT_SECRET`, `MERCADOLIBRE_SOURCE_REDIRECT_URI`
+  - `MERCADOLIBRE_TARGET_CLIENT_ID`, `MERCADOLIBRE_TARGET_CLIENT_SECRET`, `MERCADOLIBRE_TARGET_REDIRECT_URI`
+  - `MERCADOLIBRE_SOURCE_SELLER_ID`, `MERCADOLIBRE_TARGET_SELLER_ID`
+  - `MSL_OAUTH_STATE_SECRET`
+  - `MSL_MERCADOLIBRE_OAUTH_DB_PATH`
 - [ ] Point SQLite env paths to `/home/sebastian/msl-data/*.sqlite`.
 - [ ] Keep `MSL_ALLOW_INSECURE_DEV_SECRETS` and `MSL_ALLOW_UNAUTHENTICATED_LOCAL` disabled in
       production.
