@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -30,6 +30,25 @@ afterEach(() => {
 });
 
 describe("R4 seller leases", () => {
+  it("defaults lease timestamps to Date.now when no clock is injected", async () => {
+    const { db } = openLeaseStore("default-clock");
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(5_000);
+    try {
+      const store = createSqliteEconomicIngestionRunStore(db);
+      const acquired = await store.acquireSellerLease!({
+        sellerId: "plasticov",
+        ownerRunId: "run-default-clock",
+        fence,
+      });
+      expect(acquired).toMatchObject({
+        status: "acquired",
+        lease: { expiresAt: 65_000 },
+      });
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
   it("uses a durable seller-scoped lease with exact expiry, contention, and cross-seller isolation", async () => {
     let time = 1_000;
     const { db } = openLeaseStore("contention");

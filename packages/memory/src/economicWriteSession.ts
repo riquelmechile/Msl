@@ -261,9 +261,9 @@ function createAdmittedSession(input: {
           now: input.now(),
         });
         if (valid.status !== "valid") throw new Error(`Economic write admission ${valid.status}`);
-        assertSellerLeaseOwnershipInTx(input.db, input.getLease());
+        assertSellerLeaseOwnershipInTx(input.db, input.getLease(), input.now());
         const value = operation();
-        assertSellerLeaseOwnershipInTx(input.db, input.getLease());
+        assertSellerLeaseOwnershipInTx(input.db, input.getLease(), input.now());
         const receipt = consumeEconomicWriteAdmissionReceipt({
           db: input.db,
           receipt: input.receipt,
@@ -494,7 +494,7 @@ export function createEconomicMemoryRuntime(
     maintenanceAdmission.run(() => createEconomicMigrationPlan().apply(db));
   }
   const outcomes = createSqliteEconomicOutcomeStore(db, { skipMigration: true });
-  const runs = createSqliteEconomicIngestionRunStore(db, { skipMigration: true });
+  const runs = createSqliteEconomicIngestionRunStore(db, { now, skipMigration: true });
   const evidence = createSqliteEconomicEvidenceStore(db, { skipMigration: true });
   const writeSessionFactory: EconomicWriteSessionFactory = {
     async open({ sellerId, ownerRunId, receiptTtlMs, signal, onInvalidated }) {

@@ -128,10 +128,9 @@ describe("economic write session renewal", () => {
       clock.advance(20);
       await flushRenewal();
       const second = readExpiries();
-      expect(first.fence_expires_at).toBeGreaterThan(initial.fence_expires_at);
-      expect(first.lease_expires_at).toBeGreaterThan(initial.lease_expires_at);
-      expect(second.fence_expires_at).toBeGreaterThan(first.fence_expires_at);
-      expect(second.lease_expires_at).toBeGreaterThan(first.lease_expires_at);
+      expect(initial).toEqual({ fence_expires_at: 90_100, lease_expires_at: 60_100 });
+      expect(first).toEqual({ fence_expires_at: 90_120, lease_expires_at: 60_120 });
+      expect(second).toEqual({ fence_expires_at: 90_140, lease_expires_at: 60_140 });
       expect(onInvalidated).not.toHaveBeenCalled();
       expect(clock.pendingTimers).toBe(1);
       await opened.release();
