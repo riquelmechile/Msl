@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "./types.js";
 import { safeString } from "./types.js";
-import type { EconomicOutcomeStore } from "@msl/memory";
+import type { EconomicOutcomeReader as EconomicOutcomeStore } from "@msl/memory";
 import type { CostComponentType, EconomicDataCoverage } from "@msl/domain";
 import { COVERAGE_DIMENSIONS } from "@msl/domain";
 

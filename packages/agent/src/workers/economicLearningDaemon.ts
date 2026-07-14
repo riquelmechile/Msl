@@ -1,5 +1,9 @@
 import type { DaemonHandler } from "./daemonTypes.js";
-import type { EconomicLearningStore, EconomicOutcomeStore, GraphEngine } from "@msl/memory";
+import type {
+  EconomicLearningStore,
+  EconomicOutcomeReader as EconomicOutcomeStore,
+  GraphEngine,
+} from "@msl/memory";
 import { EconomicLearningTrigger } from "../finance/EconomicLearningTrigger.js";
 
 type OutcomePayload = { outcomeId: string; status: string; sellerId: string };

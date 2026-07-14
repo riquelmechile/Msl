@@ -87,7 +87,7 @@ describe("EconomicEvidenceStore", () => {
       // Same composite key, different evidenceId
       const duplicate = makeRef({
         sourceRecordId: ref.sourceRecordId,
-        sourceVersion: ref.sourceVersion,
+        sourceVersion: ref.sourceVersion ?? "",
         checksum: ref.checksum,
         sellerId: ref.sellerId,
         sourceSystem: ref.sourceSystem,
@@ -108,7 +108,7 @@ describe("EconomicEvidenceStore", () => {
       store.upsertEvidence(
         makeRef({
           sourceRecordId: ref.sourceRecordId,
-          sourceVersion: ref.sourceVersion,
+          sourceVersion: ref.sourceVersion ?? "",
           checksum: ref.checksum,
           sellerId: ref.sellerId,
           sourceSystem: ref.sourceSystem,
@@ -116,7 +116,7 @@ describe("EconomicEvidenceStore", () => {
         }),
       );
 
-      const count = store.countByRun("run-001");
+      const count = store.countByRun("plasticov", "run-001");
       expect(count).toBe(1);
     });
 
@@ -130,7 +130,7 @@ describe("EconomicEvidenceStore", () => {
       store.upsertEvidence(ref1);
       store.upsertEvidence(ref2);
 
-      expect(store.countByRun("run-001")).toBe(2);
+      expect(store.countByRun("plasticov", "run-001")).toBe(2);
     });
 
     it("inserts correctly with nullable fields present", () => {
@@ -285,13 +285,13 @@ describe("EconomicEvidenceStore", () => {
         }),
       );
 
-      const results = store.listByRun("run-001", "plasticov");
+      const results = store.listByRun("plasticov", "run-001");
       expect(results).toHaveLength(2);
       results.forEach((r) => expect(r.ingestionRunId).toBe("run-001"));
     });
 
     it("returns empty for run with no evidence", () => {
-      const results = store.listByRun("run-999", "plasticov");
+      const results = store.listByRun("plasticov", "run-999");
       expect(results).toHaveLength(0);
     });
   });
@@ -389,11 +389,11 @@ describe("EconomicEvidenceStore", () => {
         }),
       );
 
-      expect(store.countByRun("run-001")).toBe(3);
+      expect(store.countByRun("plasticov", "run-001")).toBe(3);
     });
 
     it("returns 0 for run with no evidence", () => {
-      expect(store.countByRun("no-such-run")).toBe(0);
+      expect(store.countByRun("plasticov", "no-such-run")).toBe(0);
     });
   });
 
@@ -491,6 +491,25 @@ describe("EconomicEvidenceStore", () => {
   // ── Edge cases ────────────────────────────────────────────────────────
 
   describe("edge cases", () => {
+    it("keeps unavailable legacy occurrence and source version absent rather than inventing defaults", () => {
+      db.prepare(
+        `INSERT INTO economic_evidence_references
+          (evidence_id, seller_id, source_system, source_entity_type, source_record_id,
+           observed_at, occurred_at, source_version, checksum, ingestion_run_id, created_at)
+         VALUES ('legacy-unavailable', 'plasticov', 'mercadolibre', 'order', 'legacy-order',
+           1, NULL, NULL, 'legacy-checksum', 'legacy-run', 1)`,
+      ).run();
+
+      expect(store.getEvidence("legacy-unavailable", "plasticov")).toMatchObject({
+        evidenceId: "legacy-unavailable",
+        observedAt: 1,
+      });
+      expect(store.getEvidence("legacy-unavailable", "plasticov")).not.toHaveProperty("occurredAt");
+      expect(store.getEvidence("legacy-unavailable", "plasticov")).not.toHaveProperty(
+        "sourceVersion",
+      );
+    });
+
     it("handle null source_field", () => {
       const ref = makeRef();
       // sourceField is undefined — should be stored as null

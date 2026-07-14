@@ -1,6 +1,5 @@
 import type { EconomicEvidenceReference } from "@msl/domain";
 import Database from "better-sqlite3";
-import { createMigrationRegistry } from "./migrationRegistry.js";
 
 // ── Row type ────────────────────────────────────────────────────────────────
 
@@ -31,6 +30,8 @@ export type ListEvidenceOptions = {
 };
 
 export type EconomicEvidenceStore = {
+  /** Available on SQLite implementations for shared-transaction assertions. */
+  getDb?: () => Database.Database;
   /** Insert a new evidence reference. Throws on composite key conflict. */
   insertEvidence(ref: EconomicEvidenceReference): void;
 
@@ -48,7 +49,7 @@ export type EconomicEvidenceStore = {
   listBySeller(sellerId: string, opts?: ListEvidenceOptions): EconomicEvidenceReference[];
 
   /** List evidence refs produced by a specific ingestion run, scoped to seller. */
-  listByRun(ingestionRunId: string, sellerId: string): EconomicEvidenceReference[];
+  listByRun(sellerId: string, ingestionRunId: string): EconomicEvidenceReference[];
 
   /** List evidence refs originating from a specific source record, scoped to seller. */
   listBySourceRecord(sourceRecordId: string, sellerId: string): EconomicEvidenceReference[];
@@ -57,7 +58,9 @@ export type EconomicEvidenceStore = {
   markSuperseded(evidenceId: string, supersededBy: string): void;
 
   /** Count evidence refs for a specific ingestion run. */
-  countByRun(ingestionRunId: string): number;
+  countByRun(sellerId: string, ingestionRunId: string): number;
+  /** Count all seller evidence without a display-list cardinality cap. */
+  countBySeller?(sellerId: string): number;
 };
 
 // ── Row → domain conversion ─────────────────────────────────────────────────
@@ -71,8 +74,8 @@ function evidenceFromRow(row: EvidenceRow): EconomicEvidenceReference {
     sourceRecordId: row.source_record_id,
     ...(row.source_field !== null ? { sourceField: row.source_field } : {}),
     observedAt: row.observed_at,
-    occurredAt: row.occurred_at ?? 0,
-    sourceVersion: row.source_version ?? "",
+    ...(row.occurred_at !== null ? { occurredAt: row.occurred_at } : {}),
+    ...(row.source_version !== null ? { sourceVersion: row.source_version } : {}),
     checksum: row.checksum,
     verification: (row.verification ?? "unverified") as EconomicEvidenceReference["verification"],
     confidence: row.confidence ?? 0,
@@ -84,45 +87,7 @@ function evidenceFromRow(row: EvidenceRow): EconomicEvidenceReference {
 
 export function migrateEconomicEvidenceStore(db: Database.Database): void {
   if (process.env.MSL_MIGRATION_ENABLED === "true") {
-    const registry = createMigrationRegistry();
-    registry.register({
-      version: 5,
-      name: "economic_evidence_references",
-      up: (d) => {
-        d.exec(`
-          CREATE TABLE IF NOT EXISTS economic_evidence_references (
-            evidence_id TEXT PRIMARY KEY NOT NULL,
-            seller_id TEXT NOT NULL,
-            source_system TEXT NOT NULL,
-            source_entity_type TEXT NOT NULL,
-            source_record_id TEXT NOT NULL,
-            source_field TEXT,
-            observed_at INTEGER NOT NULL,
-            occurred_at INTEGER,
-            source_version TEXT,
-            checksum TEXT NOT NULL,
-            verification TEXT,
-            confidence REAL,
-            superseded_by TEXT,
-            ingestion_run_id TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-          );
-
-          CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_composite_unique
-            ON economic_evidence_references(seller_id, source_system, source_entity_type, source_record_id, source_version, checksum);
-
-          CREATE INDEX IF NOT EXISTS idx_evidence_ingestion_run
-            ON economic_evidence_references(ingestion_run_id);
-
-          CREATE INDEX IF NOT EXISTS idx_evidence_seller
-            ON economic_evidence_references(seller_id);
-
-          CREATE INDEX IF NOT EXISTS idx_evidence_source_record
-            ON economic_evidence_references(source_record_id);
-        `);
-      },
-    });
-    registry.apply(db);
+    // The runtime factory owns the single canonical migration application.
     return;
   }
 
@@ -164,39 +129,7 @@ export function migrateEconomicEvidenceStore(db: Database.Database): void {
 
 export function migrateEconomicDurabilityColumns(db: Database.Database): void {
   if (process.env.MSL_MIGRATION_ENABLED === "true") {
-    const registry = createMigrationRegistry();
-    // v2: ingestion run indexes
-    registry.register({
-      version: 2,
-      name: "economic_ingestion_runs_indexes",
-      up: (d) => {
-        d.exec(`
-          CREATE INDEX IF NOT EXISTS idx_economic_ingestion_runs_seller_created
-            ON economic_ingestion_runs(seller_id, created_at);
-          CREATE INDEX IF NOT EXISTS idx_economic_ingestion_runs_seller_status
-            ON economic_ingestion_runs(seller_id, status);
-          CREATE INDEX IF NOT EXISTS idx_economic_ingestion_runs_seller_id
-            ON economic_ingestion_runs(seller_id, id);
-        `);
-      },
-    });
-    // v3: ingestion_run_id on cost_components
-    registry.register({
-      version: 3,
-      name: "cost_components_ingestion_run_id",
-      up: (d) => {
-        d.exec(`ALTER TABLE economic_cost_components ADD COLUMN ingestion_run_id TEXT`);
-      },
-    });
-    // v4: ingestion_run_id on snapshots
-    registry.register({
-      version: 4,
-      name: "snapshots_ingestion_run_id",
-      up: (d) => {
-        d.exec(`ALTER TABLE unit_economics_snapshots ADD COLUMN ingestion_run_id TEXT`);
-      },
-    });
-    registry.apply(db);
+    // The runtime factory owns the single canonical migration application.
     return;
   }
 
@@ -228,8 +161,11 @@ export function migrateEconomicDurabilityColumns(db: Database.Database): void {
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
-export function createSqliteEconomicEvidenceStore(db: Database.Database): EconomicEvidenceStore {
-  migrateEconomicEvidenceStore(db);
+export function createSqliteEconomicEvidenceStore(
+  db: Database.Database,
+  options: { readonly skipMigration?: boolean } = {},
+): EconomicEvidenceStore {
+  if (!options.skipMigration) migrateEconomicEvidenceStore(db);
 
   // ── Prepared statements ───────────────────────────────────────────────
 
@@ -257,7 +193,7 @@ export function createSqliteEconomicEvidenceStore(db: Database.Database): Econom
       AND source_system = ?
       AND source_entity_type = ?
       AND source_record_id = ?
-      AND source_version = ?
+      AND source_version IS ?
       AND checksum = ?
     LIMIT 1
   `);
@@ -313,12 +249,18 @@ export function createSqliteEconomicEvidenceStore(db: Database.Database): Econom
   `);
 
   const countByRunStmt = db.prepare(
-    "SELECT COUNT(*) as cnt FROM economic_evidence_references WHERE ingestion_run_id = ?",
+    "SELECT COUNT(*) as cnt FROM economic_evidence_references WHERE seller_id = ? AND ingestion_run_id = ?",
+  );
+  const countBySellerStmt = db.prepare(
+    "SELECT COUNT(*) as cnt FROM economic_evidence_references WHERE seller_id = ?",
   );
 
   // ── Store implementation ──────────────────────────────────────────────
 
   return {
+    getDb(): Database.Database {
+      return db;
+    },
     insertEvidence(ref: EconomicEvidenceReference): void {
       insertStmt.run(
         ref.evidenceId,
@@ -328,8 +270,8 @@ export function createSqliteEconomicEvidenceStore(db: Database.Database): Econom
         ref.sourceRecordId,
         ref.sourceField ?? null,
         ref.observedAt,
-        ref.occurredAt,
-        ref.sourceVersion,
+        ref.occurredAt ?? null,
+        ref.sourceVersion ?? null,
         ref.checksum,
         ref.verification,
         ref.confidence,
@@ -361,8 +303,8 @@ export function createSqliteEconomicEvidenceStore(db: Database.Database): Econom
         ref.sourceRecordId,
         ref.sourceField ?? null,
         ref.observedAt,
-        ref.occurredAt,
-        ref.sourceVersion,
+        ref.occurredAt ?? null,
+        ref.sourceVersion ?? null,
         ref.checksum,
         ref.verification,
         ref.confidence,
@@ -419,7 +361,7 @@ export function createSqliteEconomicEvidenceStore(db: Database.Database): Econom
       return rows.map(evidenceFromRow);
     },
 
-    listByRun(ingestionRunId: string, sellerId: string): EconomicEvidenceReference[] {
+    listByRun(sellerId: string, ingestionRunId: string): EconomicEvidenceReference[] {
       const rows = listByRunStmt.all(ingestionRunId, sellerId) as EvidenceRow[];
       return rows.map(evidenceFromRow);
     },
@@ -433,8 +375,13 @@ export function createSqliteEconomicEvidenceStore(db: Database.Database): Econom
       markSupersededStmt.run(supersededBy, evidenceId);
     },
 
-    countByRun(ingestionRunId: string): number {
-      const row = countByRunStmt.get(ingestionRunId) as { cnt: number } | undefined;
+    countByRun(sellerId: string, ingestionRunId: string): number {
+      const row = countByRunStmt.get(sellerId, ingestionRunId) as { cnt: number } | undefined;
+      return row?.cnt ?? 0;
+    },
+
+    countBySeller(sellerId: string): number {
+      const row = countBySellerStmt.get(sellerId) as { cnt: number } | undefined;
       return row?.cnt ?? 0;
     },
   };

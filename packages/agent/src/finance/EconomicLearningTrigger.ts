@@ -1,5 +1,9 @@
 import type { EconomicOutcome, EconomicLearningEvent } from "@msl/domain";
-import type { EconomicLearningStore, EconomicOutcomeStore, GraphEngine } from "@msl/memory";
+import type {
+  EconomicLearningStore,
+  EconomicOutcomeReader as EconomicOutcomeStore,
+  GraphEngine,
+} from "@msl/memory";
 import type { UnitEconomicsSnapshot } from "@msl/domain";
 import { EconomicLearningPipeline } from "./EconomicLearningPipeline.js";
 

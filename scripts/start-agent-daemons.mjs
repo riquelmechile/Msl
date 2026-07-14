@@ -36,36 +36,21 @@ for (const warning of envCheck.warnings) {
 
 // ── Imports ────────────────────────────────────────────────────
 const {
-  createAgentMessageBusStore,
-  createAgentConsensusStore,
+  createAgentDaemonPersistenceRuntime,
   startDaemonScheduler,
   createEconomicLearningDaemon,
   createEconomicIngestionDaemon,
   createDaemonLogger,
 } = await import("@msl/agent");
-const {
-  createGraphEngine,
-  getSharedDb,
-  createSqliteOperationalReadModel,
-  getSharedManager,
-  BackupScheduler,
-  createSqliteEconomicOutcomeStore,
-  createSqliteEconomicLearningStore,
-} = await import("@msl/memory");
+const { createGraphEngine, BackupScheduler } = await import("@msl/memory");
 const { getMlAccountRoleConfig } = await import("@msl/mercadolibre");
 const { createSqliteApprovalQueueRepository, createInMemoryApprovalQueueRepository } =
   await import("@msl/tools");
 
-// ── Shared DB connection (consolidated from 3 createDatabase() calls) ──
-const sharedDb = getSharedDb(cortexPath);
-
-// ── Bus DB (agent message bus uses its own SQLite tables) ──────
-const bus = createAgentMessageBusStore(sharedDb);
-const consensusStore = createAgentConsensusStore(sharedDb);
-
-// ── Cortex + operational reader ────────────────────────────────
+// ── Admitted persistence + Cortex ──────────────────────────────
+const persistenceRuntime = createAgentDaemonPersistenceRuntime(cortexPath);
+const { bus, consensusStore, reader } = persistenceRuntime;
 const engine = createGraphEngine(cortexPath);
-const reader = createSqliteOperationalReadModel(sharedDb);
 
 // ── Seller config ──────────────────────────────────────────────
 const roleConfig = getMlAccountRoleConfig(env);
@@ -99,9 +84,10 @@ const durabilityEnabled = env.MSL_DURABILITY_ENABLED?.trim() === "true";
 let backupScheduler = undefined;
 
 if (durabilityEnabled) {
-  const cortexManager = getSharedManager(cortexPath);
   backupScheduler = new BackupScheduler({
-    entries: [{ manager: cortexManager, dbPath: cortexPath, dbType: "cortex" }],
+    entries: [
+      { manager: persistenceRuntime.databaseManager, dbPath: cortexPath, dbType: "cortex" },
+    ],
     backupDir,
     backupIntervalMs: 24 * 60 * 60 * 1000, // 24h
     walCheckpointIntervalMs: 60 * 60 * 1000, // 1h
@@ -120,11 +106,9 @@ if (env.MSL_STRUCTURED_LOGGING_ENABLED?.trim() === "true") {
 // ── Economic learning daemon (optional) ────────────────────────
 let economicLearningDaemon = undefined;
 if (env.MSL_ECONOMIC_LEARNING_ENABLED?.trim() === "true") {
-  const economicOutcomeStore = createSqliteEconomicOutcomeStore(sharedDb);
-  const economicLearningStore = createSqliteEconomicLearningStore(sharedDb);
   economicLearningDaemon = createEconomicLearningDaemon(
-    economicOutcomeStore,
-    economicLearningStore,
+    persistenceRuntime.economicOutcomeStore,
+    persistenceRuntime.economicLearningStore,
     engine,
   );
   console.log("[agent-daemons] Economic learning daemon registered");
@@ -134,14 +118,12 @@ if (env.MSL_ECONOMIC_LEARNING_ENABLED?.trim() === "true") {
 let economicIngestionDaemon = undefined;
 if (env.MSL_ECONOMIC_INGESTION_ENABLED?.trim() === "true") {
   try {
-    const { createEconomicIngestionRuntime } = await import("@msl/agent");
-    const sourceRuntime = createEconomicIngestionRuntime("source");
-
     economicIngestionDaemon = createEconomicIngestionDaemon({
       enabled: true,
-      store: sourceRuntime.store,
-      dataFetcher: sourceRuntime.dataFetcher,
-      defaultSellerId: sourceRuntime.health.sellerId,
+      sellerRoutes: new Map([
+        [roleConfig.sourceSellerId, "source"],
+        [roleConfig.targetSellerId, "target"],
+      ]),
     });
     console.log("[agent-daemons] Economic ingestion daemon registered (source)");
   } catch (err) {
@@ -271,7 +253,7 @@ const { runDlqMonitor } = await import("@msl/agent");
 const healthInterval = setInterval(
   () => {
     const dbEntries = durabilityEnabled
-      ? [{ manager: getSharedManager(cortexPath), name: "cortex", dbPath: cortexPath }]
+      ? [{ manager: persistenceRuntime.databaseManager, name: "cortex", dbPath: cortexPath }]
       : undefined;
     const backupFreshness = backupScheduler
       ? (name) => backupScheduler.isBackupFresh(name)
@@ -310,7 +292,7 @@ const shutdown = () => {
   backupScheduler?.stop();
   webhookHandle?.stop();
   supplierMirrorHandle?.stop();
-  sharedDb.close();
+  persistenceRuntime.close();
   approvalRepo?.close?.();
   supplierMirrorRuntime?.close();
   process.exit(0);

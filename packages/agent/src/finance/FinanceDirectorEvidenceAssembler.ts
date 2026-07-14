@@ -1,4 +1,4 @@
-import type { EconomicOutcomeStore } from "@msl/memory";
+import type { EconomicOutcomeReader as EconomicOutcomeStore } from "@msl/memory";
 import type { Currency, EconomicOutcome, UnitEconomicsSnapshot } from "@msl/domain";
 
 export type FinanceDirectorEvidence = {

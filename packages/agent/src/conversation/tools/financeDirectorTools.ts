@@ -1,6 +1,9 @@
 import type { ToolDefinition } from "./types.js";
 import { safeString } from "./types.js";
-import type { EconomicOutcomeStore, FinanceDirectorAssessmentStore } from "@msl/memory";
+import type {
+  EconomicOutcomeReader as EconomicOutcomeStore,
+  FinanceDirectorAssessmentStore,
+} from "@msl/memory";
 import type { AssessmentType } from "@msl/domain";
 import { FinanceDirectorEvidenceAssembler } from "../../finance/FinanceDirectorEvidenceAssembler.js";
 import type { FinanceDirectorAdvisor } from "../../finance/FinanceDirectorAdvisor.js";

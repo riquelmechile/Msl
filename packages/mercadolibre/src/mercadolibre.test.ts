@@ -8,6 +8,7 @@ import {
   createMercadoLibreScraperFallbackAdapter,
   createMercadoLibreSupplierSourceAdapter,
   createMlcApiClient,
+  createMercadoLibreApiFetchTransport,
   createMlClient,
   createOAuthManager,
   createOAuthMlcApiClient,
@@ -535,6 +536,69 @@ describe("direct MLC API client boundary", () => {
         accessToken: "access-for-seller-1-7",
       },
     ]);
+  });
+
+  it("passes the supported Orders creation-date lower bound through the provider query", async () => {
+    const requests: Array<{ path: string; query: Readonly<Record<string, string>> | undefined }> =
+      [];
+    const client = createOAuthMlcApiClient({
+      oauthManager: {
+        ensureValidToken: () => Promise.resolve("access-token"),
+      } as Pick<OAuthManager, "ensureValidToken"> as OAuthManager,
+      transport: {
+        request: (request) => {
+          requests.push({ path: request.path, query: request.query });
+          return Promise.resolve({ results: [], paging: { total: 0, limit: 50 } });
+        },
+      },
+      now: () => now,
+      allowedSellerIds: ["seller-1"],
+    });
+
+    await client.getOrders("seller-1", {
+      limit: 50,
+      maxPages: 2,
+      dateCreatedFrom: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(requests).toEqual([
+      {
+        path: "/orders/search",
+        query: {
+          seller: "seller-1",
+          site: "MLC",
+          limit: "50",
+          "order.date_created.from": "2026-01-01T00:00:00.000Z",
+        },
+      },
+    ]);
+  });
+
+  it("propagates an Orders AbortSignal through OAuth and the HTTP transport", async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ results: [], paging: { total: 0, limit: 50 } }), {
+        status: 200,
+        statusText: "OK",
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const client = createOAuthMlcApiClient({
+      oauthManager: {
+        ensureValidToken: () => Promise.resolve("access-token"),
+      } as Pick<OAuthManager, "ensureValidToken"> as OAuthManager,
+      transport: createMercadoLibreApiFetchTransport(),
+      now: () => now,
+      allowedSellerIds: ["seller-1"],
+    });
+
+    try {
+      await client.getOrders("seller-1", { signal: controller.signal });
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(fetch.mock.calls[0]?.[1]).toMatchObject({ signal: controller.signal });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("reads Premium listing prices with logistics-aware 2026 fee details", async () => {

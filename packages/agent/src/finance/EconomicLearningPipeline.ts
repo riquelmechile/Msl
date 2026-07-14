@@ -8,7 +8,11 @@ import type {
 } from "@msl/domain";
 import { evaluateEconomicLearningEligibility } from "@msl/domain";
 import { computeEconomicSignal as computeSignal } from "@msl/domain";
-import type { EconomicLearningStore, EconomicOutcomeStore, GraphEngine } from "@msl/memory";
+import type {
+  EconomicLearningStore,
+  EconomicOutcomeReader as EconomicOutcomeStore,
+  GraphEngine,
+} from "@msl/memory";
 import { EconomicAttributionEvaluator } from "./EconomicAttributionEvaluator.js";
 import { EconomicReinforcementPlanner } from "./EconomicReinforcementPlanner.js";
 import { CortexEconomicReinforcementBridge } from "./CortexEconomicReinforcementBridge.js";

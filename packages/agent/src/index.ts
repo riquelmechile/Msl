@@ -142,6 +142,8 @@ export type { DaemonLogger, StoreLogger } from "./workers/observabilityPipeline.
 // ── Economic learning daemon ────────────────────────────────────────────
 export { createEconomicLearningDaemon } from "./workers/economicLearningDaemon.js";
 export { createEconomicIngestionDaemon } from "./workers/economicIngestionDaemon.js";
+export { createAgentDaemonPersistenceRuntime } from "./runtime/agentDaemonPersistence.js";
+export type { AgentDaemonPersistenceRuntime } from "./runtime/agentDaemonPersistence.js";
 export { runDlqMonitor } from "./workers/dlqMonitorDaemon.js";
 export { financeDirectorDaemon } from "./workers/financeDirectorDaemon.js";
 
@@ -165,6 +167,23 @@ export type {
 } from "./economics/factory.js";
 export { createProductionDataFetcher } from "./economics/dataFetcher.js";
 export type { ProductionDataFetcherOptions } from "./economics/dataFetcher.js";
+export {
+  createClaimsBacklogIdentity,
+  createSourceFetchResult,
+  isSourceFetchKind,
+  isSourceFetchResult,
+} from "./economics/sourceFetchContract.js";
+export type {
+  ClaimsBacklogIdentity,
+  ClaimsBacklogIdentityInput,
+  CreateSourceFetchResult,
+  CreateSourceFetchResultInput,
+  SourceFetchCursor,
+  SourceFetchKind,
+  SourceFetchReasonCode,
+  SourceFetchResult,
+  SourceFetchStatus,
+} from "./economics/sourceFetchContract.js";
 
 export { EscribanoObserver } from "./conversation/escribano.js";
 export type { EscribanoConfig } from "./conversation/types.js";

@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import Database from "better-sqlite3";
-import type { EconomicOutcomeStore } from "@msl/memory";
-import { createSqliteEconomicOutcomeStore } from "@msl/memory";
+import { afterEach, describe, expect, it } from "vitest";
+import type { EconomicOutcomeReaderFixture as EconomicOutcomeStore } from "../../tests/economicReaderFixture.js";
+import {
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../../tests/economicReaderFixture.js";
 import {
   createEconomicCostComponent,
   createEconomicOutcome,
@@ -12,10 +15,12 @@ import { FinanceDirectorEvidenceAssembler } from "./FinanceDirectorEvidenceAssem
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+afterEach(cleanupEconomicFixtureDatabases);
+
 function createStore(): EconomicOutcomeStore {
-  const db = new Database(":memory:");
+  const db = createEconomicFixtureDatabase();
   db.pragma("journal_mode = WAL");
-  return createSqliteEconomicOutcomeStore(db);
+  return createEconomicOutcomeReaderFixture(db);
 }
 
 function clp(n: number) {
