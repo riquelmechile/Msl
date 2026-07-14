@@ -21,6 +21,7 @@ import type {
   EconomicWriteSessionFactory,
   ExecutionBudget,
 } from "@msl/memory";
+import { EconomicIngestionOwnershipError } from "@msl/memory";
 import { normalizeOrders } from "./normalization.js";
 import {
   adaptMarketplaceFee,
@@ -980,6 +981,7 @@ export async function runEconomicIngestion(
   } catch (err) {
     const elapsedMs = Date.now() - startTime;
     const primaryError = err instanceof AggregateError && err.cause !== undefined ? err.cause : err;
+    if (primaryError instanceof EconomicIngestionOwnershipError) throw primaryError;
     const errorMessage = sanitizeFailureMessage(primaryError);
     errors.push(errorMessage);
 

@@ -53,7 +53,10 @@ export {
   migrateOperationalStore,
 } from "./operationalReadModel.js";
 export type { EconomicOutcomeReader, ProfitSummary } from "./economicOutcomeStore.js";
-export { createEconomicMemoryRuntime } from "./economicWriteSession.js";
+export {
+  createEconomicMemoryRuntime,
+  EconomicIngestionOwnershipError,
+} from "./economicWriteSession.js";
 export type {
   AdmittedEconomicWriteSession,
   EconomicCheckpointCommit,

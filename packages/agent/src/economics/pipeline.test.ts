@@ -27,7 +27,10 @@ import Database from "better-sqlite3";
 import {
   createEconomicMemoryRuntime,
   createExecutionBudget,
+  EconomicIngestionOwnershipError,
   type EconomicEvidenceReader,
+  type EconomicIngestionCommit,
+  type EconomicIngestionFailure,
   type EconomicMemoryRuntime,
   type EconomicOutcomeReader,
   type EconomicRunReader,
@@ -954,6 +957,131 @@ describe("EconomicIngestionPipeline", () => {
   });
 
   describe("lock mechanism", () => {
+    it("rejects hostile batch identities before writes and then commits a clean retry", async () => {
+      const db = createTestDatabase();
+      const runtime = createTestRuntime(db);
+      const absent = Symbol("absent");
+      const state = () => ({
+        rows: db
+          .prepare(
+            `SELECT
+          (SELECT COUNT(*) FROM economic_ingestion_runs) runs,
+          (SELECT COUNT(*) FROM economic_evidence_references) evidence,
+          (SELECT COUNT(*) FROM economic_cost_components) components,
+          (SELECT COUNT(*) FROM unit_economics_snapshots) snapshots,
+          (SELECT COUNT(*) FROM economic_ingestion_checkpoints) checkpoints,
+          (SELECT COUNT(*) FROM economic_source_health) health,
+          (SELECT write_epoch FROM economic_database_metadata) epoch`,
+          )
+          .get(),
+        lease: db.prepare("SELECT * FROM economic_seller_leases").all(),
+        fence: db.prepare("SELECT * FROM economic_database_fence").all(),
+        receipt: db.prepare("SELECT * FROM economic_database_write_admission_receipts").all(),
+      });
+      const writeSessionFactory: EconomicWriteSessionFactory = {
+        async open(input) {
+          const opened = await runtime.writeSessionFactory.open(input);
+          return {
+            ...opened,
+            session: {
+              ...opened.session,
+              async commitIngestion(command) {
+                const baseline = state();
+                const cases: ReadonlyArray<
+                  readonly [(value: EconomicIngestionCommit) => object, string, unknown]
+                > = [
+                  [(c) => c.run, "sellerId", "maustian"],
+                  [(c) => c.run, "runId", "other-run"],
+                  [(c) => c.evidence[0]!, "sellerId", "maustian"],
+                  [(c) => c.evidence[0]!, "ingestionRunId", "other-run"],
+                  [(c) => c.components[0]!, "sellerId", "maustian"],
+                  [(c) => c.components[0]!, "ingestionRunId", "other-run"],
+                  [(c) => c.snapshots[0]!, "sellerId", "maustian"],
+                  [(c) => c.snapshots[0]!, "ingestionRunId", "other-run"],
+                  [(c) => c.evidence[0]!, "sellerId", "maustian"],
+                  [(c) => c.evidence[1]!, "sellerId", "maustian"],
+                  [(c) => c.evidence[2]!, "sellerId", "maustian"],
+                  [(c) => c.evidence[0]!, "sellerId", ""],
+                  [(c) => c.evidence[0]!, "sellerId", absent],
+                  [(c) => c.evidence[0]!, "sellerId", {}],
+                  [(c) => c.evidence[0]!, "sellerId", "unknown"],
+                ];
+                for (const [select, property, value] of cases) {
+                  const hostile = structuredClone(command);
+                  if (value === absent) Reflect.deleteProperty(select(hostile), property);
+                  else Reflect.set(select(hostile), property, value);
+                  await expect(opened.session.commitIngestion(hostile)).rejects.toBeInstanceOf(
+                    EconomicIngestionOwnershipError,
+                  );
+                }
+                expect(state()).toEqual(baseline);
+                return opened.session.commitIngestion(command);
+              },
+            },
+          };
+        },
+      };
+      const result = await runEconomicIngestionProductive(
+        { sellerId: "plasticov", mode: "incremental" },
+        runtime.readers,
+        writeSessionFactory,
+        makeSampleFetcher({
+          orders: [0, 1, 2].map((id) => makeSampleOrder({ id: `order-${id}` })),
+        }),
+        createExecutionBudget(60_000),
+        runIdFactory,
+      );
+      expect(result.run.status).toBe("completed");
+      expect(runtime.readers.evidence.listByRun("plasticov", result.run.runId)).toHaveLength(3);
+      expect(runtime.readers.evidence.listByRun("maustian", result.run.runId)).toHaveLength(0);
+      expect(runtime.readers.outcomes.countComponentsByRun("plasticov", result.run.runId)).toBe(9);
+      expect(runtime.readers.outcomes.countSnapshotsByRun("plasticov", result.run.runId)).toBe(3);
+      expect(runtime.readers.outcomes.countComponentsByRun("maustian", result.run.runId)).toBe(0);
+      expect(runtime.readers.outcomes.countSnapshotsByRun("maustian", result.run.runId)).toBe(0);
+    });
+
+    it("propagates ownership rejection without failure persistence or a second session", async () => {
+      const db = createTestDatabase();
+      const runtime = createTestRuntime(db);
+      const recordFailure = vi.fn();
+      const open = vi.fn(async (input: Parameters<EconomicWriteSessionFactory["open"]>[0]) => {
+        const opened = await runtime.writeSessionFactory.open(input);
+        return {
+          ...opened,
+          session: {
+            ...opened.session,
+            commitIngestion() {
+              return Promise.reject(new EconomicIngestionOwnershipError());
+            },
+            async recordFailure(command: EconomicIngestionFailure) {
+              recordFailure();
+              return opened.session.recordFailure(command);
+            },
+          },
+        };
+      });
+      const writeSessionFactory: EconomicWriteSessionFactory = {
+        open,
+      };
+
+      await expect(
+        runEconomicIngestionProductive(
+          { sellerId: "plasticov", mode: "incremental" },
+          runtime.readers,
+          writeSessionFactory,
+          makeSampleFetcher(),
+          createExecutionBudget(60_000),
+          runIdFactory,
+        ),
+      ).rejects.toMatchObject({
+        code: "ECONOMIC_INGESTION_OWNERSHIP_MISMATCH",
+        message: "Economic ingestion ownership mismatch",
+      });
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(recordFailure).not.toHaveBeenCalled();
+      expect(await runtime.readers.runs.getLastRunBySeller("plasticov")).toBeNull();
+    });
+
     it("prevents concurrent ingestion for same seller", async () => {
       const store = mockStore();
       const fetcher = makeSampleFetcher({

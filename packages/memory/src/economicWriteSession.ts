@@ -104,6 +104,15 @@ export type EconomicIngestionFailure = {
   readonly sourceHealthUpdates?: readonly EconomicSourceHealthUpdate[];
 };
 
+export class EconomicIngestionOwnershipError extends Error {
+  readonly code = "ECONOMIC_INGESTION_OWNERSHIP_MISMATCH";
+
+  constructor() {
+    super("Economic ingestion ownership mismatch");
+    this.name = "EconomicIngestionOwnershipError";
+  }
+}
+
 export type AdmittedEconomicWriteSession = {
   readonly sellerId: string;
   readonly ownerRunId: string;
@@ -296,12 +305,25 @@ function createAdmittedSession(input: {
     ownerRunId: input.receipt.ownerRunId,
     commitIngestion(command) {
       return Promise.resolve().then(() => {
-        if (
-          command.run.sellerId !== input.receipt.sellerId ||
-          command.run.runId !== input.receipt.ownerRunId
-        ) {
-          throw new Error("Economic ingestion commit ownership mismatch");
-        }
+        const ownsOptionalRun = (runId: string | undefined): boolean =>
+          runId === undefined || runId === input.receipt.ownerRunId;
+        const ownsBatch =
+          command.run.sellerId === input.receipt.sellerId &&
+          command.run.runId === input.receipt.ownerRunId &&
+          command.evidence.every(
+            (item) =>
+              item.sellerId === input.receipt.sellerId &&
+              item.ingestionRunId === input.receipt.ownerRunId,
+          ) &&
+          command.components.every(
+            (item) =>
+              item.sellerId === input.receipt.sellerId && ownsOptionalRun(item.ingestionRunId),
+          ) &&
+          command.snapshots.every(
+            (item) =>
+              item.sellerId === input.receipt.sellerId && ownsOptionalRun(item.ingestionRunId),
+          );
+        if (!ownsBatch) throw new EconomicIngestionOwnershipError();
         return write(() => {
           insertRun(input.db, command.run, null);
           let duplicatesIgnored = command.run.duplicatesIgnored;
