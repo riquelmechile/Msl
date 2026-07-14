@@ -29,33 +29,33 @@ MSL combina razonamiento (DeepSeek), memoria (Cortex, grafo neuronal en SQLite) 
 
 Verificado contra el baseline `6fd769f` (P0 PR 4/4 Real Ingestion & Economic Adapters, hardened):
 
-| Componente                     | Estado                                                      |
-| ------------------------------ | ----------------------------------------------------------- |
-| Agent Message Bus              | Cola asíncrona SQLite, claim/resolve/fail, deduplicación    |
-| 16 daemon handlers             | Ciclos de 15 min, solo lectura, proponen al CEO (gated)     |
-| 16 lane contracts              | Contratos tipados con prefijos estables para caché          |
-| Evidence Response Router       | 5 responders que responden solicitudes de evidencia         |
-| Work Sessions                  | Sesiones persistentes con cooldown para 7 lanes             |
-| Account Assets + Account Brain | Tracking estratégico por cuenta, scoring, comparación       |
-| Cortex                         | Grafo neuronal con aprendizaje hebbiano y poda darwiniana   |
-| DeepSeek                       | Cliente real, bloques de caché, requiere `DEEPSEEK_API_KEY` |
-| Operational Read Model         | Snapshots SQLite de 8 tipos de entidad                      |
-| SQLite Durability              | Backups, verificación, restauración, WAL, integrity check   |
-| Migration Framework            | Migraciones versionadas, transaccionales e idempotentes     |
-| Observability Pipeline         | Logger JSON + correlation IDs + sanitización de secretos    |
-| Operational Health             | Checks de integridad, WAL, migraciones, backup freshness    |
-| Degraded Capability Policy     | Capacidades degradadas → WARN, no bloquean producción       |
-| Finance Director Validation    | Detección de figuras inventadas con evidencia cruzada       |
-| Supplier Mirror                | Evidencia de proveedores local-first, dry-run Jinpeng       |
-| Owned Ecommerce                | Write boundary Medusa (fail-closed), env-gated              |
-| Creative Studio                | MiniMax imagen/video, env-gated                             |
-| Telegram Bot                   | Runtime grammY, CEO-only, multi-seller                      |
-| MCP Server                     | ~40 herramientas para clientes MCP                          |
-| Aprobación "dale"              | Pipeline prepare → approve → execute → audit                |
-| Background Ingestion           | 5 procesadores con paginación por checkpoint                |
-| Economic Ingestion Pipeline    | Pipeline real con DataFetcher ML (read-only), 93+ snapshots |
-| Economic CLI                   | `npm run economic:ingest/status/coverage/reconcile/missing/inspect-evidence` |
-| Economic Store                 | SQLite: cost components, snapshots, evidence refs, runs     |
+| Componente                     | Estado                                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| Agent Message Bus              | Cola asíncrona SQLite, claim/resolve/fail, deduplicación                      |
+| 16 daemon handlers             | Ciclos de 15 min, solo lectura, proponen al CEO (gated)                       |
+| 16 lane contracts              | Contratos tipados con prefijos estables para caché                            |
+| Evidence Response Router       | 5 responders que responden solicitudes de evidencia                           |
+| Work Sessions                  | Sesiones persistentes con cooldown para 7 lanes                               |
+| Account Assets + Account Brain | Tracking estratégico por cuenta, scoring, comparación                         |
+| Cortex                         | Grafo neuronal con aprendizaje hebbiano y poda darwiniana                     |
+| DeepSeek                       | Cliente real, bloques de caché, requiere `DEEPSEEK_API_KEY`                   |
+| Operational Read Model         | Snapshots SQLite de 8 tipos de entidad                                        |
+| SQLite Durability              | Backups, verificación, restauración, WAL, integrity check                     |
+| Migration Framework            | Migraciones versionadas, transaccionales e idempotentes                       |
+| Observability Pipeline         | Logger JSON + correlation IDs + sanitización de secretos                      |
+| Operational Health             | Checks de integridad, WAL, migraciones, backup freshness                      |
+| Degraded Capability Policy     | Capacidades degradadas → WARN, no bloquean producción                         |
+| Finance Director Validation    | Detección de figuras inventadas con evidencia cruzada                         |
+| Supplier Mirror                | Evidencia de proveedores local-first, dry-run Jinpeng                         |
+| Owned Ecommerce                | Write boundary Medusa (fail-closed), env-gated                                |
+| Creative Studio                | MiniMax imagen/video, env-gated                                               |
+| Telegram Bot                   | Runtime grammY, CEO-only, multi-seller                                        |
+| MCP Server                     | ~40 herramientas para clientes MCP                                            |
+| Aprobación "dale"              | Pipeline prepare → approve → execute → audit                                  |
+| Background Ingestion           | 5 procesadores con paginación por checkpoint                                  |
+| Economic Ingestion Pipeline    | Pipeline real con DataFetcher ML (read-only), 93+ snapshots                   |
+| Economic CLI                   | `npm run economic:ingest/status/coverage/reconcile/missing/inspect-evidence`  |
+| Economic Store                 | SQLite: cost components, snapshots, evidence refs, runs                       |
 | Economic Ingestion Durability  | RunIdFactory UUID, fail-closed, atomic tx, Evidence Store, run-scoped metrics |
 
 ---
@@ -178,15 +178,15 @@ npm run dev                   # http://127.0.0.1:3000
 
 Ver [`.env.example`](.env.example) para la referencia completa. Grupos principales:
 
-| Grupo                            | Requerido para                                 |
-| -------------------------------- | ---------------------------------------------- |
-| `DEEPSEEK_API_KEY`               | Respuestas reales del LLM                      |
-| `BOT_TOKEN`                      | Bot de Telegram                                |
-| `MINIMAX_API_KEY`                | Creative Studio (imagen/video)                 |
-| MercadoLibre OAuth               | Acceso a API de ML (listings, órdenes, claims) |
-| Supplier Mirror                  | Bootstrap de Jinpeng, evidencia de proveedores |
-| `MSL_ENCRYPTION_KEY`             | Cifrado de tokens OAuth                        |
-| `MSL_ECONOMIC_INGESTION_ENABLED` | Ingesta económica real (costos, snapshots)     |
+| Grupo                               | Requerido para                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------- |
+| `DEEPSEEK_API_KEY`                  | Respuestas reales del LLM                                                 |
+| `BOT_TOKEN`                         | Bot de Telegram                                                           |
+| `MINIMAX_API_KEY`                   | Creative Studio (imagen/video)                                            |
+| MercadoLibre OAuth                  | Acceso a API de ML (listings, órdenes, claims)                            |
+| Supplier Mirror                     | Bootstrap de Jinpeng, evidencia de proveedores                            |
+| `MSL_ENCRYPTION_KEY`                | Cifrado de tokens OAuth                                                   |
+| `MSL_ECONOMIC_INGESTION_ENABLED`    | Ingesta económica real (costos, snapshots)                                |
 | `MSL_ECONOMIC_INGESTION_DURABILITY` | Durabilidad de ingesta (UUID IDs, fail-closed, atomic tx, Evidence Store) |
 
 ---
@@ -213,35 +213,35 @@ npm run economic:inspect-evidence  # Inspeccionar referencias de evidencia por r
 
 ## Estado de producción
 
-| Componente                       | Estado                                                  |
-| -------------------------------- | ------------------------------------------------------- |
-| Agent Loop + DeepSeek            | ✅ Listo (requiere `DEEPSEEK_API_KEY`)                  |
-| Agent Message Bus                | ✅ Listo (SQLite)                                       |
-| 16 Daemon Handlers               | ✅ Listo (15-min cycles, economic-learning gated)       |
-| Evidence Responses               | ✅ Listo (5 responders)                                 |
-| Work Sessions                    | ✅ Listo                                                |
-| Cortex                           | ✅ Listo (SQLite)                                       |
-| Operational Read Model           | ✅ Listo (8 entity kinds)                               |
-| SQLite Durability                | ✅ Listo (backups, WAL, integrity, gated)               |
-| Observability Pipeline           | ✅ Listo (JSON logger + sanitization, gated)            |
-| Operational Health               | ✅ Listo (DB checks, backup freshness, gated)           |
-| Telegram Bot                     | ✅ Runtime listo (requiere `BOT_TOKEN`)                 |
-| MCP Server                       | ✅ Runtime listo (~40 tools)                            |
-| Supplier Mirror                  | ✅ Foundation listo (workers disabled by default)       |
-| Owned Ecommerce                  | ✅ Runtime listo (env-gated)                            |
-| Creative Studio                  | ✅ Runtime listo (env-gated)                            |
-| ML OAuth                         | ✅ Listo (dual-account, read-only production)           |
-| OAuth dual Plasticov/Maustian    | ✅ Listo (apps separadas, tokens independientes)        |
-| Refresh automático seller-scoped | ✅ Listo (con lock, métricas, error classification)     |
-| Health por cuenta ML             | ✅ Listo (4 modos: inspect, refresh, smoke, no-network) |
-| Smoke tests read-only            | ✅ Listo (identity + orders + items, sin mutaciones)    |
-| Environment loader común         | ✅ Listo (sin symlink, funciona desde cualquier cwd)    |
-| Escrituras ML                    | ❌ Bloqueadas (`assertMercadoLibreWriteDisabled()`)     |
-| Ingesta real                     | ✅ Listo (feature-gated, infra completa)                |
-| Ingesta económica durable         | ✅ Listo (UUID IDs, fail-closed, atomic tx, Evidence Store) |
-| Ecommerce productivo             | ❌ Requiere credenciales Medusa + aprobación            |
-| Canales sociales                 | 🔲 No implementado                                      |
-| Expansión multicanal             | 🔲 No implementado                                      |
+| Componente                       | Estado                                                      |
+| -------------------------------- | ----------------------------------------------------------- |
+| Agent Loop + DeepSeek            | ✅ Listo (requiere `DEEPSEEK_API_KEY`)                      |
+| Agent Message Bus                | ✅ Listo (SQLite)                                           |
+| 16 Daemon Handlers               | ✅ Listo (15-min cycles, economic-learning gated)           |
+| Evidence Responses               | ✅ Listo (5 responders)                                     |
+| Work Sessions                    | ✅ Listo                                                    |
+| Cortex                           | ✅ Listo (SQLite)                                           |
+| Operational Read Model           | ✅ Listo (8 entity kinds)                                   |
+| SQLite Durability                | ✅ Listo (backups, WAL, integrity, gated)                   |
+| Observability Pipeline           | ✅ Listo (JSON logger + sanitization, gated)                |
+| Operational Health               | ✅ Listo (DB checks, backup freshness, gated)               |
+| Telegram Bot                     | ✅ Runtime listo (requiere `BOT_TOKEN`)                     |
+| MCP Server                       | ✅ Runtime listo (~40 tools)                                |
+| Supplier Mirror                  | ✅ Foundation listo (workers disabled by default)           |
+| Owned Ecommerce                  | ✅ Runtime listo (env-gated)                                |
+| Creative Studio                  | ✅ Runtime listo (env-gated)                                |
+| ML OAuth                         | ✅ Listo (dual-account, read-only production)               |
+| OAuth dual Plasticov/Maustian    | ✅ Listo (apps separadas, tokens independientes)            |
+| Refresh automático seller-scoped | ✅ Listo (con lock, métricas, error classification)         |
+| Health por cuenta ML             | ✅ Listo (4 modos: inspect, refresh, smoke, no-network)     |
+| Smoke tests read-only            | ✅ Listo (identity + orders + items, sin mutaciones)        |
+| Environment loader común         | ✅ Listo (sin symlink, funciona desde cualquier cwd)        |
+| Escrituras ML                    | ❌ Bloqueadas (`assertMercadoLibreWriteDisabled()`)         |
+| Ingesta real                     | ✅ Listo (feature-gated, infra completa)                    |
+| Ingesta económica durable        | ✅ Listo (UUID IDs, fail-closed, atomic tx, Evidence Store) |
+| Ecommerce productivo             | ❌ Requiere credenciales Medusa + aprobación                |
+| Canales sociales                 | 🔲 No implementado                                          |
+| Expansión multicanal             | 🔲 No implementado                                          |
 
 ---
 

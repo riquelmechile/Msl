@@ -6,7 +6,6 @@ import type {
 } from "@msl/mercadolibre";
 
 import type { McpServerConfig } from "../index.js";
-import type { McpToolResult } from "./utils.js";
 import { jsonResult, blockedResult } from "./utils.js";
 
 // ── Health service access ───────────────────────────────────────────
@@ -47,14 +46,6 @@ function sanitizeHealthArray(
 }
 
 // ── Smoke result sanitization ───────────────────────────────────────
-
-type SafeSmokeResult = {
-  endpoint: string;
-  success: boolean;
-  statusCode?: number;
-  reasonCode?: string;
-  durationMs: number;
-};
 
 function sanitizeSmokeResult(health: MercadoLibreAccountConnectionHealth): {
   seller: { sellerId: string; accountRole: string; accountName: string };
@@ -103,7 +94,10 @@ export function registerConnectionTools(
     },
     async ({ msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return blockedResult("unauthorized", "Unauthorized MCP request. Provide a valid MSL MCP API key.");
+        return blockedResult(
+          "unauthorized",
+          "Unauthorized MCP request. Provide a valid MSL MCP API key.",
+        );
       }
 
       const healthService = getHealthService(config);
@@ -157,7 +151,10 @@ export function registerConnectionTools(
     },
     async ({ sellerId, msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return blockedResult("unauthorized", "Unauthorized MCP request. Provide a valid MSL MCP API key.");
+        return blockedResult(
+          "unauthorized",
+          "Unauthorized MCP request. Provide a valid MSL MCP API key.",
+        );
       }
 
       const healthService = getHealthService(config);
@@ -225,7 +222,10 @@ export function registerConnectionTools(
     },
     async ({ sellerId, msl_api_key }) => {
       if (!validateApiKey(msl_api_key)) {
-        return blockedResult("unauthorized", "Unauthorized MCP request. Provide a valid MSL MCP API key.");
+        return blockedResult(
+          "unauthorized",
+          "Unauthorized MCP request. Provide a valid MSL MCP API key.",
+        );
       }
 
       const healthService = getHealthService(config);

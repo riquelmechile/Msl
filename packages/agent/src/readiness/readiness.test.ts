@@ -13,10 +13,7 @@ import { checkProviderReadiness } from "./ProviderReadinessChecker.js";
 import { checkRuntimeReadiness } from "./RuntimeReadinessChecker.js";
 import { checkFeatureGateReadiness } from "./FeatureGateReadinessChecker.js";
 import { checkSecurityReadiness } from "./SecurityReadinessChecker.js";
-import {
-  assertMercadoLibreWriteDisabled,
-  MercadoLibreWriteBlockedError,
-} from "./runtimeGates.js";
+import { assertMercadoLibreWriteDisabled, MercadoLibreWriteBlockedError } from "./runtimeGates.js";
 import type { ReadinessContext } from "./types.js";
 import type {
   MercadoLibreConnectionHealthService,
@@ -25,7 +22,9 @@ import type {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function fakeEnv(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> {
+function fakeEnv(
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string | undefined> {
   return {
     MSL_RUNTIME_MODE: "development",
     ...overrides,
@@ -62,7 +61,6 @@ function makeAssessInput(overrides: Partial<AssessReadinessInput> = {}): AssessR
     env,
   };
 }
-
 
 // ── EnvironmentReadinessChecker ─────────────────────────────────────
 
@@ -114,9 +112,7 @@ describe("SellerAccountReadinessChecker", () => {
       }),
     });
     const results = checkSellerAccountReadiness(ctx);
-    const plasticovCheck = results.find(
-      (r) => r.checkId === "seller-plasticov-id",
-    );
+    const plasticovCheck = results.find((r) => r.checkId === "seller-plasticov-id");
     expect(plasticovCheck?.status).toBe("blocked");
     expect(plasticovCheck?.sellerId).toBe("plasticov");
   });
@@ -129,9 +125,7 @@ describe("SellerAccountReadinessChecker", () => {
       }),
     });
     const results = checkSellerAccountReadiness(ctx);
-    const plasticovCheck = results.find(
-      (r) => r.checkId === "seller-plasticov-id",
-    );
+    const plasticovCheck = results.find((r) => r.checkId === "seller-plasticov-id");
     expect(plasticovCheck?.status).toBe("ready");
   });
 
@@ -432,10 +426,7 @@ describe("assessProductionReadiness (integration)", () => {
         }),
       }),
     );
-    expect(report.sellerReports.map((s) => s.sellerId).sort()).toEqual([
-      "maustian",
-      "plasticov",
-    ]);
+    expect(report.sellerReports.map((s) => s.sellerId).sort()).toEqual(["maustian", "plasticov"]);
   });
 
   it("includes remediation plan for blocked capabilities", () => {
@@ -485,10 +476,7 @@ describe("assessProductionReadiness (integration)", () => {
 
   it("produces consistent capacity lists", () => {
     const report = assessProductionReadiness(makeAssessInput({ env: fakeEnv() }));
-    const allCaps = new Set([
-      ...report.readyCapabilities,
-      ...report.disabledCapabilities,
-    ]);
+    const allCaps = new Set([...report.readyCapabilities, ...report.disabledCapabilities]);
     // Blocked capabilities may not be in ready or disabled lists — they're in blockers
     // The union of ready+disabled+blocked should cover all capabilities
     const blockedCaps = new Set(report.blockers.map((b) => b.capability));
@@ -500,7 +488,11 @@ describe("assessProductionReadiness (integration)", () => {
 // ── Live Connection Readiness (T5.3) ────────────────────────────────
 
 function fakeHealth(
-  overrides: Partial<MercadoLibreAccountConnectionHealth> & { sellerId: string; accountRole: "source" | "target"; accountName: string },
+  overrides: Partial<MercadoLibreAccountConnectionHealth> & {
+    sellerId: string;
+    accountRole: "source" | "target";
+    accountName: string;
+  },
 ): MercadoLibreAccountConnectionHealth {
   return {
     status: "ready",
@@ -519,31 +511,37 @@ function fakeHealthService(
   sellers: Map<string, MercadoLibreAccountConnectionHealth>,
 ): MercadoLibreConnectionHealthService {
   return {
-    inspect: async (sellerId: string) => {
+    inspect: (sellerId: string) => {
       const health = sellers.get(sellerId);
-      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
-      return health;
+      return health
+        ? Promise.resolve(health)
+        : Promise.reject(new Error(`Unknown seller: ${sellerId}`));
     },
-    inspectAll: async () => Array.from(sellers.values()),
-    refreshIfNeeded: async (sellerId: string) => {
+    inspectAll: () => Promise.resolve(Array.from(sellers.values())),
+    refreshIfNeeded: (sellerId: string) => {
       const health = sellers.get(sellerId);
-      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
-      return health;
+      return health
+        ? Promise.resolve(health)
+        : Promise.reject(new Error(`Unknown seller: ${sellerId}`));
     },
-    smokeRead: async (sellerId: string) => {
+    smokeRead: (sellerId: string) => {
       const health = sellers.get(sellerId);
-      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
-      return health;
+      return health
+        ? Promise.resolve(health)
+        : Promise.reject(new Error(`Unknown seller: ${sellerId}`));
     },
-    healthByMode: async (sellerId: string) => {
+    healthByMode: (sellerId: string) => {
       const health = sellers.get(sellerId);
-      if (!health) throw new Error(`Unknown seller: ${sellerId}`);
-      return health;
+      return health
+        ? Promise.resolve(health)
+        : Promise.reject(new Error(`Unknown seller: ${sellerId}`));
     },
   };
 }
 
-function liveEnv(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> {
+function liveEnv(
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string | undefined> {
   return {
     MSL_RUNTIME_MODE: "production",
     MERCADOLIBRE_SOURCE_SELLER_ID: "123456789",
@@ -561,7 +559,7 @@ function liveEnv(overrides: Record<string, string | undefined> = {}): Record<str
 }
 
 function liveCtx(overrides: Partial<ReadinessContext> = {}): ReadinessContext {
-  const env = liveEnv(overrides.env as Record<string, string | undefined> | undefined);
+  const env = liveEnv(overrides.env);
   return makeCtx({ env, ...overrides });
 }
 
@@ -571,20 +569,26 @@ describe("checkMercadoLibreLiveConnection", () => {
     const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
     const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
     const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
-    sellers.set(sourceSellerId!, fakeHealth({
-      sellerId: sourceSellerId!,
-      accountRole: "source",
-      accountName: "Plasticov",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
-    sellers.set(targetSellerId!, fakeHealth({
-      sellerId: targetSellerId!,
-      accountRole: "target",
-      accountName: "Maustian",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
+    sellers.set(
+      sourceSellerId!,
+      fakeHealth({
+        sellerId: sourceSellerId!,
+        accountRole: "source",
+        accountName: "Plasticov",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
+    sellers.set(
+      targetSellerId!,
+      fakeHealth({
+        sellerId: targetSellerId!,
+        accountRole: "target",
+        accountName: "Maustian",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
 
     const factory: HealthServiceFactory = () => fakeHealthService(sellers);
     const results = await checkMercadoLibreLiveConnection(ctx, factory);
@@ -602,22 +606,28 @@ describe("checkMercadoLibreLiveConnection", () => {
     const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
     const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
     const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
-    sellers.set(sourceSellerId!, fakeHealth({
-      sellerId: sourceSellerId!,
-      accountRole: "source",
-      accountName: "Plasticov",
-      status: "degraded",
-      tokenStatus: "expiring",
-      reasonCodes: ["token_expiring"],
-      reason: "Token expires soon",
-    }));
-    sellers.set(targetSellerId!, fakeHealth({
-      sellerId: targetSellerId!,
-      accountRole: "target",
-      accountName: "Maustian",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
+    sellers.set(
+      sourceSellerId!,
+      fakeHealth({
+        sellerId: sourceSellerId!,
+        accountRole: "source",
+        accountName: "Plasticov",
+        status: "degraded",
+        tokenStatus: "expiring",
+        reasonCodes: ["token_expiring"],
+        reason: "Token expires soon",
+      }),
+    );
+    sellers.set(
+      targetSellerId!,
+      fakeHealth({
+        sellerId: targetSellerId!,
+        accountRole: "target",
+        accountName: "Maustian",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
 
     const factory: HealthServiceFactory = () => fakeHealthService(sellers);
     const results = await checkMercadoLibreLiveConnection(ctx, factory);
@@ -632,22 +642,28 @@ describe("checkMercadoLibreLiveConnection", () => {
     const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
     const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
     const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
-    sellers.set(sourceSellerId!, fakeHealth({
-      sellerId: sourceSellerId!,
-      accountRole: "source",
-      accountName: "Plasticov",
-      status: "blocked",
-      tokenStatus: "decryption-failed",
-      reasonCodes: ["decryption_failed"],
-      reason: "Token decryption failed",
-    }));
-    sellers.set(targetSellerId!, fakeHealth({
-      sellerId: targetSellerId!,
-      accountRole: "target",
-      accountName: "Maustian",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
+    sellers.set(
+      sourceSellerId!,
+      fakeHealth({
+        sellerId: sourceSellerId!,
+        accountRole: "source",
+        accountName: "Plasticov",
+        status: "blocked",
+        tokenStatus: "decryption-failed",
+        reasonCodes: ["decryption_failed"],
+        reason: "Token decryption failed",
+      }),
+    );
+    sellers.set(
+      targetSellerId!,
+      fakeHealth({
+        sellerId: targetSellerId!,
+        accountRole: "target",
+        accountName: "Maustian",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
 
     const factory: HealthServiceFactory = () => fakeHealthService(sellers);
     const results = await checkMercadoLibreLiveConnection(ctx, factory);
@@ -661,20 +677,26 @@ describe("checkMercadoLibreLiveConnection", () => {
     const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
     const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
     const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
-    sellers.set(sourceSellerId!, fakeHealth({
-      sellerId: sourceSellerId!,
-      accountRole: "source",
-      accountName: "Plasticov",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
-    sellers.set(targetSellerId!, fakeHealth({
-      sellerId: targetSellerId!,
-      accountRole: "target",
-      accountName: "Maustian",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
+    sellers.set(
+      sourceSellerId!,
+      fakeHealth({
+        sellerId: sourceSellerId!,
+        accountRole: "source",
+        accountName: "Plasticov",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
+    sellers.set(
+      targetSellerId!,
+      fakeHealth({
+        sellerId: targetSellerId!,
+        accountRole: "target",
+        accountName: "Maustian",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
 
     const factory: HealthServiceFactory = () => fakeHealthService(sellers);
     const results = await checkMercadoLibreLiveConnection(ctx, factory);
@@ -714,11 +736,11 @@ describe("checkMercadoLibreLiveConnection", () => {
   it("reports blocked when health service throws", async () => {
     const ctx = liveCtx();
     const errorService: MercadoLibreConnectionHealthService = {
-      inspect: async () => { throw new Error("Simulated failure"); },
-      inspectAll: async () => { throw new Error("Simulated failure"); },
-      refreshIfNeeded: async () => { throw new Error("Simulated failure"); },
-      smokeRead: async () => { throw new Error("Simulated failure"); },
-      healthByMode: async () => { throw new Error("Simulated failure"); },
+      inspect: () => Promise.reject(new Error("Simulated failure")),
+      inspectAll: () => Promise.reject(new Error("Simulated failure")),
+      refreshIfNeeded: () => Promise.reject(new Error("Simulated failure")),
+      smokeRead: () => Promise.reject(new Error("Simulated failure")),
+      healthByMode: () => Promise.reject(new Error("Simulated failure")),
     };
 
     const factory: HealthServiceFactory = () => errorService;
@@ -737,22 +759,28 @@ describe("checkMercadoLibreLiveConnection", () => {
     const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
     const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
     const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
-    sellers.set(sourceSellerId!, fakeHealth({
-      sellerId: sourceSellerId!,
-      accountRole: "source",
-      accountName: "Plasticov",
-      status: "disconnected",
-      tokenStatus: "missing",
-      reasonCodes: ["token_missing"],
-      reason: "No stored token",
-    }));
-    sellers.set(targetSellerId!, fakeHealth({
-      sellerId: targetSellerId!,
-      accountRole: "target",
-      accountName: "Maustian",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
+    sellers.set(
+      sourceSellerId!,
+      fakeHealth({
+        sellerId: sourceSellerId!,
+        accountRole: "source",
+        accountName: "Plasticov",
+        status: "disconnected",
+        tokenStatus: "missing",
+        reasonCodes: ["token_missing"],
+        reason: "No stored token",
+      }),
+    );
+    sellers.set(
+      targetSellerId!,
+      fakeHealth({
+        sellerId: targetSellerId!,
+        accountRole: "target",
+        accountName: "Maustian",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
 
     const factory: HealthServiceFactory = () => fakeHealthService(sellers);
     const results = await checkMercadoLibreLiveConnection(ctx, factory);
@@ -766,22 +794,28 @@ describe("checkMercadoLibreLiveConnection", () => {
     const sellers = new Map<string, MercadoLibreAccountConnectionHealth>();
     const sourceSellerId = ctx.env.MERCADOLIBRE_SOURCE_SELLER_ID?.trim();
     const targetSellerId = ctx.env.MERCADOLIBRE_TARGET_SELLER_ID?.trim();
-    sellers.set(sourceSellerId!, fakeHealth({
-      sellerId: sourceSellerId!,
-      accountRole: "source",
-      accountName: "Plasticov",
-      status: "reauthorization-required",
-      tokenStatus: "refresh-rejected",
-      reasonCodes: ["invalid_grant"],
-      reason: "Refresh rejected",
-    }));
-    sellers.set(targetSellerId!, fakeHealth({
-      sellerId: targetSellerId!,
-      accountRole: "target",
-      accountName: "Maustian",
-      status: "ready",
-      tokenStatus: "valid",
-    }));
+    sellers.set(
+      sourceSellerId!,
+      fakeHealth({
+        sellerId: sourceSellerId!,
+        accountRole: "source",
+        accountName: "Plasticov",
+        status: "reauthorization-required",
+        tokenStatus: "refresh-rejected",
+        reasonCodes: ["invalid_grant"],
+        reason: "Refresh rejected",
+      }),
+    );
+    sellers.set(
+      targetSellerId!,
+      fakeHealth({
+        sellerId: targetSellerId!,
+        accountRole: "target",
+        accountName: "Maustian",
+        status: "ready",
+        tokenStatus: "valid",
+      }),
+    );
 
     const factory: HealthServiceFactory = () => fakeHealthService(sellers);
     const results = await checkMercadoLibreLiveConnection(ctx, factory);
@@ -801,15 +835,13 @@ describe("assertMercadoLibreWriteDisabled", () => {
   });
 
   it("message includes operation name", () => {
-    expect(() => assertMercadoLibreWriteDisabled("publishItem")).toThrow(
-      /Attempted: publishItem/,
-    );
+    expect(() => assertMercadoLibreWriteDisabled("publishItem")).toThrow(/Attempted: publishItem/);
   });
 
   it("message includes sellerId when provided", () => {
-    expect(() =>
-      assertMercadoLibreWriteDisabled("updateItem", "123456789"),
-    ).toThrow(/for seller 123456789/);
+    expect(() => assertMercadoLibreWriteDisabled("updateItem", "123456789")).toThrow(
+      /for seller 123456789/,
+    );
   });
 
   it("message is descriptive and clear", () => {

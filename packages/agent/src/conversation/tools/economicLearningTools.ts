@@ -11,9 +11,7 @@ function safeLimit(value: unknown, max: number): number {
 
 // ── explain_economic_learning ──────────────────────────────────────────────
 
-export function createExplainEconomicLearningTool(
-  store?: EconomicLearningStore,
-): ToolDefinition {
+export function createExplainEconomicLearningTool(store?: EconomicLearningStore): ToolDefinition {
   return {
     name: "explain_economic_learning",
     description:
@@ -280,8 +278,7 @@ export function createInspectEconomicLearningStatusTool(
         // Count attribution strengths
         const attributionStrengths: Record<string, number> = {};
         for (const attr of attributions) {
-          attributionStrengths[attr.strength] =
-            (attributionStrengths[attr.strength] ?? 0) + 1;
+          attributionStrengths[attr.strength] = (attributionStrengths[attr.strength] ?? 0) + 1;
         }
 
         const overview: Record<string, unknown> = {
@@ -411,9 +408,7 @@ export function createListEconomicLearningEventsTool(
 
 // ── Tool factory ───────────────────────────────────────────────────────────
 
-export function createEconomicLearningTools(
-  store?: EconomicLearningStore,
-): ToolDefinition[] {
+export function createEconomicLearningTools(store?: EconomicLearningStore): ToolDefinition[] {
   return [
     createExplainEconomicLearningTool(store),
     createInspectEconomicLearningStatusTool(store),

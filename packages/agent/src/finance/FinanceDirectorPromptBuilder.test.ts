@@ -4,7 +4,9 @@ import type { FinanceDirectorEvidence } from "./FinanceDirectorEvidenceAssembler
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeFakeSnapshot(overrides: Record<string, unknown> = {}): NonNullable<FinanceDirectorEvidence["snapshots"]>[number] {
+function makeFakeSnapshot(
+  overrides: Record<string, unknown> = {},
+): NonNullable<FinanceDirectorEvidence["snapshots"]>[number] {
   return {
     snapshotId: (overrides.snapshotId ?? "s1") as string,
     sellerId: (overrides.sellerId ?? "plasticov") as string,
@@ -31,7 +33,9 @@ function makeFakeSnapshot(overrides: Record<string, unknown> = {}): NonNullable<
   };
 }
 
-function makeEmptyEvidence(overrides: Partial<FinanceDirectorEvidence> = {}): FinanceDirectorEvidence {
+function makeEmptyEvidence(
+  overrides: Partial<FinanceDirectorEvidence> = {},
+): FinanceDirectorEvidence {
   return {
     snapshots: [],
     outcomes: [],

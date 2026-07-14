@@ -24,12 +24,7 @@ export class MercadoLibreRefreshError extends Error {
   readonly retryable: boolean;
   readonly sellerId: string;
 
-  constructor(
-    code: RefreshErrorCode,
-    message: string,
-    sellerId: string,
-    retryable?: boolean,
-  ) {
+  constructor(code: RefreshErrorCode, message: string, sellerId: string, retryable?: boolean) {
     super(message);
     this.name = "MercadoLibreRefreshError";
     this.code = code;
@@ -80,7 +75,7 @@ function mockTokens(sellerId: string): OAuthTokens {
 export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
   const store: TokenStore = createTokenStore(config.dbPath ?? ":memory:");
   const stub = isStubCredentials(config);
-  const now = config.clock?.now ?? (() => Date.now());
+  const now = () => config.clock?.now() ?? Date.now();
 
   function getAuthorizationUrl(sellerId: string, state: string): string {
     if (stub) {
@@ -180,7 +175,7 @@ export function createOAuthManager(config: OAuthManagerConfig): OAuthManager {
     }
 
     if (!response.ok) {
-      const responseBody = await response.json().catch(() => ({})) as Record<string, unknown>;
+      const responseBody = (await response.json().catch(() => ({}))) as Record<string, unknown>;
       const errorCode = (responseBody.error as string) ?? "";
       const errorDesc = (responseBody.error_description as string) ?? "";
 

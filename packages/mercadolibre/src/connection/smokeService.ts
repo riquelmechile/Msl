@@ -45,7 +45,8 @@ function createResult(
   if (overrides.statusCode !== undefined) result.statusCode = overrides.statusCode;
   if (overrides.count !== undefined) result.count = overrides.count;
   if (overrides.reasonCode !== undefined) result.reasonCode = overrides.reasonCode;
-  if (overrides.rateLimitRemaining !== undefined) result.rateLimitRemaining = overrides.rateLimitRemaining;
+  if (overrides.rateLimitRemaining !== undefined)
+    result.rateLimitRemaining = overrides.rateLimitRemaining;
   if (overrides.duration !== undefined) result.duration = overrides.duration;
   return result;
 }
@@ -95,7 +96,14 @@ async function safeFetch(
     }
 
     const data = await response.json();
-    return { ok: true, status, data, ...(rateLimitRemaining != null ? { rateLimitRemaining: Number.parseInt(rateLimitRemaining, 10) } : {}) };
+    return {
+      ok: true,
+      status,
+      data,
+      ...(rateLimitRemaining != null
+        ? { rateLimitRemaining: Number.parseInt(rateLimitRemaining, 10) }
+        : {}),
+    };
   } catch (err) {
     const isTimeout = err instanceof DOMException && err.name === "AbortError";
     return {
@@ -130,7 +138,7 @@ export function createMercadoLibreReadOnlySmokeService(
   options: SmokeServiceOptions,
 ): MercadoLibreReadOnlySmokeService {
   const { oauthManager, store: _store, clock, noNetwork } = options;
-  const now = clock?.now ?? (() => Date.now());
+  const now = () => clock?.now() ?? Date.now();
 
   async function getAccessToken(sellerId: string): Promise<string> {
     return oauthManager.ensureValidToken(sellerId);
@@ -220,10 +228,7 @@ export function createMercadoLibreReadOnlySmokeService(
     }
   }
 
-  async function runOrdersSmoke(
-    sellerId: string,
-    limit = 3,
-  ): Promise<SmokeEndpointResult> {
+  async function runOrdersSmoke(sellerId: string, limit = 3): Promise<SmokeEndpointResult> {
     const startTime = now();
 
     if (noNetwork) {
@@ -299,10 +304,7 @@ export function createMercadoLibreReadOnlySmokeService(
     }
   }
 
-  async function runItemsSmoke(
-    sellerId: string,
-    limit = 5,
-  ): Promise<SmokeEndpointResult> {
+  async function runItemsSmoke(sellerId: string, limit = 5): Promise<SmokeEndpointResult> {
     const startTime = now();
 
     if (noNetwork) {

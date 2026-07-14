@@ -81,9 +81,7 @@ export class EconomicAttributionEvaluator {
           hasEvidence: supportingEvidenceIds.length > 0,
         }),
         supportingEvidenceIds,
-        ...(hasObsWindow
-          ? { observationWindow: obsWindow }
-          : {}),
+        ...(hasObsWindow ? { observationWindow: obsWindow } : {}),
       });
       assessments.push(assessment);
       hasExecutionMatch = true;
@@ -107,9 +105,7 @@ export class EconomicAttributionEvaluator {
           hasEvidence: supportingEvidenceIds.length > 0,
         }),
         supportingEvidenceIds,
-        ...(hasObsWindow
-          ? { observationWindow: obsWindow }
-          : {}),
+        ...(hasObsWindow ? { observationWindow: obsWindow } : {}),
       });
       assessments.push(assessment);
     }
@@ -184,9 +180,7 @@ export class EconomicAttributionEvaluator {
         confidence: 0.1,
         supportingEvidenceIds,
         observationWindow: obsWindow,
-        alternativeExplanations: [
-          "No shared ID matched between outcome and attribution input.",
-        ],
+        alternativeExplanations: ["No shared ID matched between outcome and attribution input."],
       });
       assessments.push(assessment);
     }
@@ -231,9 +225,7 @@ export class EconomicAttributionEvaluator {
       supportingEvidenceIds: params.supportingEvidenceIds,
       contradictingEvidenceIds: [],
       alternativeExplanations: params.alternativeExplanations ?? [],
-      ...(params.observationWindow
-        ? { observationWindow: params.observationWindow }
-        : {}),
+      ...(params.observationWindow ? { observationWindow: params.observationWindow } : {}),
       evaluator: "economic-attribution-evaluator",
     });
   }

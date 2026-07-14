@@ -45,10 +45,7 @@ export class FinanceDirectorAdvisor {
   private validator: FinanceDirectorValidator;
   private fallback: FinanceDirectorFallback;
 
-  constructor(input: {
-    transport: DeepSeekTransport;
-    ledger?: WorkforceCostCacheLedgerStore;
-  }) {
+  constructor(input: { transport: DeepSeekTransport; ledger?: WorkforceCostCacheLedgerStore }) {
     this.transport = input.transport;
     this.ledger = input.ledger;
     this.promptBuilder = new FinanceDirectorPromptBuilder();
@@ -88,7 +85,9 @@ export class FinanceDirectorAdvisor {
       sellerId,
       assessmentType,
       ...(sessionContext?.history !== undefined ? { sessionContext: sessionContext.history } : {}),
-      ...(sessionContext?.priorAssessment !== undefined ? { priorAssessment: sessionContext.priorAssessment } : {}),
+      ...(sessionContext?.priorAssessment !== undefined
+        ? { priorAssessment: sessionContext.priorAssessment }
+        : {}),
     });
 
     // ── Call DeepSeek ──────────────────────────────────────────────────
@@ -125,7 +124,11 @@ export class FinanceDirectorAdvisor {
       parsed = this.parseResponse(rawResponse);
     } catch {
       // Invalid JSON → attempt retry with correction
-      rawResponse = await this.retryWithCorrection(gateway, prompt, "Response was not valid JSON. Please return valid JSON only.");
+      rawResponse = await this.retryWithCorrection(
+        gateway,
+        prompt,
+        "Response was not valid JSON. Please return valid JSON only.",
+      );
       if (rawResponse) {
         try {
           parsed = this.parseResponse(rawResponse);
@@ -188,9 +191,8 @@ export class FinanceDirectorAdvisor {
       risks: Object.freeze(parsed.risks ?? []),
       opportunities: Object.freeze(parsed.opportunities ?? []),
       missingEvidence: Object.freeze(parsed.missingEvidence ?? []),
-      confidence: typeof parsed.confidence === "number"
-        ? Math.max(0, Math.min(1, parsed.confidence))
-        : 0.5,
+      confidence:
+        typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5,
       uncertaintyReasons: Object.freeze(parsed.uncertaintyReasons ?? []),
       recommendations: Object.freeze(parsed.recommendations ?? []),
       requestsForEvidence: Object.freeze(parsed.requestsForEvidence ?? []),

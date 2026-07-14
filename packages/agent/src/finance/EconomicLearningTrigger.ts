@@ -34,7 +34,8 @@ export class EconomicLearningTrigger {
 
     // Deduplication: same outcome + seller within cooldown
     const lastProcessed = this.processedOutcomes.get(dedupKey);
-    if (lastProcessed && Date.now() - lastProcessed < 300_000) { // 5 min cooldown
+    if (lastProcessed && Date.now() - lastProcessed < 300_000) {
+      // 5 min cooldown
       return {
         outcomeId: outcome.outcomeId,
         sellerId: outcome.sellerId,
@@ -94,7 +95,8 @@ export class EconomicLearningTrigger {
     const now = Date.now();
     let pruned = 0;
     for (const [key, timestamp] of this.processedOutcomes) {
-      if (now - timestamp > 600_000) { // 10 min
+      if (now - timestamp > 600_000) {
+        // 10 min
         this.processedOutcomes.delete(key);
         pruned++;
       }

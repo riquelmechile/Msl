@@ -7,9 +7,7 @@ const BASE_INPUT: NormalizeOrdersInput = {
   orders: [],
 };
 
-function makeInput(
-  overrides: Partial<NormalizeOrdersInput>,
-): NormalizeOrdersInput {
+function makeInput(overrides: Partial<NormalizeOrdersInput>): NormalizeOrdersInput {
   return { ...BASE_INPUT, ...overrides };
 }
 

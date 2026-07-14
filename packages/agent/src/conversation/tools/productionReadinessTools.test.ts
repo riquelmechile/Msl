@@ -4,7 +4,9 @@ import { createInspectProductionReadinessTool } from "./productionReadinessTools
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function fakeEnv(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> {
+function fakeEnv(
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string | undefined> {
   return {
     MSL_RUNTIME_MODE: "development",
     ...overrides,

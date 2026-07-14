@@ -76,7 +76,8 @@ export function checkDatabaseReadiness(ctx: ReadinessContext): ReadinessCheckRes
             capability: capability as ReadinessCheckResult["capability"],
             status: "ready",
             safeMessage: `${name} is ":memory:" — acceptable in development mode.`,
-            remediation: "In-memory database is fine for dev. Switch to a file path for production.",
+            remediation:
+              "In-memory database is fine for dev. Switch to a file path for production.",
           }),
         );
       }
@@ -124,10 +125,7 @@ export function checkDatabaseReadiness(ctx: ReadinessContext): ReadinessCheckRes
 
     // ── Write permission check (create temp file) ─────────────────
     try {
-      const testFile = path.join(
-        dirPath,
-        `.msl-readiness-test-${Date.now().toString(36)}.tmp`,
-      );
+      const testFile = path.join(dirPath, `.msl-readiness-test-${Date.now().toString(36)}.tmp`);
       writeFileSync(testFile, "readiness-check", { encoding: "utf-8" });
       try {
         unlinkSync(testFile);
@@ -200,7 +198,8 @@ export function checkDatabaseReadiness(ctx: ReadinessContext): ReadinessCheckRes
         checkId: `${CHECK_PREFIX}-telegram-cortex-conflict`,
         capability: "telegram-ceo",
         status: "degraded",
-        safeMessage: "MSL_TELEGRAM_CORTEX_SQLITE_PATH and MSL_CORTEX_SQLITE_PATH point to the same file.",
+        safeMessage:
+          "MSL_TELEGRAM_CORTEX_SQLITE_PATH and MSL_CORTEX_SQLITE_PATH point to the same file.",
         remediation: "Use different paths for Telegram Cortex and shared Cortex databases.",
       }),
     );
@@ -211,11 +210,11 @@ export function checkDatabaseReadiness(ctx: ReadinessContext): ReadinessCheckRes
 
 // ── Internal helpers: integrity & WAL checks ──────────────────────────
 
-interface ValidatedPath {
+type ValidatedPath = {
   name: string;
   dbPath: string;
   capability: string;
-}
+};
 
 /**
  * Run `PRAGMA integrity_check` on every validated database that exists
@@ -223,10 +222,7 @@ interface ValidatedPath {
  * not flagged. A failing integrity check degrades the `database-integrity`
  * feature capability.
  */
-function runIntegrityChecks(
-  results: ReadinessCheckResult[],
-  paths: ValidatedPath[],
-): void {
+function runIntegrityChecks(results: ReadinessCheckResult[], paths: ValidatedPath[]): void {
   for (const { name, dbPath, capability } of paths) {
     // Skip when the database file does not exist yet (first startup).
     if (!existsSync(dbPath)) continue;
@@ -250,16 +246,15 @@ function runIntegrityChecks(
             }),
           );
         } else {
-          const errors = integrityResult
-            .map((r) => r.integrity_check)
-            .filter((s) => s !== "ok");
+          const errors = integrityResult.map((r) => r.integrity_check).filter((s) => s !== "ok");
           results.push(
             createReadinessCheckResult({
               checkId: `${CHECK_PREFIX}-${name.toLowerCase().replace(/_/g, "-")}-integrity`,
               capability: capability as ReadinessCheckResult["capability"],
               status: "degraded",
               safeMessage: `${name} integrity FAILED: ${errors.join("; ")}`,
-              remediation: "Run PRAGMA integrity_check manually and consider restoring from backup.",
+              remediation:
+                "Run PRAGMA integrity_check manually and consider restoring from backup.",
             }),
           );
         }
@@ -285,10 +280,7 @@ function runIntegrityChecks(
  * Check WAL file size for every validated database. A WAL file exceeding
  * 200 MB degrades the `wal-health` feature capability.
  */
-function runWalHealthChecks(
-  results: ReadinessCheckResult[],
-  paths: ValidatedPath[],
-): void {
+function runWalHealthChecks(results: ReadinessCheckResult[], paths: ValidatedPath[]): void {
   for (const { name, dbPath, capability } of paths) {
     const walPath = dbPath + "-wal";
 

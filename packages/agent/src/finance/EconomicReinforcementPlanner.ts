@@ -136,9 +136,7 @@ export class EconomicReinforcementPlanner {
 
         // Compute delta based on strength
         const delta = this.computeDelta(signal, effectiveStrength);
-        reasonCodes.push(
-          `delta-${delta > 0 ? "positive" : delta < 0 ? "negative" : "neutral"}`,
-        );
+        reasonCodes.push(`delta-${delta > 0 ? "positive" : delta < 0 ? "negative" : "neutral"}`);
 
         // Apply adjustments to activated nodes
         if (activatedNodeIds && activatedNodeIds.length > 0) {
@@ -329,9 +327,7 @@ function computeEffectiveStrength(
  * Takes the average confidence across all non-"none" assessments,
  * or 0 if no assessments.
  */
-function computeEffectiveConfidence(
-  attributions: EconomicAttributionAssessment[],
-): number {
+function computeEffectiveConfidence(attributions: EconomicAttributionAssessment[]): number {
   const valid = attributions.filter((a) => a.strength !== "none");
   if (valid.length === 0) return 0;
 

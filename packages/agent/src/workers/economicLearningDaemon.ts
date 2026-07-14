@@ -54,17 +54,21 @@ export function createEconomicLearningDaemon(
       };
       if (engine !== undefined) input.engine = engine;
 
-      const result = trigger.onOutcomeTransition(input as Parameters<typeof trigger.onOutcomeTransition>[0]);
+      const result = trigger.onOutcomeTransition(
+        input as Parameters<typeof trigger.onOutcomeTransition>[0],
+      );
 
       void reader;
 
       return {
-        findings: [{
-          kind: "info" as const,
-          severity: "info" as const,
-          summary: `Economic learning ${result.status} for outcome ${result.outcomeId}`,
-          evidenceIds: [`outcome:${result.outcomeId}`, `seller:${result.sellerId}`],
-        }],
+        findings: [
+          {
+            kind: "info" as const,
+            severity: "info" as const,
+            summary: `Economic learning ${result.status} for outcome ${result.outcomeId}`,
+            evidenceIds: [`outcome:${result.outcomeId}`, `seller:${result.sellerId}`],
+          },
+        ],
         proposalEnqueued: false,
         messageIds: [],
       };

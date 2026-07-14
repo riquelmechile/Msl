@@ -438,9 +438,16 @@ export const FINANCE_DIRECTOR_LANE: LaneContract = {
     "Output format: FinancialAssessment with summary, verifiedFacts, hypotheses, risks, opportunities, missingEvidence, comparisons, recommendations, confidence, uncertaintyReasons.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider: "unit economics snapshots, economic outcomes, profit summaries, cost evidence, product ads profitability, account brain, listing/order/claim/reputation snapshots",
+  refreshableContextProvider:
+    "unit economics snapshots, economic outcomes, profit summaries, cost evidence, product ads profitability, account brain, listing/order/claim/reputation snapshots",
   inputs: ["unit-economics", "economic-outcome", "profit-summary", "cost-evidence"],
-  outputs: ["financial-assessment", "recommendations", "missing-inputs", "risk-alerts", "evidence-requests"],
+  outputs: [
+    "financial-assessment",
+    "recommendations",
+    "missing-inputs",
+    "risk-alerts",
+    "evidence-requests",
+  ],
   boundaries: [
     "no mutation execution",
     "no verification of outcomes",

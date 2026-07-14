@@ -17,7 +17,9 @@ function clearTestEnv() {
   delete process.env.MERCADOLIBRE_TARGET_SELLER_ID;
 }
 
-function makeHealth(overrides: Partial<MercadoLibreAccountConnectionHealth> = {}): MercadoLibreAccountConnectionHealth {
+function makeHealth(
+  overrides: Partial<MercadoLibreAccountConnectionHealth> = {},
+): MercadoLibreAccountConnectionHealth {
   const base: MercadoLibreAccountConnectionHealth = {
     sellerId: "123456789",
     accountRole: "source",
@@ -31,19 +33,28 @@ function makeHealth(overrides: Partial<MercadoLibreAccountConnectionHealth> = {}
     writeReady: false,
     noExternalMutationExecuted: true,
   };
-  return { ...base, ...overrides } as MercadoLibreAccountConnectionHealth;
+  return { ...base, ...overrides };
 }
 
-function makeMockHealthService(overrides: Partial<{
-  inspect: ReturnType<typeof vi.fn>;
-  inspectAll: ReturnType<typeof vi.fn>;
-  refreshIfNeeded: ReturnType<typeof vi.fn>;
-  smokeRead: ReturnType<typeof vi.fn>;
-  healthByMode: ReturnType<typeof vi.fn>;
-}> = {}) {
+function makeMockHealthService(
+  overrides: Partial<{
+    inspect: ReturnType<typeof vi.fn>;
+    inspectAll: ReturnType<typeof vi.fn>;
+    refreshIfNeeded: ReturnType<typeof vi.fn>;
+    smokeRead: ReturnType<typeof vi.fn>;
+    healthByMode: ReturnType<typeof vi.fn>;
+  }> = {},
+) {
   return {
     inspect: overrides.inspect ?? vi.fn().mockResolvedValue(makeHealth()),
-    inspectAll: overrides.inspectAll ?? vi.fn().mockResolvedValue([makeHealth(), makeHealth({ sellerId: "987654321", accountRole: "target", accountName: "Maustian" })]),
+    inspectAll:
+      overrides.inspectAll ??
+      vi
+        .fn()
+        .mockResolvedValue([
+          makeHealth(),
+          makeHealth({ sellerId: "987654321", accountRole: "target", accountName: "Maustian" }),
+        ]),
     refreshIfNeeded: overrides.refreshIfNeeded ?? vi.fn().mockResolvedValue(makeHealth()),
     smokeRead: overrides.smokeRead ?? vi.fn().mockResolvedValue(makeHealth()),
     healthByMode: overrides.healthByMode ?? vi.fn().mockResolvedValue(makeHealth()),
@@ -57,13 +68,15 @@ function makeMockHealthService(overrides: Partial<{
 function captureTools(server: McpServer) {
   const handlers: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {};
   const serverAny = server as unknown as {
-    registerTool: (name: string, schema: unknown, handler: (args: Record<string, unknown>) => Promise<unknown>) => void;
+    registerTool: (
+      name: string,
+      schema: unknown,
+      handler: (args: Record<string, unknown>) => Promise<unknown>,
+    ) => void;
   };
-  const spy = vi.spyOn(serverAny, "registerTool").mockImplementation(
-    (name, _schema, handler) => {
-      handlers[name] = handler;
-    },
-  );
+  const spy = vi.spyOn(serverAny, "registerTool").mockImplementation((name, _schema, handler) => {
+    handlers[name] = handler;
+  });
   return { handlers, spy };
 }
 
@@ -86,7 +99,10 @@ describe("connectionTools", () => {
 
   describe("sanitization and safety guarantees", () => {
     it("returns noExternalMutationExecuted: true in all tool responses", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService();
       const config = { connectionHealthService: healthService } as unknown as McpServerConfig;
 
@@ -99,18 +115,25 @@ describe("connectionTools", () => {
       expect((allParsed as Record<string, unknown>).noExternalMutationExecuted).toBe(true);
 
       // Test inspect_mercadolibre_account_health
-      const inspectParsed = parseResult(await handlers["inspect_mercadolibre_account_health"]!({ sellerId: "source" }));
+      const inspectParsed = parseResult(
+        await handlers["inspect_mercadolibre_account_health"]!({ sellerId: "source" }),
+      );
       expect((inspectParsed as Record<string, unknown>).noExternalMutationExecuted).toBe(true);
 
       // Test run_mercadolibre_read_smoke
-      const smokeParsed = parseResult(await handlers["run_mercadolibre_read_smoke"]!({ sellerId: "source" }));
+      const smokeParsed = parseResult(
+        await handlers["run_mercadolibre_read_smoke"]!({ sellerId: "source" }),
+      );
       expect((smokeParsed as Record<string, unknown>).noExternalMutationExecuted).toBe(true);
 
       spy.mockRestore();
     });
 
     it("does not leak tokens, secrets, or PII in any response", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService({
         inspect: vi.fn().mockResolvedValue(makeHealth({ reason: "some reason" })),
         inspectAll: vi.fn().mockResolvedValue([makeHealth()]),
@@ -136,7 +159,9 @@ describe("connectionTools", () => {
         expect(text).not.toMatch(/refresh_token/);
         expect(text).not.toMatch(/client_secret/);
         expect(text).not.toMatch(/Bearer\s+[A-Za-z0-9._~+/=-]{12,}/);
-        expect(() => JSON.parse(text)).not.toThrow();
+        expect(() => {
+          JSON.parse(text);
+        }).not.toThrow();
       }
 
       spy.mockRestore();
@@ -145,7 +170,10 @@ describe("connectionTools", () => {
 
   describe("inspect_mercadolibre_connections", () => {
     it("returns sanitized health for all sellers", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService();
       const config = { connectionHealthService: healthService } as unknown as McpServerConfig;
 
@@ -153,7 +181,10 @@ describe("connectionTools", () => {
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
-      const parsed = parseResult(await handlers["inspect_mercadolibre_connections"]!({})) as Record<string, unknown>;
+      const parsed = parseResult(await handlers["inspect_mercadolibre_connections"]!({})) as Record<
+        string,
+        unknown
+      >;
       expect(parsed.connections).toBeInstanceOf(Array);
       const conns = parsed.connections as Record<string, unknown>[];
       expect(conns.length).toBe(2);
@@ -168,14 +199,20 @@ describe("connectionTools", () => {
     });
 
     it("returns blockedResult when health service is not available", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const config = {} as McpServerConfig;
 
       const { handlers, spy } = captureTools(server);
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
-      const parsed = parseResult(await handlers["inspect_mercadolibre_connections"]!({})) as Record<string, unknown>;
+      const parsed = parseResult(await handlers["inspect_mercadolibre_connections"]!({})) as Record<
+        string,
+        unknown
+      >;
       expect(parsed.status).toBe("blocked");
       expect(parsed.reason).toBe("missing-account-roles");
 
@@ -183,7 +220,10 @@ describe("connectionTools", () => {
     });
 
     it("handles health service errors gracefully", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService({
         inspectAll: vi.fn().mockRejectedValue(new Error("Network down")),
       });
@@ -193,7 +233,10 @@ describe("connectionTools", () => {
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
-      const parsed = parseResult(await handlers["inspect_mercadolibre_connections"]!({})) as Record<string, unknown>;
+      const parsed = parseResult(await handlers["inspect_mercadolibre_connections"]!({})) as Record<
+        string,
+        unknown
+      >;
       expect(parsed.error).toBeDefined();
       expect(parsed.noExternalMutationExecuted).toBe(true);
 
@@ -203,7 +246,10 @@ describe("connectionTools", () => {
 
   describe("inspect_mercadolibre_account_health", () => {
     it("returns detailed health for a specific seller", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService();
       const config = { connectionHealthService: healthService } as unknown as McpServerConfig;
 
@@ -211,7 +257,9 @@ describe("connectionTools", () => {
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
-      const parsed = parseResult(await handlers["inspect_mercadolibre_account_health"]!({ sellerId: "source" })) as Record<string, unknown>;
+      const parsed = parseResult(
+        await handlers["inspect_mercadolibre_account_health"]!({ sellerId: "source" }),
+      ) as Record<string, unknown>;
       expect(parsed.status).toBe("ready");
       expect(parsed.tokenStatus).toBe("valid");
       expect(parsed.readReady).toBe(true);
@@ -222,14 +270,22 @@ describe("connectionTools", () => {
     });
 
     it("blocks for unauthorized API keys", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const config = {} as McpServerConfig;
 
       const { handlers, spy } = captureTools(server);
 
       registerConnectionTools(server, { validateApiKey: () => false, config });
 
-      const parsed = parseResult(await handlers["inspect_mercadolibre_account_health"]!({ sellerId: "source", msl_api_key: "wrong" })) as Record<string, unknown>;
+      const parsed = parseResult(
+        await handlers["inspect_mercadolibre_account_health"]!({
+          sellerId: "source",
+          msl_api_key: "wrong",
+        }),
+      ) as Record<string, unknown>;
       expect(parsed.status).toBe("blocked");
       expect(parsed.reason).toBe("unauthorized");
 
@@ -237,14 +293,19 @@ describe("connectionTools", () => {
     });
 
     it("blocks when seller is not configured", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const config = {} as McpServerConfig;
 
       const { handlers, spy } = captureTools(server);
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
-      const parsed = parseResult(await handlers["inspect_mercadolibre_account_health"]!({ sellerId: "nonexistent" })) as Record<string, unknown>;
+      const parsed = parseResult(
+        await handlers["inspect_mercadolibre_account_health"]!({ sellerId: "nonexistent" }),
+      ) as Record<string, unknown>;
       expect(parsed.status).toBe("blocked");
       expect(parsed.reason).toBe("missing-account-roles");
 
@@ -254,7 +315,10 @@ describe("connectionTools", () => {
 
   describe("run_mercadolibre_read_smoke", () => {
     it("runs smoke tests and returns sanitized results", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService({
         smokeRead: vi.fn().mockResolvedValue(makeHealth({ status: "ready", tokenStatus: "valid" })),
       });
@@ -264,7 +328,9 @@ describe("connectionTools", () => {
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
-      const parsed = parseResult(await handlers["run_mercadolibre_read_smoke"]!({ sellerId: "source" })) as Record<string, unknown>;
+      const parsed = parseResult(
+        await handlers["run_mercadolibre_read_smoke"]!({ sellerId: "source" }),
+      ) as Record<string, unknown>;
       expect(parsed.seller).toBeDefined();
       const seller = parsed.seller as Record<string, unknown>;
       expect(seller.sellerId).toBe("123456789");
@@ -276,7 +342,10 @@ describe("connectionTools", () => {
     });
 
     it("contains CEO warning in response", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService();
       const config = { connectionHealthService: healthService } as unknown as McpServerConfig;
 
@@ -284,7 +353,9 @@ describe("connectionTools", () => {
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
-      const parsed = parseResult(await handlers["run_mercadolibre_read_smoke"]!({ sellerId: "source" })) as Record<string, unknown>;
+      const parsed = parseResult(
+        await handlers["run_mercadolibre_read_smoke"]!({ sellerId: "source" }),
+      ) as Record<string, unknown>;
       expect(parsed.warning).toMatch(/only when explicitly requested/i);
 
       spy.mockRestore();
@@ -293,32 +364,43 @@ describe("connectionTools", () => {
 
   describe("tool descriptions", () => {
     it("all tool descriptions contain 'read-only' and 'zero mutations'", () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService();
       const config = { connectionHealthService: healthService } as unknown as McpServerConfig;
 
       const toolSchemas: Record<string, { description: string }> = {};
-      const serverAny = server as unknown as { registerTool: (name: string, schema: { description: string }) => void };
-      const spy = vi.spyOn(serverAny, "registerTool").mockImplementation(
-        (name: string, schema: { description: string }) => {
+      const serverAny = server as unknown as {
+        registerTool: (name: string, schema: { description: string }) => void;
+      };
+      const spy = vi
+        .spyOn(serverAny, "registerTool")
+        .mockImplementation((name: string, schema: { description: string }) => {
           toolSchemas[name] = schema;
-        },
-      );
+        });
 
       registerConnectionTools(server, { validateApiKey: () => true, config });
 
       expect(toolSchemas["inspect_mercadolibre_connections"]).toBeDefined();
       expect(toolSchemas["inspect_mercadolibre_connections"]!.description).toMatch(/read-only/i);
-      expect(toolSchemas["inspect_mercadolibre_connections"]!.description).toMatch(/zero mutations/i);
+      expect(toolSchemas["inspect_mercadolibre_connections"]!.description).toMatch(
+        /zero mutations/i,
+      );
 
       expect(toolSchemas["inspect_mercadolibre_account_health"]).toBeDefined();
       expect(toolSchemas["inspect_mercadolibre_account_health"]!.description).toMatch(/read-only/i);
-      expect(toolSchemas["inspect_mercadolibre_account_health"]!.description).toMatch(/zero mutations/i);
+      expect(toolSchemas["inspect_mercadolibre_account_health"]!.description).toMatch(
+        /zero mutations/i,
+      );
 
       expect(toolSchemas["run_mercadolibre_read_smoke"]).toBeDefined();
       expect(toolSchemas["run_mercadolibre_read_smoke"]!.description).toMatch(/read-only/i);
       expect(toolSchemas["run_mercadolibre_read_smoke"]!.description).toMatch(/zero mutations/i);
-      expect(toolSchemas["run_mercadolibre_read_smoke"]!.description).toMatch(/DO NOT run automatically/i);
+      expect(toolSchemas["run_mercadolibre_read_smoke"]!.description).toMatch(
+        /DO NOT run automatically/i,
+      );
 
       spy.mockRestore();
     });
@@ -326,7 +408,10 @@ describe("connectionTools", () => {
 
   describe("seller filter (source/target mapping)", () => {
     it("maps 'source' shorthand to MERCADOLIBRE_SOURCE_SELLER_ID", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService({
         inspect: vi.fn().mockResolvedValue(makeHealth({ sellerId: "111111111" })),
       });
@@ -343,7 +428,10 @@ describe("connectionTools", () => {
     });
 
     it("maps 'target' shorthand to MERCADOLIBRE_TARGET_SELLER_ID", async () => {
-      const server = new McpServer({ name: "test", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const server = new McpServer(
+        { name: "test", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+      );
       const healthService = makeMockHealthService({
         inspect: vi.fn().mockResolvedValue(makeHealth({ sellerId: "222222222" })),
       });

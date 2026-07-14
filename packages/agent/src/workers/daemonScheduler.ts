@@ -142,20 +142,12 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
  * Build the effective handler map, adding economic-learning when
  * both the env flag and the pre-built daemon handler are present.
  */
-function buildHandlerMap(
-  config: DaemonSchedulerConfig,
-): Partial<Record<LaneId, DaemonHandler>> {
+function buildHandlerMap(config: DaemonSchedulerConfig): Partial<Record<LaneId, DaemonHandler>> {
   const map: Partial<Record<LaneId, DaemonHandler>> = { ...daemonHandlerMap };
-  if (
-    process.env.MSL_ECONOMIC_LEARNING_ENABLED === "true" &&
-    config.economicLearningDaemon
-  ) {
+  if (process.env.MSL_ECONOMIC_LEARNING_ENABLED === "true" && config.economicLearningDaemon) {
     map["economic-learning"] = config.economicLearningDaemon;
   }
-  if (
-    process.env.MSL_ECONOMIC_INGESTION_ENABLED === "true" &&
-    config.economicIngestionDaemon
-  ) {
+  if (process.env.MSL_ECONOMIC_INGESTION_ENABLED === "true" && config.economicIngestionDaemon) {
     map["economic-ingestion"] = config.economicIngestionDaemon;
   }
   return map;
@@ -243,9 +235,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
   const run = async () => {
     // ── Build effective handler map (extended with economic-learning when enabled) ──
     const handlerMap = buildHandlerMap(config);
-    const extraLaneIds = Object.keys(handlerMap).filter(
-      (k) => !(k in daemonHandlerMap),
-    );
+    const extraLaneIds = Object.keys(handlerMap).filter((k) => !(k in daemonHandlerMap));
 
     // ── Build per-seller account contexts ──
     const accountContexts = new Map<string, AgentAccountContext>();

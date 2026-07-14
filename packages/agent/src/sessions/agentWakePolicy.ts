@@ -80,16 +80,10 @@ export function resolveFinanceDirectorWakeReason(
   if (lowered.includes("missing_input") || lowered.includes("missing-input")) {
     return FINANCE_DIRECTOR_WAKE_REASONS.MISSING_INPUT_RESOLVED;
   }
-  if (
-    lowered.includes("evidence_response") ||
-    lowered.includes("evidence-response")
-  ) {
+  if (lowered.includes("evidence_response") || lowered.includes("evidence-response")) {
     return FINANCE_DIRECTOR_WAKE_REASONS.EVIDENCE_RESPONSE_RECEIVED;
   }
-  if (
-    lowered.includes("proposal_review") ||
-    lowered.includes("proposal-review")
-  ) {
+  if (lowered.includes("proposal_review") || lowered.includes("proposal-review")) {
     return FINANCE_DIRECTOR_WAKE_REASONS.PROPOSAL_REVIEW_REQUESTED;
   }
   return undefined;

@@ -7,10 +7,7 @@ import {
   severityForStatus,
   worstStatus,
 } from "./productionReadiness.js";
-import type {
-  ReadinessCheckResult,
-  ReadinessStatus,
-} from "./productionReadiness.js";
+import type { ReadinessCheckResult, ReadinessStatus } from "./productionReadiness.js";
 
 // ── severityForStatus ────────────────────────────────────────────────
 
@@ -139,7 +136,11 @@ describe("createProductionReadinessReport", () => {
 
   it("accepts all overrides", () => {
     const blockers: ReadinessCheckResult[] = [
-      createReadinessCheckResult({ checkId: "b1", capability: "deepseek-reasoning", status: "blocked" }),
+      createReadinessCheckResult({
+        checkId: "b1",
+        capability: "deepseek-reasoning",
+        status: "blocked",
+      }),
     ];
     const report = createProductionReadinessReport({
       runtimeMode: "production",

@@ -41,21 +41,21 @@ Operational guide for the MercadoLibre dual-account OAuth production connection.
 
 All variables are documented in `.env.example`. Key groups for the dual-account connection:
 
-| Variable | Purpose | Required |
-|----------|---------|----------|
-| `MERCADOLIBRE_SOURCE_CLIENT_ID` | Plasticov OAuth app ID | ✅ |
-| `MERCADOLIBRE_SOURCE_CLIENT_SECRET` | Plasticov OAuth app secret | ✅ |
-| `MERCADOLIBRE_SOURCE_REDIRECT_URI` | Plasticov OAuth callback URL | ✅ |
-| `MERCADOLIBRE_TARGET_CLIENT_ID` | Maustian OAuth app ID | ✅ |
-| `MERCADOLIBRE_TARGET_CLIENT_SECRET` | Maustian OAuth app secret | ✅ |
-| `MERCADOLIBRE_TARGET_REDIRECT_URI` | Maustian OAuth callback URL | ✅ |
-| `MERCADOLIBRE_SOURCE_SELLER_ID` | Plasticov MercadoLibre user ID | ✅ |
-| `MERCADOLIBRE_TARGET_SELLER_ID` | Maustian MercadoLibre user ID | ✅ |
-| `MSL_ENCRYPTION_KEY` | AES-256-GCM encryption key for tokens | ✅ |
-| `MSL_MERCADOLIBRE_OAUTH_DB_PATH` | SQLite path for token storage | ✅ |
-| `MSL_OAUTH_STATE_SECRET` | HMAC secret for OAuth state signing | ✅ |
-| `MSL_SKIP_ENV_FILE` | Skip `.env`/`.env.local` loading (CI/containers) | — |
-| `MSL_ALLOW_INSECURE_DEV_SECRETS` | Allow dev without encryption key | — (dev only) |
+| Variable                            | Purpose                                          | Required     |
+| ----------------------------------- | ------------------------------------------------ | ------------ |
+| `MERCADOLIBRE_SOURCE_CLIENT_ID`     | Plasticov OAuth app ID                           | ✅           |
+| `MERCADOLIBRE_SOURCE_CLIENT_SECRET` | Plasticov OAuth app secret                       | ✅           |
+| `MERCADOLIBRE_SOURCE_REDIRECT_URI`  | Plasticov OAuth callback URL                     | ✅           |
+| `MERCADOLIBRE_TARGET_CLIENT_ID`     | Maustian OAuth app ID                            | ✅           |
+| `MERCADOLIBRE_TARGET_CLIENT_SECRET` | Maustian OAuth app secret                        | ✅           |
+| `MERCADOLIBRE_TARGET_REDIRECT_URI`  | Maustian OAuth callback URL                      | ✅           |
+| `MERCADOLIBRE_SOURCE_SELLER_ID`     | Plasticov MercadoLibre user ID                   | ✅           |
+| `MERCADOLIBRE_TARGET_SELLER_ID`     | Maustian MercadoLibre user ID                    | ✅           |
+| `MSL_ENCRYPTION_KEY`                | AES-256-GCM encryption key for tokens            | ✅           |
+| `MSL_MERCADOLIBRE_OAUTH_DB_PATH`    | SQLite path for token storage                    | ✅           |
+| `MSL_OAUTH_STATE_SECRET`            | HMAC secret for OAuth state signing              | ✅           |
+| `MSL_SKIP_ENV_FILE`                 | Skip `.env`/`.env.local` loading (CI/containers) | —            |
+| `MSL_ALLOW_INSECURE_DEV_SECRETS`    | Allow dev without encryption key                 | — (dev only) |
 
 ## Connection Flow
 
@@ -101,21 +101,21 @@ All commands support `--json` for structured output.
 
 The connection health service (`createMercadoLibreConnectionHealthService`) provides four inspection modes:
 
-| Mode | What It Checks | API Calls |
-|------|---------------|-----------|
-| `inspect-only` | Token decryption, expiry evaluation | None |
-| `refresh-if-needed` | Token decrypt + refresh if expired | Refresh only |
-| `smoke-read` | Identity check, orders access, items access | Read-only API calls |
-| `no-network` | Config validation only | None |
+| Mode                | What It Checks                              | API Calls           |
+| ------------------- | ------------------------------------------- | ------------------- |
+| `inspect-only`      | Token decryption, expiry evaluation         | None                |
+| `refresh-if-needed` | Token decrypt + refresh if expired          | Refresh only        |
+| `smoke-read`        | Identity check, orders access, items access | Read-only API calls |
+| `no-network`        | Config validation only                      | None                |
 
 ### Health Statuses
 
-| Status | Meaning |
-|--------|---------|
-| `ready` | Token valid, connection operational |
-| `degraded` | Token expiring, network error, or partial failure |
-| `blocked` | Store unavailable, decryption failed, or config error |
-| `disconnected` | No token stored |
+| Status                     | Meaning                                                                |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `ready`                    | Token valid, connection operational                                    |
+| `degraded`                 | Token expiring, network error, or partial failure                      |
+| `blocked`                  | Store unavailable, decryption failed, or config error                  |
+| `disconnected`             | No token stored                                                        |
 | `reauthorization-required` | Token refresh rejected (invalid_grant) — manual reauthorization needed |
 
 ### CEO MCP Tools
@@ -128,19 +128,19 @@ Three MCP tools are available for the CEO to inspect connections:
 
 ## Read vs Write
 
-| Operation | Status | Gate |
-|-----------|--------|------|
-| Read orders | ✅ Enabled | Health service checks token |
-| Read items/listings | ✅ Enabled | Health service checks token |
-| Read identity | ✅ Enabled | Smoke test verifies |
-| Publish item | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
-| Update item | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
-| Change stock | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
-| Change price | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
-| Product Ads | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
-| Answer questions | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
-| Send messages | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
-| Claims actions | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Operation           | Status     | Gate                                |
+| ------------------- | ---------- | ----------------------------------- |
+| Read orders         | ✅ Enabled | Health service checks token         |
+| Read items/listings | ✅ Enabled | Health service checks token         |
+| Read identity       | ✅ Enabled | Smoke test verifies                 |
+| Publish item        | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Update item         | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Change stock        | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Change price        | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Product Ads         | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Answer questions    | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Send messages       | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
+| Claims actions      | ❌ BLOCKED | `assertMercadoLibreWriteDisabled()` |
 
 Write operations require P0 PR 4/4 (real data ingestion and economic adapters).
 

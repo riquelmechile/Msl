@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  CryptoRunIdFactory,
-  DeterministicRunIdFactory,
-} from "./runIdFactory.js";
+import { CryptoRunIdFactory, DeterministicRunIdFactory } from "./runIdFactory.js";
 
 describe("RunIdFactory", () => {
   describe("CryptoRunIdFactory", () => {
@@ -36,11 +33,7 @@ describe("RunIdFactory", () => {
 
   describe("DeterministicRunIdFactory", () => {
     it("returns predefined sequence in order", () => {
-      const factory = new DeterministicRunIdFactory([
-        "run-a",
-        "run-b",
-        "run-c",
-      ]);
+      const factory = new DeterministicRunIdFactory(["run-a", "run-b", "run-c"]);
       expect(factory.createRunId()).toBe("run-a");
       expect(factory.createRunId()).toBe("run-b");
       expect(factory.createRunId()).toBe("run-c");

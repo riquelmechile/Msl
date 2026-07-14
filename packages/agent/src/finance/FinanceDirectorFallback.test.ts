@@ -86,7 +86,10 @@ describe("FinanceDirectorFallback", () => {
     });
 
     const assessment = fallback.buildFallbackAssessment(
-      evidence, "Review", "plasticov", "account-health",
+      evidence,
+      "Review",
+      "plasticov",
+      "account-health",
     );
 
     expect(assessment.verifiedFacts.some((f) => f.includes("shipping"))).toBe(true);
@@ -97,7 +100,10 @@ describe("FinanceDirectorFallback", () => {
   it("sets fallbackUsed: true", () => {
     const evidence = makeEvidence();
     const assessment = fallback.buildFallbackAssessment(
-      evidence, "Review", "plasticov", "account-health",
+      evidence,
+      "Review",
+      "plasticov",
+      "account-health",
     );
 
     expect(assessment.fallbackUsed).toBe(true);
@@ -107,7 +113,10 @@ describe("FinanceDirectorFallback", () => {
   it("sets noMutationExecuted: true", () => {
     const evidence = makeEvidence();
     const assessment = fallback.buildFallbackAssessment(
-      evidence, "Review", "plasticov", "account-health",
+      evidence,
+      "Review",
+      "plasticov",
+      "account-health",
     );
 
     expect(assessment.noMutationExecuted).toBe(true);
@@ -116,7 +125,10 @@ describe("FinanceDirectorFallback", () => {
   it("never contains invented recommendations", () => {
     const evidence = makeEvidence();
     const assessment = fallback.buildFallbackAssessment(
-      evidence, "Review", "plasticov", "account-health",
+      evidence,
+      "Review",
+      "plasticov",
+      "account-health",
     );
 
     // Fallback should never have recommendations
@@ -133,7 +145,10 @@ describe("FinanceDirectorFallback", () => {
     });
 
     const assessment = fallback.buildFallbackAssessment(
-      evidence, "Review", "plasticov", "account-health",
+      evidence,
+      "Review",
+      "plasticov",
+      "account-health",
     );
 
     expect(assessment.risks.length).toBeGreaterThan(0);
@@ -150,7 +165,10 @@ describe("FinanceDirectorFallback", () => {
     });
 
     const assessment = fallback.buildFallbackAssessment(
-      evidence, "Review", "plasticov", "account-health",
+      evidence,
+      "Review",
+      "plasticov",
+      "account-health",
     );
 
     // Sparse evidence → confidence should be low

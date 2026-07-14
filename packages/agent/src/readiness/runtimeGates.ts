@@ -1,4 +1,8 @@
-import type { ProductionCapability, ProductionReadinessReport, RuntimeGatePolicy } from "./types.js";
+import type {
+  ProductionCapability,
+  ProductionReadinessReport,
+  RuntimeGatePolicy,
+} from "./types.js";
 
 // ── MercadoLibre Write Block Error ──────────────────────────────────
 

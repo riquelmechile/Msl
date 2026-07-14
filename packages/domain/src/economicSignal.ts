@@ -51,12 +51,7 @@ export function computeEconomicSignal(input: SignalInput): EconomicSignal {
 
   // ── Reason codes ────────────────────────────────────────────────
 
-  const reasonCodes = buildReasonCodes(
-    outcome,
-    snapshot,
-    baselineSnapshot,
-    direction,
-  );
+  const reasonCodes = buildReasonCodes(outcome, snapshot, baselineSnapshot, direction);
 
   // ── Source values (bounded metadata, no Money objects) ──────────
 
@@ -230,9 +225,7 @@ function clamp(value: number, min: number, max: number): number {
 
 function assertFinite(value: number, label: string): void {
   if (!Number.isFinite(value)) {
-    throw new Error(
-      `computeEconomicSignal: ${label} must be finite, got ${value}`,
-    );
+    throw new Error(`computeEconomicSignal: ${label} must be finite, got ${value}`);
   }
 }
 

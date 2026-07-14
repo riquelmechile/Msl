@@ -1,11 +1,15 @@
 import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
 import { createSqliteEconomicOutcomeStore, createSqliteEconomicLearningStore } from "@msl/memory";
 import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
-import { startDaemonScheduler, enqueueDaemonTick, getRegisteredLaneIds } from "../../src/workers/daemonScheduler.js";
+import {
+  startDaemonScheduler,
+  enqueueDaemonTick,
+  getRegisteredLaneIds,
+} from "../../src/workers/daemonScheduler.js";
 import { createEconomicLearningDaemon } from "../../src/workers/economicLearningDaemon.js";
 import { createDaemonLogger } from "../../src/workers/observabilityPipeline.js";
 import { createCeoInboxStore, type CeoInboxStore } from "../../src/conversation/ceoInboxStore.js";
@@ -526,7 +530,10 @@ describe("daemonScheduler", () => {
             senderAgentId: "ceo",
             receiverAgentId: "economic-learning",
             messageType: "daemon-tick",
-            payloadJson: JSON.stringify({ cycleTimestamp: new Date().toISOString(), sellerId: "seller-1" }),
+            payloadJson: JSON.stringify({
+              cycleTimestamp: new Date().toISOString(),
+              sellerId: "seller-1",
+            }),
           });
 
           const scheduler = startDaemonScheduler({

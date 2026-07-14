@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import type { OAuthManager } from "../oauth/oauthManager.js";
 import type { TokenStore } from "../oauth/tokenStore.js";
 import { createMercadoLibreReadOnlySmokeService } from "./smokeService.js";
@@ -20,14 +20,10 @@ function stubTokenStore(overrides: Partial<TokenStore> = {}): TokenStore {
 function stubOAuthManager(overrides: Partial<OAuthManager> = {}): OAuthManager {
   return {
     getAuthorizationUrl: () => "https://auth.example.com",
-    exchangeCodeForToken: async () => {
-      throw new Error("not implemented");
-    },
-    refreshAccessToken: async () => {
-      throw new Error("not implemented");
-    },
+    exchangeCodeForToken: () => Promise.reject(new Error("not implemented")),
+    refreshAccessToken: () => Promise.reject(new Error("not implemented")),
     isTokenExpired: () => false,
-    ensureValidToken: async () => "mock-access-token",
+    ensureValidToken: () => Promise.resolve("mock-access-token"),
     getStoredToken: () => undefined,
     deleteToken: () => {},
     isStubMode: () => true,
@@ -38,12 +34,14 @@ function stubOAuthManager(overrides: Partial<OAuthManager> = {}): OAuthManager {
 
 const FIXED_NOW = 1_700_000_000_000; // ~Nov 2023
 
-function makeService(overrides: {
-  oauthManager?: OAuthManager;
-  store?: TokenStore;
-  clock?: { now(): number };
-  noNetwork?: boolean;
-} = {}): MercadoLibreReadOnlySmokeService {
+function makeService(
+  overrides: {
+    oauthManager?: OAuthManager;
+    store?: TokenStore;
+    clock?: { now(): number };
+    noNetwork?: boolean;
+  } = {},
+): MercadoLibreReadOnlySmokeService {
   const options: import("./smokeService.js").SmokeServiceOptions = {
     oauthManager: overrides.oauthManager ?? stubOAuthManager(),
     store: overrides.store ?? stubTokenStore(),
@@ -60,12 +58,18 @@ function makeService(overrides: {
  * Uses Response.clone() so each concurrent fetch gets its own body stream.
  */
 function mockFetchResponse(response: Response) {
-  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(response.clone())));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(() => Promise.resolve(response.clone())),
+  );
   return vi.mocked(fetch);
 }
 
 function mockFetchThrow(error: Error) {
-  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.reject(error)));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(() => Promise.reject(error)),
+  );
   return vi.mocked(fetch);
 }
 
@@ -123,9 +127,7 @@ describe("MercadoLibreReadOnlySmokeService", () => {
     });
 
     it("returns auth_error on 401", async () => {
-      mockFetchResponse(
-        jsonResponse({ error: "unauthorized" }, 401),
-      );
+      mockFetchResponse(jsonResponse({ error: "unauthorized" }, 401));
 
       const svc = makeService();
       const result = await svc.runIdentitySmoke("111111");
@@ -337,9 +339,7 @@ describe("MercadoLibreReadOnlySmokeService", () => {
   describe("runFullSmoke", () => {
     it("runs all three endpoints and returns results", async () => {
       // All three endpoints return success
-      mockFetchResponse(
-        jsonResponse({ id: 111111, nickname: "TEST" }),
-      );
+      mockFetchResponse(jsonResponse({ id: 111111, nickname: "TEST" }));
 
       const svc = makeService();
       const results = await svc.runFullSmoke("111111");
@@ -360,9 +360,7 @@ describe("MercadoLibreReadOnlySmokeService", () => {
       // But with a single mock, all three calls get the same response
       // Identity will fail because it returns orders data which has no "id" field
       // Actually let me test differently — let me verify the structure
-      mockFetchResponse(
-        jsonResponse({ id: 111111 }),
-      );
+      mockFetchResponse(jsonResponse({ id: 111111 }));
 
       const svc = makeService();
       const results = await svc.runFullSmoke("111111");

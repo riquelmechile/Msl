@@ -163,7 +163,12 @@ export function createEconomicIngestionRun(
   ] as const;
 
   for (const { name, value } of nonNegativeFields) {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      !Number.isInteger(value)
+    ) {
       return {
         success: false,
         error: new EconomicIngestionRunError(
@@ -174,9 +179,7 @@ export function createEconomicIngestionRun(
   }
 
   const runId =
-    input.runId ??
-    input.runIdFactory?.createRunId() ??
-    new CryptoRunIdFactory().createRunId();
+    input.runId ?? input.runIdFactory?.createRunId() ?? new CryptoRunIdFactory().createRunId();
 
   return {
     success: true,

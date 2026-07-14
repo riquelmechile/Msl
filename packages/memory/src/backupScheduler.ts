@@ -1,5 +1,13 @@
-import { statSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
-import { join, basename } from "node:path";
+import {
+  statSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  unlinkSync,
+  existsSync,
+} from "node:fs";
+import { join } from "node:path";
 import type { DatabaseManager } from "./databaseManager.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -12,7 +20,7 @@ import type { DatabaseManager } from "./databaseManager.js";
  * kind — entries with `dbType === "oauth"` are excluded from automated
  * cycles as required by sqlite-durability spec.
  */
-export interface DbEntry {
+export type DbEntry = {
   manager: DatabaseManager;
   /** Absolute path to the live SQLite database file. */
   dbPath: string;
@@ -22,34 +30,34 @@ export interface DbEntry {
    * integrity cycles.
    */
   dbType: string;
-}
+};
 
-export interface BackupSchedulerConfig {
+export type BackupSchedulerConfig = {
   /** Managed databases to schedule. OAuth entries are skipped. */
   entries: DbEntry[];
   /** Directory where backup files are written. Created if absent. */
   backupDir: string;
-  /** Backup interval in ms (default: 24 h). */
+  /** Backup interval in ms (default: 24 h). */
   backupIntervalMs?: number;
   /** How many days to keep backups (default: 7). */
   retentionDays?: number;
   /** Maximum allowed age of the last verified backup before it is
-   *  considered stale (default: 48 h = 172 800 000 ms). */
+   *  considered stale (default: 48 h = 172,800,000 ms). */
   freshnessWindowMs?: number;
-  /** WAL checkpoint interval in ms (default: 1 h). */
+  /** WAL checkpoint interval in ms (default: 1 h). */
   walCheckpointIntervalMs?: number;
   /** WAL size threshold in bytes that forces an immediate checkpoint
-   *  regardless of interval (default: 200 MB). */
+   *  regardless of interval (default: 200 MB). */
   walSizeThresholdBytes?: number;
-  /** Integrity check interval in ms (default: 6 h). */
+  /** Integrity check interval in ms (default: 6 h). */
   integrityCheckIntervalMs?: number;
-}
+};
 
 /**
  * Lightweight metadata persisted for each managed database's most
  * recent backup. Written to `<backupDir>/_metadata.json`.
  */
-export interface BackupMetadata {
+export type BackupMetadata = {
   /** The dbType from the DbEntry. */
   dbName: string;
   /** ISO-8601 timestamp of the last successful backup. */
@@ -62,7 +70,7 @@ export interface BackupMetadata {
   pageCount: number;
   /** Absolute path to the most recent backup file. */
   backupPath: string | null;
-}
+};
 
 // ── Defaults ────────────────────────────────────────────────────────────
 
@@ -157,9 +165,7 @@ export class BackupScheduler {
 
   /** Return entries excluding the OAuth token database. */
   activeEntries(): DbEntry[] {
-    return this.config.entries.filter(
-      (e) => e.dbType !== "oauth",
-    );
+    return this.config.entries.filter((e) => e.dbType !== "oauth");
   }
 
   /** Run a full backup cycle immediately (bypasses the timer). */
@@ -172,14 +178,11 @@ export class BackupScheduler {
 
     for (const entry of entries) {
       const dbName = entry.dbType;
-      const backupFile = join(
-        this.config.backupDir,
-        `${dbName}-${Date.now()}.sqlite`,
-      );
+      const backupFile = join(this.config.backupDir, `${dbName}-${Date.now()}.sqlite`);
 
       try {
         mkdirSync(this.config.backupDir, { recursive: true });
-        const pageCount = await entry.manager.backup(backupFile);
+        await entry.manager.backup(backupFile);
 
         // Verify the freshly written backup.
         const verification = entry.manager.verifyBackup(backupFile);
@@ -199,7 +202,11 @@ export class BackupScheduler {
             `[BackupScheduler] Backup verification failed for ${dbName}: ${verification.error}`,
           );
           // Discard the corrupted backup file.
-          try { unlinkSync(backupFile); } catch { /* best effort */ }
+          try {
+            unlinkSync(backupFile);
+          } catch {
+            /* best effort */
+          }
         }
 
         // Replace or append metadata record.
@@ -232,7 +239,7 @@ export class BackupScheduler {
   }
 
   /** Run a WAL checkpoint cycle immediately. */
-  async runWalCheckpoint(): Promise<void> {
+  runWalCheckpoint(): Promise<void> {
     const entries = this.activeEntries();
     for (const entry of entries) {
       try {
@@ -262,10 +269,11 @@ export class BackupScheduler {
         console.error(`[BackupScheduler] WAL checkpoint failed for ${entry.dbType}: ${message}`);
       }
     }
+    return Promise.resolve();
   }
 
   /** Run an integrity check cycle immediately. */
-  async runIntegrityCheck(): Promise<void> {
+  runIntegrityCheck(): Promise<void> {
     const entries = this.activeEntries();
     for (const entry of entries) {
       try {
@@ -280,6 +288,7 @@ export class BackupScheduler {
         console.error(`[BackupScheduler] Integrity check error for ${entry.dbType}: ${message}`);
       }
     }
+    return Promise.resolve();
   }
 
   /** Enforce the retention policy — delete backup files older than the
@@ -287,13 +296,9 @@ export class BackupScheduler {
   enforceRetention(): void {
     const metadata = this.readMetadata();
     const cutoffMs = this.config.retentionDays * 24 * 60 * 60 * 1000;
-    const cutoffTime = Date.now() - cutoffMs;
-
     // Collect verified backup paths to protect.
     const protectedPaths = new Set(
-      metadata
-        .filter((m) => m.status === "verified" && m.backupPath)
-        .map((m) => m.backupPath!),
+      metadata.filter((m) => m.status === "verified" && m.backupPath).map((m) => m.backupPath!),
     );
 
     try {

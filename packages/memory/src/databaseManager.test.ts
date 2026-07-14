@@ -1,11 +1,10 @@
 import { describe, expect, it, afterEach } from "vitest";
 import Database from "better-sqlite3";
-import { existsSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDatabaseManager } from "./databaseManager.js";
 import type { DatabaseManager } from "./databaseManager.js";
-import { backupDatabase } from "./backup.js";
 
 const TEST_DB = join(tmpdir(), "msl-test-dm.db");
 const BACKUP_DIR = join(tmpdir(), "msl-test-dm-backups");
@@ -16,8 +15,16 @@ function setupTestDb(): {
   cleanup: () => void;
 } {
   // Clean up from previous runs.
-  try { unlinkSync(TEST_DB); } catch { /* ok */ }
-  try { rmSync(BACKUP_DIR, { recursive: true, force: true }); } catch { /* ok */ }
+  try {
+    unlinkSync(TEST_DB);
+  } catch {
+    /* ok */
+  }
+  try {
+    rmSync(BACKUP_DIR, { recursive: true, force: true });
+  } catch {
+    /* ok */
+  }
 
   mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -52,14 +59,34 @@ function setupTestDb(): {
     manager,
     cleanup: () => {
       for (const conn of openedConnections) {
-        try { conn.close(); } catch { /* ok */ }
+        try {
+          conn.close();
+        } catch {
+          /* ok */
+        }
       }
       openedConnections.length = 0;
       process.env.MSL_DURABILITY_ENABLED = prev;
-      try { unlinkSync(TEST_DB); } catch { /* ok */ }
-      try { unlinkSync(TEST_DB + "-wal"); } catch { /* ok */ }
-      try { unlinkSync(TEST_DB + "-shm"); } catch { /* ok */ }
-      try { rmSync(BACKUP_DIR, { recursive: true, force: true }); } catch { /* ok */ }
+      try {
+        unlinkSync(TEST_DB);
+      } catch {
+        /* ok */
+      }
+      try {
+        unlinkSync(TEST_DB + "-wal");
+      } catch {
+        /* ok */
+      }
+      try {
+        unlinkSync(TEST_DB + "-shm");
+      } catch {
+        /* ok */
+      }
+      try {
+        rmSync(BACKUP_DIR, { recursive: true, force: true });
+      } catch {
+        /* ok */
+      }
     },
   };
 }
@@ -131,7 +158,6 @@ describe("DatabaseManager", () => {
 
     // Write a file that is not a valid SQLite database.
     const badPath = join(BACKUP_DIR, "bad.db");
-    const { writeFileSync } = require("node:fs");
     writeFileSync(badPath, "not a database file");
 
     // The LiveDatabaseManager should handle this gracefully.
@@ -237,9 +263,9 @@ describe("DatabaseManager", () => {
 
     // Open a fresh connection to verify the restored data.
     const reopenedDb = new Database(TEST_DB);
-    const rows = reopenedDb
-      .prepare("SELECT value FROM test_data ORDER BY id")
-      .all() as Array<{ value: string }>;
+    const rows = reopenedDb.prepare("SELECT value FROM test_data ORDER BY id").all() as Array<{
+      value: string;
+    }>;
     const values = rows.map((r) => r.value);
 
     expect(values).toContain("original");
@@ -251,9 +277,9 @@ describe("DatabaseManager", () => {
     const { manager, cleanup } = setupTestDb();
     _cleanup = cleanup;
 
-    await expect(
-      manager.restoreFrom(join(BACKUP_DIR, "nonexistent-restore.db")),
-    ).rejects.toThrow(/not found/);
+    await expect(manager.restoreFrom(join(BACKUP_DIR, "nonexistent-restore.db"))).rejects.toThrow(
+      /not found/,
+    );
   });
 
   it("restoreFrom preserves original file on failure", async () => {
@@ -268,20 +294,18 @@ describe("DatabaseManager", () => {
     db.exec("INSERT INTO test_data (value) VALUES ('live-marker')");
 
     // Count rows before attempting a bad restore.
-    const countBefore = db
-      .prepare("SELECT COUNT(*) as cnt FROM test_data")
-      .get() as { cnt: number };
+    const countBefore = db.prepare("SELECT COUNT(*) as cnt FROM test_data").get() as {
+      cnt: number;
+    };
 
     // Now attempt to restore from a non-existent file.
-    await expect(
-      manager.restoreFrom(join(BACKUP_DIR, "nonexistent.db")),
-    ).rejects.toThrow();
+    await expect(manager.restoreFrom(join(BACKUP_DIR, "nonexistent.db"))).rejects.toThrow();
 
     // The original database should still be intact.
     const reopenedDb = new Database(TEST_DB);
-    const countAfter = reopenedDb
-      .prepare("SELECT COUNT(*) as cnt FROM test_data")
-      .get() as { cnt: number };
+    const countAfter = reopenedDb.prepare("SELECT COUNT(*) as cnt FROM test_data").get() as {
+      cnt: number;
+    };
     expect(countAfter.cnt).toBe(countBefore.cnt);
 
     const markerExists = reopenedDb

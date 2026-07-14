@@ -12,8 +12,6 @@ import type { EconomicCostComponent } from "@msl/domain";
  * This PR leaves this as a declared missing input. The pipeline
  * will report "other" as missing in coverage analysis.
  */
-export function adaptOther(
-  _tx: NormalizedCommerceTransaction,
-): EconomicCostComponent[] {
+export function adaptOther(_tx: NormalizedCommerceTransaction): EconomicCostComponent[] {
   return [];
 }

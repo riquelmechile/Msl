@@ -11,11 +11,11 @@ import type { Logger } from "../conversation/observability.js";
  * objects are sanitised before emission: secrets are redacted and
  * `prompt`/`content` keys are stripped.
  */
-export interface DaemonLogger {
+export type DaemonLogger = {
   info(msg: string, ctx?: Record<string, unknown>): void;
   warn(msg: string, ctx?: Record<string, unknown>): void;
   error(msg: string, err?: Error, ctx?: Record<string, unknown>): void;
-}
+};
 
 /** Store-level logger — same shape as {@link DaemonLogger}. */
 export type StoreLogger = DaemonLogger;
@@ -109,10 +109,7 @@ function noopLogger(): DaemonLogger {
  * When `MSL_STRUCTURED_LOGGING_ENABLED` is not `"true"` the returned
  * logger is a no-op.
  */
-export function createDaemonLogger(
-  name: string,
-  correlationId: string,
-): DaemonLogger {
+export function createDaemonLogger(name: string, correlationId: string): DaemonLogger {
   const enabled = process.env.MSL_STRUCTURED_LOGGING_ENABLED === "true";
   if (!enabled) return noopLogger();
 
@@ -120,23 +117,17 @@ export function createDaemonLogger(
 
   return {
     info(msg: string, ctx?: Record<string, unknown>): void {
-      const sanitized = ctx
-        ? (sanitizeContext(ctx) as Record<string, unknown>)
-        : undefined;
+      const sanitized = ctx ? (sanitizeContext(ctx) as Record<string, unknown>) : undefined;
       base.info(msg, { ...sanitized, correlationId });
     },
 
     warn(msg: string, ctx?: Record<string, unknown>): void {
-      const sanitized = ctx
-        ? (sanitizeContext(ctx) as Record<string, unknown>)
-        : undefined;
+      const sanitized = ctx ? (sanitizeContext(ctx) as Record<string, unknown>) : undefined;
       base.warn(msg, { ...sanitized, correlationId });
     },
 
     error(msg: string, err?: Error, ctx?: Record<string, unknown>): void {
-      const sanitized = ctx
-        ? (sanitizeContext(ctx) as Record<string, unknown>)
-        : undefined;
+      const sanitized = ctx ? (sanitizeContext(ctx) as Record<string, unknown>) : undefined;
       base.error(msg, err, { ...sanitized, correlationId });
     },
   };
@@ -152,9 +143,6 @@ export function createDaemonLogger(
  * @param name         Component name (e.g. `"economic-outcome-store"`).
  * @param correlationId  Inherited from the daemon handler invocation.
  */
-export function createStoreLogger(
-  name: string,
-  correlationId: string,
-): StoreLogger {
+export function createStoreLogger(name: string, correlationId: string): StoreLogger {
   return createDaemonLogger(name, correlationId);
 }

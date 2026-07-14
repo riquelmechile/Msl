@@ -36,14 +36,7 @@ function isNonEmptyString(value: unknown): value is string {
 
 const VALID_SOURCE_SYSTEMS = ["mercadolibre", "supplier", "manual", "derived"] as const;
 
-const VALID_SOURCE_ENTITY_TYPES = [
-  "order",
-  "payment",
-  "shipment",
-  "claim",
-  "ad",
-  "item",
-] as const;
+const VALID_SOURCE_ENTITY_TYPES = ["order", "payment", "shipment", "claim", "ad", "item"] as const;
 
 const VALID_VERIFICATION_STATES: readonly CostVerification[] = [
   "unverified",
@@ -113,9 +106,7 @@ export function createEconomicEvidenceReference(
   if (!isNonEmptyString(input.sourceRecordId)) {
     return {
       success: false,
-      error: new EconomicEvidenceReferenceError(
-        "sourceRecordId must be a non-empty string",
-      ),
+      error: new EconomicEvidenceReferenceError("sourceRecordId must be a non-empty string"),
     };
   }
 

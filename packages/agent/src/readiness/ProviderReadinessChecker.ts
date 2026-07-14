@@ -10,7 +10,11 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
 
   // ── DeepSeek ────────────────────────────────────────────────────
   const deepseekKey = env.DEEPSEEK_API_KEY;
-  if (deepseekKey && deepseekKey.trim() !== "" && !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(deepseekKey.trim())) {
+  if (
+    deepseekKey &&
+    deepseekKey.trim() !== "" &&
+    !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(deepseekKey.trim())
+  ) {
     results.push(
       createReadinessCheckResult({
         checkId: `${CHECK_PREFIX}-deepseek`,
@@ -20,7 +24,10 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
         remediation: "DeepSeek provider is ready.",
       }),
     );
-  } else if (deepseekKey && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(deepseekKey.trim())) {
+  } else if (
+    deepseekKey &&
+    /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(deepseekKey.trim())
+  ) {
     results.push(
       createReadinessCheckResult({
         checkId: `${CHECK_PREFIX}-deepseek`,
@@ -45,7 +52,11 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
   // ── MiniMax (conditional on Creative Studio) ────────────────────
   const minimaxKey = env.MINIMAX_API_KEY;
   if (features.creativeStudioEnabled) {
-    if (minimaxKey && minimaxKey.trim() !== "" && !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(minimaxKey.trim())) {
+    if (
+      minimaxKey &&
+      minimaxKey.trim() !== "" &&
+      !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(minimaxKey.trim())
+    ) {
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-minimax`,
@@ -55,7 +66,10 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
           remediation: "MiniMax provider is ready.",
         }),
       );
-    } else if (minimaxKey && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(minimaxKey.trim())) {
+    } else if (
+      minimaxKey &&
+      /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(minimaxKey.trim())
+    ) {
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-minimax`,
@@ -72,7 +86,8 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
           capability: "creative-studio",
           status: "blocked",
           safeMessage: "Creative Studio is enabled but MINIMAX_API_KEY is not set.",
-          remediation: "Set MINIMAX_API_KEY or disable Creative Studio (MSL_CREATIVE_STUDIO_ENABLED=false).",
+          remediation:
+            "Set MINIMAX_API_KEY or disable Creative Studio (MSL_CREATIVE_STUDIO_ENABLED=false).",
         }),
       );
     }
@@ -84,7 +99,8 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
         capability: "creative-studio",
         status: "not-applicable",
         safeMessage: "Creative Studio is disabled — MiniMax API key is not required.",
-        remediation: "Enable MSL_CREATIVE_STUDIO_ENABLED if you want to use MiniMax for image/video generation.",
+        remediation:
+          "Enable MSL_CREATIVE_STUDIO_ENABLED if you want to use MiniMax for image/video generation.",
       }),
     );
   }
@@ -115,7 +131,11 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
 
   // ── Telegram Bot token ─────────────────────────────────────────
   const botToken = env.BOT_TOKEN;
-  if (botToken && botToken.trim() !== "" && !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(botToken.trim())) {
+  if (
+    botToken &&
+    botToken.trim() !== "" &&
+    !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(botToken.trim())
+  ) {
     results.push(
       createReadinessCheckResult({
         checkId: `${CHECK_PREFIX}-bot-token`,
@@ -125,7 +145,10 @@ export function checkProviderReadiness(ctx: ReadinessContext): ReadinessCheckRes
         remediation: "Bot token is ready.",
       }),
     );
-  } else if (botToken && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(botToken.trim())) {
+  } else if (
+    botToken &&
+    /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(botToken.trim())
+  ) {
     results.push(
       createReadinessCheckResult({
         checkId: `${CHECK_PREFIX}-bot-token`,

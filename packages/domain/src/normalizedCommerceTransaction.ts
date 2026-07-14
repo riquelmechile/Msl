@@ -45,7 +45,9 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value > 0;
+  return (
+    typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value > 0
+  );
 }
 
 function isValidMoney(value: unknown): value is Money {
@@ -98,9 +100,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.transactionId)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "transactionId must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("transactionId must be a non-empty string"),
     };
   }
 
@@ -108,9 +108,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.sellerId)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "sellerId must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("sellerId must be a non-empty string"),
     };
   }
 
@@ -118,9 +116,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.channel)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "channel must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("channel must be a non-empty string"),
     };
   }
 
@@ -128,9 +124,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.orderId)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "orderId must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("orderId must be a non-empty string"),
     };
   }
 
@@ -138,9 +132,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.itemId)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "itemId must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("itemId must be a non-empty string"),
     };
   }
 
@@ -148,9 +140,7 @@ export function createNormalizedCommerceTransaction(
   if (!isPositiveInteger(input.quantity)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "quantity must be a positive integer",
-      ),
+      error: new NormalizedCommerceTransactionError("quantity must be a positive integer"),
     };
   }
 
@@ -188,9 +178,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.orderStatus)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "orderStatus must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("orderStatus must be a non-empty string"),
     };
   }
 
@@ -208,9 +196,7 @@ export function createNormalizedCommerceTransaction(
   if (typeof input.updatedAt !== "number" || !Number.isFinite(input.updatedAt)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "updatedAt must be a finite number (epoch ms)",
-      ),
+      error: new NormalizedCommerceTransactionError("updatedAt must be a finite number (epoch ms)"),
     };
   }
 
@@ -218,9 +204,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.sourceVersion)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "sourceVersion must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("sourceVersion must be a non-empty string"),
     };
   }
 
@@ -238,9 +222,7 @@ export function createNormalizedCommerceTransaction(
   if (!isNonEmptyString(input.ingestionRunId)) {
     return {
       success: false,
-      error: new NormalizedCommerceTransactionError(
-        "ingestionRunId must be a non-empty string",
-      ),
+      error: new NormalizedCommerceTransactionError("ingestionRunId must be a non-empty string"),
     };
   }
 

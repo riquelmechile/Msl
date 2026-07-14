@@ -183,7 +183,7 @@ function createRuntimeReadClient(env: RuntimeEnv): {
   const configs = resolveOAuthConfigs(env);
 
   // Wire onTokenRefresh callback into every seller's OAuth config
-  for (const [sellerId, config] of configs) {
+  for (const config of configs.values()) {
     const sellerConfig: OAuthManagerConfig = config;
     const originalCallback = sellerConfig.onTokenRefresh;
     sellerConfig.onTokenRefresh = (sid: string) => {

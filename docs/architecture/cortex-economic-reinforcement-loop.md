@@ -14,10 +14,10 @@ This PR establishes the bridge: **verified economic outcomes feed Darwinian lear
 
 ### Three PRs, Three Layers
 
-| PR | Concern | Status |
-|----|---------|--------|
-| 1/3 | Economic domain, calculation, persistence | ✅ Merged |
-| 2/3 | Finance Director — interpretation via DeepSeek | ✅ Merged |
+| PR  | Concern                                                     | Status    |
+| --- | ----------------------------------------------------------- | --------- |
+| 1/3 | Economic domain, calculation, persistence                   | ✅ Merged |
+| 2/3 | Finance Director — interpretation via DeepSeek              | ✅ Merged |
 | 3/3 | Cortex Economic Reinforcement Loop — learning from outcomes | ✅ Merged |
 
 - **PR 1/3** answers "what happened" — the deterministic calculation layer.
@@ -28,10 +28,10 @@ This PR establishes the bridge: **verified economic outcomes feed Darwinian lear
 
 ### Preference vs. Effectiveness
 
-| Signal | Teachs | Source | Existing before this PR |
-|--------|--------|--------|------------------------|
-| CEO approval | What the CEO wants | "dale" / rejection | ✅ Cortex Darwinian feedback |
-| Economic outcome | What actually works | Verified profit/loss | — (this PR) |
+| Signal           | Teachs              | Source               | Existing before this PR      |
+| ---------------- | ------------------- | -------------------- | ---------------------------- |
+| CEO approval     | What the CEO wants  | "dale" / rejection   | ✅ Cortex Darwinian feedback |
+| Economic outcome | What actually works | Verified profit/loss | — (this PR)                  |
 
 These are distinct signals. A CEO might approve a campaign because it sounds good. Only the economic outcome reveals whether it produced real profit. The learning system must respect both but must never confuse approval with effectiveness.
 
@@ -79,6 +79,7 @@ EconomicSignal                  Fast path: IDs                  Idempotent bridg
 Source: `EconomicOutcomeStore`, `UnitEconomicsSnapshot`, verified evidence. This tier answers "what happened" and is 100% deterministic. No AI reasoning, no LLM, no heuristics.
 
 Components:
+
 - **Eligibility Evaluator** — deterministic gate: which outcomes are eligible?
 - **Economic Signal Calculator** — direction (positive/neutral/negative), magnitude (0..1), confidence
 
@@ -87,6 +88,7 @@ Components:
 Estimates the strength of association between the outcome and the decision chain — proposals, actions, agents, sessions, campaigns. Uses a 5-level scale with explicit evidence requirements for each level. The fast path is deterministic (shared IDs); DeepSeek can optionally generate alternative hypotheses but cannot override evidence limits.
 
 Components:
+
 - **Attribution Evaluator** — strength assessment with evidence linkage
 - **Anti-causality safeguards** — caps, alternative explanations, contradiction detection
 
@@ -95,6 +97,7 @@ Components:
 Creates outcome nodes, links evidence, adjusts eligible connections, records learning events, prevents duplicates, and enables audit and reversal. Never recalculates profit — it reads from Tier 1.
 
 Components:
+
 - **Reinforcement Planner** — transforms signal + attribution into a validated plan
 - **Cortex Economic Bridge** — applies the plan to Cortex with idempotency
 - **Learning Store** — SQLite ledger with seller isolation
@@ -132,31 +135,31 @@ Pure deterministic function. Evaluates in order — first failure wins.
 
 ### Status Gate
 
-| Outcome status | Result | Reason code |
-|---------------|--------|-------------|
-| `pending` | Blocked | `outcome-not-verified` |
-| `observing` | Blocked | `outcome-not-verified` |
-| `observed` | Blocked | `outcome-not-verified` |
-| `disputed` | Blocked | `outcome-not-verified` |
-| `invalidated` | Blocked | `outcome-not-verified` |
-| `verified` | Continue evaluation | — |
+| Outcome status | Result              | Reason code            |
+| -------------- | ------------------- | ---------------------- |
+| `pending`      | Blocked             | `outcome-not-verified` |
+| `observing`    | Blocked             | `outcome-not-verified` |
+| `observed`     | Blocked             | `outcome-not-verified` |
+| `disputed`     | Blocked             | `outcome-not-verified` |
+| `invalidated`  | Blocked             | `outcome-not-verified` |
+| `verified`     | Continue evaluation | —                      |
 
 ### 10 Block Reasons
 
 If the outcome passes the status gate, it must also pass these checks:
 
-| # | Check | Block reason |
-|---|-------|-------------|
-| 1 | Outcome status is `verified` | `outcome-not-verified` |
-| 2 | Observed economic impact is present | `missing-observed-impact` |
-| 3 | Snapshot is not unverifiable or disputed | `disputed-evidence` |
-| 4 | Snapshot is not partial with missing inputs | `incomplete-economic-data` |
-| 5 | Snapshot currency is valid (CLP or USD) | `currency-conflict` |
-| 6 | Outcome not already processed | `already-processed` |
-| 7 | Attribution targets exist | `missing-attribution-target` |
-| 8 | Snapshot seller matches outcome seller | `seller-scope-mismatch` |
-| 9 | Evidence is not stale | `stale-evidence` |
-| 10 | Outcome not invalidated | `invalidated-outcome` |
+| #   | Check                                       | Block reason                 |
+| --- | ------------------------------------------- | ---------------------------- |
+| 1   | Outcome status is `verified`                | `outcome-not-verified`       |
+| 2   | Observed economic impact is present         | `missing-observed-impact`    |
+| 3   | Snapshot is not unverifiable or disputed    | `disputed-evidence`          |
+| 4   | Snapshot is not partial with missing inputs | `incomplete-economic-data`   |
+| 5   | Snapshot currency is valid (CLP or USD)     | `currency-conflict`          |
+| 6   | Outcome not already processed               | `already-processed`          |
+| 7   | Attribution targets exist                   | `missing-attribution-target` |
+| 8   | Snapshot seller matches outcome seller      | `seller-scope-mismatch`      |
+| 9   | Evidence is not stale                       | `stale-evidence`             |
+| 10  | Outcome not invalidated                     | `invalidated-outcome`        |
 
 ```typescript
 // Simplified: only eligible if all gates pass
@@ -201,6 +204,7 @@ The magnitude is derived from financial deltas — how the outcome compares to b
 ### Confidence
 
 Based on:
+
 - Snapshot completeness (partial vs. complete)
 - Evidence quality (all costs verified vs. unverified)
 - Calculation status
@@ -221,17 +225,18 @@ Evidence-based attribution strength evaluation. Fast path is deterministic (ID l
 
 ### Strength Levels
 
-| Level | Requirements | Max Reinforcement |
-|-------|-------------|-------------------|
-| `none` | No identifiable link between outcome and action | No reinforcement. Record factual outcome node only |
-| `associated` | Temporal coincidence or shared context (correlationId, sessionId) but no direct execution link | Create episodic memory. Minimal or no edge adjustment |
-| `contributory` | Linked execution IDs (proposalId, executionId, agentId) with coherent evidence chain | Moderate adjustment weighted by confidence × magnitude |
-| `experiment-supported` | Baseline comparison or before/after analysis with control context | Larger adjustment, still globally capped |
-| `causal` | Requires explicit experiment contract and extraordinary evidence | Maximum allowed adjustment, never unlimited |
+| Level                  | Requirements                                                                                   | Max Reinforcement                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `none`                 | No identifiable link between outcome and action                                                | No reinforcement. Record factual outcome node only     |
+| `associated`           | Temporal coincidence or shared context (correlationId, sessionId) but no direct execution link | Create episodic memory. Minimal or no edge adjustment  |
+| `contributory`         | Linked execution IDs (proposalId, executionId, agentId) with coherent evidence chain           | Moderate adjustment weighted by confidence × magnitude |
+| `experiment-supported` | Baseline comparison or before/after analysis with control context                              | Larger adjustment, still globally capped               |
+| `causal`               | Requires explicit experiment contract and extraordinary evidence                               | Maximum allowed adjustment, never unlimited            |
 
 ### Fast Path (Deterministic)
 
 Links by shared IDs:
+
 - `proposalId` → `proposal` attribution target
 - `executionId` → `action` attribution target
 - `originatingAgentId` → `agent` attribution target
@@ -244,6 +249,7 @@ Temporal proximity alone (same hour, same day) without ID linkage is at most `as
 ### DeepSeek Path (Optional, Bounded)
 
 DeepSeek can help formulate alternative explanations, identify contradictory evidence, and recommend caution. But DeepSeek **cannot**:
+
 - Raise strength above evidence limits
 - Assign `causal` without baseline/experiment context
 - Invent evidence IDs
@@ -265,13 +271,13 @@ Transforms outcome + signal + attribution into a validated, immutable plan. Neve
 
 ### Per-Strength Policies
 
-| Strength | Edge Adjustment Policy |
-|----------|----------------------|
-| `none` | No edge changes. Optionally record factual outcome node |
-| `associated` | Create episodic memory. Minimal or no edge adjustment. Weighted by confidence × magnitude |
-| `contributory` | Moderate adjustment. Delta capped by `maxContributoryDelta` |
-| `experiment-supported` | Larger adjustment. Delta capped by `maxExperimentDelta` |
-| `causal` | Maximum allowed adjustment. Delta capped by `maxCausalDelta`. Never unlimited |
+| Strength               | Edge Adjustment Policy                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `none`                 | No edge changes. Optionally record factual outcome node                                   |
+| `associated`           | Create episodic memory. Minimal or no edge adjustment. Weighted by confidence × magnitude |
+| `contributory`         | Moderate adjustment. Delta capped by `maxContributoryDelta`                               |
+| `experiment-supported` | Larger adjustment. Delta capped by `maxExperimentDelta`                                   |
+| `causal`               | Maximum allowed adjustment. Delta capped by `maxCausalDelta`. Never unlimited             |
 
 ### Global Magnitude Cap
 
@@ -287,12 +293,12 @@ A single outcome cannot create a global rule. The planner generates `LessonCandi
 
 ### Memory Types in Lesson Candidates
 
-| Type | Description | Example |
-|------|-------------|---------|
-| `episodic` | What happened in this specific instance | "Outcome 'o-42' produced 15% contribution margin from campaign 'c-7'" |
-| `semantic` | What we now know about the domain | "Products in category MLM1234 with free shipping had 8% higher margin" |
-| `procedural` | How to do something (or avoid doing) | "When listing in category X, prefer Classic over Premium for margins < 25%" |
-| `economic` | How money flowed | "Campaign 'c-7' net profit: CLP 45000; ROAS: 2.3; margin: 15%" |
+| Type         | Description                             | Example                                                                     |
+| ------------ | --------------------------------------- | --------------------------------------------------------------------------- |
+| `episodic`   | What happened in this specific instance | "Outcome 'o-42' produced 15% contribution margin from campaign 'c-7'"       |
+| `semantic`   | What we now know about the domain       | "Products in category MLM1234 with free shipping had 8% higher margin"      |
+| `procedural` | How to do something (or avoid doing)    | "When listing in category X, prefer Classic over Premium for margins < 25%" |
+| `economic`   | How money flowed                        | "Campaign 'c-7' net profit: CLP 45000; ROAS: 2.3; margin: 15%"              |
 
 ## 5. Cortex Bridge — Idempotent Application
 
@@ -332,6 +338,7 @@ Re-applying the same plan with the same key is a no-op. Re-verification with new
 ### Safe Degradation
 
 If Cortex operations fail:
+
 1. The bridge records a `failed` learning event
 2. Economic outcomes remain untouched — no data corruption
 3. The failure is surfaced for retry or investigation
@@ -401,12 +408,12 @@ If exact inverse is unsafe (e.g., edge was pruned, node was merged), record a co
 
 The reinforcement loop creates lesson candidates across four memory types, stored in Cortex:
 
-| Memory type | Cortex representation | When created |
-|-------------|----------------------|--------------|
-| **Episodic** — what happened | `proposal_outcome` node with metadata | Every processed outcome |
-| **Semantic** — what we know | Constellation edges with learned weights | Multiple corroborating outcomes |
-| **Procedural** — how to act | Hebbian-strengthened activation paths | Patterns with confident economic signals |
-| **Economic** — money flow | Lesson candidates with financial data | Every outcome with complete economic data |
+| Memory type                  | Cortex representation                    | When created                              |
+| ---------------------------- | ---------------------------------------- | ----------------------------------------- |
+| **Episodic** — what happened | `proposal_outcome` node with metadata    | Every processed outcome                   |
+| **Semantic** — what we know  | Constellation edges with learned weights | Multiple corroborating outcomes           |
+| **Procedural** — how to act  | Hebbian-strengthened activation paths    | Patterns with confident economic signals  |
+| **Economic** — money flow    | Lesson candidates with financial data    | Every outcome with complete economic data |
 
 Cortex's existing Darwinian mechanisms (Hebbian reinforcement, pruning, convergence) operate on these nodes and edges, but now informed by verified economic truth in addition to CEO preference.
 
@@ -414,11 +421,11 @@ Cortex's existing Darwinian mechanisms (Hebbian reinforcement, pruning, converge
 
 The Finance Director Agent (PR 2/3) gains three new read-only tools for inspecting learning state:
 
-| Tool | Purpose | Mutation |
-|------|---------|----------|
-| `explain_economic_learning` | Show outcome → evidence → attribution → signal → adjustments → lessons | None |
-| `inspect_economic_learning_status` | Status of learning for an outcome (eligible, processed, failed, reversed) | None |
-| `list_economic_learning_events` | Seller-scoped list of learning events with filters | None |
+| Tool                               | Purpose                                                                   | Mutation |
+| ---------------------------------- | ------------------------------------------------------------------------- | -------- |
+| `explain_economic_learning`        | Show outcome → evidence → attribution → signal → adjustments → lessons    | None     |
+| `inspect_economic_learning_status` | Status of learning for an outcome (eligible, processed, failed, reversed) | None     |
+| `list_economic_learning_events`    | Seller-scoped list of learning events with filters                        | None     |
 
 All tools: `noExternalMutationExecuted: true`, seller-scoped, bounded responses (default limit 20).
 
@@ -452,6 +459,7 @@ Plasticov and Maustian remain strictly isolated:
 - Cross-seller queries are architecturally impossible without bypassing the store interface
 
 A Plasticov outcome cannot:
+
 - Reinforce a Maustian constellation
 - Consult a Maustian attribution assessment
 - Generate a global lesson without explicit cross-seller process
@@ -468,6 +476,7 @@ signalPolicyVersion          →  e.g., "0.1.0"
 ```
 
 These are centrally configured in `EconomicReinforcementPlanner.config`. Versioning enables:
+
 - **Reproducibility**: replay a past outcome with different policies
 - **Rule migration**: upgrade policies without retroactively changing past events
 - **Reversal**: find which policy version produced what adjustment
@@ -477,15 +486,16 @@ These are centrally configured in `EconomicReinforcementPlanner.config`. Version
 
 Learning is event-driven, not polled:
 
-| Event | Action |
-|-------|--------|
-| `economic-outcome-verified` | Eligibility → signal → attribution → plan → bridge → ledger |
-| `verified-outcome-updated` | Re-evaluate with new evidence version |
-| `economic-outcome-disputed` | Find prior events → reversal plan → compensate |
-| `economic-outcome-invalidated` | Full reversal |
-| `learning-retry-requested` | Retry failed events |
+| Event                          | Action                                                      |
+| ------------------------------ | ----------------------------------------------------------- |
+| `economic-outcome-verified`    | Eligibility → signal → attribution → plan → bridge → ledger |
+| `verified-outcome-updated`     | Re-evaluate with new evidence version                       |
+| `economic-outcome-disputed`    | Find prior events → reversal plan → compensate              |
+| `economic-outcome-invalidated` | Full reversal                                               |
+| `learning-retry-requested`     | Retry failed events                                         |
 
 No Telegram notification per event. Escalate to CEO only for:
+
 - Significant loss patterns (multiple negative outcomes linked to same agent/pattern)
 - Contradictory attribution (same action, conflicting outcomes)
 - Major reversal (causal attribution later proven wrong)
@@ -515,33 +525,33 @@ Orchestrates the full Tier 1 → Tier 2 → Tier 3 flow for a single outcome. Th
 
 ## Files
 
-| File | Package | Purpose |
-|------|---------|---------|
-| `economicLearning.ts` | domain | All domain types: eligibility, attribution, signal, plan, event, factories |
-| `economicLearningEligibility.ts` | domain | Deterministic eligibility evaluator (10 block reasons) |
-| `economicSignal.ts` | domain | Deterministic economic signal calculator |
-| `economicLearningStore.ts` | memory | SQLite ledger for learning events with seller isolation |
-| `EconomicAttributionEvaluator.ts` | agent/finance | 5-level attribution strength evaluation with fast-path + optional DeepSeek |
-| `EconomicReinforcementPlanner.ts` | agent/finance | Plan generation from signal + attribution with per-strength policies |
-| `CortexEconomicReinforcementBridge.ts` | agent/finance | Idempotent Cortex bridge with before/after hashes and safe degradation |
-| `EconomicLearningPipeline.ts` | agent/finance | Pipeline orchestrator: eligibility → signal → attribution → plan → bridge |
-| `economicLearningTools.ts` | agent/tools | Finance Director read-only learning inspection tools (3) |
+| File                                   | Package       | Purpose                                                                    |
+| -------------------------------------- | ------------- | -------------------------------------------------------------------------- |
+| `economicLearning.ts`                  | domain        | All domain types: eligibility, attribution, signal, plan, event, factories |
+| `economicLearningEligibility.ts`       | domain        | Deterministic eligibility evaluator (10 block reasons)                     |
+| `economicSignal.ts`                    | domain        | Deterministic economic signal calculator                                   |
+| `economicLearningStore.ts`             | memory        | SQLite ledger for learning events with seller isolation                    |
+| `EconomicAttributionEvaluator.ts`      | agent/finance | 5-level attribution strength evaluation with fast-path + optional DeepSeek |
+| `EconomicReinforcementPlanner.ts`      | agent/finance | Plan generation from signal + attribution with per-strength policies       |
+| `CortexEconomicReinforcementBridge.ts` | agent/finance | Idempotent Cortex bridge with before/after hashes and safe degradation     |
+| `EconomicLearningPipeline.ts`          | agent/finance | Pipeline orchestrator: eligibility → signal → attribution → plan → bridge  |
+| `economicLearningTools.ts`             | agent/tools   | Finance Director read-only learning inspection tools (3)                   |
 
 ## Tests
 
 ~3,500 lines of test code across 9 test files:
 
-| Test File | Tests |
-|-----------|-------|
-| `economicLearningEligibility.test.ts` | 15+ — all status gates, completeness, currency, seller mismatch, already-processed |
-| `economicSignal.test.ts` | 18+ — positive, negative, neutral, refund, baseline, NaN/Infinity guards |
-| `economicLearning.test.ts` | 5+ — factory functions, type guards, plan creation |
-| `economicLearningStore.test.ts` | 15+ — CRUD, idempotency, seller isolation, status transitions |
-| `EconomicAttributionEvaluator.test.ts` | 12+ — five strength levels, fast path, caps, cross-seller rejection |
-| `EconomicReinforcementPlanner.test.ts` | 12+ — per-strength policies, magnitude caps, negative signal, isolated outcome |
-| `CortexEconomicReinforcementBridge.test.ts` | 12+ — apply, idempotency, retry, Cortex failure isolation, seller isolation |
-| `economicLearningTools.test.ts` | 8+ — explain, inspect, list, seller isolation, nonexistent, failed, reversed |
-| `EconomicLearningPipeline.test.ts` | 8+ — end-to-end flow, failure at each tier, retry, reversal |
+| Test File                                   | Tests                                                                              |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `economicLearningEligibility.test.ts`       | 15+ — all status gates, completeness, currency, seller mismatch, already-processed |
+| `economicSignal.test.ts`                    | 18+ — positive, negative, neutral, refund, baseline, NaN/Infinity guards           |
+| `economicLearning.test.ts`                  | 5+ — factory functions, type guards, plan creation                                 |
+| `economicLearningStore.test.ts`             | 15+ — CRUD, idempotency, seller isolation, status transitions                      |
+| `EconomicAttributionEvaluator.test.ts`      | 12+ — five strength levels, fast path, caps, cross-seller rejection                |
+| `EconomicReinforcementPlanner.test.ts`      | 12+ — per-strength policies, magnitude caps, negative signal, isolated outcome     |
+| `CortexEconomicReinforcementBridge.test.ts` | 12+ — apply, idempotency, retry, Cortex failure isolation, seller isolation        |
+| `economicLearningTools.test.ts`             | 8+ — explain, inspect, list, seller isolation, nonexistent, failed, reversed       |
+| `EconomicLearningPipeline.test.ts`          | 8+ — end-to-end flow, failure at each tier, retry, reversal                        |
 
 ## Formula
 

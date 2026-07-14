@@ -1,5 +1,13 @@
 import crypto from "node:crypto";
-import type { AssessmentType, FinancialAssessment, FinancialRisk, MissingEvidence, Recommendation, Hypothesis, Opportunity } from "@msl/domain";
+import type {
+  AssessmentType,
+  FinancialAssessment,
+  FinancialRisk,
+  MissingEvidence,
+  Recommendation,
+  Hypothesis,
+  Opportunity,
+} from "@msl/domain";
 import type { FinanceDirectorEvidence } from "./FinanceDirectorEvidenceAssembler.js";
 
 // ── Fallback ──────────────────────────────────────────────────────────────
@@ -27,7 +35,7 @@ export class FinanceDirectorFallback {
       const missing = s.missingInputs.length > 0 ? ` missing=[${s.missingInputs.join(", ")}]` : "";
       verifiedFacts.push(
         `Snapshot ${s.snapshotId}: seller=${s.sellerId}, revenue=${s.grossRevenue} ${evidence.sellerCurrency}, ` +
-        `netProfit=${s.netProfit}, margin=${(s.netMargin * 100).toFixed(1)}%, status=${s.calculationStatus}${missing}`,
+          `netProfit=${s.netProfit}, margin=${(s.netMargin * 100).toFixed(1)}%, status=${s.calculationStatus}${missing}`,
       );
     }
 
@@ -63,7 +71,8 @@ export class FinanceDirectorFallback {
     }
     if (evidence.snapshots.length === 0) {
       risks.push({
-        description: "No unit economics snapshots available. Revenue and cost analysis is impossible.",
+        description:
+          "No unit economics snapshots available. Revenue and cost analysis is impossible.",
         severity: "critical",
         probability: 1.0,
       });
@@ -109,7 +118,8 @@ export class FinanceDirectorFallback {
     // No recommendations — fallback never recommends
     const recommendations: Recommendation[] = [];
 
-    const summary = `[FALLBACK] Financial assessment for ${sellerId} (${assessmentType}): ` +
+    const summary =
+      `[FALLBACK] Financial assessment for ${sellerId} (${assessmentType}): ` +
       `${evidence.snapshots.length} snapshots, ${evidence.outcomes.length} outcomes, ` +
       `${evidence.missingInputs.length} missing inputs. ` +
       `${evidence.profitSummary ? `Net profit: ${evidence.profitSummary.netProfit} ${evidence.sellerCurrency}. ` : "No profit data available. "}` +
@@ -138,9 +148,10 @@ export class FinanceDirectorFallback {
       opportunities: Object.freeze([] as Opportunity[]),
       missingEvidence: Object.freeze(missingEvidence),
       confidence,
-      uncertaintyReasons: evidence.missingInputs.length > 0
-        ? [`${evidence.missingInputs.length} evidence inputs are missing.`]
-        : [],
+      uncertaintyReasons:
+        evidence.missingInputs.length > 0
+          ? [`${evidence.missingInputs.length} evidence inputs are missing.`]
+          : [],
       recommendations: Object.freeze(recommendations),
       requestsForEvidence: Object.freeze([]),
       modelUsed: "none",

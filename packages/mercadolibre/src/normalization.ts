@@ -450,7 +450,9 @@ function normalizeOrders(input: {
       for (const oi of rawItems) {
         const oiRec = asRecord(oi);
         const item = asRecord(oiRec?.item);
-        const itemId = stringValue(item?.id) ?? (numberValue(item?.id) !== undefined ? String(item?.id) : undefined);
+        const itemId =
+          stringValue(item?.id) ??
+          (numberValue(item?.id) !== undefined ? String(item?.id) : undefined);
         if (!itemId) continue;
         sanitizedItems.push({
           itemId,

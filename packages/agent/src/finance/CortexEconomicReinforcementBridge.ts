@@ -56,9 +56,7 @@ export class CortexEconomicReinforcementBridge {
     // ── Check idempotency ────────────────────────────────────────────────
     if (isAlreadyProcessed(idempotencyKey)) {
       // Find the existing event
-      const existing = this.persistedEvents.find(
-        (e) => e.idempotencyKey === idempotencyKey,
-      );
+      const existing = this.persistedEvents.find((e) => e.idempotencyKey === idempotencyKey);
       if (existing) {
         return {
           event: existing,
@@ -162,9 +160,7 @@ export class CortexEconomicReinforcementBridge {
     }
 
     // Record lessons created
-    const lessonIds = plan.lessonCandidates.map(
-      (_, idx) => `lesson-${plan.outcomeId}-${idx + 1}`,
-    );
+    const lessonIds = plan.lessonCandidates.map((_, idx) => `lesson-${plan.outcomeId}-${idx + 1}`);
 
     // ── Compute after state hash ─────────────────────────────────────────
     const afterStateHash = this.computeHash(engine, computeStateHash);
@@ -334,10 +330,7 @@ export class CortexEconomicReinforcementBridge {
     void delta;
   }
 
-  private computeHash(
-    engine: GraphEngine | undefined,
-    hashFn?: () => string,
-  ): string {
+  private computeHash(engine: GraphEngine | undefined, hashFn?: () => string): string {
     if (hashFn) {
       return hashFn();
     }

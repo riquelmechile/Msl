@@ -1,22 +1,9 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
-import {
-  createEconomicOutcome,
-  transitionOutcome,
-} from "@msl/domain";
-import type {
-  EconomicOutcome,
-  UnitEconomicsSnapshot,
-} from "@msl/domain";
-import type {
-  EconomicLearningStore,
-  EconomicOutcomeStore,
-  GraphEngine,
-} from "@msl/memory";
-import {
-  createSqliteEconomicLearningStore,
-  createSqliteEconomicOutcomeStore,
-} from "@msl/memory";
+import { createEconomicOutcome, transitionOutcome } from "@msl/domain";
+import type { EconomicOutcome, UnitEconomicsSnapshot } from "@msl/domain";
+import type { EconomicLearningStore, EconomicOutcomeStore, GraphEngine } from "@msl/memory";
+import { createSqliteEconomicLearningStore, createSqliteEconomicOutcomeStore } from "@msl/memory";
 import { EconomicLearningPipeline } from "./EconomicLearningPipeline.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -41,9 +28,7 @@ function makeOutcome(
   const raw = createEconomicOutcome({
     sellerId,
     ...(opts?.proposalId ? { proposalId: opts.proposalId } : {}),
-    ...(opts?.originatingAgentId
-      ? { originatingAgentId: opts.originatingAgentId }
-      : {}),
+    ...(opts?.originatingAgentId ? { originatingAgentId: opts.originatingAgentId } : {}),
     ...(opts?.workSessionId ? { workSessionId: opts.workSessionId } : {}),
     ...(opts?.observedEconomicImpactId
       ? { observedEconomicImpactId: opts.observedEconomicImpactId }
@@ -63,9 +48,7 @@ function makeOutcome(
   return verified;
 }
 
-function makeSnapshot(
-  outcome: EconomicOutcome,
-): UnitEconomicsSnapshot {
+function makeSnapshot(outcome: EconomicOutcome): UnitEconomicsSnapshot {
   const sellerId = outcome.sellerId;
   return {
     snapshotId: `snap-${outcome.outcomeId}`,

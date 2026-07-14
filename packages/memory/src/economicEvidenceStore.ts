@@ -185,9 +185,7 @@ export function migrateEconomicDurabilityColumns(db: Database.Database): void {
       version: 3,
       name: "cost_components_ingestion_run_id",
       up: (d) => {
-        d.exec(
-          `ALTER TABLE economic_cost_components ADD COLUMN ingestion_run_id TEXT`,
-        );
+        d.exec(`ALTER TABLE economic_cost_components ADD COLUMN ingestion_run_id TEXT`);
       },
     });
     // v4: ingestion_run_id on snapshots
@@ -195,9 +193,7 @@ export function migrateEconomicDurabilityColumns(db: Database.Database): void {
       version: 4,
       name: "snapshots_ingestion_run_id",
       up: (d) => {
-        d.exec(
-          `ALTER TABLE unit_economics_snapshots ADD COLUMN ingestion_run_id TEXT`,
-        );
+        d.exec(`ALTER TABLE unit_economics_snapshots ADD COLUMN ingestion_run_id TEXT`);
       },
     });
     registry.apply(db);
@@ -232,9 +228,7 @@ export function migrateEconomicDurabilityColumns(db: Database.Database): void {
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
-export function createSqliteEconomicEvidenceStore(
-  db: Database.Database,
-): EconomicEvidenceStore {
+export function createSqliteEconomicEvidenceStore(db: Database.Database): EconomicEvidenceStore {
   migrateEconomicEvidenceStore(db);
 
   // ── Prepared statements ───────────────────────────────────────────────
@@ -405,15 +399,18 @@ export function createSqliteEconomicEvidenceStore(
       let rows: EvidenceRow[];
       if (opts.ingestionRunId && opts.verification) {
         rows = listBySellerRunVerificationStmt.all(
-          sellerId, opts.ingestionRunId, opts.verification, limit,
+          sellerId,
+          opts.ingestionRunId,
+          opts.verification,
+          limit,
         ) as EvidenceRow[];
       } else if (opts.ingestionRunId) {
-        rows = listBySellerAndRunStmt.all(
-          sellerId, opts.ingestionRunId, limit,
-        ) as EvidenceRow[];
+        rows = listBySellerAndRunStmt.all(sellerId, opts.ingestionRunId, limit) as EvidenceRow[];
       } else if (opts.verification) {
         rows = listBySellerAndVerificationStmt.all(
-          sellerId, opts.verification, limit,
+          sellerId,
+          opts.verification,
+          limit,
         ) as EvidenceRow[];
       } else {
         rows = listBySellerStmt.all(sellerId, limit) as EvidenceRow[];

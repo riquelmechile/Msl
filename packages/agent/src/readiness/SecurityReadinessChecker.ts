@@ -11,7 +11,11 @@ export function checkSecurityReadiness(ctx: ReadinessContext): ReadinessCheckRes
 
   // ── Encryption key ──────────────────────────────────────────────
   const encKey = env.MSL_ENCRYPTION_KEY;
-  if (encKey && encKey.trim() !== "" && !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim())) {
+  if (
+    encKey &&
+    encKey.trim() !== "" &&
+    !/^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim())
+  ) {
     results.push(
       createReadinessCheckResult({
         checkId: `${CHECK_PREFIX}-encryption-key`,
@@ -21,7 +25,10 @@ export function checkSecurityReadiness(ctx: ReadinessContext): ReadinessCheckRes
         remediation: "Encryption key is ready.",
       }),
     );
-  } else if (encKey && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim())) {
+  } else if (
+    encKey &&
+    /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim())
+  ) {
     results.push(
       createReadinessCheckResult({
         checkId: `${CHECK_PREFIX}-encryption-key`,
@@ -52,7 +59,8 @@ export function checkSecurityReadiness(ctx: ReadinessContext): ReadinessCheckRes
           checkId: `${CHECK_PREFIX}-insecure-dev-secrets`,
           capability: "mercadolibre-read-plasticov",
           status: "blocked",
-          safeMessage: "MSL_ALLOW_INSECURE_DEV_SECRETS is enabled in production — this bypasses token encryption.",
+          safeMessage:
+            "MSL_ALLOW_INSECURE_DEV_SECRETS is enabled in production — this bypasses token encryption.",
           remediation: "Set MSL_ALLOW_INSECURE_DEV_SECRETS=false or remove it in production.",
         }),
       );
@@ -62,7 +70,8 @@ export function checkSecurityReadiness(ctx: ReadinessContext): ReadinessCheckRes
           checkId: `${CHECK_PREFIX}-insecure-dev-secrets`,
           capability: "mercadolibre-read-plasticov",
           status: "degraded",
-          safeMessage: "MSL_ALLOW_INSECURE_DEV_SECRETS is enabled — token encryption bypassed (dev only).",
+          safeMessage:
+            "MSL_ALLOW_INSECURE_DEV_SECRETS is enabled — token encryption bypassed (dev only).",
           remediation: "This is acceptable for development. Disable before production.",
         }),
       );
@@ -88,7 +97,8 @@ export function checkSecurityReadiness(ctx: ReadinessContext): ReadinessCheckRes
           checkId: `${CHECK_PREFIX}-unauth-local`,
           capability: "web-chat",
           status: "blocked",
-          safeMessage: "MSL_ALLOW_UNAUTHENTICATED_LOCAL is enabled in production — unauthenticated access is allowed.",
+          safeMessage:
+            "MSL_ALLOW_UNAUTHENTICATED_LOCAL is enabled in production — unauthenticated access is allowed.",
           remediation: "Set MSL_ALLOW_UNAUTHENTICATED_LOCAL=false or remove it in production.",
         }),
       );
@@ -98,7 +108,8 @@ export function checkSecurityReadiness(ctx: ReadinessContext): ReadinessCheckRes
           checkId: `${CHECK_PREFIX}-unauth-local`,
           capability: "web-chat",
           status: "degraded",
-          safeMessage: "MSL_ALLOW_UNAUTHENTICATED_LOCAL is enabled — unauthenticated local access allowed (dev only).",
+          safeMessage:
+            "MSL_ALLOW_UNAUTHENTICATED_LOCAL is enabled — unauthenticated local access allowed (dev only).",
           remediation: "This is acceptable for development. Disable before production.",
         }),
       );

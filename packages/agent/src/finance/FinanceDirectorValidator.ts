@@ -14,23 +14,28 @@ export type ValidationResult = {
 };
 
 /** Internal representation of a numeric claim extracted from assessment text. */
-interface NumericClaim {
+type NumericClaim = {
   value: number;
   raw: string;
   isPercentage: boolean;
   context: string;
-}
+};
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const VALID_SELLERS = new Set(["plasticov", "maustian"]);
-const DIRECT_MUTATION_PATTERN = /\b(execute|implement\s+now|publish|change\s+price|activate\s+ads?|spend\s+money|modify\s+listing)\b/i;
-const GUARANTEED_PROFIT_PATTERN = /\b(guaranteed?\s+profit|profit\s+is\s+(guaranteed|cert[ao])|seguro\s+de\s+ganancia|ganancia\s+(garantizada|segura))\b/i;
-const OBSERVED_AS_VERIFIED_PATTERN = /\bobserved.*?(confirm\w*|verif\w+)|verif\w+.*?by\s+observation\b/i;
-const PARTIAL_AS_COMPLETE_PATTERN = /\b(all\s+costs?\s+(are\s+)?(included|covered|captured|accounted)|complete\s+picture|full\s+data|datos?\s+completos?)\b/i;
+const DIRECT_MUTATION_PATTERN =
+  /\b(execute|implement\s+now|publish|change\s+price|activate\s+ads?|spend\s+money|modify\s+listing)\b/i;
+const GUARANTEED_PROFIT_PATTERN =
+  /\b(guaranteed?\s+profit|profit\s+is\s+(guaranteed|cert[ao])|seguro\s+de\s+ganancia|ganancia\s+(garantizada|segura))\b/i;
+const OBSERVED_AS_VERIFIED_PATTERN =
+  /\bobserved.*?(confirm\w*|verif\w+)|verif\w+.*?by\s+observation\b/i;
+const PARTIAL_AS_COMPLETE_PATTERN =
+  /\b(all\s+costs?\s+(are\s+)?(included|covered|captured|accounted)|complete\s+picture|full\s+data|datos?\s+completos?)\b/i;
 
 // Budget violation patterns
-const EXCESSIVE_SPEND_PATTERN = /\b(invest|spend|allocate|increase\s+budget\s+by)\s+(?:USD|CLP|\$)?[\d,]{2,}(?:k|K|M|m(?:illion|illones)?|mil)?(?:\s*(?:USD|CLP|dollars|d[oó]lares|pesos))?\b/i;
+const EXCESSIVE_SPEND_PATTERN =
+  /\b(invest|spend|allocate|increase\s+budget\s+by)\s+(?:USD|CLP|\$)?[\d,]{2,}(?:k|K|M|m(?:illion|illones)?|mil)?(?:\s*(?:USD|CLP|dollars|d[oó]lares|pesos))?\b/i;
 const BOOST_AD_SPEND_PATTERN = /\bboost\s+ad\s+spend\b/i;
 const BUDGET_INCREASE_PERCENT = /\bincrease\s+budget\s+by\s+(\d+)\s*%/i;
 const LARGE_AMOUNT_THRESHOLD = 100000;
@@ -130,8 +135,7 @@ export class FinanceDirectorValidator {
 
   // ── Numeric claim types ──────────────────────────────────────────────
 
-  private readonly NUMERIC_PATTERN =
-    /\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b|\b\d+(?:\.\d+)?\b/g;
+  private readonly NUMERIC_PATTERN = /\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b|\b\d+(?:\.\d+)?\b/g;
 
   // ── checkInventedFigures ──────────────────────────────────────────────
 
@@ -142,7 +146,12 @@ export class FinanceDirectorValidator {
   ): void {
     // 1. Confidence validation (PRESERVED from existing)
     if (assessment.confidence !== undefined) {
-      if (typeof assessment.confidence !== "number" || Number.isNaN(assessment.confidence) || assessment.confidence < 0 || assessment.confidence > 1) {
+      if (
+        typeof assessment.confidence !== "number" ||
+        Number.isNaN(assessment.confidence) ||
+        assessment.confidence < 0 ||
+        assessment.confidence > 1
+      ) {
         issues.push({
           rule: "invented-figure",
           detail: `Confidence ${JSON.stringify(assessment.confidence)} is not a valid 0-1 number.`,
@@ -180,7 +189,7 @@ export class FinanceDirectorValidator {
       const pctMatch = afterMatch.match(/^\s*%/);
       const isPercentage = pctMatch !== null;
       // Build the raw representation including trailing % for precision analysis
-      const raw = isPercentage ? match[0] + pctMatch![0] : match[0];
+      const raw = isPercentage ? match[0] + pctMatch[0] : match[0];
 
       // Extract surrounding context (~60 chars before/after)
       const start = Math.max(0, match.index - 60);
@@ -406,7 +415,11 @@ export class FinanceDirectorValidator {
     // Look for recommendations or hypotheses that assume costs are zero
     for (const h of assessment.hypotheses ?? []) {
       const combined = `${h.statement} ${h.evidence}`;
-      if (combined.includes("zero") || combined.includes("sin costo") || combined.includes("costo 0")) {
+      if (
+        combined.includes("zero") ||
+        combined.includes("sin costo") ||
+        combined.includes("costo 0")
+      ) {
         // Only flag if there are actually missing inputs that could affect cost
         if (missingInputs.size > 0) {
           issues.push({
@@ -439,7 +452,8 @@ export class FinanceDirectorValidator {
     // Check if text references both CLP and USD simultaneously in a comparative context
     const hasCLP = /\bCLP\b/i.test(text);
     const hasUSD = /\bUSD\b/i.test(text);
-    const hasComparative = /\b(compar|vs\.?|versus|contra|better\s+than|worse\s+than|more\s+expensive\s+in|cheaper\s+in)\b/i;
+    const hasComparative =
+      /\b(compar|vs\.?|versus|contra|better\s+than|worse\s+than|more\s+expensive\s+in|cheaper\s+in)\b/i;
 
     if (hasCLP && hasUSD && hasComparative) {
       issues.push({
@@ -487,13 +501,14 @@ export class FinanceDirectorValidator {
     issues: ValidationIssue[],
   ): void {
     for (const h of assessment.hypotheses ?? []) {
-      const causalIndicators = /\b(because|caused\s+by|due\s+to|led\s+to|resulted?\s+in|provoc[oó]|caus[oó]|debido\s+a|resultado\s+de)\b/i;
+      const causalIndicators =
+        /\b(because|caused\s+by|due\s+to|led\s+to|resulted?\s+in|provoc[oó]|caus[oó]|debido\s+a|resultado\s+de)\b/i;
       if (causalIndicators.test(h.statement)) {
         // If confidence is low or no evidence is cited, flag it
         if (!h.evidence || h.evidence.trim() === "" || h.confidence < 0.3) {
           issues.push({
             rule: "invented-causality",
-            detail: `Hypothesis "${h.statement}" makes causal claim without sufficient evidence (confidence: ${h.confidence}, evidence: "${h.evidence || 'none'}").`,
+            detail: `Hypothesis "${h.statement}" makes causal claim without sufficient evidence (confidence: ${h.confidence}, evidence: "${h.evidence || "none"}").`,
           });
         }
       }
@@ -624,7 +639,7 @@ export class FinanceDirectorValidator {
     if (BOOST_AD_SPEND_PATTERN.test(text) && !costEvidenceAvailable) {
       issues.push({
         rule: "budget-violation",
-        detail: 'Recommendation suggests boosting ad spend without cost evidence.',
+        detail: "Recommendation suggests boosting ad spend without cost evidence.",
       });
     }
 

@@ -70,9 +70,7 @@ export function sanitizeSecret(key: string, value: string | undefined): string {
 /**
  * Sanitize a full env map for safe display. Returns a new Record with sanitized values.
  */
-export function sanitizeEnv(
-  env: Record<string, string | undefined>,
-): Record<string, string> {
+export function sanitizeEnv(env: Record<string, string | undefined>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     result[key] = sanitizeSecret(key, value);

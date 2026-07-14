@@ -7,35 +7,29 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 describe("CLI commands (unit)", () => {
   let exitCode: number | null = null;
-  let exitMessage: string | null = null;
   let stdout: string[] = [];
   let stderr: string[] = [];
 
   beforeEach(() => {
     exitCode = null;
-    exitMessage = null;
     stdout = [];
     stderr = [];
 
-    vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+    vi.spyOn(process, "exit").mockImplementation((code?: string | number | null) => {
       exitCode = typeof code === "number" ? code : 0;
       // Throw to stop execution
       throw new Error(`process.exit(${code})`);
     });
 
-    vi.spyOn(process.stdout, "write").mockImplementation(
-      (chunk: string | Uint8Array) => {
-        stdout.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-        return true;
-      },
-    );
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stdout.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    });
 
-    vi.spyOn(process.stderr, "write").mockImplementation(
-      (chunk: string | Uint8Array) => {
-        stderr.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-        return true;
-      },
-    );
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stderr.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    });
   });
 
   describe("argument parsing", () => {
@@ -118,9 +112,8 @@ describe("CLI commands (unit)", () => {
         noExternalMutationExecuted: true,
       };
       const json = JSON.stringify(health, null, 2);
-      const parsed = JSON.parse(json);
-      expect(parsed.sellerId).toBe("123456789");
-      expect(parsed.status).toBe("ready");
+      const parsed: unknown = JSON.parse(json);
+      expect(parsed).toMatchObject({ sellerId: "123456789", status: "ready" });
     });
   });
 

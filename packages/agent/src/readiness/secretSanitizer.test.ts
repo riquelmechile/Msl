@@ -50,15 +50,23 @@ describe("sanitizeSecret", () => {
 
   it("shows paths as-is", () => {
     expect(sanitizeSecret("MSL_CHAT_SQLITE_PATH", "/data/chat.db")).toBe("/data/chat.db");
-    expect(sanitizeSecret("MSL_APPROVAL_QUEUE_DB_PATH", "/data/approvals.db")).toBe("/data/approvals.db");
+    expect(sanitizeSecret("MSL_APPROVAL_QUEUE_DB_PATH", "/data/approvals.db")).toBe(
+      "/data/approvals.db",
+    );
     expect(sanitizeSecret("MSL_CORTEX_SQLITE_PATH", ":memory:")).toBe(":memory:");
     expect(sanitizeSecret("MSL_LOG_DIR", "/var/log/msl")).toBe("/var/log/msl");
   });
 
   it("shows URLs and hosts as-is", () => {
-    expect(sanitizeSecret("MINIMAX_API_HOST", "https://api.minimaxi.com")).toBe("https://api.minimaxi.com");
-    expect(sanitizeSecret("DEEPSEEK_BASE_URL", "https://api.deepseek.com")).toBe("https://api.deepseek.com");
-    expect(sanitizeSecret("MINIMAX_BASE_URL", "https://custom.endpoint.com")).toBe("https://custom.endpoint.com");
+    expect(sanitizeSecret("MINIMAX_API_HOST", "https://api.minimaxi.com")).toBe(
+      "https://api.minimaxi.com",
+    );
+    expect(sanitizeSecret("DEEPSEEK_BASE_URL", "https://api.deepseek.com")).toBe(
+      "https://api.deepseek.com",
+    );
+    expect(sanitizeSecret("MINIMAX_BASE_URL", "https://custom.endpoint.com")).toBe(
+      "https://custom.endpoint.com",
+    );
   });
 
   it("shows mode and enabled flags as-is", () => {

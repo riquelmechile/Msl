@@ -35,10 +35,23 @@ for (const warning of envCheck.warnings) {
 }
 
 // ── Imports ────────────────────────────────────────────────────
-const { createAgentMessageBusStore, createAgentConsensusStore, startDaemonScheduler, createEconomicLearningDaemon, createEconomicIngestionDaemon, createDaemonLogger } =
-  await import("@msl/agent");
-const { createGraphEngine, getSharedDb, createSqliteOperationalReadModel, getSharedManager, BackupScheduler, createSqliteEconomicOutcomeStore, createSqliteEconomicLearningStore } =
-  await import("@msl/memory");
+const {
+  createAgentMessageBusStore,
+  createAgentConsensusStore,
+  startDaemonScheduler,
+  createEconomicLearningDaemon,
+  createEconomicIngestionDaemon,
+  createDaemonLogger,
+} = await import("@msl/agent");
+const {
+  createGraphEngine,
+  getSharedDb,
+  createSqliteOperationalReadModel,
+  getSharedManager,
+  BackupScheduler,
+  createSqliteEconomicOutcomeStore,
+  createSqliteEconomicLearningStore,
+} = await import("@msl/memory");
 const { getMlAccountRoleConfig } = await import("@msl/mercadolibre");
 const { createSqliteApprovalQueueRepository, createInMemoryApprovalQueueRepository } =
   await import("@msl/tools");
@@ -91,7 +104,7 @@ if (durabilityEnabled) {
     entries: [{ manager: cortexManager, dbPath: cortexPath, dbType: "cortex" }],
     backupDir,
     backupIntervalMs: 24 * 60 * 60 * 1000, // 24h
-    walCheckpointIntervalMs: 60 * 60 * 1000,  // 1h
+    walCheckpointIntervalMs: 60 * 60 * 1000, // 1h
     integrityCheckIntervalMs: 6 * 60 * 60 * 1000, // 6h
   });
   backupScheduler.start();
@@ -99,9 +112,8 @@ if (durabilityEnabled) {
 }
 
 // ── Observability: structured logging ──────────────────────────
-let daemonLogger = undefined;
 if (env.MSL_STRUCTURED_LOGGING_ENABLED?.trim() === "true") {
-  daemonLogger = createDaemonLogger("agent-daemons", randomUUID());
+  createDaemonLogger("agent-daemons", randomUUID());
   console.log("[agent-daemons] Structured logging enabled");
 }
 

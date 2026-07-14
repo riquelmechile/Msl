@@ -59,7 +59,15 @@ function mockStore(): EconomicOutcomeStore {
     listOutcomesByOrder: vi.fn(),
     listOutcomesByCorrelationId: vi.fn(),
     listMissingInputs: vi.fn(() => []),
-    summarizeProfit: vi.fn(() => ({ sellerId: "seller", currency: "CLP" as const, totalRevenue: 0, totalCosts: 0, netProfit: 0, netMargin: 0, snapshotCount: 0 })),
+    summarizeProfit: vi.fn(() => ({
+      sellerId: "seller",
+      currency: "CLP" as const,
+      totalRevenue: 0,
+      totalCosts: 0,
+      netProfit: 0,
+      netMargin: 0,
+      snapshotCount: 0,
+    })),
   };
   /* eslint-enable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
   return store as EconomicOutcomeStore;
@@ -94,7 +102,10 @@ function makeClaim(overrides?: Partial<AgentMessage>): AgentMessage {
     senderAgentId: "system",
     receiverAgentId: "economic-ingestion",
     messageType: "daemon-tick",
-    payloadJson: JSON.stringify({ cycleTimestamp: new Date().toISOString(), sellerId: "plasticov" }),
+    payloadJson: JSON.stringify({
+      cycleTimestamp: new Date().toISOString(),
+      sellerId: "plasticov",
+    }),
     status: "pending",
     priority: 0,
     attempts: 0,

@@ -32,14 +32,16 @@ export function checkSellerAccountReadiness(ctx: ReadinessContext): ReadinessChe
     const prefix = sellerId === "plasticov" ? "SOURCE" : "TARGET";
 
     // ── Seller ID ──────────────────────────────────────────────────
-    const sellerIdVar = sellerId === "plasticov" ? "MERCADOLIBRE_SOURCE_SELLER_ID" : "MERCADOLIBRE_TARGET_SELLER_ID";
+    const sellerIdVar =
+      sellerId === "plasticov" ? "MERCADOLIBRE_SOURCE_SELLER_ID" : "MERCADOLIBRE_TARGET_SELLER_ID";
     const sellerIdValue = env[sellerIdVar];
 
     if (!sellerIdValue || sellerIdValue.trim() === "") {
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-${sellerId}-id`,
-          capability: sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
+          capability:
+            sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
           status: "blocked",
           sellerId,
           safeMessage: `${sellerIdVar} is not set — ${accountName} identity is unknown.`,
@@ -50,7 +52,8 @@ export function checkSellerAccountReadiness(ctx: ReadinessContext): ReadinessChe
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-${sellerId}-id`,
-          capability: sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
+          capability:
+            sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
           status: "ready",
           sellerId,
           safeMessage: `${accountName} seller ID is configured.`,
@@ -73,14 +76,17 @@ export function checkSellerAccountReadiness(ctx: ReadinessContext): ReadinessChe
     const hasRedirectUri = !!(redirectUri && redirectUri.trim() !== "");
     const configured = hasClientId && hasClientSecret && hasRedirectUri;
     const isPlaceholder =
-      (hasClientId && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientId.trim())) ||
-      (hasClientSecret && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientSecret.trim()));
+      (hasClientId &&
+        /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientId.trim())) ||
+      (hasClientSecret &&
+        /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientSecret.trim()));
 
     if (configured && !isPlaceholder) {
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-${sellerId}-oauth`,
-          capability: sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
+          capability:
+            sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
           status: "ready",
           sellerId,
           safeMessage: `${accountName} OAuth is fully configured.`,
@@ -91,7 +97,8 @@ export function checkSellerAccountReadiness(ctx: ReadinessContext): ReadinessChe
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-${sellerId}-oauth`,
-          capability: sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
+          capability:
+            sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
           status: "blocked",
           sellerId,
           safeMessage: `${accountName} OAuth credentials appear to be placeholders.`,
@@ -107,7 +114,8 @@ export function checkSellerAccountReadiness(ctx: ReadinessContext): ReadinessChe
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-${sellerId}-oauth`,
-          capability: sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
+          capability:
+            sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
           status: "blocked",
           sellerId,
           safeMessage: `${accountName} OAuth is incomplete: ${missing.join(", ")} not set.`,
@@ -123,7 +131,8 @@ export function checkSellerAccountReadiness(ctx: ReadinessContext): ReadinessChe
       results.push(
         createReadinessCheckResult({
           checkId: `${CHECK_PREFIX}-${sellerId}-cross-binding`,
-          capability: sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
+          capability:
+            sellerId === "plasticov" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
           status: "blocked",
           sellerId,
           safeMessage: `MERCADOLIBRE_SOURCE_SELLER_ID and MERCADOLIBRE_TARGET_SELLER_ID are identical — cross-binding detected.`,
@@ -136,8 +145,11 @@ export function checkSellerAccountReadiness(ctx: ReadinessContext): ReadinessChe
   // ── Encryption readiness ────────────────────────────────────────
   const encKey = env.MSL_ENCRYPTION_KEY;
   const hasEncKey = !!(encKey && encKey.trim() !== "");
-  const isEncPlaceholder = hasEncKey && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim());
-  const isInsecureFb = !!env.MSL_ALLOW_INSECURE_DEV_SECRETS && env.MSL_ALLOW_INSECURE_DEV_SECRETS.trim().toLowerCase() === "true";
+  const isEncPlaceholder =
+    hasEncKey && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim());
+  const isInsecureFb =
+    !!env.MSL_ALLOW_INSECURE_DEV_SECRETS &&
+    env.MSL_ALLOW_INSECURE_DEV_SECRETS.trim().toLowerCase() === "true";
 
   if (hasEncKey && !isEncPlaceholder) {
     results.push(
@@ -190,7 +202,8 @@ function resolveSellerId(
   sellerKey: "plasticov" | "maustian",
   env: Record<string, string | undefined>,
 ): string | undefined {
-  const varName = sellerKey === "plasticov" ? "MERCADOLIBRE_SOURCE_SELLER_ID" : "MERCADOLIBRE_TARGET_SELLER_ID";
+  const varName =
+    sellerKey === "plasticov" ? "MERCADOLIBRE_SOURCE_SELLER_ID" : "MERCADOLIBRE_TARGET_SELLER_ID";
   const value = env[varName]?.trim();
   return value || undefined;
 }

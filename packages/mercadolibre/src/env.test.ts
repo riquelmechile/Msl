@@ -1,13 +1,16 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getRepoRoot, loadRepositoryEnvironment } from "./env.js";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
 function createTempRepo(): string {
-  const dir = join(tmpdir(), `msl-env-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const dir = join(
+    tmpdir(),
+    `msl-env-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -20,12 +23,6 @@ function writePkg(dir: string, workspaces?: string[]): void {
 }
 
 const SAVED_ENV = { ...process.env };
-
-function clearEnvKeys(keys: string[]): void {
-  for (const k of keys) {
-    delete process.env[k];
-  }
-}
 
 beforeEach(() => {
   // Restore process.env to a known baseline — but preserve NODE_ENV
@@ -54,10 +51,11 @@ describe("getRepoRoot", () => {
     const root = getRepoRoot(__dirname);
     expect(root).toBeDefined();
     expect(existsSync(join(root!, "package.json"))).toBe(true);
-    const pkg = JSON.parse(
-      require("node:fs").readFileSync(join(root!, "package.json"), "utf-8"),
-    );
-    expect(Array.isArray(pkg.workspaces)).toBe(true);
+    const pkg: unknown = JSON.parse(readFileSync(join(root!, "package.json"), "utf-8"));
+    expect(typeof pkg === "object" && pkg !== null && "workspaces" in pkg).toBe(true);
+    if (typeof pkg === "object" && pkg !== null && "workspaces" in pkg) {
+      expect(Array.isArray(pkg.workspaces)).toBe(true);
+    }
   });
 
   it("returns undefined when no parent has workspaces", () => {
@@ -198,7 +196,7 @@ describe("loadRepositoryEnvironment", () => {
     writePkg(root, ["packages/*"]);
     writeFileSync(
       join(root, ".env"),
-      'DOUBLE_QUOTED="hello world"\nSINGLE_QUOTED=\'hello world\'\nUNQUOTED=plain\n',
+      "DOUBLE_QUOTED=\"hello world\"\nSINGLE_QUOTED='hello world'\nUNQUOTED=plain\n",
     );
     const cwd = process.cwd();
     try {

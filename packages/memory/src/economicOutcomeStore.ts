@@ -155,10 +155,7 @@ export type EconomicOutcomeStore = {
   upsertCostComponent(input: CostComponentInsertInput): EconomicCostComponent;
   listCostComponents(sellerId: string, opts?: ListCostComponentsOptions): EconomicCostComponent[];
   listBySourceRecord(sellerId: string, sourceRecordId: string): EconomicCostComponent[];
-  reverseCostComponent(
-    id: string,
-    reason: string,
-  ): EconomicCostComponent | null;
+  reverseCostComponent(id: string, reason: string): EconomicCostComponent | null;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -368,9 +365,7 @@ export function migrateEconomicOutcomeStore(db: Database.Database): void {
 
   for (const col of newColumns) {
     try {
-      db.exec(
-        `ALTER TABLE economic_cost_components ADD COLUMN ${col.name} ${col.type}`,
-      );
+      db.exec(`ALTER TABLE economic_cost_components ADD COLUMN ${col.name} ${col.type}`);
     } catch {
       // Column already exists from a prior migration — ignore.
     }
@@ -549,9 +544,7 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
   `);
 
-  const getCostCompByIdStmt = db.prepare(
-    "SELECT * FROM economic_cost_components WHERE id = ?",
-  );
+  const getCostCompByIdStmt = db.prepare("SELECT * FROM economic_cost_components WHERE id = ?");
 
   const reverseCostCompStmt = db.prepare(`
     UPDATE economic_cost_components
@@ -766,12 +759,21 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
       let rows: UnitEconomicsRow[];
 
       if (opts.snapshotId) {
-        const row = getSnapshotByIdStmt.get(opts.snapshotId, sellerId) as UnitEconomicsRow | undefined;
+        const row = getSnapshotByIdStmt.get(opts.snapshotId, sellerId) as
+          UnitEconomicsRow | undefined;
         rows = row ? [row] : [];
       } else if (opts.orderId) {
-        rows = listSnapshotsBySellerAndOrderStmt.all(sellerId, opts.orderId, limit) as UnitEconomicsRow[];
+        rows = listSnapshotsBySellerAndOrderStmt.all(
+          sellerId,
+          opts.orderId,
+          limit,
+        ) as UnitEconomicsRow[];
       } else if (opts.itemId) {
-        rows = listSnapshotsBySellerAndItemStmt.all(sellerId, opts.itemId, limit) as UnitEconomicsRow[];
+        rows = listSnapshotsBySellerAndItemStmt.all(
+          sellerId,
+          opts.itemId,
+          limit,
+        ) as UnitEconomicsRow[];
       } else if (opts.sku) {
         rows = listSnapshotsBySellerAndSkuStmt.all(sellerId, opts.sku, limit) as UnitEconomicsRow[];
       } else {

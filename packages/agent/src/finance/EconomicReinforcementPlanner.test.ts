@@ -48,7 +48,14 @@ function makeAttribution(
     targetType: "action",
     targetId: "exec-1",
     strength,
-    confidence: strength === "none" ? 0.1 : strength === "associated" ? 0.4 : strength === "contributory" ? 0.7 : 0.85,
+    confidence:
+      strength === "none"
+        ? 0.1
+        : strength === "associated"
+          ? 0.4
+          : strength === "contributory"
+            ? 0.7
+            : 0.85,
     supportingEvidenceIds: ["ev-1"],
     contradictingEvidenceIds: [],
     alternativeExplanations: [],
@@ -308,9 +315,7 @@ describe("EconomicReinforcementPlanner", () => {
 
     const plan = planner.createPlan(input);
 
-    const edgeAdjustments = plan.proposedAdjustments.filter(
-      (a) => a.targetType === "edge",
-    );
+    const edgeAdjustments = plan.proposedAdjustments.filter((a) => a.targetType === "edge");
     expect(edgeAdjustments).toHaveLength(2);
     for (const adj of edgeAdjustments) {
       expect(adj.targetType).toBe("edge");

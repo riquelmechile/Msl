@@ -68,10 +68,7 @@ export function evaluateEconomicLearningEligibility(
     }
 
     // Rule 4: partial snapshot with missing inputs → incomplete
-    if (
-      snapshot.calculationStatus === "partial" &&
-      snapshot.missingInputs.length > 0
-    ) {
+    if (snapshot.calculationStatus === "partial" && snapshot.missingInputs.length > 0) {
       reasonCodes.push("incomplete-economic-data");
       eligible = false;
     }
@@ -113,9 +110,7 @@ export function evaluateEconomicLearningEligibility(
   // (we don't clear eligible=true when no blocking reasons were found)
 
   // Compute evidence quality from snapshot when available
-  const evidenceQuality = snapshot
-    ? computeEvidenceQuality(snapshot)
-    : 0;
+  const evidenceQuality = snapshot ? computeEvidenceQuality(snapshot) : 0;
 
   const hasVerifiedEconomicImpact = !!outcome.observedEconomicImpactId;
 

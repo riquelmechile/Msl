@@ -11,11 +11,7 @@ import type {
 
 // ── Supporting types ───────────────────────────────────────────────
 
-export type HealthServiceMode =
-  | "inspect-only"
-  | "refresh-if-needed"
-  | "smoke-read"
-  | "no-network";
+export type HealthServiceMode = "inspect-only" | "refresh-if-needed" | "smoke-read" | "no-network";
 
 export type StructuredLogger = {
   info: (message: string, meta?: Record<string, unknown>) => void;
@@ -66,16 +62,8 @@ const TOKEN_EXPIRY_WINDOW_SECONDS = 5 * 60; // 5 minutes
 export function createMercadoLibreConnectionHealthService(
   options: HealthServiceOptions,
 ): MercadoLibreConnectionHealthService {
-  const {
-    registry,
-    oauthManager,
-    store,
-    smokeService,
-    clock,
-    logger,
-    metrics,
-  } = options;
-  const now = clock?.now ?? (() => Date.now());
+  const { registry, oauthManager, store, smokeService, clock, logger, metrics } = options;
+  const now = () => clock?.now() ?? Date.now();
 
   // ── Helpers ────────────────────────────────────────────────────
 
@@ -109,7 +97,9 @@ export function createMercadoLibreConnectionHealthService(
       writeReady: false,
       reasonCodes: overrides.reasonCodes ?? [],
       noExternalMutationExecuted: true,
-      ...(overrides.tokenExpiresAt !== undefined ? { tokenExpiresAt: overrides.tokenExpiresAt } : {}),
+      ...(overrides.tokenExpiresAt !== undefined
+        ? { tokenExpiresAt: overrides.tokenExpiresAt }
+        : {}),
       ...(overrides.reason !== undefined ? { reason: overrides.reason } : {}),
     };
   }
@@ -219,29 +209,33 @@ export function createMercadoLibreConnectionHealthService(
 
   // ── Core modes ─────────────────────────────────────────────────
 
-  async function inspect(sellerId: string): Promise<MercadoLibreAccountConnectionHealth> {
+  function inspect(sellerId: string): Promise<MercadoLibreAccountConnectionHealth> {
     const entry = findEntry(sellerId);
     if (!entry) {
       log("warn", "healthService.inspect: unknown seller", { sellerId });
-      throw new Error(`Unknown seller: ${sellerId}`);
+      return Promise.reject(new Error(`Unknown seller: ${sellerId}`));
     }
 
     const configReasons = validateConfig(entry);
     if (configReasons.length > 0) {
-      return makeHealth(entry, "blocked", "missing", {
-        reasonCodes: configReasons,
-        reason: `Disabled: ${configReasons.join(", ")}`,
-      });
+      return Promise.resolve(
+        makeHealth(entry, "blocked", "missing", {
+          reasonCodes: configReasons,
+          reason: `Disabled: ${configReasons.join(", ")}`,
+        }),
+      );
     }
 
     const inspection = inspectToken(entry);
     const evaluation = evaluateTokenHealth(inspection);
 
-    return makeHealth(entry, evaluation.status, evaluation.tokenStatus, {
-      reasonCodes: evaluation.reasonCodes,
-      tokenExpiresAt: evaluation.tokenExpiresAt,
-      reason: evaluation.reason,
-    });
+    return Promise.resolve(
+      makeHealth(entry, evaluation.status, evaluation.tokenStatus, {
+        reasonCodes: evaluation.reasonCodes,
+        tokenExpiresAt: evaluation.tokenExpiresAt,
+        reason: evaluation.reason,
+      }),
+    );
   }
 
   async function inspectAll(): Promise<MercadoLibreAccountConnectionHealth[]> {
@@ -268,9 +262,7 @@ export function createMercadoLibreConnectionHealthService(
     );
   }
 
-  async function refreshIfNeeded(
-    sellerId: string,
-  ): Promise<MercadoLibreAccountConnectionHealth> {
+  async function refreshIfNeeded(sellerId: string): Promise<MercadoLibreAccountConnectionHealth> {
     const entry = findEntry(sellerId);
     if (!entry) {
       log("warn", "healthService.refreshIfNeeded: unknown seller", { sellerId });
@@ -290,8 +282,7 @@ export function createMercadoLibreConnectionHealthService(
     const evaluation = evaluateTokenHealth(inspection);
 
     // Only refresh if token is expired or expiring (not valid)
-    const needsRefresh =
-      evaluation.tokenStatus !== "valid";
+    const needsRefresh = evaluation.tokenStatus !== "valid";
 
     if (!needsRefresh) {
       metIncrement("meli.health.token.valid", { seller: sellerId, account: entry.accountName });
@@ -325,7 +316,7 @@ export function createMercadoLibreConnectionHealthService(
         account: entry.accountName,
       });
       metIncrement("meli.health.refresh.attempt", { seller: sellerId });
-      const freshAccessToken = await oauthManager.ensureValidToken(sellerId);
+      await oauthManager.ensureValidToken(sellerId);
       // Get the updated stored token to read new expiry
       const updated = oauthManager.getStoredToken(sellerId);
       if (!updated) {
@@ -476,30 +467,36 @@ export function createMercadoLibreConnectionHealthService(
     return {
       ...afterRefresh,
       status: allPassed ? "ready" : "degraded",
-      reasonCodes: allPassed ? afterRefresh.reasonCodes : [...afterRefresh.reasonCodes, "smoke_partial"],
+      reasonCodes: allPassed
+        ? afterRefresh.reasonCodes
+        : [...afterRefresh.reasonCodes, "smoke_partial"],
     };
   }
 
-  async function noNetwork(sellerId: string): Promise<MercadoLibreAccountConnectionHealth> {
+  function noNetwork(sellerId: string): Promise<MercadoLibreAccountConnectionHealth> {
     const entry = findEntry(sellerId);
     if (!entry) {
       log("warn", "healthService.noNetwork: unknown seller", { sellerId });
-      throw new Error(`Unknown seller: ${sellerId}`);
+      return Promise.reject(new Error(`Unknown seller: ${sellerId}`));
     }
 
     const configReasons = validateConfig(entry);
     if (configReasons.length > 0) {
-      return makeHealth(entry, "blocked", "missing", {
-        reasonCodes: configReasons,
-        reason: `Disabled: ${configReasons.join(", ")}`,
-      });
+      return Promise.resolve(
+        makeHealth(entry, "blocked", "missing", {
+          reasonCodes: configReasons,
+          reason: `Disabled: ${configReasons.join(", ")}`,
+        }),
+      );
     }
 
     // Config-only validation — no API calls, no token store access
-    return makeHealth(entry, "degraded", "missing", {
-      reasonCodes: ["no_network"],
-      reason: "No-network mode: config validation only, connectivity not verified",
-    });
+    return Promise.resolve(
+      makeHealth(entry, "degraded", "missing", {
+        reasonCodes: ["no_network"],
+        reason: "No-network mode: config validation only, connectivity not verified",
+      }),
+    );
   }
 
   async function healthByMode(

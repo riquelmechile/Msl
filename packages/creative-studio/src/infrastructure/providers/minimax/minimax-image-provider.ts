@@ -62,7 +62,6 @@ export class MinimaxImageProvider implements CreativeProvider {
     return IMAGE_KINDS.includes(kind);
   }
 
-   
   estimate(_request: CreativeAssetRequest): number {
     return this.modelConfig.costPerCall;
   }

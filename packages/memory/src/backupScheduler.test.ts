@@ -1,6 +1,14 @@
-import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
+import { describe, expect, it, afterEach, beforeEach } from "vitest";
 import Database from "better-sqlite3";
-import { existsSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BackupScheduler } from "./backupScheduler.js";
@@ -12,10 +20,26 @@ const BACKUP_DIR = join(tmpdir(), "msl-test-backup-scheduler");
 const TEST_DB_A = join(tmpdir(), "msl-test-bs-a.db");
 const TEST_DB_B = join(tmpdir(), "msl-test-bs-b.db");
 
-function createTestDb(dbPath: string): { db: Database.Database; manager: DatabaseManager; cleanup: () => void } {
-  try { unlinkSync(dbPath); } catch { /* ok */ }
-  try { unlinkSync(dbPath + "-wal"); } catch { /* ok */ }
-  try { unlinkSync(dbPath + "-shm"); } catch { /* ok */ }
+function createTestDb(dbPath: string): {
+  db: Database.Database;
+  manager: DatabaseManager;
+  cleanup: () => void;
+} {
+  try {
+    unlinkSync(dbPath);
+  } catch {
+    /* ok */
+  }
+  try {
+    unlinkSync(dbPath + "-wal");
+  } catch {
+    /* ok */
+  }
+  try {
+    unlinkSync(dbPath + "-shm");
+  } catch {
+    /* ok */
+  }
 
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
@@ -31,9 +55,21 @@ function createTestDb(dbPath: string): { db: Database.Database; manager: Databas
     manager,
     cleanup: () => {
       db.close();
-      try { unlinkSync(dbPath); } catch { /* ok */ }
-      try { unlinkSync(dbPath + "-wal"); } catch { /* ok */ }
-      try { unlinkSync(dbPath + "-shm"); } catch { /* ok */ }
+      try {
+        unlinkSync(dbPath);
+      } catch {
+        /* ok */
+      }
+      try {
+        unlinkSync(dbPath + "-wal");
+      } catch {
+        /* ok */
+      }
+      try {
+        unlinkSync(dbPath + "-shm");
+      } catch {
+        /* ok */
+      }
     },
   };
 }
@@ -46,11 +82,7 @@ function makeConfig(overrides?: Partial<BackupSchedulerConfig>): BackupScheduler
   };
 }
 
-function makeEntry(
-  dbPath: string,
-  manager: DatabaseManager,
-  dbType: string,
-): DbEntry {
+function makeEntry(dbPath: string, manager: DatabaseManager, dbType: string): DbEntry {
   return { dbPath, manager, dbType };
 }
 
@@ -109,8 +141,8 @@ describe("BackupScheduler", () => {
         await scheduler.runBackupCycle();
 
         // Check that a backup file was created.
-        const files = existsSync(BACKUP_DIR) ? require("node:fs").readdirSync(BACKUP_DIR) : [];
-        const backupFiles = files.filter((f: string) => f.endsWith(".sqlite"));
+        const files = existsSync(BACKUP_DIR) ? readdirSync(BACKUP_DIR) : [];
+        const backupFiles = files.filter((file) => file.endsWith(".sqlite"));
         expect(backupFiles.length).toBeGreaterThanOrEqual(1);
 
         // Check metadata.
@@ -220,7 +252,7 @@ describe("BackupScheduler", () => {
       try {
         // Create a large WAL-like file to trigger the threshold.
         const walPath = TEST_DB_A + "-wal";
-        require("node:fs").writeFileSync(
+        writeFileSync(
           walPath,
           Buffer.alloc(201 * 1024 * 1024), // 201 MB
         );
@@ -250,7 +282,11 @@ describe("BackupScheduler", () => {
         expect(checkpointCalled).toBe(true);
 
         // Clean up the large WAL file.
-        try { unlinkSync(walPath); } catch { /* ok */ }
+        try {
+          unlinkSync(walPath);
+        } catch {
+          /* ok */
+        }
       } finally {
         dbA.cleanup();
       }
@@ -311,11 +347,11 @@ describe("BackupScheduler", () => {
 
         // Manually create an old backup file.
         const oldFile = join(BACKUP_DIR, "old-backup.sqlite");
-        require("node:fs").writeFileSync(oldFile, "dummy");
+        writeFileSync(oldFile, "dummy");
 
         // Force mtime to be old.
         const oldTime = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
-        require("node:fs").utimesSync(oldFile, oldTime, oldTime);
+        utimesSync(oldFile, oldTime, oldTime);
 
         scheduler.enforceRetention();
 

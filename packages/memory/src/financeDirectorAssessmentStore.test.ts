@@ -99,11 +99,9 @@ function makeComplexAssessment(overrides: { sellerId: string }): FinancialAssess
     evidenceIds: ["evid-1", "evid-2", "evid-3"],
     outcomeIds: ["out-1", "out-2"],
     snapshotIds: ["snap-1", "snap-2", "snap-3"],
-    summary: "The account shows strong revenue growth but rising costs in shipping and advertising.",
-    verifiedFacts: [
-      "Revenue for Q2 is CLP 45,000,000",
-      "Product cost margin is 38%",
-    ],
+    summary:
+      "The account shows strong revenue growth but rising costs in shipping and advertising.",
+    verifiedFacts: ["Revenue for Q2 is CLP 45,000,000", "Product cost margin is 38%"],
     hypotheses: [
       {
         statement: "Shipping costs increased due to new carrier rate structure",
@@ -142,7 +140,8 @@ function makeComplexAssessment(overrides: { sellerId: string }): FinancialAssess
         accountA: "plasticov",
         accountB: "maustian",
         metric: "net_margin",
-        finding: "Plasticov margin is 12% vs Maustian 24% — shipping cost delta explains 70% of gap",
+        finding:
+          "Plasticov margin is 12% vs Maustian 24% — shipping cost delta explains 70% of gap",
       },
     ],
     expectedImpact: "If shipping costs are addressed, net margin could improve by 3-5 points",
@@ -323,9 +322,7 @@ describe("FinanceDirectorAssessmentStore", () => {
   it("listByOutcome returns empty when no match", () => {
     const store = createStore();
 
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", outcomeIds: ["out-1"] }),
-    );
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", outcomeIds: ["out-1"] }));
 
     const list = store.listByOutcome("nonexistent", "plasticov");
     expect(list).toEqual([]);
@@ -334,12 +331,8 @@ describe("FinanceDirectorAssessmentStore", () => {
   it("listByOutcome respects seller isolation", () => {
     const store = createStore();
 
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", outcomeIds: ["out-shared"] }),
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "maustian", outcomeIds: ["out-shared"] }),
-    );
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", outcomeIds: ["out-shared"] }));
+    store.insertAssessment(makeAssessment({ sellerId: "maustian", outcomeIds: ["out-shared"] }));
 
     const plasticovList = store.listByOutcome("out-shared", "plasticov");
     expect(plasticovList).toHaveLength(1);
@@ -355,18 +348,15 @@ describe("FinanceDirectorAssessmentStore", () => {
   it("listByProposal returns assessments for that proposal", () => {
     const store = createStore();
 
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", assessmentId: "a1" }),
-      { proposalId: "prop-1" },
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", assessmentId: "a2" }),
-      { proposalId: "prop-1" },
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", assessmentId: "a3" }),
-      { proposalId: "prop-2" },
-    );
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", assessmentId: "a1" }), {
+      proposalId: "prop-1",
+    });
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", assessmentId: "a2" }), {
+      proposalId: "prop-1",
+    });
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", assessmentId: "a3" }), {
+      proposalId: "prop-2",
+    });
 
     const list = store.listByProposal("prop-1", "plasticov");
     expect(list).toHaveLength(2);
@@ -399,15 +389,9 @@ describe("FinanceDirectorAssessmentStore", () => {
   it("listBySession returns assessments for that work session", () => {
     const store = createStore();
 
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", workSessionId: "ws-1" }),
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", workSessionId: "ws-1" }),
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", workSessionId: "ws-2" }),
-    );
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", workSessionId: "ws-1" }));
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", workSessionId: "ws-1" }));
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", workSessionId: "ws-2" }));
 
     const list = store.listBySession("ws-1", "plasticov");
     expect(list).toHaveLength(2);
@@ -418,9 +402,7 @@ describe("FinanceDirectorAssessmentStore", () => {
 
   it("listBySession returns empty for unknown session", () => {
     const store = createStore();
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", workSessionId: "ws-1" }),
-    );
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", workSessionId: "ws-1" }));
 
     const list = store.listBySession("nonexistent", "plasticov");
     expect(list).toEqual([]);
@@ -431,15 +413,9 @@ describe("FinanceDirectorAssessmentStore", () => {
   it("listByCorrelationId returns assessments for that correlation", () => {
     const store = createStore();
 
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", correlationId: "corr-a" }),
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", correlationId: "corr-a" }),
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", correlationId: "corr-b" }),
-    );
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", correlationId: "corr-a" }));
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", correlationId: "corr-a" }));
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", correlationId: "corr-b" }));
 
     const list = store.listByCorrelationId("corr-a", "plasticov");
     expect(list).toHaveLength(2);
@@ -451,12 +427,8 @@ describe("FinanceDirectorAssessmentStore", () => {
   it("listByCorrelationId respects seller isolation", () => {
     const store = createStore();
 
-    store.insertAssessment(
-      makeAssessment({ sellerId: "plasticov", correlationId: "corr-shared" }),
-    );
-    store.insertAssessment(
-      makeAssessment({ sellerId: "maustian", correlationId: "corr-shared" }),
-    );
+    store.insertAssessment(makeAssessment({ sellerId: "plasticov", correlationId: "corr-shared" }));
+    store.insertAssessment(makeAssessment({ sellerId: "maustian", correlationId: "corr-shared" }));
 
     const plasticovList = store.listByCorrelationId("corr-shared", "plasticov");
     expect(plasticovList).toHaveLength(1);
@@ -548,7 +520,9 @@ describe("FinanceDirectorAssessmentStore", () => {
     expect(retrieved!.evidenceIds).toEqual(["evid-1", "evid-2", "evid-3"]);
     expect(retrieved!.outcomeIds).toEqual(["out-1", "out-2"]);
     expect(retrieved!.snapshotIds).toEqual(["snap-1", "snap-2", "snap-3"]);
-    expect(retrieved!.summary).toBe("The account shows strong revenue growth but rising costs in shipping and advertising.");
+    expect(retrieved!.summary).toBe(
+      "The account shows strong revenue growth but rising costs in shipping and advertising.",
+    );
     expect(retrieved!.verifiedFacts).toHaveLength(2);
     expect(retrieved!.hypotheses).toHaveLength(1);
     expect(retrieved!.hypotheses[0]!.statement).toContain("Shipping costs");

@@ -1,9 +1,4 @@
-import type { OAuthManagerConfig } from "../oauth/oauthManager.js";
-import type { TokenStore } from "../oauth/tokenStore.js";
-import type {
-  CreateMercadoLibreAccountRegistryInput,
-  MlAccountEntry,
-} from "./state.js";
+import type { CreateMercadoLibreAccountRegistryInput, MlAccountEntry } from "./state.js";
 
 function nonEmpty(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
@@ -34,20 +29,15 @@ function nonEmpty(value: string | undefined): string | undefined {
 export function createMercadoLibreAccountRegistry(
   input: CreateMercadoLibreAccountRegistryInput,
 ): MlAccountEntry[] {
-  const { env, oauthConfigs, tokenStore: _tokenStore } = input;
+  const { env, oauthConfigs } = input;
 
   const sourceSellerId = nonEmpty(env.MERCADOLIBRE_SOURCE_SELLER_ID);
   const targetSellerId = nonEmpty(env.MERCADOLIBRE_TARGET_SELLER_ID);
 
   const entries: MlAccountEntry[] = [];
-  const distinct = sourceSellerId && targetSellerId
-    ? sourceSellerId !== targetSellerId
-    : true;
+  const distinct = sourceSellerId && targetSellerId ? sourceSellerId !== targetSellerId : true;
 
-  function buildEntry(
-    sellerId: string,
-    role: "source" | "target",
-  ): MlAccountEntry {
+  function buildEntry(sellerId: string, role: "source" | "target"): MlAccountEntry {
     const hasOAuth = oauthConfigs.has(sellerId);
     const accountName = role === "source" ? "Plasticov" : "Maustian";
     const enabled = hasOAuth && distinct;
@@ -61,13 +51,9 @@ export function createMercadoLibreAccountRegistry(
       operationalScope: "mlc",
       cortexScope: role === "source" ? "mlc-plasticov" : "mlc-maustian",
       readCapability:
-        role === "source"
-          ? "mercadolibre-read-plasticov"
-          : "mercadolibre-read-maustian",
+        role === "source" ? "mercadolibre-read-plasticov" : "mercadolibre-read-maustian",
       writeCapability:
-        role === "source"
-          ? "mercadolibre-write-plasticov"
-          : "mercadolibre-write-maustian",
+        role === "source" ? "mercadolibre-write-plasticov" : "mercadolibre-write-maustian",
       expectedIdentity: sellerId,
       enabled,
       connectionPolicy: "read-only",

@@ -34,9 +34,9 @@ describe("MigrationRegistry", () => {
     expect(created).toEqual(["v1", "v2"]);
 
     // schema_version table exists with correct rows.
-    const versions = db
-      .prepare("SELECT version FROM schema_version ORDER BY version")
-      .all() as { version: number }[];
+    const versions = db.prepare("SELECT version FROM schema_version ORDER BY version").all() as {
+      version: number;
+    }[];
     expect(versions).toEqual([{ version: 1 }, { version: 2 }]);
 
     // Tables actually exist.
@@ -205,9 +205,9 @@ describe("MigrationRegistry", () => {
     expect(thrown!.message).toContain('Migration v2 ("bad_alter") failed');
 
     // schema_version still at v1 — v2 was rolled back.
-    const versions = db
-      .prepare("SELECT version FROM schema_version ORDER BY version")
-      .all() as { version: number }[];
+    const versions = db.prepare("SELECT version FROM schema_version ORDER BY version").all() as {
+      version: number;
+    }[];
     expect(versions).toEqual([{ version: 1 }]);
 
     // v1's data survived.
@@ -258,9 +258,9 @@ describe("MigrationRegistry", () => {
     expect(() => registry.apply(db)).toThrow(/Migration v3 \("v3_fail"\) failed/);
 
     // DB should still be at v2.
-    const versions = db
-      .prepare("SELECT version FROM schema_version ORDER BY version")
-      .all() as { version: number }[];
+    const versions = db.prepare("SELECT version FROM schema_version ORDER BY version").all() as {
+      version: number;
+    }[];
     expect(versions.map((v) => v.version)).toEqual([1, 2]);
 
     // Both tables still exist.
@@ -318,9 +318,27 @@ describe("MigrationRegistry", () => {
 
     const registry = createMigrationRegistry();
     let called = false;
-    registry.register({ version: 1, name: "v1", up: () => { called = true; } });
-    registry.register({ version: 2, name: "v2", up: () => { called = true; } });
-    registry.register({ version: 3, name: "v3", up: (d) => { d.exec("CREATE TABLE new_t (x INTEGER)"); } });
+    registry.register({
+      version: 1,
+      name: "v1",
+      up: () => {
+        called = true;
+      },
+    });
+    registry.register({
+      version: 2,
+      name: "v2",
+      up: () => {
+        called = true;
+      },
+    });
+    registry.register({
+      version: 3,
+      name: "v3",
+      up: (d) => {
+        d.exec("CREATE TABLE new_t (x INTEGER)");
+      },
+    });
 
     const result = registry.apply(db);
     expect(result.applied).toBe(1); // Only v3.
@@ -328,9 +346,9 @@ describe("MigrationRegistry", () => {
     expect(called).toBe(false); // v1, v2 up() never invoked.
 
     // Original rows still present.
-    const versions = db
-      .prepare("SELECT version FROM schema_version ORDER BY version")
-      .all() as { version: number }[];
+    const versions = db.prepare("SELECT version FROM schema_version ORDER BY version").all() as {
+      version: number;
+    }[];
     expect(versions.map((v) => v.version)).toEqual([1, 2, 3]);
 
     db.close();

@@ -76,11 +76,11 @@ function getPreviousHourKey(capturedAt: string): string {
  * empty findings without error.
  */
 export const supplierManagerDaemon: DaemonHandler = async ({
-  claim: _claim,  
-  reader: _reader,  
+  claim: _claim,
+  reader: _reader,
   cortex,
   bus,
-  sellerIds: _sellerIds,  
+  sellerIds: _sellerIds,
   supplierMirrorStore,
   advisor,
 }) => {

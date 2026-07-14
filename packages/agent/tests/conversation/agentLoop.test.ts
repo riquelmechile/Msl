@@ -2348,7 +2348,6 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-         
         (_proposalId: string) =>
           ({
             proposalId: "prop-001",
@@ -2371,7 +2370,6 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-         
         (_proposalId: string) =>
           ({
             proposalId: "prop-001",
@@ -2428,7 +2426,6 @@ describe("buildConsensusContext", () => {
     const store = makeConsensusStore({
       requiresConsensus: vi.fn(() => true),
       getConsensus: vi.fn(
-         
         (_proposalId: string) =>
           ({
             proposalId: "prop-002",
@@ -2487,7 +2484,6 @@ describe("createAgentLoop — consensus context integration", () => {
       submitReview: vi.fn(),
       getConsensusBySeller: vi.fn(),
       getConsensus: vi.fn(
-         
         (_proposalId: string) =>
           ({
             proposalId: "prop-001",
@@ -2578,7 +2574,6 @@ describe("createAgentLoop — consensus context integration", () => {
       submitReview: vi.fn(),
       getConsensusBySeller: vi.fn(),
       getConsensus: vi.fn(
-         
         (_proposalId: string) =>
           ({
             proposalId: "prop-pending",

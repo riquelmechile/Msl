@@ -104,7 +104,9 @@ export class FinanceDirectorPromptBuilder {
     if (priorAssessment) {
       blockC += `\n\nPrior assessment hypotheses:\n${
         (priorAssessment.hypotheses ?? [])
-          .map((h: { statement: string; confidence: number }) => `- [${h.confidence}] ${h.statement}`)
+          .map(
+            (h: { statement: string; confidence: number }) => `- [${h.confidence}] ${h.statement}`,
+          )
           .join("\n") || "(none)"
       }`;
       const pending = (priorAssessment.requestsForEvidence ?? [])
@@ -118,13 +120,17 @@ export class FinanceDirectorPromptBuilder {
     // ── Block D: Dynamic Evidence ────────────────────────────────────────
     const snapshotSummary = evidence.snapshots
       .map((s) => {
-        const missing = s.missingInputs.length > 0 ? ` missing=[${s.missingInputs.join(", ")}]` : "";
+        const missing =
+          s.missingInputs.length > 0 ? ` missing=[${s.missingInputs.join(", ")}]` : "";
         return `- snapshot ${s.snapshotId}: revenue=${s.grossRevenue} ${evidence.sellerCurrency}, netProfit=${s.netProfit}, margin=${(s.netMargin * 100).toFixed(1)}%, status=${s.calculationStatus}${missing}`;
       })
       .join("\n");
 
     const outcomeSummary = evidence.outcomes
-      .map((o) => `- outcome ${o.outcomeId}: status=${o.status}, seller=${o.sellerId}${o.orderId ? `, order=${o.orderId}` : ""}`)
+      .map(
+        (o) =>
+          `- outcome ${o.outcomeId}: status=${o.status}, seller=${o.sellerId}${o.orderId ? `, order=${o.orderId}` : ""}`,
+      )
       .join("\n");
 
     const profitBlock = evidence.profitSummary

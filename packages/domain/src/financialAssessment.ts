@@ -86,7 +86,12 @@ export type FinancialAssessment = {
   readonly escalationRecommendation?: string;
   readonly modelUsed: string;
   readonly fallbackUsed: boolean;
-  readonly promptBlockHashes: { readonly blockA?: string; readonly blockB?: string; readonly blockC?: string; readonly blockD?: string };
+  readonly promptBlockHashes: {
+    readonly blockA?: string;
+    readonly blockB?: string;
+    readonly blockC?: string;
+    readonly blockD?: string;
+  };
   readonly workSessionId?: string;
   readonly correlationId?: string;
   readonly noMutationExecuted: true;
