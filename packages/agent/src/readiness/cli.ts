@@ -48,9 +48,5 @@ if (useJson) {
 }
 
 const exitCode =
-  report.overallStatus === "blocked"
-    ? 1
-    : strict && report.overallStatus === "degraded"
-      ? 1
-      : 0;
+  report.overallStatus === "blocked" ? 1 : strict && report.overallStatus === "degraded" ? 1 : 0;
 process.exit(exitCode);

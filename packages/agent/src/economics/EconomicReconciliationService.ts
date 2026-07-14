@@ -75,8 +75,10 @@ export function reconcileEconomics(
 
   // ── Cost dimension (fees + shipping + ads + refunds) ───────────────────
 
-  const sourceCost = sourceTotals.fees + sourceTotals.shipping + sourceTotals.ads + sourceTotals.refunds;
-  const computedCost = computedTotals.fees + computedTotals.shipping + computedTotals.ads + computedTotals.refunds;
+  const sourceCost =
+    sourceTotals.fees + sourceTotals.shipping + sourceTotals.ads + sourceTotals.refunds;
+  const computedCost =
+    computedTotals.fees + computedTotals.shipping + computedTotals.ads + computedTotals.refunds;
   const costDiff = Math.abs(sourceCost - computedCost);
   const costStatus: DimensionStatus =
     costDiff <= tolerance
@@ -130,10 +132,8 @@ export function reconcileEconomics(
   // Any disputed snapshots?
   const disputedCount = computed.filter((s) => s.calculationStatus === "disputed").length;
   if (disputedCount > 0) {
-    const totalSource =
-      sourceTotals.grossRevenue + sourceCost;
-    const totalComputed =
-      computedTotals.grossRevenue + computedCost;
+    const totalSource = sourceTotals.grossRevenue + sourceCost;
+    const totalComputed = computedTotals.grossRevenue + computedCost;
     return {
       status: "disputed",
       details: `${disputedCount} snapshot(s) have disputed calculation status.`,
@@ -149,11 +149,16 @@ export function reconcileEconomics(
   }
 
   // Zero-both-sides → incomplete (spec: zero revenue AND zero cost)
-  if (sourceTotals.grossRevenue === 0 && sourceCost === 0 &&
-      computedTotals.grossRevenue === 0 && computedCost === 0) {
+  if (
+    sourceTotals.grossRevenue === 0 &&
+    sourceCost === 0 &&
+    computedTotals.grossRevenue === 0 &&
+    computedCost === 0
+  ) {
     return {
       status: "incomplete",
-      details: "Both revenue and costs are zero — reconciliation cannot determine balance. This is classified as incomplete, not balanced.",
+      details:
+        "Both revenue and costs are zero — reconciliation cannot determine balance. This is classified as incomplete, not balanced.",
       sourceTotal: 0,
       computedTotal: 0,
       difference: 0,
@@ -173,10 +178,8 @@ export function reconcileEconomics(
   if (bothBalanced) {
     const maxDiff = Math.max(revenueDiff, costDiff);
     const status = maxDiff === 0 ? "balanced" : ("balanced-with-tolerance" as const);
-    const totalSource =
-      sourceTotals.grossRevenue + sourceCost;
-    const totalComputed =
-      computedTotals.grossRevenue + computedCost;
+    const totalSource = sourceTotals.grossRevenue + sourceCost;
+    const totalComputed = computedTotals.grossRevenue + computedCost;
     return {
       status,
       details:
@@ -202,15 +205,11 @@ export function reconcileEconomics(
     );
   }
   if (costDiff > tolerance) {
-    mismatchDetails.push(
-      `costs: source=${sourceCost}, computed=${computedCost}, diff=${costDiff}`,
-    );
+    mismatchDetails.push(`costs: source=${sourceCost}, computed=${computedCost}, diff=${costDiff}`);
   }
 
-  const totalSource =
-    sourceTotals.grossRevenue + sourceCost;
-  const totalComputed =
-    computedTotals.grossRevenue + computedCost;
+  const totalSource = sourceTotals.grossRevenue + sourceCost;
+  const totalComputed = computedTotals.grossRevenue + computedCost;
   const maxDiff = Math.max(revenueDiff, costDiff);
 
   return {

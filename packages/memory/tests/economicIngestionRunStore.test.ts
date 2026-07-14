@@ -72,9 +72,9 @@ describe("EconomicIngestionRunStore", () => {
     });
 
     it("throws for update on non-existent run", async () => {
-      await expect(
-        store.updateRun("nonexistent", { status: "completed" }),
-      ).rejects.toThrow("Ingestion run not found");
+      await expect(store.updateRun("nonexistent", { status: "completed" })).rejects.toThrow(
+        "Ingestion run not found",
+      );
     });
 
     it("getLastRunBySeller returns most recent run", async () => {
@@ -357,7 +357,7 @@ describe("EconomicIngestionRunStore", () => {
 
   describe("error sanitization", () => {
     it("strips stack traces with file paths", async () => {
-      const run = await store.createRun({
+      await store.createRun({
         runId: "error-run",
         sellerId: "plasticov",
         mode: "incremental",

@@ -104,7 +104,6 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects object missing type", () => {
-     
     const { type: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });
@@ -118,7 +117,6 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects missing supplierId", () => {
-     
     const { supplierId: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });
@@ -128,7 +126,6 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects missing supplierItemId", () => {
-     
     const { supplierItemId: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });
@@ -166,7 +163,6 @@ describe("isValidSupplierWebSignal", () => {
   });
 
   it("rejects missing capturedAt", () => {
-     
     const { capturedAt: _, ...rest } = validPayload();
     expect(isValidSupplierWebSignal(rest)).toBe(false);
   });

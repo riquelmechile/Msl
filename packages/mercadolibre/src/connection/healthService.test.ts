@@ -1,11 +1,8 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OAuthManager } from "../oauth/oauthManager.js";
 import { MercadoLibreRefreshError } from "../oauth/oauthManager.js";
 import type { TokenStore } from "../oauth/tokenStore.js";
-import type {
-  MlAccountEntry,
-  SmokeEndpointResult,
-} from "./state.js";
+import type { MlAccountEntry, SmokeEndpointResult } from "./state.js";
 import {
   createMercadoLibreConnectionHealthService,
   type MercadoLibreConnectionHealthService,
@@ -28,14 +25,10 @@ function stubTokenStore(overrides: Partial<TokenStore> = {}): TokenStore {
 function stubOAuthManager(overrides: Partial<OAuthManager> = {}): OAuthManager {
   return {
     getAuthorizationUrl: () => "https://auth.example.com",
-    exchangeCodeForToken: async () => {
-      throw new Error("not implemented");
-    },
-    refreshAccessToken: async () => {
-      throw new Error("not implemented");
-    },
+    exchangeCodeForToken: () => Promise.reject(new Error("not implemented")),
+    refreshAccessToken: () => Promise.reject(new Error("not implemented")),
     isTokenExpired: () => false,
-    ensureValidToken: async () => "mock-access-token",
+    ensureValidToken: () => Promise.resolve("mock-access-token"),
     getStoredToken: () => undefined,
     deleteToken: () => {},
     isStubMode: () => true,
@@ -44,31 +37,32 @@ function stubOAuthManager(overrides: Partial<OAuthManager> = {}): OAuthManager {
   };
 }
 
-function stubSmokeService(
-  identitySuccess = true,
-): MercadoLibreReadOnlySmokeService {
+function stubSmokeService(identitySuccess = true): MercadoLibreReadOnlySmokeService {
   return {
-    runIdentitySmoke: async (sellerId) => ({
-      endpoint: "GET /users/{sellerId}",
-      success: identitySuccess,
-      seller: sellerId,
-      statusCode: identitySuccess ? 200 : 401,
-      reasonCode: identitySuccess ? undefined : "seller_mismatch",
-    } as SmokeEndpointResult),
-    runOrdersSmoke: async (sellerId) => ({
-      endpoint: "GET /orders/search",
-      success: true,
-      seller: sellerId,
-      statusCode: 200,
-      count: 3,
-    } as SmokeEndpointResult),
-    runItemsSmoke: async (sellerId) => ({
-      endpoint: "GET /users/{sellerId}/items/search",
-      success: true,
-      seller: sellerId,
-      statusCode: 200,
-      count: 5,
-    } as SmokeEndpointResult),
+    runIdentitySmoke: (sellerId) =>
+      Promise.resolve({
+        endpoint: "GET /users/{sellerId}",
+        success: identitySuccess,
+        seller: sellerId,
+        statusCode: identitySuccess ? 200 : 401,
+        ...(identitySuccess ? {} : { reasonCode: "seller_mismatch" }),
+      } satisfies SmokeEndpointResult),
+    runOrdersSmoke: (sellerId) =>
+      Promise.resolve({
+        endpoint: "GET /orders/search",
+        success: true,
+        seller: sellerId,
+        statusCode: 200,
+        count: 3,
+      }),
+    runItemsSmoke: (sellerId) =>
+      Promise.resolve({
+        endpoint: "GET /users/{sellerId}/items/search",
+        success: true,
+        seller: sellerId,
+        statusCode: 200,
+        count: 5,
+      }),
     runFullSmoke: async (sellerId) => {
       const svc = stubSmokeService(identitySuccess);
       const [identity, orders, items] = await Promise.all([
@@ -121,13 +115,15 @@ function maustianEntry(overrides: Partial<MlAccountEntry> = {}): MlAccountEntry 
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-function makeService(overrides: {
-  registry?: MlAccountEntry[];
-  oauthManager?: OAuthManager;
-  store?: TokenStore;
-  smokeService?: MercadoLibreReadOnlySmokeService;
-  clock?: { now(): number };
-} = {}): MercadoLibreConnectionHealthService {
+function makeService(
+  overrides: {
+    registry?: MlAccountEntry[];
+    oauthManager?: OAuthManager;
+    store?: TokenStore;
+    smokeService?: MercadoLibreReadOnlySmokeService;
+    clock?: { now(): number };
+  } = {},
+): MercadoLibreConnectionHealthService {
   const options: import("./healthService.js").HealthServiceOptions = {
     registry: overrides.registry ?? [plasticovEntry()],
     oauthManager: overrides.oauthManager ?? stubOAuthManager(),
@@ -339,14 +335,10 @@ describe("MercadoLibreConnectionHealthService", () => {
     it("returns reauthorization-required on invalid_grant", async () => {
       const expiredAt = new Date(FIXED_NOW - 10 * 60 * 1000).toISOString();
       const oauth = stubOAuthManager({
-        ensureValidToken: async () => {
-          throw new MercadoLibreRefreshError(
-            "invalid_grant",
-            "Refresh token revoked",
-            "111111",
-            false,
-          );
-        },
+        ensureValidToken: () =>
+          Promise.reject(
+            new MercadoLibreRefreshError("invalid_grant", "Refresh token revoked", "111111", false),
+          ),
       });
       const store = stubTokenStore({
         getToken: () => ({
@@ -369,14 +361,10 @@ describe("MercadoLibreConnectionHealthService", () => {
     it("returns degraded on network error during refresh", async () => {
       const expiredAt = new Date(FIXED_NOW - 10 * 60 * 1000).toISOString();
       const oauth = stubOAuthManager({
-        ensureValidToken: async () => {
-          throw new MercadoLibreRefreshError(
-            "network_error",
-            "Connection refused",
-            "111111",
-            true,
-          );
-        },
+        ensureValidToken: () =>
+          Promise.reject(
+            new MercadoLibreRefreshError("network_error", "Connection refused", "111111", true),
+          ),
       });
       const store = stubTokenStore({
         getToken: () => ({
@@ -428,15 +416,18 @@ describe("MercadoLibreConnectionHealthService", () => {
       const clock = { now: () => FIXED_NOW };
 
       // Single shared store with both sellers' tokens
-      const tokenMap = new Map<string, {
-        seller_id: string;
-        access_token: string;
-        refresh_token: string;
-        expires_at: string;
-        user_id: string;
-        nickname: string;
-        account_level: string;
-      }>();
+      const tokenMap = new Map<
+        string,
+        {
+          seller_id: string;
+          access_token: string;
+          refresh_token: string;
+          expires_at: string;
+          user_id: string;
+          nickname: string;
+          account_level: string;
+        }
+      >();
       // Plasticov: expired token
       tokenMap.set("111111", {
         seller_id: "111111",

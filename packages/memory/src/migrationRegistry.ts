@@ -2,23 +2,23 @@ import Database from "better-sqlite3";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-export interface MigrationStep {
+export type MigrationStep = {
   /** Monotonically increasing version number. */
   version: number;
   /** Human-readable label for diagnostics. */
   name: string;
   /** The migration function. Executed inside a transaction by the registry. */
   up: (db: Database.Database) => void;
-}
+};
 
-export interface MigrationApplyResult {
+export type MigrationApplyResult = {
   /** Number of migrations freshly applied in this run. */
   applied: number;
   /** Number of migrations already recorded and skipped. */
   skipped: number;
-}
+};
 
-export interface MigrationRegistry {
+export type MigrationRegistry = {
   /** Register a migration step. Steps must be registered in version order. */
   register(step: MigrationStep): void;
   /**
@@ -32,7 +32,7 @@ export interface MigrationRegistry {
   apply(db: Database.Database): MigrationApplyResult;
   /** Return the highest registered version (0 if none). */
   expectedVersion(): number;
-}
+};
 
 // ── Internal helpers ───────────────────────────────────────────────────
 
@@ -54,9 +54,8 @@ function currentVersion(db: Database.Database): number {
     .get() as { name: string } | undefined;
   if (!exists) return 0;
 
-  const row = db
-    .prepare("SELECT MAX(version) as v FROM schema_version")
-    .get() as { v: number | null } | undefined;
+  const row = db.prepare("SELECT MAX(version) as v FROM schema_version").get() as
+    { v: number | null } | undefined;
   return row?.v ?? 0;
 }
 
@@ -117,9 +116,7 @@ export function createMigrationRegistry(): MigrationRegistry {
         // Transaction rolled back by SQLite. Log and rethrow so the
         // caller can decide how to handle the failure.
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `Migration v${step.version} ("${step.name}") failed: ${message}`,
-        );
+        throw new Error(`Migration v${step.version} ("${step.name}") failed: ${message}`);
       }
     }
 

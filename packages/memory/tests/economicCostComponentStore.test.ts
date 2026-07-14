@@ -191,9 +191,7 @@ describe("Cost Component Store", () => {
     const store = createStore();
 
     // Insert v1
-    const v1 = store.insertCostComponent(
-      makeInput({ sellerId: "plasticov", sourceVersion: "v1" }),
-    );
+    const v1 = store.insertCostComponent(makeInput({ sellerId: "plasticov", sourceVersion: "v1" }));
     // Upsert v2 (supersedes v1)
     const v2 = store.upsertCostComponent(
       makeInput({ sellerId: "plasticov", sourceVersion: "v2", amount: clp(6000) }),
@@ -231,11 +229,13 @@ describe("Cost Component Store", () => {
     const store = createStore();
 
     store.insertCostComponent(makeInput({ sellerId: "plasticov" }));
+    store.insertCostComponent(makeInput({ sellerId: "maustian", sourceRecordId: "order-456" }));
     store.insertCostComponent(
-      makeInput({ sellerId: "maustian", sourceRecordId: "order-456" }),
-    );
-    store.insertCostComponent(
-      makeInput({ sellerId: "maustian", sourceRecordId: "order-789", economicMeaning: "sale_fee_2" }),
+      makeInput({
+        sellerId: "maustian",
+        sourceRecordId: "order-789",
+        economicMeaning: "sale_fee_2",
+      }),
     );
 
     expect(store.listCostComponents("plasticov")).toHaveLength(1);
@@ -247,9 +247,7 @@ describe("Cost Component Store", () => {
   it("listCostComponents — filter by type returns only matching components", () => {
     const store = createStore();
 
-    store.insertCostComponent(
-      makeInput({ sellerId: "plasticov", type: "marketplace_fee" }),
-    );
+    store.insertCostComponent(makeInput({ sellerId: "plasticov", type: "marketplace_fee" }));
     store.insertCostComponent(
       makeInput({ sellerId: "plasticov", type: "shipping", economicMeaning: "ship_cost" }),
     );
@@ -373,9 +371,7 @@ describe("Cost Component Store", () => {
 
   it("insert and retrieve USD amount correctly", () => {
     const store = createStore();
-    const comp = store.insertCostComponent(
-      makeInput({ sellerId: "plasticov", amount: usd(4999) }),
-    );
+    const comp = store.insertCostComponent(makeInput({ sellerId: "plasticov", amount: usd(4999) }));
     expect(comp.amount).toEqual({ amountMinor: 4999, currency: "USD" });
     expect(comp.currency).toBe("USD");
   });

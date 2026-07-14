@@ -16,14 +16,17 @@ import {
   migrateEconomicIngestionRunStore,
   migrateEconomicDurabilityColumns,
 } from "@msl/memory";
-import type { EconomicOutcomeStore, EconomicIngestionRunStore, EconomicEvidenceStore } from "@msl/memory";
+import type {
+  EconomicOutcomeStore,
+  EconomicIngestionRunStore,
+  EconomicEvidenceStore,
+} from "@msl/memory";
 import { CryptoRunIdFactory } from "@msl/domain";
 import type { RunIdFactory } from "@msl/domain";
 import { createProductionDataFetcher } from "./dataFetcher.js";
 import { runEconomicIngestion } from "./EconomicIngestionPipeline.js";
 import type { DataFetcher, PipelineConfig, PipelineResult } from "./EconomicIngestionPipeline.js";
 import { reconcileEconomics } from "./EconomicReconciliationService.js";
-import type { ReconciliationVerdict } from "./EconomicIngestionPipeline.js";
 import { createMetrics, createLogger } from "../conversation/observability.js";
 import type { MetricsCollector, Logger } from "../conversation/observability.js";
 import type Database from "better-sqlite3";
@@ -91,7 +94,8 @@ export function createEconomicIngestionRuntime(
 
   // ── 2. Resolve seller account ───────────────────────────────────────────
   const roleConfig = getMlAccountRoleConfig(env);
-  const numericSellerId = seller === "source" ? roleConfig.sourceSellerId : roleConfig.targetSellerId;
+  const numericSellerId =
+    seller === "source" ? roleConfig.sourceSellerId : roleConfig.targetSellerId;
   // Pipeline uses friendly slugs: source→plasticov, target→maustian
   const pipelineSellerId = seller === "source" ? "plasticov" : "maustian";
 
@@ -101,7 +105,6 @@ export function createEconomicIngestionRuntime(
   // ── 4. OAuth and ML client ──────────────────────────────────────────────
   let mlClient: MlcApiClient | undefined;
   let oauthManager: OAuthManager | undefined;
-  let ownDb: Database.Database | undefined;
 
   if (!overrides?.mlClient && !overrides?.dataFetcher) {
     const oauthConfigs = resolveOAuthConfigs(env);
@@ -120,7 +123,6 @@ export function createEconomicIngestionRuntime(
   // ── 5. SQLite stores ────────────────────────────────────────────────────
   const cortexPath = env.MSL_CORTEX_SQLITE_PATH?.trim();
   const db = overrides?.db ?? getSharedDb(cortexPath);
-  ownDb = overrides?.db ? undefined : db;
 
   const store = overrides?.store ?? createSqliteEconomicOutcomeStore(db);
   const runStore = overrides?.runStore ?? createSqliteEconomicIngestionRunStore(db);
@@ -157,7 +159,14 @@ export function createEconomicIngestionRuntime(
   const pipeline =
     overrides?.pipeline ??
     (async (config: PipelineConfig) => {
-      return runEconomicIngestion(config, store, dataFetcher, runIdFactory, runStore, evidenceStore);
+      return runEconomicIngestion(
+        config,
+        store,
+        dataFetcher,
+        runIdFactory,
+        runStore,
+        evidenceStore,
+      );
     });
 
   // ── 9. Health ───────────────────────────────────────────────────────────
@@ -175,9 +184,6 @@ export function createEconomicIngestionRuntime(
   // ── 10. Cleanup ─────────────────────────────────────────────────────────
   const close = () => {
     oauthManager?.close?.();
-    if (ownDb && overrides?.db === undefined) {
-      // Don't close shared DB — connection pool manages it
-    }
   };
 
   return {

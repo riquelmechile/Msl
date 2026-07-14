@@ -100,7 +100,11 @@ export {
 export { getSharedDb, closeSharedDb, getSharedManager } from "./connectionPool.js";
 export { backupDatabase } from "./backup.js";
 export { createMigrationRegistry } from "./migrationRegistry.js";
-export type { MigrationRegistry, MigrationStep, MigrationApplyResult } from "./migrationRegistry.js";
+export type {
+  MigrationRegistry,
+  MigrationStep,
+  MigrationApplyResult,
+} from "./migrationRegistry.js";
 export type { EconomicEvidenceStore, ListEvidenceOptions } from "./economicEvidenceStore.js";
 export {
   createSqliteEconomicEvidenceStore,
@@ -115,11 +119,7 @@ export type {
   WalCheckpointResult,
 } from "./databaseManager.js";
 export { BackupScheduler, createBackupScheduler } from "./backupScheduler.js";
-export type {
-  DbEntry,
-  BackupSchedulerConfig,
-  BackupMetadata,
-} from "./backupScheduler.js";
+export type { DbEntry, BackupSchedulerConfig, BackupMetadata } from "./backupScheduler.js";
 
 export type LocalDataResidency = "local-only" | "selective-remote-sync";
 

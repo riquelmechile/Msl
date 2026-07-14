@@ -1,10 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 
-import {
-  sanitizeContext,
-  createDaemonLogger,
-  createStoreLogger,
-} from "./observabilityPipeline.js";
+import { sanitizeContext, createDaemonLogger, createStoreLogger } from "./observabilityPipeline.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

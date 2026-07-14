@@ -65,7 +65,14 @@ type CliOutput = {
 // ── Argument parsing ───────────────────────────────────────────────────────
 
 const VALID_SELLER_SLUGS = new Set(["source", "target"]);
-const VALID_COMMANDS = new Set(["ingest", "status", "coverage", "reconcile", "missing", "inspect-evidence"]);
+const VALID_COMMANDS = new Set([
+  "ingest",
+  "status",
+  "coverage",
+  "reconcile",
+  "missing",
+  "inspect-evidence",
+]);
 
 export function parseArgs(raw: string[]): CliArgs {
   const args = raw.slice(2);
@@ -241,10 +248,7 @@ async function handleIngest(args: CliArgs, runtime: EconomicIngestionRuntime): P
   return okOutput(args, sanitizeForOutput(output) as Record<string, unknown>);
 }
 
-async function handleStatus(
-  args: CliArgs,
-  runtime: EconomicIngestionRuntime,
-): Promise<CliOutput> {
+async function handleStatus(args: CliArgs, runtime: EconomicIngestionRuntime): Promise<CliOutput> {
   const lastRun = await runtime.runStore.getLastRunBySeller(runtime.health.sellerId);
   const runs = await runtime.runStore.listRunsBySeller(runtime.health.sellerId, 10);
 
@@ -265,10 +269,7 @@ async function handleStatus(
   return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
 }
 
-async function handleCoverage(
-  args: CliArgs,
-  runtime: EconomicIngestionRuntime,
-): Promise<CliOutput> {
+function handleCoverage(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
   const store = runtime.store;
   const sellerId = runtime.health.sellerId;
 
@@ -314,10 +315,7 @@ async function handleCoverage(
   return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
 }
 
-async function handleReconcile(
-  args: CliArgs,
-  runtime: EconomicIngestionRuntime,
-): Promise<CliOutput> {
+function handleReconcile(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
   const store = runtime.store;
   const sellerId = runtime.health.sellerId;
 
@@ -359,10 +357,7 @@ async function handleReconcile(
   return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
 }
 
-async function handleMissing(
-  args: CliArgs,
-  runtime: EconomicIngestionRuntime,
-): Promise<CliOutput> {
+function handleMissing(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
   const store = runtime.store;
   const sellerId = runtime.health.sellerId;
 
@@ -385,10 +380,7 @@ async function handleMissing(
   return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
 }
 
-async function handleInspectEvidence(
-  args: CliArgs,
-  runtime: EconomicIngestionRuntime,
-): Promise<CliOutput> {
+function handleInspectEvidence(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
   const evidenceStore = runtime.evidenceStore;
   const sellerId = runtime.health.sellerId;
 
@@ -501,16 +493,16 @@ export async function runCli(
         output = await handleStatus(args, runtime);
         break;
       case "coverage":
-        output = await handleCoverage(args, runtime);
+        output = handleCoverage(args, runtime);
         break;
       case "reconcile":
-        output = await handleReconcile(args, runtime);
+        output = handleReconcile(args, runtime);
         break;
       case "missing":
-        output = await handleMissing(args, runtime);
+        output = handleMissing(args, runtime);
         break;
       case "inspect-evidence":
-        output = await handleInspectEvidence(args, runtime);
+        output = handleInspectEvidence(args, runtime);
         break;
       default:
         output = errOutput(args, `Unknown command: ${String(args.command)}`);
@@ -538,9 +530,8 @@ async function main(): Promise<void> {
 
 // Only auto-run when executed directly, not when imported (e.g. during tests).
 const isDirectExecution =
-  process.argv[1]?.endsWith("economicCli.ts") ||
-  process.argv[1]?.endsWith("economicCli.js");
+  process.argv[1]?.endsWith("economicCli.ts") || process.argv[1]?.endsWith("economicCli.js");
 
 if (isDirectExecution) {
-  main();
+  void main();
 }

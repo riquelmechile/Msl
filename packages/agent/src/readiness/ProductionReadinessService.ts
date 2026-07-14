@@ -230,8 +230,11 @@ function buildSellerReports(
     // Build encryption readiness
     const encKey = env.MSL_ENCRYPTION_KEY;
     const hasEncKey = !!(encKey && encKey.trim() !== "");
-    const isEncPlaceholder = hasEncKey && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim());
-    const isInsecureFb = !!env.MSL_ALLOW_INSECURE_DEV_SECRETS && env.MSL_ALLOW_INSECURE_DEV_SECRETS.trim().toLowerCase() === "true";
+    const isEncPlaceholder =
+      hasEncKey && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(encKey.trim());
+    const isInsecureFb =
+      !!env.MSL_ALLOW_INSECURE_DEV_SECRETS &&
+      env.MSL_ALLOW_INSECURE_DEV_SECRETS.trim().toLowerCase() === "true";
 
     // Compute seller overall status
     let sellerOverall: ReadinessStatus = "not-applicable";
@@ -257,8 +260,10 @@ function buildSellerReports(
           hasClientSecret,
           hasRedirectUri,
           isPlaceholder:
-            (hasClientId && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientId.trim())) ||
-            (hasClientSecret && /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientSecret.trim())),
+            (hasClientId &&
+              /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientId.trim())) ||
+            (hasClientSecret &&
+              /^(test|example|changeme|your-|xxx|placeholder|dummy)/i.test(clientSecret.trim())),
           ...(tokenStoreRaw ? { tokenStorePath: tokenStoreRaw } : {}),
         },
         encryptionReadiness: {
@@ -277,7 +282,10 @@ function buildSellerReports(
 function isRelevantToSeller(capability: ProductionCapability, sellerId: string): boolean {
   if (sellerId === "plasticov" && capability.includes("plasticov")) return true;
   if (sellerId === "maustian" && capability.includes("maustian")) return true;
-  if (capability === "mercadolibre-read-plasticov" || capability === "mercadolibre-write-plasticov") {
+  if (
+    capability === "mercadolibre-read-plasticov" ||
+    capability === "mercadolibre-write-plasticov"
+  ) {
     return sellerId === "plasticov";
   }
   if (capability === "mercadolibre-read-maustian" || capability === "mercadolibre-write-maustian") {

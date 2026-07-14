@@ -26,15 +26,25 @@ function parseArgv(argv) {
   const args = { _: [] };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--seller" && i + 1 < argv.length) { args.seller = argv[++i]; }
-    else if (arg === "--limit" && i + 1 < argv.length) { args.limit = parseInt(argv[++i], 10); }
-    else if (arg === "--max-pages" && i + 1 < argv.length) { args.maxPages = parseInt(argv[++i], 10); }
-    else if (arg === "--max-time" && i + 1 < argv.length) { args.maxTime = parseInt(argv[++i], 10); }
-    else if (arg === "--dry-run") { args.dryRun = true; }
-    else if (arg === "--no-persist") { args.noPersist = true; }
-    else if (arg === "--json") { args.json = true; }
-    else if (arg === "--help" || arg === "-h") { args.help = true; }
-    else { args._.push(arg); }
+    if (arg === "--seller" && i + 1 < argv.length) {
+      args.seller = argv[++i];
+    } else if (arg === "--limit" && i + 1 < argv.length) {
+      args.limit = parseInt(argv[++i], 10);
+    } else if (arg === "--max-pages" && i + 1 < argv.length) {
+      args.maxPages = parseInt(argv[++i], 10);
+    } else if (arg === "--max-time" && i + 1 < argv.length) {
+      args.maxTime = parseInt(argv[++i], 10);
+    } else if (arg === "--dry-run") {
+      args.dryRun = true;
+    } else if (arg === "--no-persist") {
+      args.noPersist = true;
+    } else if (arg === "--json") {
+      args.json = true;
+    } else if (arg === "--help" || arg === "-h") {
+      args.help = true;
+    } else {
+      args._.push(arg);
+    }
   }
   return args;
 }
@@ -153,10 +163,12 @@ async function main() {
   const listingsSnap = await client.getListings(sellerId);
   const allIds = listingsSnap.data.map((l) => l.id).filter((id) => id && /^MLC\d+$/.test(id));
 
-  if (!JSON_OUTPUT) console.log(`📦 ${allIds.length} items to fetch in batches of ${BATCH_SIZE}...`);
+  if (!JSON_OUTPUT)
+    console.log(`📦 ${allIds.length} items to fetch in batches of ${BATCH_SIZE}...`);
 
   const cortexPath = (
-    process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() || process.env.MSL_CORTEX_SQLITE_PATH?.trim()
+    process.env.MSL_TELEGRAM_CORTEX_SQLITE_PATH?.trim() ||
+    process.env.MSL_CORTEX_SQLITE_PATH?.trim()
   )?.replace(/\.sqlite$/, `.telegram-${sellerId}.sqlite`);
 
   const engine = cortexPath ? createGraphEngine(cortexPath) : undefined;

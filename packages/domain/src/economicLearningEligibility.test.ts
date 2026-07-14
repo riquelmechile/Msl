@@ -2,23 +2,17 @@ import { describe, expect, it } from "vitest";
 import { createEconomicOutcome, transitionOutcome } from "./economicOutcome.js";
 import type { EconomicOutcome } from "./economicOutcome.js";
 import type { UnitEconomicsSnapshot } from "./unitEconomics.js";
-import {
-  evaluateEconomicLearningEligibility,
-} from "./economicLearningEligibility.js";
+import { evaluateEconomicLearningEligibility } from "./economicLearningEligibility.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeOutcome(
-  overrides: Partial<EconomicOutcome> = {},
-): EconomicOutcome {
+function makeOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
   let outcome = createEconomicOutcome({ sellerId: "seller-1" });
   outcome = { ...outcome, ...overrides };
   return outcome;
 }
 
-function makeVerifiedOutcome(
-  overrides: Partial<EconomicOutcome> = {},
-): EconomicOutcome {
+function makeVerifiedOutcome(overrides: Partial<EconomicOutcome> = {}): EconomicOutcome {
   let outcome = createEconomicOutcome({ sellerId: "seller-1" });
   outcome = transitionOutcome(outcome, "observing");
   outcome = transitionOutcome(outcome, "observed");
@@ -33,9 +27,7 @@ function makeVerifiedOutcome(
   return outcome;
 }
 
-function makeSnapshot(
-  overrides: Partial<UnitEconomicsSnapshot> = {},
-): UnitEconomicsSnapshot {
+function makeSnapshot(overrides: Partial<UnitEconomicsSnapshot> = {}): UnitEconomicsSnapshot {
   const base: UnitEconomicsSnapshot = {
     snapshotId: "snap-1",
     sellerId: "seller-1",
@@ -174,7 +166,8 @@ describe("evaluateEconomicLearningEligibility", () => {
   it("blocks verified outcome without observedEconomicImpactId", () => {
     const outcome = makeVerifiedOutcome();
     // Delete observedEconomicImpactId to simulate missing field
-    const { observedEconomicImpactId: _drop, ...outcomeWithoutImpact } = outcome as EconomicOutcome & { observedEconomicImpactId?: string };
+    const { observedEconomicImpactId: _drop, ...outcomeWithoutImpact } =
+      outcome as EconomicOutcome & { observedEconomicImpactId?: string };
     const cleaned = outcomeWithoutImpact as EconomicOutcome;
 
     const result = evaluateEconomicLearningEligibility({
@@ -291,7 +284,9 @@ describe("evaluateEconomicLearningEligibility", () => {
   it("accumulates multiple block reasons", () => {
     const outcome = makeOutcome({ status: "pending" });
     // Remove observedEconomicImpactId
-    const { observedEconomicImpactId: _drop, ...cleaned } = outcome as EconomicOutcome & { observedEconomicImpactId?: string };
+    const { observedEconomicImpactId: _drop, ...cleaned } = outcome as EconomicOutcome & {
+      observedEconomicImpactId?: string;
+    };
 
     const result = evaluateEconomicLearningEligibility({
       outcome: cleaned,
@@ -366,10 +361,12 @@ describe("evaluateEconomicLearningEligibility", () => {
       // However, it still accumulates all reason codes.
       const outcome = makeOutcome({ status: "pending" });
       // Remove observedEconomicImpactId
-      const { observedEconomicImpactId: _drop, ...cleaned } = outcome as EconomicOutcome & { observedEconomicImpactId?: string };
+      const { observedEconomicImpactId: _drop, ...cleaned } = outcome as EconomicOutcome & {
+        observedEconomicImpactId?: string;
+      };
 
       const result = evaluateEconomicLearningEligibility({
-        outcome: cleaned as EconomicOutcome,
+        outcome: cleaned,
         snapshot: makeSnapshot(),
         hasAttributionTargets: false,
         alreadyProcessed: true,

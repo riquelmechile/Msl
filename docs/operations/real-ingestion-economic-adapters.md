@@ -24,16 +24,16 @@ Layer F: Consumption              → Finance Director tools, CLI, daemon
 
 ## Command Reference
 
-| Command | Description |
-|---------|-------------|
-| `npm run economic:ingest -- --seller <id>` | Run full ingestion pipeline for a seller |
-| `npm run economic:ingest -- --seller <id> --dry-run` | Dry-run: compute without persisting |
-| `npm run economic:ingest -- --seller <id> --no-persist` | Compute and report, skip storage |
-| `npm run economic:ingest -- --seller <id> --max-pages 3` | Limit pages fetched from ML API |
-| `npm run economic:status -- --seller <id>` | Status of the last ingestion run |
-| `npm run economic:coverage -- --seller <id>` | Economic data coverage per dimension |
-| `npm run economic:reconcile -- --seller <id>` | Reconcile cost components vs snapshots |
-| `npm run economic:missing -- --seller <id>` | List missing economic inputs per seller |
+| Command                                                  | Description                              |
+| -------------------------------------------------------- | ---------------------------------------- |
+| `npm run economic:ingest -- --seller <id>`               | Run full ingestion pipeline for a seller |
+| `npm run economic:ingest -- --seller <id> --dry-run`     | Dry-run: compute without persisting      |
+| `npm run economic:ingest -- --seller <id> --no-persist`  | Compute and report, skip storage         |
+| `npm run economic:ingest -- --seller <id> --max-pages 3` | Limit pages fetched from ML API          |
+| `npm run economic:status -- --seller <id>`               | Status of the last ingestion run         |
+| `npm run economic:coverage -- --seller <id>`             | Economic data coverage per dimension     |
+| `npm run economic:reconcile -- --seller <id>`            | Reconcile cost components vs snapshots   |
+| `npm run economic:missing -- --seller <id>`              | List missing economic inputs per seller  |
 
 All commands support `--json` for machine-readable output.
 
@@ -41,12 +41,13 @@ All commands support `--json` for machine-readable output.
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MSL_ECONOMIC_INGESTION_ENABLED` | `false` | Enable the economic ingestion pipeline and daemon |
-| `MSL_ECONOMIC_INGESTION_DURABILITY` | `true` | Enable durability features: UUID IDs, fail-closed, atomic tx, Evidence Store |
+| Variable                            | Default | Description                                                                  |
+| ----------------------------------- | ------- | ---------------------------------------------------------------------------- |
+| `MSL_ECONOMIC_INGESTION_ENABLED`    | `false` | Enable the economic ingestion pipeline and daemon                            |
+| `MSL_ECONOMIC_INGESTION_DURABILITY` | `true`  | Enable durability features: UUID IDs, fail-closed, atomic tx, Evidence Store |
 
 When `MSL_ECONOMIC_INGESTION_DURABILITY=true` (default):
+
 - `CryptoRunIdFactory` generates UUID-based run IDs (`economic-ingestion-{uuid}`)
 - Persistence errors abort the pipeline (fail-closed) — no silent catch
 - All final writes execute in a single `db.transaction()` — atomic commit
@@ -57,6 +58,7 @@ When `MSL_ECONOMIC_INGESTION_DURABILITY=true` (default):
 - Checkpoint advances only after successful commit
 
 When `false` (legacy path):
+
 - Sequential `runCounter`-based run IDs
 - Silent catch on persistence errors
 - No atomic transaction boundary (writes not grouped)
@@ -64,11 +66,13 @@ When `false` (legacy path):
 - Single-dimension reconciliation (balanced/mismatched)
 
 When `false` (default):
+
 - The daemon no-ops immediately
 - CLI commands return `unavailable` status
 - Finance Director tools return empty data with guidance
 
 When `true`:
+
 - The daemon runs incremental ingestion on schedule
 - CLI commands execute the full pipeline
 - Finance Director tools query real cost components
@@ -77,15 +81,15 @@ When `true`:
 
 ## Data Sources
 
-| Layer | Source System | Data |
-|-------|---------------|------|
-| Orders | ML `getOrders` | Order status, totals, shipment IDs |
-| Items | ML `getItem` | Line items, listing prices, categories |
-| Payments | ML `getItemPrices` | Real sale fees (`sale_fee_amount`) |
-| Shipping | ML `getShipmentStatus` | Shipping costs (seller-paid only) |
-| Promotions | ML `getItemPromotions` | Seller-funded discounts |
-| Claims | ML `getClaimReturnCost` | Refund/return charges |
-| Advertising | ML `getProductAdsInsights` | Ad spend per campaign |
+| Layer       | Source System              | Data                                   |
+| ----------- | -------------------------- | -------------------------------------- |
+| Orders      | ML `getOrders`             | Order status, totals, shipment IDs     |
+| Items       | ML `getItem`               | Line items, listing prices, categories |
+| Payments    | ML `getItemPrices`         | Real sale fees (`sale_fee_amount`)     |
+| Shipping    | ML `getShipmentStatus`     | Shipping costs (seller-paid only)      |
+| Promotions  | ML `getItemPromotions`     | Seller-funded discounts                |
+| Claims      | ML `getClaimReturnCost`    | Refund/return charges                  |
+| Advertising | ML `getProductAdsInsights` | Ad spend per campaign                  |
 
 All data is fetched through the MercadoLibre OAuth connection with real credentials. The pipeline is **read-only** — mutations are blocked by `assertMercadoLibreWriteDisabled()`.
 
@@ -94,11 +98,13 @@ All data is fetched through the MercadoLibre OAuth connection with real credenti
 ## Architecture: 6-Layer Pipeline
 
 ### Layer A: ML API (Data Fetch)
+
 - Fetches orders, items, payments, shipments, claims, and ad insights
 - Paginated with checkpoint-based resume
 - Seller-scoped via OAuth tokens
 
 ### Layer B: Normalization
+
 - `normalizeOrders(mlOrders, mlItems, mlPayments)` → `NormalizedCommerceTransaction[]`
 - One transaction per line item (multi-item orders → multiple transactions)
 - PII stripped: no buyer names, emails, phone numbers
@@ -106,7 +112,9 @@ All data is fetched through the MercadoLibre OAuth connection with real credenti
 - Multi-pack → per-unit price
 
 ### Layer C: Economic Adapters (11 total)
+
 5 real adapters:
+
 - `OrderRevenue`: gross revenue from paid orders (feeds snapshot, not a cost)
 - `MarketplaceFee`: real `sale_fee_amount` → `marketplace_fee`
 - `ShippingCost`: seller-paid shipping only
@@ -115,14 +123,17 @@ All data is fetched through the MercadoLibre OAuth connection with real credenti
 - `AdvertisingCost`: real ad spend per campaign
 
 6 stub adapters (return empty + declare `missingInputs`):
+
 - `ProductCost`, `LandedCost`, `Packaging`, `Financing`, `Tax`, `Other`
 
 ### Layer D: Calculation
+
 - `computeUnitEconomics(transaction, costComponents)` → `UnitEconomicsSnapshot`
 - Deterministic: gross revenue − sum of cost component amounts
 - Never substitutes zero for missing data — declares `missingInputs`
 
 ### Layer E: Persistence (Durability-Hardened)
+
 - `EconomicOutcomeStore` (SQLite) for cost components and snapshots
 - `EconomicEvidenceStore` (SQLite) for evidence references with provenance
 - `EconomicIngestionRunStore` (SQLite) for run lifecycle tracking
@@ -137,6 +148,7 @@ All data is fetched through the MercadoLibre OAuth connection with real credenti
 - Seller isolation enforced at the query level
 
 ### Layer F: Consumption
+
 - 8 Finance Director tools (inspect, reconcile, coverage, evidence)
 - CLI for operational use
 - Daemon for scheduled ingestion
@@ -147,6 +159,7 @@ All data is fetched through the MercadoLibre OAuth connection with real credenti
 ## Missing Inputs Handling
 
 When a cost component type has no data (e.g., `product_cost` from stub adapters or missing ML data):
+
 1. The adapter returns an empty array
 2. It declares `missingInputs: ["product_cost"]`
 3. The pipeline records this in the snapshot as `missingInputs`
@@ -158,6 +171,7 @@ When a cost component type has no data (e.g., `product_cost` from stub adapters 
 ## Seller Isolation
 
 Every query and mutation is seller-scoped:
+
 - `store.listCostComponents(sellerId, ...)` only returns that seller's data
 - `store.listUnitEconomicsSnapshots(sellerId, ...)` same
 - The daemon runs per-seller
@@ -224,11 +238,11 @@ npm run economic:migration:status
 
 ## Feature Flags
 
-| Flag | Default | Controls |
-|------|---------|----------|
-| `MSL_ECONOMIC_INGESTION_ENABLED` | `false` | Enable the ingestion pipeline and daemon |
-| `MSL_ECONOMIC_INGESTION_DURABILITY` | `true` | UUID IDs, fail-closed, atomic tx, Evidence Store |
-| `MSL_MIGRATION_ENABLED` | `false` | MigrationRegistry vs legacy `CREATE TABLE IF NOT EXISTS` |
+| Flag                                | Default | Controls                                                 |
+| ----------------------------------- | ------- | -------------------------------------------------------- |
+| `MSL_ECONOMIC_INGESTION_ENABLED`    | `false` | Enable the ingestion pipeline and daemon                 |
+| `MSL_ECONOMIC_INGESTION_DURABILITY` | `true`  | UUID IDs, fail-closed, atomic tx, Evidence Store         |
+| `MSL_MIGRATION_ENABLED`             | `false` | MigrationRegistry vs legacy `CREATE TABLE IF NOT EXISTS` |
 
 The two economic flags are independent: durability can be enabled without the pipeline being enabled. `MSL_ECONOMIC_INGESTION_DURABILITY=true` requires the evidence table — if `MSL_MIGRATION_ENABLED=false`, the store falls back to `CREATE TABLE IF NOT EXISTS`.
 
@@ -258,14 +272,14 @@ For large backfills, run in batches with increasing page limits to respect ML AP
 
 ## Troubleshooting
 
-| Symptom | Likely Cause | Resolution |
-|---------|-------------|------------|
-| `npm run economic:ingest` returns "unavailable" | Feature gate disabled | Set `MSL_ECONOMIC_INGESTION_ENABLED=true` |
-| Pipeline fails on "OAuth not configured" | Missing ML credentials | Verify `MERCADOLIBRE_SOURCE_*` env vars |
-| Reconciliation shows "mismatched" | Cost components and snapshots diverged | Re-run ingestion for that seller |
-| Coverage shows "partial" for `product_cost` | Stub adapter — no real data source yet | Expected. Supplier Mirror integration needed for real data |
-| Daemon returns empty result | Feature gate off or store unavailable | Check `MSL_ECONOMIC_INGESTION_ENABLED` and SQLite path |
-| Rate-limit errors from ML API | Too many pages requested | Reduce `--max-pages`, wait for rate limit reset |
+| Symptom                                         | Likely Cause                           | Resolution                                                 |
+| ----------------------------------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| `npm run economic:ingest` returns "unavailable" | Feature gate disabled                  | Set `MSL_ECONOMIC_INGESTION_ENABLED=true`                  |
+| Pipeline fails on "OAuth not configured"        | Missing ML credentials                 | Verify `MERCADOLIBRE_SOURCE_*` env vars                    |
+| Reconciliation shows "mismatched"               | Cost components and snapshots diverged | Re-run ingestion for that seller                           |
+| Coverage shows "partial" for `product_cost`     | Stub adapter — no real data source yet | Expected. Supplier Mirror integration needed for real data |
+| Daemon returns empty result                     | Feature gate off or store unavailable  | Check `MSL_ECONOMIC_INGESTION_ENABLED` and SQLite path     |
+| Rate-limit errors from ML API                   | Too many pages requested               | Reduce `--max-pages`, wait for rate limit reset            |
 
 ---
 

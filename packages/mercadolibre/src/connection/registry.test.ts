@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { OAuthManagerConfig } from "../oauth/oauthManager.js";
 import type { TokenStore } from "../oauth/tokenStore.js";
 import { createMercadoLibreAccountRegistry } from "./registry.js";
-import type { MlAccountEntry } from "./state.js";
 
 // ── Stub token store ───────────────────────────────────────────────
 

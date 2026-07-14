@@ -14,9 +14,7 @@ import { resolveOAuthConfigs } from "../oauth/oauthConfig.js";
 import { createMultiAppOAuthManager } from "../oauth/multiAppOAuthManager.js";
 import { createTokenStore } from "../oauth/tokenStore.js";
 import { createMercadoLibreAccountRegistry } from "./registry.js";
-import {
-  createMercadoLibreConnectionHealthService,
-} from "./healthService.js";
+import { createMercadoLibreConnectionHealthService } from "./healthService.js";
 import { createMercadoLibreReadOnlySmokeService } from "./smokeService.js";
 import type { MercadoLibreAccountConnectionHealth } from "./state.js";
 
@@ -105,7 +103,7 @@ function bootstrap() {
   const oauthManager = createMultiAppOAuthManager(configs);
   const store = createTokenStore(oauthDbPath);
   const registry = createMercadoLibreAccountRegistry({
-    env: process.env as Record<string, string | undefined>,
+    env: process.env,
     oauthConfigs: configs,
     tokenStore: store,
   });
@@ -126,10 +124,7 @@ function bootstrap() {
 
 // ── Commands ───────────────────────────────────────────────────────
 
-async function meliConnectionStatus(
-  seller?: string,
-  options?: { json?: boolean },
-): Promise<void> {
+async function meliConnectionStatus(seller?: string, options?: { json?: boolean }): Promise<void> {
   const { healthService, registry } = bootstrap();
 
   if (seller) {
@@ -146,19 +141,14 @@ async function meliConnectionStatus(
     }
     const healths = await healthService.inspectAll();
     if (options?.json) {
-      process.stdout.write(
-        `${JSON.stringify(healths.map(sanitizeHealth), null, 2)}\n`,
-      );
+      process.stdout.write(`${JSON.stringify(healths.map(sanitizeHealth), null, 2)}\n`);
     } else {
       process.stdout.write(formatHealthText(healths));
     }
   }
 }
 
-async function meliRefresh(
-  seller: string,
-  options?: { json?: boolean },
-): Promise<void> {
+async function meliRefresh(seller: string, options?: { json?: boolean }): Promise<void> {
   const { healthService, registry } = bootstrap();
 
   const resolved = resolveSeller(seller, registry);
@@ -170,10 +160,7 @@ async function meliRefresh(
   }
 }
 
-async function meliSmoke(
-  seller: string,
-  options?: { json?: boolean },
-): Promise<void> {
+async function meliSmoke(seller: string, options?: { json?: boolean }): Promise<void> {
   const { healthService, registry } = bootstrap();
 
   const resolved = resolveSeller(seller, registry);
@@ -185,7 +172,7 @@ async function meliSmoke(
   }
 }
 
-async function meliConnectUrl(seller: string): Promise<void> {
+function meliConnectUrl(seller: string): void {
   const { oauthManager, registry } = bootstrap();
 
   // Generate a fresh HMAC state token
@@ -263,11 +250,12 @@ const COMMANDS: Record<string, () => Promise<void>> = {
     if (!seller) exit(1, "--seller is required for smoke");
     await meliSmoke(seller, { json });
   },
-  "connect-url": async () => {
-    const { seller } = parseArgs();
-    if (!seller) exit(1, "--seller is required for connect-url");
-    await meliConnectUrl(seller);
-  },
+  "connect-url": () =>
+    Promise.resolve().then(() => {
+      const { seller } = parseArgs();
+      if (!seller) exit(1, "--seller is required for connect-url");
+      meliConnectUrl(seller);
+    }),
 };
 
 // Only auto-run when executed directly (not imported)

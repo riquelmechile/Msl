@@ -141,9 +141,15 @@ describe("EconomicLearningStore", () => {
   it("lists events by outcome", () => {
     const store = createStore();
 
-    const e1 = createEconomicLearningEvent(makeEvent({ sellerId: "plasticov", outcomeId: "outcome-a" }));
-    const e2 = createEconomicLearningEvent(makeEvent({ sellerId: "plasticov", outcomeId: "outcome-a" }));
-    const e3 = createEconomicLearningEvent(makeEvent({ sellerId: "plasticov", outcomeId: "outcome-b" }));
+    const e1 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "plasticov", outcomeId: "outcome-a" }),
+    );
+    const e2 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "plasticov", outcomeId: "outcome-a" }),
+    );
+    const e3 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "plasticov", outcomeId: "outcome-b" }),
+    );
 
     store.insertEvent(e1);
     store.insertEvent(e2);
@@ -181,10 +187,14 @@ describe("EconomicLearningStore", () => {
     const store = createStore();
 
     for (let i = 0; i < 10; i++) {
-      store.insertEvent(createEconomicLearningEvent(makeEvent({
-        sellerId: "plasticov",
-        idempotencyKey: `idem-${i}`,
-      })));
+      store.insertEvent(
+        createEconomicLearningEvent(
+          makeEvent({
+            sellerId: "plasticov",
+            idempotencyKey: `idem-${i}`,
+          }),
+        ),
+      );
     }
 
     const list = store.listBySeller("plasticov", { limit: 3 });
@@ -197,22 +207,28 @@ describe("EconomicLearningStore", () => {
     const store = createStore();
 
     // Create attribution for agent-1
-    const attr = createEconomicAttributionAssessment(makeAttribution({
-      sellerId: "plasticov",
-      targetId: "agent-x",
-      targetType: "agent",
-    }));
+    const attr = createEconomicAttributionAssessment(
+      makeAttribution({
+        sellerId: "plasticov",
+        targetId: "agent-x",
+        targetType: "agent",
+      }),
+    );
     store.saveAttribution(attr);
 
     // Create events referencing this attribution
-    const e1 = createEconomicLearningEvent(makeEvent({
-      sellerId: "plasticov",
-      attributionId: attr.attributionId,
-    }));
-    const e2 = createEconomicLearningEvent(makeEvent({
-      sellerId: "plasticov",
-      attributionId: "attr-other",
-    }));
+    const e1 = createEconomicLearningEvent(
+      makeEvent({
+        sellerId: "plasticov",
+        attributionId: attr.attributionId,
+      }),
+    );
+    const e2 = createEconomicLearningEvent(
+      makeEvent({
+        sellerId: "plasticov",
+        attributionId: "attr-other",
+      }),
+    );
 
     store.insertEvent(e1);
     store.insertEvent(e2);
@@ -248,11 +264,13 @@ describe("EconomicLearningStore", () => {
   it("isAlreadyProcessed returns true when same outcome+policy exists", () => {
     const store = createStore();
 
-    const event = createEconomicLearningEvent(makeEvent({
-      sellerId: "plasticov",
-      outcomeId: "outcome-x",
-      reinforcementPolicyVersion: "v2",
-    }));
+    const event = createEconomicLearningEvent(
+      makeEvent({
+        sellerId: "plasticov",
+        outcomeId: "outcome-x",
+        reinforcementPolicyVersion: "v2",
+      }),
+    );
     store.insertEvent(event);
 
     const processed = store.isAlreadyProcessed("outcome-x", "plasticov", "v2");
@@ -262,11 +280,13 @@ describe("EconomicLearningStore", () => {
   it("isAlreadyProcessed returns false for different policy version", () => {
     const store = createStore();
 
-    const event = createEconomicLearningEvent(makeEvent({
-      sellerId: "plasticov",
-      outcomeId: "outcome-x",
-      reinforcementPolicyVersion: "v1",
-    }));
+    const event = createEconomicLearningEvent(
+      makeEvent({
+        sellerId: "plasticov",
+        outcomeId: "outcome-x",
+        reinforcementPolicyVersion: "v1",
+      }),
+    );
     store.insertEvent(event);
 
     const processed = store.isAlreadyProcessed("outcome-x", "plasticov", "v2");
@@ -276,11 +296,13 @@ describe("EconomicLearningStore", () => {
   it("isAlreadyProcessed returns false for different outcome", () => {
     const store = createStore();
 
-    const event = createEconomicLearningEvent(makeEvent({
-      sellerId: "plasticov",
-      outcomeId: "outcome-x",
-      reinforcementPolicyVersion: "v1",
-    }));
+    const event = createEconomicLearningEvent(
+      makeEvent({
+        sellerId: "plasticov",
+        outcomeId: "outcome-x",
+        reinforcementPolicyVersion: "v1",
+      }),
+    );
     store.insertEvent(event);
 
     const processed = store.isAlreadyProcessed("outcome-y", "plasticov", "v1");
@@ -342,9 +364,15 @@ describe("EconomicLearningStore", () => {
   it("getReversedEvents returns only reversed events", () => {
     const store = createStore();
 
-    const e1 = createEconomicLearningEvent(makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }));
-    const e2 = createEconomicLearningEvent(makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }));
-    const e3 = createEconomicLearningEvent(makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }));
+    const e1 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }),
+    );
+    const e2 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }),
+    );
+    const e3 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }),
+    );
 
     store.insertEvent(e1);
     store.insertEvent(e2);
@@ -383,14 +411,22 @@ describe("EconomicLearningStore", () => {
   it("listByOutcome respects seller isolation", () => {
     const store = createStore();
 
-    store.insertEvent(createEconomicLearningEvent(makeEvent({
-      sellerId: "plasticov",
-      outcomeId: "shared-outcome",
-    })));
-    store.insertEvent(createEconomicLearningEvent(makeEvent({
-      sellerId: "maustian",
-      outcomeId: "shared-outcome",
-    })));
+    store.insertEvent(
+      createEconomicLearningEvent(
+        makeEvent({
+          sellerId: "plasticov",
+          outcomeId: "shared-outcome",
+        }),
+      ),
+    );
+    store.insertEvent(
+      createEconomicLearningEvent(
+        makeEvent({
+          sellerId: "maustian",
+          outcomeId: "shared-outcome",
+        }),
+      ),
+    );
 
     const plasticovList = store.listByOutcome("shared-outcome", "plasticov");
     expect(plasticovList.length).toBe(1);
@@ -404,8 +440,12 @@ describe("EconomicLearningStore", () => {
   it("getReversedEvents respects seller isolation", () => {
     const store = createStore();
 
-    const e1 = createEconomicLearningEvent(makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }));
-    const e2 = createEconomicLearningEvent(makeEvent({ sellerId: "maustian", outcomeId: "outcome-z" }));
+    const e1 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "plasticov", outcomeId: "outcome-z" }),
+    );
+    const e2 = createEconomicLearningEvent(
+      makeEvent({ sellerId: "maustian", outcomeId: "outcome-z" }),
+    );
 
     store.insertEvent(e1);
     store.insertEvent(e2);
@@ -426,11 +466,13 @@ describe("EconomicLearningStore", () => {
   it("saveEligibility persists eligibility data", () => {
     const store = createStore();
 
-    const eligibility = createEconomicLearningEligibility(makeEligibility({
-      sellerId: "plasticov",
-      eligible: false,
-      reasonCodes: ["outcome-not-verified", "missing-attribution-target"],
-    }));
+    const eligibility = createEconomicLearningEligibility(
+      makeEligibility({
+        sellerId: "plasticov",
+        eligible: false,
+        reasonCodes: ["outcome-not-verified", "missing-attribution-target"],
+      }),
+    );
 
     // Should not throw
     store.saveEligibility(eligibility);
@@ -446,12 +488,14 @@ describe("EconomicLearningStore", () => {
   it("saveAttribution persists attribution data", () => {
     const store = createStore();
 
-    const attribution = createEconomicAttributionAssessment(makeAttribution({
-      sellerId: "plasticov",
-      strength: "causal",
-      confidence: 0.95,
-      supportingEvidenceIds: ["ev-1", "ev-2"],
-    }));
+    const attribution = createEconomicAttributionAssessment(
+      makeAttribution({
+        sellerId: "plasticov",
+        strength: "causal",
+        confidence: 0.95,
+        supportingEvidenceIds: ["ev-1", "ev-2"],
+      }),
+    );
 
     // Should not throw
     store.saveAttribution(attribution);
@@ -467,11 +511,13 @@ describe("EconomicLearningStore", () => {
   it("savePlan and getLatestPlan round-trip correctly", () => {
     const store = createStore();
 
-    const plan = createEconomicReinforcementPlan(makePlan({
-      sellerId: "plasticov",
-      outcomeId: "outcome-plan-1",
-      status: "validated",
-    }));
+    const plan = createEconomicReinforcementPlan(
+      makePlan({
+        sellerId: "plasticov",
+        outcomeId: "outcome-plan-1",
+        status: "validated",
+      }),
+    );
 
     store.savePlan(plan);
 
@@ -495,21 +541,25 @@ describe("EconomicLearningStore", () => {
     const store = createStore();
 
     // Insert plan v1
-    const plan1 = createEconomicReinforcementPlan(makePlan({
-      sellerId: "plasticov",
-      outcomeId: "outcome-latest",
-      status: "applied",
-      reinforcementPolicyVersion: "v1",
-    }));
+    const plan1 = createEconomicReinforcementPlan(
+      makePlan({
+        sellerId: "plasticov",
+        outcomeId: "outcome-latest",
+        status: "applied",
+        reinforcementPolicyVersion: "v1",
+      }),
+    );
     store.savePlan(plan1);
 
     // Insert plan v2 — deliberately separate save calls
-    const plan2 = createEconomicReinforcementPlan(makePlan({
-      sellerId: "plasticov",
-      outcomeId: "outcome-latest",
-      status: "reversed",
-      reinforcementPolicyVersion: "v2",
-    }));
+    const plan2 = createEconomicReinforcementPlan(
+      makePlan({
+        sellerId: "plasticov",
+        outcomeId: "outcome-latest",
+        status: "reversed",
+        reinforcementPolicyVersion: "v2",
+      }),
+    );
     store.savePlan(plan2);
 
     const latest = store.getLatestPlan("outcome-latest", "plasticov");
@@ -524,10 +574,12 @@ describe("EconomicLearningStore", () => {
   it("getLatestPlan respects seller isolation", () => {
     const store = createStore();
 
-    const plan = createEconomicReinforcementPlan(makePlan({
-      sellerId: "plasticov",
-      outcomeId: "outcome-plan-iso",
-    }));
+    const plan = createEconomicReinforcementPlan(
+      makePlan({
+        sellerId: "plasticov",
+        outcomeId: "outcome-plan-iso",
+      }),
+    );
     store.savePlan(plan);
 
     // Maustian should not see plasticov's plan
@@ -538,18 +590,22 @@ describe("EconomicLearningStore", () => {
   it("saveEligibility respects seller isolation (cross-seller check)", () => {
     const store = createStore();
 
-    const eligibility = createEconomicLearningEligibility(makeEligibility({
-      sellerId: "plasticov",
-      outcomeId: "outcome-elig",
-    }));
+    const eligibility = createEconomicLearningEligibility(
+      makeEligibility({
+        sellerId: "plasticov",
+        outcomeId: "outcome-elig",
+      }),
+    );
     store.saveEligibility(eligibility);
 
     // Save again with different seller — should not overwrite plasticov
-    const maustianElig = createEconomicLearningEligibility(makeEligibility({
-      sellerId: "maustian",
-      outcomeId: "outcome-elig",
-      eligible: false,
-    }));
+    const maustianElig = createEconomicLearningEligibility(
+      makeEligibility({
+        sellerId: "maustian",
+        outcomeId: "outcome-elig",
+        eligible: false,
+      }),
+    );
     store.saveEligibility(maustianElig);
 
     // Both saves succeed — no cross-seller interference

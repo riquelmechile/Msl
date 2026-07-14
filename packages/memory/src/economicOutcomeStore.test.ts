@@ -368,9 +368,18 @@ describe("EconomicOutcomeStore", () => {
     const store = createStore();
     // All expected cost types present
     const allTypes = [
-      "product_cost", "marketplace_fee", "shipping", "advertising",
-      "seller_discount", "refund", "return", "tax", "financing",
-      "landed_cost", "packaging", "other",
+      "product_cost",
+      "marketplace_fee",
+      "shipping",
+      "advertising",
+      "seller_discount",
+      "refund",
+      "return",
+      "tax",
+      "financing",
+      "landed_cost",
+      "packaging",
+      "other",
     ];
     const snapshot = makeSnapshot("plasticov", 200000, "CLP", allTypes);
     store.insertUnitEconomicsSnapshot(snapshot);
@@ -447,7 +456,11 @@ describe("EconomicOutcomeStore", () => {
   it("summarizeProfit returns positive profit", () => {
     const store = createStore();
     // Revenue=100000, costs=1000 each for 3 types=3000, netProfit=97000
-    const snapshot = makeSnapshot("plasticov", 100000, "CLP", ["product_cost", "marketplace_fee", "shipping"]);
+    const snapshot = makeSnapshot("plasticov", 100000, "CLP", [
+      "product_cost",
+      "marketplace_fee",
+      "shipping",
+    ]);
     store.insertUnitEconomicsSnapshot(snapshot);
 
     const summary = store.summarizeProfit("plasticov", "CLP");
@@ -477,7 +490,9 @@ describe("EconomicOutcomeStore", () => {
 
   it("summarizeProfit aggregates multiple snapshots", () => {
     const store = createStore();
-    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 50000, "CLP", ["product_cost", "marketplace_fee"]));
+    store.insertUnitEconomicsSnapshot(
+      makeSnapshot("plasticov", 50000, "CLP", ["product_cost", "marketplace_fee"]),
+    );
     store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 30000, "CLP", ["shipping"]));
     store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 20000, "CLP", ["product_cost"]));
 

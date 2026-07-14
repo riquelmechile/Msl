@@ -3,12 +3,14 @@ import type { Currency, NormalizedCommerceTransaction } from "@msl/domain";
 import { createMoney, createNormalizedCommerceTransaction } from "@msl/domain";
 import { adaptMarketplaceFee, type FeeData } from "./marketplaceFee.js";
 
-function buildTx(overrides: Partial<{
-  sellerId: string;
-  orderId: string;
-  currency: Currency;
-  occurredAt: number;
-}> = {}): NormalizedCommerceTransaction {
+function buildTx(
+  overrides: Partial<{
+    sellerId: string;
+    orderId: string;
+    currency: Currency;
+    occurredAt: number;
+  }> = {},
+): NormalizedCommerceTransaction {
   const amount = createMoney(15990, "CLP");
   const currency: Currency = overrides.currency ?? "CLP";
   const result = createNormalizedCommerceTransaction({

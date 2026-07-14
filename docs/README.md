@@ -52,13 +52,13 @@ Documentos que establecen la visión de producto estable y no deben divergir del
 
 ### Operación
 
-| Documento                                                                                                                          | Propósito                                                    |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| [`vps-deployment.md`](./vps-deployment.md)                                                                                         | Guía de deploy en VPS con PM2                                |
-| [`production-secrets-setup.md`](./production-secrets-setup.md)                                                                     | Configuración de secretos para producción                    |
-| [`operations/production-readiness-control-plane.md`](./operations/production-readiness-control-plane.md)                           | Production Readiness Control Plane (P0, PR 1/4)              |
-| [`operations/mercadolibre-dual-account-production-connection.md`](./operations/mercadolibre-dual-account-production-connection.md) | MercadoLibre Dual-Account Production Connection (P0, PR 3/4) |
-| [`operations/real-ingestion-economic-adapters.md`](./operations/real-ingestion-economic-adapters.md)                               | Real Ingestion & Economic Adapters (P0, PR 4/4) + Durability Hardening           |
+| Documento                                                                                                                          | Propósito                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [`vps-deployment.md`](./vps-deployment.md)                                                                                         | Guía de deploy en VPS con PM2                                          |
+| [`production-secrets-setup.md`](./production-secrets-setup.md)                                                                     | Configuración de secretos para producción                              |
+| [`operations/production-readiness-control-plane.md`](./operations/production-readiness-control-plane.md)                           | Production Readiness Control Plane (P0, PR 1/4)                        |
+| [`operations/mercadolibre-dual-account-production-connection.md`](./operations/mercadolibre-dual-account-production-connection.md) | MercadoLibre Dual-Account Production Connection (P0, PR 3/4)           |
+| [`operations/real-ingestion-economic-adapters.md`](./operations/real-ingestion-economic-adapters.md)                               | Real Ingestion & Economic Adapters (P0, PR 4/4) + Durability Hardening |
 
 Documentos orientados a la operación del sistema en producción: deploy, configuración, secretos y monitoreo.
 

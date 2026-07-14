@@ -27,13 +27,7 @@ import {
   adaptOther,
   extractOrderRevenue,
 } from "./adapters/index.js";
-import type {
-  FeeData,
-  ShippingData,
-  DiscountData,
-  RefundData,
-  AdData,
-} from "./adapters/index.js";
+import type { FeeData, ShippingData, DiscountData, RefundData, AdData } from "./adapters/index.js";
 import { transitionRun } from "./EconomicIngestionRun.js";
 import { reconcileEconomics } from "./EconomicReconciliationService.js";
 
@@ -56,12 +50,7 @@ export type PipelineResult = {
 };
 
 export type ReconciliationVerdict = {
-  status:
-    | "balanced"
-    | "balanced-with-tolerance"
-    | "incomplete"
-    | "mismatched"
-    | "disputed";
+  status: "balanced" | "balanced-with-tolerance" | "incomplete" | "mismatched" | "disputed";
   details: string;
   sourceTotal?: number;
   computedTotal?: number;
@@ -188,9 +177,7 @@ export async function runEconomicIngestion(
 
     // 3. Acquire lock
     if (!acquireLock(config.sellerId)) {
-      throw new Error(
-        `Seller "${config.sellerId}" is already being ingested. Try again later.`,
-      );
+      throw new Error(`Seller "${config.sellerId}" is already being ingested. Try again later.`);
     }
 
     try {
@@ -309,9 +296,7 @@ export async function runEconomicIngestion(
         if (orderData?.sale_fee_amount && orderData.sale_fee_amount > 0) {
           const feeData: FeeData = {
             saleFeeAmount: orderData.sale_fee_amount,
-            ...(orderData.currency_id !== undefined
-              ? { currencyId: orderData.currency_id }
-              : {}),
+            ...(orderData.currency_id !== undefined ? { currencyId: orderData.currency_id } : {}),
           };
           allComponents.push(...adaptMarketplaceFee(tx, feeData));
         } else {
@@ -319,10 +304,7 @@ export async function runEconomicIngestion(
         }
 
         // Shipping cost
-        if (
-          orderData?.shipping_cost !== undefined &&
-          orderData.shipping_mode === "seller"
-        ) {
+        if (orderData?.shipping_cost !== undefined && orderData.shipping_mode === "seller") {
           const shippingData: ShippingData = {
             shippingCost: orderData.shipping_cost,
             shippingMode: orderData.shipping_mode,
@@ -354,15 +336,11 @@ export async function runEconomicIngestion(
             ...(orderData.refund_amount !== undefined
               ? { refundAmount: orderData.refund_amount }
               : {}),
-            ...(orderData.return_cost !== undefined
-              ? { returnCost: orderData.return_cost }
-              : {}),
+            ...(orderData.return_cost !== undefined ? { returnCost: orderData.return_cost } : {}),
             ...(orderData.is_partial_refund !== undefined
               ? { isPartial: orderData.is_partial_refund }
               : {}),
-            ...(orderData.claim_id !== undefined
-              ? { claimId: orderData.claim_id }
-              : {}),
+            ...(orderData.claim_id !== undefined ? { claimId: orderData.claim_id } : {}),
           };
           allComponents.push(...adaptRefundReturn(tx, refundData));
         } else {
@@ -396,9 +374,7 @@ export async function runEconomicIngestion(
           currency: ad.currency,
           ...(ad.period !== undefined ? { period: ad.period } : {}),
         };
-        allComponents.push(
-          ...adaptAdvertisingCost(config.sellerId, adData, undefined),
-        );
+        allComponents.push(...adaptAdvertisingCost(config.sellerId, adData, undefined));
       }
 
       checkAborted(config.abortSignal);
@@ -568,18 +544,13 @@ export async function runEconomicIngestion(
         ),
         fees: fetched.orders.reduce((sum, o) => sum + (o.sale_fee_amount ?? 0), 0),
         shipping: fetched.orders.reduce(
-          (sum, o) =>
-            sum +
-            (o.shipping_mode === "seller" ? (o.shipping_cost ?? 0) : 0),
+          (sum, o) => sum + (o.shipping_mode === "seller" ? (o.shipping_cost ?? 0) : 0),
           0,
         ),
         ads:
           fetched.orders.reduce((sum, o) => sum + (o.ad_cost ?? 0), 0) +
           fetched.ads.reduce((sum, a) => sum + a.cost, 0),
-        refunds: fetched.orders.reduce(
-          (sum, o) => sum + (o.refund_amount ?? 0),
-          0,
-        ),
+        refunds: fetched.orders.reduce((sum, o) => sum + (o.refund_amount ?? 0), 0),
       };
       const reconciliation = reconcileEconomics(sourceTotals, snapshots, 1);
 
@@ -633,20 +604,14 @@ export async function runEconomicIngestion(
         sourceKinds: ["orders", "items", "claims", "ads"],
         startedAt: startTime,
         ...(isTerminal ? { completedAt: endTime } : {}),
-        ...(run.checkpointAfter !== undefined
-          ? { checkpointAfter: run.checkpointAfter }
-          : {}),
+        ...(run.checkpointAfter !== undefined ? { checkpointAfter: run.checkpointAfter } : {}),
         recordsFetched: fetched.orders.length + fetched.ads.length,
         recordsNormalized: transactions.length,
         componentsCreated: allComponents.length,
         snapshotsCreated: snapshots.length,
         duplicatesIgnored,
-        partialSnapshots: snapshots.filter(
-          (s) => s.calculationStatus === "partial",
-        ).length,
-        disputedSnapshots: snapshots.filter(
-          (s) => s.calculationStatus === "disputed",
-        ).length,
+        partialSnapshots: snapshots.filter((s) => s.calculationStatus === "partial").length,
+        disputedSnapshots: snapshots.filter((s) => s.calculationStatus === "disputed").length,
         errors,
         status: run.status,
       });

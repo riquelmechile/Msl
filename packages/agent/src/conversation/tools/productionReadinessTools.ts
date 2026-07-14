@@ -8,7 +8,9 @@ import { assessProductionReadiness } from "../../readiness/ProductionReadinessSe
  * Read-only tool that returns a sanitized production readiness report.
  * No HTTP calls, no business mutations, no real credentials exposed.
  */
-export function createInspectProductionReadinessTool(env: Record<string, string | undefined> = process.env): ToolDefinition {
+export function createInspectProductionReadinessTool(
+  env: Record<string, string | undefined> = process.env,
+): ToolDefinition {
   return {
     name: "inspect_production_readiness",
     description:

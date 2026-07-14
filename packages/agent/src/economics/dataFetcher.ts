@@ -35,11 +35,7 @@ function isTransientError(err: unknown): boolean {
   );
 }
 
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  attempts = 3,
-  baseDelayMs = 500,
-): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 500): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -61,6 +57,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" || typeof value === "number" ? String(value) : fallback;
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  return typeof value === "number" || typeof value === "string" ? Number(value) : fallback;
+}
+
 // ── Factory ────────────────────────────────────────────────────────────────
 
 /**
@@ -74,9 +82,7 @@ function sleep(ms: number): Promise<void> {
  * **No PII** — raw API payloads are never persisted; the pipeline always
  *   passes data through its normalization layer before persistence.
  */
-export function createProductionDataFetcher(
-  opts: ProductionDataFetcherOptions,
-): DataFetcher {
+export function createProductionDataFetcher(opts: ProductionDataFetcherOptions): DataFetcher {
   const mlClient = opts.mlClient;
   const maxPages = opts.maxPages ?? 5;
   const rateLimitDelayMs = opts.rateLimitDelayMs ?? 500;
@@ -109,35 +115,39 @@ export function createProductionDataFetcher(
           mlClient.getOrders(mlSellerId, { limit: pageSize, offset }),
         );
 
-        const rawData = snapshot.data;
+        const rawData: unknown = snapshot.data;
         // MlcReadSnapshot.data can be a single item or an array — normalize
-        const orderSummaries = Array.isArray(rawData) ? rawData : rawData ? [rawData] : [];
+        const orderSummaries = Array.isArray(rawData)
+          ? rawData.filter(isRecord)
+          : isRecord(rawData)
+            ? [rawData]
+            : [];
         if (orderSummaries.length === 0) break;
 
         for (const row of orderSummaries) {
           // Map sanitized order items from MlcOrderSummary to the pipeline's expected format
           const pipelineItems: FetchedData["orders"][number]["order_items"] = [];
-          const rawOrderItems = (row as Record<string, unknown>).orderItems;
+          const rawOrderItems = row.orderItems;
           if (Array.isArray(rawOrderItems)) {
             for (const oi of rawOrderItems) {
-              const oiRec = oi as Record<string, unknown>;
+              if (!isRecord(oi)) continue;
               pipelineItems.push({
                 item: {
-                  id: String(oiRec.itemId ?? ""),
+                  id: stringValue(oi.itemId, ""),
                   title: "", // Title is intentionally stripped for PII safety
                 },
-                quantity: Number(oiRec.quantity ?? 1),
-                unit_price: Number(oiRec.unitPrice ?? 0),
+                quantity: numberValue(oi.quantity, 1),
+                unit_price: numberValue(oi.unitPrice, 0),
               });
             }
           }
 
           orders.push({
-            id: row.id,
-            status: row.status ?? "unknown",
-            total_amount: row.totalAmount ?? 0,
-            currency_id: row.currencyId ?? "CLP",
-            date_created: row.createdAt ?? new Date().toISOString(),
+            id: stringValue(row.id, ""),
+            status: stringValue(row.status, "unknown"),
+            total_amount: numberValue(row.totalAmount, 0),
+            currency_id: stringValue(row.currencyId, "CLP"),
+            date_created: stringValue(row.createdAt, new Date().toISOString()),
             order_items: pipelineItems,
             // Enrichment fields initialized to zero/null — the adapters
             // handle missing data gracefully and adapters that need this
@@ -164,21 +174,22 @@ export function createProductionDataFetcher(
     const claims: FetchedData["claims"] = [];
     try {
       checkAborted();
-      if (mlClient.searchClaims) {
+      const searchClaims = mlClient.searchClaims?.bind(mlClient);
+      if (searchClaims) {
         for (let page = 0; page < effectiveMaxPages; page++) {
           checkAborted();
           const pageSize = 50;
           const offset = page * pageSize;
 
           const snapshot = await withRetry(() =>
-            mlClient.searchClaims!(mlSellerId, { limit: pageSize, offset }),
+            searchClaims(mlSellerId, { limit: pageSize, offset }),
           );
 
-          const claimData = snapshot.data;
+          const claimData: unknown = snapshot.data;
           if (!Array.isArray(claimData) || claimData.length === 0) break;
 
           for (const claim of claimData) {
-            claims.push(claim as unknown as Record<string, unknown>);
+            if (isRecord(claim)) claims.push(claim);
           }
 
           if (claimData.length < pageSize) break;
@@ -195,24 +206,23 @@ export function createProductionDataFetcher(
     const ads: FetchedData["ads"] = [];
     try {
       checkAborted();
-      if (mlClient.getProductAdsInsights) {
-        const snapshot = await withRetry(() =>
-          mlClient.getProductAdsInsights!(mlSellerId, {}),
-        );
+      const getProductAdsInsights = mlClient.getProductAdsInsights?.bind(mlClient);
+      if (getProductAdsInsights) {
+        const snapshot = await withRetry(() => getProductAdsInsights(mlSellerId, {}));
 
-        const insightData = snapshot.data;
+        const insightData: unknown = snapshot.data;
         if (Array.isArray(insightData) && insightData.length > 0) {
           for (const insight of insightData) {
-            const raw = insight as unknown as Record<string, unknown>;
+            if (!isRecord(insight)) continue;
             ads.push({
-              campaignId: String(raw.campaignId ?? raw.id ?? "unknown"),
-              cost: Number(raw.cost ?? raw.totalCost ?? raw.spend ?? 0),
-              currency: String(raw.currency ?? raw.currencyId ?? "CLP"),
-              ...(raw.dateFrom !== undefined || raw.dateTo !== undefined
+              campaignId: stringValue(insight.campaignId ?? insight.id, "unknown"),
+              cost: numberValue(insight.cost ?? insight.totalCost ?? insight.spend, 0),
+              currency: stringValue(insight.currency ?? insight.currencyId, "CLP"),
+              ...(insight.dateFrom !== undefined || insight.dateTo !== undefined
                 ? {
                     period: {
-                      start: Number(raw.dateFrom ?? 0),
-                      end: Number(raw.dateTo ?? Date.now()),
+                      start: numberValue(insight.dateFrom, 0),
+                      end: numberValue(insight.dateTo, Date.now()),
                     },
                   }
                 : {}),

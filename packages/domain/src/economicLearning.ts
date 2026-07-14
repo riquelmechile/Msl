@@ -35,10 +35,7 @@ export type EconomicLearningEligibility = {
   readonly evaluatedAt: number;
 };
 
-export type EconomicLearningEligibilityInput = Omit<
-  EconomicLearningEligibility,
-  "evaluatedAt"
->;
+export type EconomicLearningEligibilityInput = Omit<EconomicLearningEligibility, "evaluatedAt">;
 
 // ── Attribution ─────────────────────────────────────────────────────────────
 
@@ -169,12 +166,7 @@ export type EconomicReinforcementPlanInput = Omit<
 
 // ── Learning event statuses ─────────────────────────────────────────────────
 
-export const LEARNING_EVENT_STATUSES = [
-  "processed",
-  "failed",
-  "retryable",
-  "reversed",
-] as const;
+export const LEARNING_EVENT_STATUSES = ["processed", "failed", "retryable", "reversed"] as const;
 
 export type LearningEventStatus = (typeof LEARNING_EVENT_STATUSES)[number];
 
@@ -211,10 +203,7 @@ export type EconomicLearningEvent = {
   readonly reinforcementPolicyVersion: string;
 };
 
-export type EconomicLearningEventInput = Omit<
-  EconomicLearningEvent,
-  "eventId" | "appliedAt"
->;
+export type EconomicLearningEventInput = Omit<EconomicLearningEvent, "eventId" | "appliedAt">;
 
 // ── Factories ───────────────────────────────────────────────────────────────
 

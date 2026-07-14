@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { FinancialAssessment, FinancialRisk, Hypothesis, MissingEvidence, Recommendation } from "@msl/domain";
+import type {
+  FinancialAssessment,
+  FinancialRisk,
+  Hypothesis,
+  MissingEvidence,
+  Recommendation,
+} from "@msl/domain";
 import { FinanceDirectorValidator } from "./FinanceDirectorValidator.js";
 import type { FinanceDirectorEvidence } from "./FinanceDirectorEvidenceAssembler.js";
 
@@ -16,7 +22,13 @@ type MutableAssessment = {
   opportunities?: { description: string; estimatedImpact: string }[];
   missingEvidence?: MissingEvidence[];
   recommendations?: Recommendation[];
-  requestsForEvidence?: { kind: string; targetAgent: string; reason: string; priority: "low" | "medium" | "high"; ttl: number }[];
+  requestsForEvidence?: {
+    kind: string;
+    targetAgent: string;
+    reason: string;
+    priority: "low" | "medium" | "high";
+    ttl: number;
+  }[];
   uncertaintyReasons?: string[];
   evidenceIds?: string[];
   outcomeIds?: string[];
@@ -113,7 +125,10 @@ describe("FinanceDirectorValidator", () => {
   // ── Valid assessment passes ─────────────────────────────────────────────
 
   it("passes a valid assessment", () => {
-    const result = validator.validate(makeValidPartial() as Partial<FinancialAssessment>, makeValidEvidence());
+    const result = validator.validate(
+      makeValidPartial() as Partial<FinancialAssessment>,
+      makeValidEvidence(),
+    );
     expect(result.valid).toBe(true);
     expect(result.issues).toHaveLength(0);
   });
@@ -199,7 +214,11 @@ describe("FinanceDirectorValidator", () => {
   it("rejects direct mutation recommendation", () => {
     const partial = makeValidPartial();
     partial.recommendations = [
-      { action: "Execute price change immediately", rationale: "Margins are too low", urgency: "escalate" },
+      {
+        action: "Execute price change immediately",
+        rationale: "Margins are too low",
+        urgency: "escalate",
+      },
     ];
 
     const result = validator.validate(partial as Partial<FinancialAssessment>, makeValidEvidence());
@@ -397,7 +416,11 @@ describe("FinanceDirectorValidator", () => {
       // 999999 and 75000 are NOT in evidence (evidence has 100000 revenue, etc.)
       const figIssues = result.issues.filter((i) => i.rule === "invented-figure");
       expect(figIssues.length).toBeGreaterThanOrEqual(1);
-      expect(figIssues.some((i) => i.detail.includes("Unsubstantiated") || i.detail.includes("Undocumented"))).toBe(true);
+      expect(
+        figIssues.some(
+          (i) => i.detail.includes("Unsubstantiated") || i.detail.includes("Undocumented"),
+        ),
+      ).toBe(true);
     });
 
     it("flags fabricated metric — ROAS claimed without ad cost data", () => {
@@ -413,11 +436,12 @@ describe("FinanceDirectorValidator", () => {
       const assessment = makeValidPartial();
       assessment.summary = "Our ROAS is 4.7 which indicates strong campaign performance.";
 
-      const result = validator.validate(
-        assessment as Partial<FinancialAssessment>,
-        evidence,
-      );
-      expect(result.issues.some((i) => i.detail.includes("Fabricated metric") && i.detail.includes("ROAS"))).toBe(true);
+      const result = validator.validate(assessment as Partial<FinancialAssessment>, evidence);
+      expect(
+        result.issues.some(
+          (i) => i.detail.includes("Fabricated metric") && i.detail.includes("ROAS"),
+        ),
+      ).toBe(true);
     });
 
     it("flags fabricated metric — CAC claimed without acquisition data", () => {
@@ -435,7 +459,11 @@ describe("FinanceDirectorValidator", () => {
         makeValidEvidence(),
       );
       // CAC of 2.47 should be flagged — evidence has no clicks/customer counts
-      expect(result.issues.some((i) => i.detail.includes("Fabricated metric") && i.detail.includes("CAC"))).toBe(true);
+      expect(
+        result.issues.some(
+          (i) => i.detail.includes("Fabricated metric") && i.detail.includes("CAC"),
+        ),
+      ).toBe(true);
     });
 
     it("flags suspicious precision — 3+ decimal places from integer Money", () => {
@@ -458,7 +486,9 @@ describe("FinanceDirectorValidator", () => {
         makeValidEvidence(),
       );
       // 32 and 14.50 have ≤2 decimal places — should NOT trigger suspicious precision
-      const precisionIssues = result.issues.filter((i) => i.detail.includes("Suspicious precision"));
+      const precisionIssues = result.issues.filter((i) =>
+        i.detail.includes("Suspicious precision"),
+      );
       expect(precisionIssues).toHaveLength(0);
     });
 

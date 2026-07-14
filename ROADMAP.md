@@ -54,7 +54,7 @@
 | 1/4 | Production Readiness Control Plane                              | ✅ Complete |
 | 2/4 | Durable Runtime Operations (backups, migrations, observability) | ✅ Complete |
 | 3/4 | ML Dual-Account Production Connection (OAuth real)              | ✅ Complete |
-| 4/4 | Real Ingestion & Economic Adapters + Durability Hardening        | ✅ Hardened  |
+| 4/4 | Real Ingestion & Economic Adapters + Durability Hardening       | ✅ Hardened |
 
 ### Capacidades implementadas en PR 1/4
 

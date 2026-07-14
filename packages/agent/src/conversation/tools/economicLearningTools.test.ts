@@ -17,7 +17,10 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function exec(tool: ReturnType<typeof createExplainEconomicLearningTool>, args: Record<string, unknown>): Record<string, unknown> {
+function exec(
+  tool: ReturnType<typeof createExplainEconomicLearningTool>,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
   return tool.execute(args) as Record<string, unknown>;
 }
 

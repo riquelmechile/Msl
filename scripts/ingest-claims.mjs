@@ -25,15 +25,25 @@ function parseArgv(argv) {
   const args = { _: [] };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--seller" && i + 1 < argv.length) { args.seller = argv[++i]; }
-    else if (arg === "--limit" && i + 1 < argv.length) { args.limit = parseInt(argv[++i], 10); }
-    else if (arg === "--max-pages" && i + 1 < argv.length) { args.maxPages = parseInt(argv[++i], 10); }
-    else if (arg === "--max-time" && i + 1 < argv.length) { args.maxTime = parseInt(argv[++i], 10); }
-    else if (arg === "--dry-run") { args.dryRun = true; }
-    else if (arg === "--no-persist") { args.noPersist = true; }
-    else if (arg === "--json") { args.json = true; }
-    else if (arg === "--help" || arg === "-h") { args.help = true; }
-    else { args._.push(arg); }
+    if (arg === "--seller" && i + 1 < argv.length) {
+      args.seller = argv[++i];
+    } else if (arg === "--limit" && i + 1 < argv.length) {
+      args.limit = parseInt(argv[++i], 10);
+    } else if (arg === "--max-pages" && i + 1 < argv.length) {
+      args.maxPages = parseInt(argv[++i], 10);
+    } else if (arg === "--max-time" && i + 1 < argv.length) {
+      args.maxTime = parseInt(argv[++i], 10);
+    } else if (arg === "--dry-run") {
+      args.dryRun = true;
+    } else if (arg === "--no-persist") {
+      args.noPersist = true;
+    } else if (arg === "--json") {
+      args.json = true;
+    } else if (arg === "--help" || arg === "-h") {
+      args.help = true;
+    } else {
+      args._.push(arg);
+    }
   }
   return args;
 }
@@ -157,13 +167,10 @@ async function main() {
         limit: String(PAGE_SIZE),
         offset: String(offset),
       });
-      const res = await fetch(
-        `https://api.mercadolibre.com/post-purchase/v1/claims/search?${qs}`,
-        {
-          headers: { Authorization: `Bearer ${at}` },
-          signal: abortController.signal,
-        },
-      );
+      const res = await fetch(`https://api.mercadolibre.com/post-purchase/v1/claims/search?${qs}`, {
+        headers: { Authorization: `Bearer ${at}` },
+        signal: abortController.signal,
+      });
 
       if (res.status === 429) {
         rateLimited = true;

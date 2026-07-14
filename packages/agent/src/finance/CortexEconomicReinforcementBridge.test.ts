@@ -31,11 +31,23 @@ class FakeGraphEngine {
   private nextNodeId = 1;
   private nextEdgeId = 1;
 
-  createNodeCalls: Array<{ label: string; metadata: Record<string, unknown>; sellerId: string | undefined }> = [];
+  createNodeCalls: Array<{
+    label: string;
+    metadata: Record<string, unknown>;
+    sellerId: string | undefined;
+  }> = [];
   getNodeCalls: number[] = [];
-  getOrCreateCalls: Array<{ label: string; metadata: Record<string, unknown>; sellerId: string | undefined }> = [];
+  getOrCreateCalls: Array<{
+    label: string;
+    metadata: Record<string, unknown>;
+    sellerId: string | undefined;
+  }> = [];
 
-  createNode(label: string, metadata: Record<string, unknown> = {}, sellerId: string | undefined = undefined): FakeNode {
+  createNode(
+    label: string,
+    metadata: Record<string, unknown> = {},
+    sellerId: string | undefined = undefined,
+  ): FakeNode {
     this.createNodeCalls.push({ label, metadata, sellerId });
     const node: FakeNode = { id: this.nextNodeId++, label, activation: 0, metadata, sellerId };
     this.nodes.push(node);
@@ -47,7 +59,11 @@ class FakeGraphEngine {
     return this.nodes.find((n) => n.id === id) ?? null;
   }
 
-  getOrCreateNode(label: string, metadata: Record<string, unknown> = {}, sellerId: string | undefined = undefined): FakeNode {
+  getOrCreateNode(
+    label: string,
+    metadata: Record<string, unknown> = {},
+    sellerId: string | undefined = undefined,
+  ): FakeNode {
     this.getOrCreateCalls.push({ label, metadata, sellerId });
     const existing = this.nodes.find((n) => n.label === label);
     if (existing) return existing;
@@ -67,8 +83,17 @@ class FakeGraphEngine {
 
   traverse() {
     return {
-      activatedNodes: this.nodes.map((n) => ({ nodeId: n.id, label: n.label, activation: n.activation })),
-      traversedEdges: this.edges.map((e) => ({ source: e.source, target: e.target, weight: e.weight, co_occurrence_count: 0 })),
+      activatedNodes: this.nodes.map((n) => ({
+        nodeId: n.id,
+        label: n.label,
+        activation: n.activation,
+      })),
+      traversedEdges: this.edges.map((e) => ({
+        source: e.source,
+        target: e.target,
+        weight: e.weight,
+        co_occurrence_count: 0,
+      })),
       lessons: [] as Array<{ source_node: number; target_node: number; lesson: string }>,
       context: {} as Record<string, unknown>,
     };
@@ -92,7 +117,13 @@ function makeSignal(): EconomicSignal {
     magnitude: 0.5,
     confidence: 0.8,
     reasonCodes: ["positive-net-profit"],
-    sourceValues: { netProfit: 50000, grossRevenue: 100000, contributionProfit: 50000, netMargin: 0.5, contributionMargin: 0.5 },
+    sourceValues: {
+      netProfit: 50000,
+      grossRevenue: 100000,
+      contributionProfit: 50000,
+      netMargin: 0.5,
+      contributionMargin: 0.5,
+    },
   };
 }
 
@@ -106,7 +137,9 @@ function makePlan(overrides: Partial<EconomicReinforcementPlan> = {}): EconomicR
     confidence: 0.7,
     targetNodes: [{ nodeId: "outcome-1", reason: "Test target" }],
     targetEdges: [],
-    proposedAdjustments: [{ nodeId: "1", delta: 0.05, reason: "Test adjustment", targetType: "node" }],
+    proposedAdjustments: [
+      { nodeId: "1", delta: 0.05, reason: "Test adjustment", targetType: "node" },
+    ],
     lessonCandidates: [],
     blockedTargets: [],
     reasonCodes: ["contributory-attribution"],
@@ -223,7 +256,10 @@ describe("CortexEconomicReinforcementBridge", () => {
     const plasticovOutcome = makeVerifiedOutcome({ sellerId: "plasticov" });
     const maustianOutcome = makeVerifiedOutcome({ sellerId: "maustian" });
 
-    const plasticovPlan = makePlan({ outcomeId: plasticovOutcome.outcomeId, sellerId: "plasticov" });
+    const plasticovPlan = makePlan({
+      outcomeId: plasticovOutcome.outcomeId,
+      sellerId: "plasticov",
+    });
     const maustianPlan = makePlan({ outcomeId: maustianOutcome.outcomeId, sellerId: "maustian" });
 
     const persisted: EconomicLearningEvent[] = [];

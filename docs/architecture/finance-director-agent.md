@@ -82,17 +82,18 @@ finance_director_assessments (
 
 ### What evidence is gathered
 
-| Evidence Kind | Source | Max Items | Max Age |
-|---|---|---|---|
-| Unit Economics Snapshots | `EconomicOutcomeStore` | 50 | 90d |
-| Economic Outcomes | `EconomicOutcomeStore` | 25 | 90d |
-| Profit Summary | Aggregated from snapshots | — | 90d |
-| Product Ads Profitability | `product-ads-profitability` lane | consumed as-needed | — |
-| Account Brain | `account-brain` lane | consumed as-needed | — |
+| Evidence Kind             | Source                           | Max Items          | Max Age |
+| ------------------------- | -------------------------------- | ------------------ | ------- |
+| Unit Economics Snapshots  | `EconomicOutcomeStore`           | 50                 | 90d     |
+| Economic Outcomes         | `EconomicOutcomeStore`           | 25                 | 90d     |
+| Profit Summary            | Aggregated from snapshots        | —                  | 90d     |
+| Product Ads Profitability | `product-ads-profitability` lane | consumed as-needed | —       |
+| Account Brain             | `account-brain` lane             | consumed as-needed | —       |
 
 ### Evidence Bounding
 
 When a query would return more data than the configured limits, the assembler:
+
 1. Returns the most recent items within limits
 2. Sets `metadata.bounded: true`
 3. Includes a `truncationNotice` describing which limit was hit
@@ -104,23 +105,23 @@ When a query would return more data than the configured limits, the assembler:
 type FinancialAssessment = {
   assessmentId: string;
   sellerId: string;
-  assessmentType: AssessmentType;  // 9-member enum
+  assessmentType: AssessmentType; // 9-member enum
   summary: string;
-  verifiedFacts: string[];         // ONLY facts with evidence linkage
-  hypotheses: Hypothesis[];        // Speculative, with confidence
-  risks: FinancialRisk[];          // Severity + probability
-  opportunities: Opportunity[];    // Estimated impact
+  verifiedFacts: string[]; // ONLY facts with evidence linkage
+  hypotheses: Hypothesis[]; // Speculative, with confidence
+  risks: FinancialRisk[]; // Severity + probability
+  opportunities: Opportunity[]; // Estimated impact
   missingEvidence: MissingEvidence[];
-  confidence: number;              // 0..1
+  confidence: number; // 0..1
   uncertaintyReasons: string[];
   recommendations: Recommendation[];
   requestsForEvidence: EvidenceRequest[];
-  evidenceIds: string[];           // Every ID referenced in the assessment
+  evidenceIds: string[]; // Every ID referenced in the assessment
   outcomeIds: string[];
   snapshotIds: string[];
   modelUsed: string;
   fallbackUsed: boolean;
-  noMutationExecuted: true;        // Always true — read-only
+  noMutationExecuted: true; // Always true — read-only
 };
 ```
 
@@ -146,6 +147,7 @@ type FinancialAssessment = {
 ## Fallback Behavior
 
 When DeepSeek returns `status: "fallback"` or validation rejects the output:
+
 1. Build deterministic `FinancialAssessment`
 2. `outcome`: `"unknown"`
 3. `confidence`: `0`
@@ -157,14 +159,15 @@ When DeepSeek returns `status: "fallback"` or validation rejects the output:
 
 ## CEO Tools (4)
 
-| Tool | Purpose | Assessment Type | Mutation |
-|---|---|---|---|
-| `ask_finance_director` | Open-ended financial question | `account-health` (default) | None |
-| `review_financial_health` | Broad account health sweep | `account-health` | None |
-| `explain_economic_outcome` | Explain a specific outcome | `outcome-review` | None |
-| `review_proposal_profitability` | Evaluate proposal without approving | `proposal-review` | None |
+| Tool                            | Purpose                             | Assessment Type            | Mutation |
+| ------------------------------- | ----------------------------------- | -------------------------- | -------- |
+| `ask_finance_director`          | Open-ended financial question       | `account-health` (default) | None     |
+| `review_financial_health`       | Broad account health sweep          | `account-health`           | None     |
+| `explain_economic_outcome`      | Explain a specific outcome          | `outcome-review`           | None     |
+| `review_proposal_profitability` | Evaluate proposal without approving | `proposal-review`          | None     |
 
 All tools:
+
 - Require `sellerId`
 - Return `noExternalMutationExecuted: true`
 - Scope all queries to the requesting seller
@@ -176,20 +179,21 @@ The `finance-director` lane is registered as a **sessionized lane** in `daemonSc
 
 ### Wake reasons
 
-| Reason | Trigger |
-|---|---|
-| `ceo_question` | CEO asks a financial question |
-| `economic_outcome_observed` | New economic outcome calculated |
-| `economic_outcome_disputed` | Outcome status marked `disputed` |
-| `new_unit_economics_snapshot` | Fresh snapshot ingested |
-| `profit_anomaly` | Negative net profit detected |
-| `missing_input_resolved` | Previously missing cost data now available |
-| `evidence_response_received` | Response to pending evidence request |
-| `proposal_review_requested` | CEO or daemon requests profitability review |
+| Reason                        | Trigger                                     |
+| ----------------------------- | ------------------------------------------- |
+| `ceo_question`                | CEO asks a financial question               |
+| `economic_outcome_observed`   | New economic outcome calculated             |
+| `economic_outcome_disputed`   | Outcome status marked `disputed`            |
+| `new_unit_economics_snapshot` | Fresh snapshot ingested                     |
+| `profit_anomaly`              | Negative net profit detected                |
+| `missing_input_resolved`      | Previously missing cost data now available  |
+| `evidence_response_received`  | Response to pending evidence request        |
+| `proposal_review_requested`   | CEO or daemon requests profitability review |
 
 ### Daemon handler
 
 The `financeDirectorDaemon` scans for:
+
 - New economic outcomes (since last check)
 - Profit anomalies (negative net profit)
 - Low-confidence outcomes (confidence < 0.5)
@@ -210,13 +214,13 @@ Interval is configurable via `MSL_FINANCE_DIRECTOR_INTERVAL_MS` (not 15-minute d
 
 ## Separation of Concerns
 
-| Concern | PR 1/3 | PR 2/3 (this) | PR 3/3 |
-|---|---|---|---|
-| Calculation | ✅ | Reads from | Reads from |
-| Persistence | ✅ | Reads from | Reads from |
-| Interpretation | — | ✅ (DeepSeek) | ✅ |
-| Validation | — | ✅ (16 rules) | ✅ |
-| Learning | — | — | ✅ (Cortex) |
+| Concern        | PR 1/3 | PR 2/3 (this) | PR 3/3      |
+| -------------- | ------ | ------------- | ----------- |
+| Calculation    | ✅     | Reads from    | Reads from  |
+| Persistence    | ✅     | Reads from    | Reads from  |
+| Interpretation | —      | ✅ (DeepSeek) | ✅          |
+| Validation     | —      | ✅ (16 rules) | ✅          |
+| Learning       | —      | —             | ✅ (Cortex) |
 
 ## What's left for PR 3/3 (Cortex Reinforcement Loop)
 

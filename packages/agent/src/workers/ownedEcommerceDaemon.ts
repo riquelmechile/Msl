@@ -367,7 +367,7 @@ async function handleEvidenceReEvaluation(params: {
 export const ownedEcommerceDaemon: DaemonHandler = async ({
   claim,
   reader,
-  cortex: _cortex,  
+  cortex: _cortex,
   bus,
   sellerIds,
   sessionStore,

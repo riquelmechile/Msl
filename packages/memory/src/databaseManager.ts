@@ -3,35 +3,35 @@ import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "nod
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { backupDatabase } from "./backup.js";
-import { closeSharedDb, getSharedDb } from "./connectionPool.js";
+import { closeSharedDb } from "./connectionPool.js";
 import type { MigrationApplyResult, MigrationRegistry } from "./migrationRegistry.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-export interface BackupVerifyResult {
+export type BackupVerifyResult = {
   /** Whether the backup passes integrity check. */
   ok: boolean;
   /** Error detail when `ok` is `false`. */
   error?: string;
   /** Page count of the verified backup file. */
   pages: number;
-}
+};
 
-export interface IntegrityResult {
+export type IntegrityResult = {
   /** Whether integrity check returns "ok". */
   ok: boolean;
   /** Error messages from PRAGMA integrity_check (empty when ok). */
   errors: string[];
-}
+};
 
-export interface WalCheckpointResult {
+export type WalCheckpointResult = {
   /** WAL pages before checkpoint. */
   pagesBefore: number;
   /** WAL pages after checkpoint. */
   pagesAfter: number;
-}
+};
 
-export interface DatabaseManager {
+export type DatabaseManager = {
   /**
    * Create a backup of the managed database to `targetPath` using
    * SQLite's online backup API. Delegates to {@link backupDatabase}.
@@ -75,20 +75,20 @@ export interface DatabaseManager {
    * managed database.
    */
   migrate(registry: MigrationRegistry): MigrationApplyResult;
-}
+};
 
 // ── No-op manager (returned when durability is disabled) ───────────────
 
 function createNoopDatabaseManager(): DatabaseManager {
   return {
-    async backup(): Promise<number> {
-      return 0;
+    backup(): Promise<number> {
+      return Promise.resolve(0);
     },
     verifyBackup(): BackupVerifyResult {
       return { ok: true, pages: 0 };
     },
-    async restoreFrom(): Promise<void> {
-      // no-op
+    restoreFrom(): Promise<void> {
+      return Promise.resolve();
     },
     checkIntegrity(): IntegrityResult {
       return { ok: true, errors: [] };
@@ -119,7 +119,7 @@ class LiveDatabaseManager implements DatabaseManager {
     this.openDb = openDb;
   }
 
-  async backup(targetPath: string): Promise<number> {
+  backup(targetPath: string): Promise<number> {
     const db = this.openDb();
     return backupDatabase(db, targetPath);
   }
@@ -141,11 +141,12 @@ class LiveDatabaseManager implements DatabaseManager {
       const result = backupDb.pragma("integrity_check") as Array<{ integrity_check: string }>;
       const ok = result.length === 1 && result[0]!.integrity_check === "ok";
 
-      const pages = (
-        backupDb.prepare("SELECT page_count FROM pragma_page_count").get() as {
-          page_count: number;
-        }
-      )?.page_count ?? 0;
+      const pages =
+        (
+          backupDb.prepare("SELECT page_count FROM pragma_page_count").get() as {
+            page_count: number;
+          }
+        )?.page_count ?? 0;
 
       if (!ok) {
         const errors = result.map((r) => r.integrity_check).filter((s) => s !== "ok");
@@ -161,7 +162,16 @@ class LiveDatabaseManager implements DatabaseManager {
     }
   }
 
-  async restoreFrom(backupPath: string): Promise<void> {
+  restoreFrom(backupPath: string): Promise<void> {
+    try {
+      this.restoreFromSync(backupPath);
+      return Promise.resolve();
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  private restoreFromSync(backupPath: string): void {
     if (!existsSync(backupPath)) {
       throw new Error(`Backup file not found: ${backupPath}`);
     }

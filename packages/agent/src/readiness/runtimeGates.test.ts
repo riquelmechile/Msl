@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  assertProductionCapabilityReady,
-  assertSellerCapabilityReady,
-} from "./runtimeGates.js";
+import { assertProductionCapabilityReady, assertSellerCapabilityReady } from "./runtimeGates.js";
 import {
   createProductionReadinessReport,
   createReadinessCheckResult,
@@ -126,7 +123,10 @@ describe("assertProductionCapabilityReady", () => {
   it("does not throw in production when capability is not-applicable", () => {
     const report = createProductionReadinessReport({
       runtimeMode: "production",
-      capabilities: { "deepseek-reasoning": "not-applicable" } as Record<ProductionCapability, "not-applicable">,
+      capabilities: { "deepseek-reasoning": "not-applicable" } as Record<
+        ProductionCapability,
+        "not-applicable"
+      >,
     });
     expect(() =>
       assertProductionCapabilityReady("deepseek-reasoning", undefined, report, {
@@ -138,7 +138,10 @@ describe("assertProductionCapabilityReady", () => {
   it("does not throw in production when capability is degraded", () => {
     const report = createProductionReadinessReport({
       runtimeMode: "production",
-      capabilities: { "deepseek-reasoning": "degraded" } as Record<ProductionCapability, "degraded">,
+      capabilities: { "deepseek-reasoning": "degraded" } as Record<
+        ProductionCapability,
+        "degraded"
+      >,
     });
     expect(() =>
       assertProductionCapabilityReady("deepseek-reasoning", undefined, report, {
@@ -165,7 +168,10 @@ describe("assertProductionCapabilityReady", () => {
   it("does not throw in prod when capability is degraded (no warnings in report)", () => {
     const report = createProductionReadinessReport({
       runtimeMode: "production",
-      capabilities: { "deepseek-reasoning": "degraded" } as Record<ProductionCapability, "degraded">,
+      capabilities: { "deepseek-reasoning": "degraded" } as Record<
+        ProductionCapability,
+        "degraded"
+      >,
     });
     expect(() =>
       assertProductionCapabilityReady("deepseek-reasoning", undefined, report, {

@@ -1,22 +1,9 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
-import {
-  createEconomicOutcome,
-  transitionOutcome,
-} from "@msl/domain";
-import type {
-  EconomicOutcome,
-  UnitEconomicsSnapshot,
-} from "@msl/domain";
-import type {
-  EconomicLearningStore,
-  EconomicOutcomeStore,
-  GraphEngine,
-} from "@msl/memory";
-import {
-  createSqliteEconomicLearningStore,
-  createSqliteEconomicOutcomeStore,
-} from "@msl/memory";
+import { createEconomicOutcome, transitionOutcome } from "@msl/domain";
+import type { EconomicOutcome, UnitEconomicsSnapshot } from "@msl/domain";
+import type { EconomicLearningStore, EconomicOutcomeStore, GraphEngine } from "@msl/memory";
+import { createSqliteEconomicLearningStore, createSqliteEconomicOutcomeStore } from "@msl/memory";
 import { EconomicLearningTrigger, type TriggerInput } from "./EconomicLearningTrigger.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -41,9 +28,7 @@ function makeVerifiedOutcome(
   const raw = createEconomicOutcome({
     sellerId,
     ...(opts?.proposalId ? { proposalId: opts.proposalId } : {}),
-    ...(opts?.originatingAgentId
-      ? { originatingAgentId: opts.originatingAgentId }
-      : {}),
+    ...(opts?.originatingAgentId ? { originatingAgentId: opts.originatingAgentId } : {}),
     ...(opts?.workSessionId ? { workSessionId: opts.workSessionId } : {}),
     ...(opts?.observedEconomicImpactId
       ? { observedEconomicImpactId: opts.observedEconomicImpactId }
@@ -131,10 +116,7 @@ class FakeGraphEngine {
   nodes: FakeNode[] = [];
   private nextNodeId = 1;
 
-  getOrCreateNode(
-    label: string,
-    metadata: Record<string, unknown> = {},
-  ): FakeNode {
+  getOrCreateNode(label: string, metadata: Record<string, unknown> = {}): FakeNode {
     const existing = this.nodes.find((n) => n.label === label);
     if (existing) return existing;
     const node: FakeNode = {
@@ -192,7 +174,13 @@ describe("EconomicLearningTrigger", () => {
 
     const trigger = new EconomicLearningTrigger();
     const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore, engine as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        snapshot,
+      ),
     );
 
     expect(result.triggered).toBe(true);
@@ -214,9 +202,7 @@ describe("EconomicLearningTrigger", () => {
     });
 
     const trigger = new EconomicLearningTrigger();
-    const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore),
-    );
+    const result = trigger.onOutcomeTransition(triggerInput(outcome, economicStore, learningStore));
 
     expect(result.triggered).toBe(true);
     expect(result.event).toBeDefined();
@@ -237,9 +223,7 @@ describe("EconomicLearningTrigger", () => {
     });
 
     const trigger = new EconomicLearningTrigger();
-    const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore),
-    );
+    const result = trigger.onOutcomeTransition(triggerInput(outcome, economicStore, learningStore));
 
     expect(result.triggered).toBe(true);
     expect(result.event).toBeDefined();
@@ -257,9 +241,7 @@ describe("EconomicLearningTrigger", () => {
     const outcome = makePendingOutcome("plasticov");
 
     const trigger = new EconomicLearningTrigger();
-    const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore),
-    );
+    const result = trigger.onOutcomeTransition(triggerInput(outcome, economicStore, learningStore));
 
     expect(result.triggered).toBe(false);
     expect(result.status).toBe("blocked");
@@ -286,14 +268,26 @@ describe("EconomicLearningTrigger", () => {
 
     // First trigger — should process
     const first = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore, engine as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        snapshot,
+      ),
     );
     expect(first.triggered).toBe(true);
     expect(first.status).toBe("processed");
 
     // Second trigger within cooldown — should deduplicate
     const second = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore, engine as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        snapshot,
+      ),
     );
     expect(second.triggered).toBe(false);
     expect(second.status).toBe("blocked");
@@ -323,10 +317,22 @@ describe("EconomicLearningTrigger", () => {
     const trigger = new EconomicLearningTrigger();
 
     const resultA = trigger.onOutcomeTransition(
-      triggerInput(plasticovOutcome, economicStore, learningStore, engine as unknown as GraphEngine, makeSnapshot(plasticovOutcome)),
+      triggerInput(
+        plasticovOutcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        makeSnapshot(plasticovOutcome),
+      ),
     );
     const resultB = trigger.onOutcomeTransition(
-      triggerInput(maustianOutcome, economicStore, learningStore, engine as unknown as GraphEngine, makeSnapshot(maustianOutcome)),
+      triggerInput(
+        maustianOutcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        makeSnapshot(maustianOutcome),
+      ),
     );
 
     expect(resultA.triggered).toBe(true);
@@ -398,7 +404,13 @@ describe("EconomicLearningTrigger", () => {
 
     const trigger = new EconomicLearningTrigger();
     const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, brokenLearningStore, new FakeGraphEngine() as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        brokenLearningStore,
+        new FakeGraphEngine() as unknown as GraphEngine,
+        snapshot,
+      ),
     );
 
     expect(result.status).toBe("failed");

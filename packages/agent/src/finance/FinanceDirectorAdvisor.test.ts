@@ -8,9 +8,12 @@ import type { FinanceDirectorEvidence } from "./FinanceDirectorEvidenceAssembler
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function clpSnapshot(overrides: Record<string, unknown> = {}): NonNullable<FinanceDirectorEvidence["snapshots"]>[number] {
+function clpSnapshot(
+  overrides: Record<string, unknown> = {},
+): NonNullable<FinanceDirectorEvidence["snapshots"]>[number] {
   return {
-    snapshotId: typeof overrides.snapshotId === "string" ? `snap-${overrides.snapshotId}` : "snap-1",
+    snapshotId:
+      typeof overrides.snapshotId === "string" ? `snap-${overrides.snapshotId}` : "snap-1",
     sellerId: (overrides.sellerId ?? "plasticov") as string,
     grossRevenue: (overrides.grossRevenue ?? 100000) as number,
     netProfit: (overrides.netProfit ?? 50000) as number,
@@ -60,13 +63,15 @@ function makeMockResponse(assessmentOverrides: Record<string, unknown>): DeepSee
     hypotheses: [
       { statement: "Profit margins are sustainable", confidence: 0.7, evidence: "snap-1" },
     ],
-    risks: [
-      { description: "Shipping cost unknown", severity: "low", probability: 0.3 },
-    ],
+    risks: [{ description: "Shipping cost unknown", severity: "low", probability: 0.3 }],
     opportunities: [],
     missingEvidence: [],
     recommendations: [
-      { action: "Monitor shipping costs for better accuracy", rationale: "Shipping is a variable cost", urgency: "monitor" },
+      {
+        action: "Monitor shipping costs for better accuracy",
+        rationale: "Shipping is a variable cost",
+        urgency: "monitor",
+      },
     ],
     requestsForEvidence: [],
     confidence: 0.8,
@@ -139,14 +144,25 @@ describe("FinanceDirectorAdvisor", () => {
         verifiedFacts: ["Revenue=50000, costs exceed revenue"],
         confidence: 0.3,
         recommendations: [
-          { action: "Investigate cost structure", rationale: "Net loss detected", urgency: "escalate" },
+          {
+            action: "Investigate cost structure",
+            rationale: "Net loss detected",
+            urgency: "escalate",
+          },
         ],
       }),
     ]);
 
     const advisor = new FinanceDirectorAdvisor({ transport });
     const evidence = makeEvidence({
-      snapshots: [clpSnapshot({ snapshotId: "loss", grossRevenue: 50000, netProfit: -10000, netMargin: -0.2 })],
+      snapshots: [
+        clpSnapshot({
+          snapshotId: "loss",
+          grossRevenue: 50000,
+          netProfit: -10000,
+          netMargin: -0.2,
+        }),
+      ],
     });
 
     const result = await advisor.analyze({
@@ -168,25 +184,38 @@ describe("FinanceDirectorAdvisor", () => {
         summary: "Only partial cost data available.",
         confidence: 0.4,
         missingEvidence: [
-          { kind: "shipping", reason: "Shipping cost missing", targetAgent: "cost-supplier", priority: "high" },
+          {
+            kind: "shipping",
+            reason: "Shipping cost missing",
+            targetAgent: "cost-supplier",
+            priority: "high",
+          },
         ],
         requestsForEvidence: [
-          { kind: "shipping", targetAgent: "cost-supplier", reason: "Required for accuracy", priority: "high", ttl: 86400 },
+          {
+            kind: "shipping",
+            targetAgent: "cost-supplier",
+            reason: "Required for accuracy",
+            priority: "high",
+            ttl: 86400,
+          },
         ],
       }),
     ]);
 
     const advisor = new FinanceDirectorAdvisor({ transport });
     const evidence = makeEvidence({
-      snapshots: [clpSnapshot({
-        snapshotId: "partial",
-        missingInputs: ["shipping", "tax"],
-        calculationStatus: "partial",
-        netProfit: 30000,
-        netMargin: 0.3,
-        contributionProfit: 50000,
-        contributionMargin: 0.5,
-      })],
+      snapshots: [
+        clpSnapshot({
+          snapshotId: "partial",
+          missingInputs: ["shipping", "tax"],
+          calculationStatus: "partial",
+          netProfit: 30000,
+          netMargin: 0.3,
+          contributionProfit: 50000,
+          contributionMargin: 0.5,
+        }),
+      ],
       missingInputs: ["shipping", "tax"],
       profitSummary: null,
     });
@@ -216,15 +245,17 @@ describe("FinanceDirectorAdvisor", () => {
 
     const advisor = new FinanceDirectorAdvisor({ transport });
     const evidence = makeEvidence({
-      outcomes: [{
-        outcomeId: "out-1",
-        sellerId: "plasticov",
-        status: "observed" as const,
-        confidence: 0.8,
-        completeness: 0.9,
-        evidenceIds: [],
-        createdAt: Date.now(),
-      }],
+      outcomes: [
+        {
+          outcomeId: "out-1",
+          sellerId: "plasticov",
+          status: "observed" as const,
+          confidence: 0.8,
+          completeness: 0.9,
+          evidenceIds: [],
+          createdAt: Date.now(),
+        },
+      ],
     });
 
     const result = await advisor.analyze({
@@ -273,22 +304,28 @@ describe("FinanceDirectorAdvisor", () => {
         verifiedFacts: ["Ad revenue: 20000, ad spend: 10000, ROAS: 2.0", "Net profit: -5000"],
         confidence: 0.5,
         hypotheses: [
-          { statement: "High ROAS is deceptive due to hidden costs", confidence: 0.6, evidence: "snap-roas" },
+          {
+            statement: "High ROAS is deceptive due to hidden costs",
+            confidence: 0.6,
+            evidence: "snap-roas",
+          },
         ],
       }),
     ]);
 
     const advisor = new FinanceDirectorAdvisor({ transport });
     const evidence = makeEvidence({
-      snapshots: [clpSnapshot({
-        snapshotId: "roas",
-        grossRevenue: 20000,
-        advertisingCost: 10000,
-        netProfit: -5000,
-        netMargin: -0.25,
-        contributionProfit: 10000,
-        contributionMargin: 0.5,
-      })],
+      snapshots: [
+        clpSnapshot({
+          snapshotId: "roas",
+          grossRevenue: 20000,
+          advertisingCost: 10000,
+          netProfit: -5000,
+          netMargin: -0.25,
+          contributionProfit: 10000,
+          contributionMargin: 0.5,
+        }),
+      ],
     });
 
     const result = await advisor.analyze({
@@ -316,10 +353,12 @@ describe("FinanceDirectorAdvisor", () => {
     const advisor = new FinanceDirectorAdvisor({ transport });
     const thirtyDaysAgo = Date.now() - 31 * 86400000;
     const evidence = makeEvidence({
-      snapshots: [clpSnapshot({
-        snapshotId: "old",
-        calculatedAt: thirtyDaysAgo,
-      })],
+      snapshots: [
+        clpSnapshot({
+          snapshotId: "old",
+          calculatedAt: thirtyDaysAgo,
+        }),
+      ],
     });
 
     const result = await advisor.analyze({

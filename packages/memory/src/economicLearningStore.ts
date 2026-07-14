@@ -175,7 +175,9 @@ function eligibilityFromRow(row: EligibilityRow): EconomicLearningEligibility {
     outcomeId: row.outcome_id,
     sellerId: row.seller_id,
     eligible: row.eligible === 1,
-    reasonCodes: parseJsonArray(row.reason_codes_json) as EconomicLearningEligibility["reasonCodes"],
+    reasonCodes: parseJsonArray(
+      row.reason_codes_json,
+    ) as EconomicLearningEligibility["reasonCodes"],
     // Fields not stored are filled with defaults for reconstruction
     outcomeStatus: "verified",
     completeness: 0,
@@ -297,9 +299,7 @@ export function migrateEconomicLearningStore(db: Database.Database): void {
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createSqliteEconomicLearningStore(
-  db: Database.Database,
-): EconomicLearningStore {
+export function createSqliteEconomicLearningStore(db: Database.Database): EconomicLearningStore {
   migrateEconomicLearningStore(db);
 
   // ── Prepared statements ────────────────────────────────────────────────
@@ -350,9 +350,7 @@ export function createSqliteEconomicLearningStore(
     WHERE event_id = ? AND seller_id = ?
   `);
 
-  const getEventByIdStmt = db.prepare(
-    "SELECT * FROM economic_learning_events WHERE event_id = ?",
-  );
+  const getEventByIdStmt = db.prepare("SELECT * FROM economic_learning_events WHERE event_id = ?");
 
   const claimIdempotencyStmt = db.prepare(`
     INSERT OR IGNORE INTO economic_learning_idempotency
@@ -555,7 +553,15 @@ export function createSqliteEconomicLearningStore(
 
     savePlan(plan) {
       // Store full plan as JSON, but exclude the fields stored as columns
-      const { planId, outcomeId, sellerId, status: _status, createdAt: _createdAt, noExternalMutationExecuted: _nm, ...rest } = plan;
+      const {
+        planId,
+        outcomeId,
+        sellerId,
+        status: _status,
+        createdAt: _createdAt,
+        noExternalMutationExecuted: _nm,
+        ...rest
+      } = plan;
       const planData = { ...rest, planId, outcomeId, sellerId };
 
       const tx = db.transaction(() => {

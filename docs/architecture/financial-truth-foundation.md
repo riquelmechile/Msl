@@ -53,22 +53,23 @@ type Money = { amountMinor: number; currency: Currency };
 
 12 cost types with provenance:
 
-| Type | Description |
-|------|-------------|
-| `product_cost` | COGS / supplier cost |
-| `marketplace_fee` | MercadoLibre commission |
-| `shipping` | Seller-paid or subsidized shipping |
-| `advertising` | Product Ads spend |
-| `seller_discount` | Seller-funded discounts |
-| `refund` | Partial refund |
-| `return` | Full return |
-| `tax` | VAT, sales tax |
-| `financing` | Mercado Crédito, installment costs |
-| `landed_cost` | Allocated import costs |
-| `packaging` | Packaging materials |
-| `other` | Any other verified cost |
+| Type              | Description                        |
+| ----------------- | ---------------------------------- |
+| `product_cost`    | COGS / supplier cost               |
+| `marketplace_fee` | MercadoLibre commission            |
+| `shipping`        | Seller-paid or subsidized shipping |
+| `advertising`     | Product Ads spend                  |
+| `seller_discount` | Seller-funded discounts            |
+| `refund`          | Partial refund                     |
+| `return`          | Full return                        |
+| `tax`             | VAT, sales tax                     |
+| `financing`       | Mercado Crédito, installment costs |
+| `landed_cost`     | Allocated import costs             |
+| `packaging`       | Packaging materials                |
+| `other`           | Any other verified cost            |
 
 Each component records:
+
 - `id`, `sellerId`, `type`, `amount: Money`
 - `source` (mercadolibre, supplier, customs, carrier, manual, derived, unknown)
 - `sourceRecordId` — traceability to the original record
@@ -81,6 +82,7 @@ Each component records:
 Per-unit economics scoped by seller, channel, order, item, SKU, product, period, and currency.
 
 Fields:
+
 - `grossRevenue`, `sellerFundedDiscounts`, `refunds` → revenue side
 - `marketplaceFees`, `sellerShippingCost`, `advertisingCost`, `productCost`, `allocatedLandedCost`, `taxes`, `financingCost`, `packagingCost`, `otherCosts` → cost side
 - `contributionProfit`, `netProfit` → derived
@@ -93,6 +95,7 @@ Fields:
 Links an action to its observed economic result.
 
 6-state lifecycle:
+
 ```
 pending → observing → observed → verified
                               ↘ disputed → invalidated (terminal)
@@ -125,16 +128,17 @@ Guarantees: no NaN, no Infinity, no implicit currency mixing, missing ≠ zero, 
 
 SQLite store with 3 tables:
 
-| Table | Purpose |
-|-------|---------|
-| `economic_outcomes` | Outcome lifecycle, status, correlation IDs, attribution links |
-| `economic_cost_components` | Individual cost records with provenance and `ingestion_run_id` |
-| `unit_economics_snapshots` | Full snapshots stored as JSON with `ingestion_run_id` |
-| `economic_evidence_references` | Evidence chain-of-custody with 15-column composite key |
+| Table                          | Purpose                                                        |
+| ------------------------------ | -------------------------------------------------------------- |
+| `economic_outcomes`            | Outcome lifecycle, status, correlation IDs, attribution links  |
+| `economic_cost_components`     | Individual cost records with provenance and `ingestion_run_id` |
+| `unit_economics_snapshots`     | Full snapshots stored as JSON with `ingestion_run_id`          |
+| `economic_evidence_references` | Evidence chain-of-custody with 15-column composite key         |
 
 All tables have `seller_id TEXT NOT NULL` with indexes. All queries use parameterized `WHERE seller_id = ?`. Zero SQL string interpolation.
 
 Key methods:
+
 - `insertOutcome` — idempotent via UNIQUE on `outcome_id`
 - `updateOutcomeStatus` — validates transitions via `transitionOutcome()`
 - `verifyOutcome` / `disputeOutcome` — controlled state changes
@@ -184,14 +188,14 @@ Every cost component and unit economics snapshot carries an `ingestion_run_id TE
 
 The following cost component types remain partial (stub adapters returning empty + `missingInputs`):
 
-| Type | Missing Reason | Resolution Path |
-|------|---------------|-----------------|
-| `product_cost` | Requires supplier cost data | Supplier Mirror integration |
-| `landed_cost` | Requires customs and freight data | Import documentation, carrier APIs |
-| `packaging` | Requires packaging cost tracking | Operational data collection |
-| `financing` | Requires credit/installment tracking | Mercado Crédito API access |
-| `tax` | Requires tax calculation rules | Accounting integration |
-| `other` | Any other verified cost | Manual entry or future integrations |
+| Type           | Missing Reason                       | Resolution Path                     |
+| -------------- | ------------------------------------ | ----------------------------------- |
+| `product_cost` | Requires supplier cost data          | Supplier Mirror integration         |
+| `landed_cost`  | Requires customs and freight data    | Import documentation, carrier APIs  |
+| `packaging`    | Requires packaging cost tracking     | Operational data collection         |
+| `financing`    | Requires credit/installment tracking | Mercado Crédito API access          |
+| `tax`          | Requires tax calculation rules       | Accounting integration              |
+| `other`        | Any other verified cost              | Manual entry or future integrations |
 
 Missing ≠ zero. Snapshots with missing inputs are marked `calculationStatus: "partial"` and the missing types are declared explicitly.
 
@@ -199,13 +203,14 @@ Missing ≠ zero. Snapshots with missing inputs are marked `calculationStatus: "
 
 Three CEO read-only tools in `packages/agent/src/conversation/tools/economicTools.ts`:
 
-| Tool | Purpose |
-|------|---------|
-| `inspect_unit_economics` | Read a UnitEconomicsSnapshot by ID |
-| `inspect_economic_outcome` | Read outcomes by ID or filter by seller/status |
-| `list_missing_economic_inputs` | List all outcomes with missing cost data |
+| Tool                           | Purpose                                        |
+| ------------------------------ | ---------------------------------------------- |
+| `inspect_unit_economics`       | Read a UnitEconomicsSnapshot by ID             |
+| `inspect_economic_outcome`     | Read outcomes by ID or filter by seller/status |
+| `list_missing_economic_inputs` | List all outcomes with missing cost data       |
 
 All tools:
+
 - Require `sellerId` (validated)
 - Declare `noExternalMutationExecuted: true` on every return path
 - Return bounded responses (default limit 20)
@@ -214,6 +219,7 @@ All tools:
 ## Seller Isolation
 
 Plasticov and Maustian data is strictly isolated:
+
 - `seller_id` column on all tables
 - Indexes for seller-scoped queries
 - Every query includes `WHERE seller_id = ?`
@@ -268,25 +274,26 @@ When grossRevenue is zero, margin returns 0 (no division by zero).
 
 ## Files
 
-| File | Package | Purpose |
-|------|---------|---------|
-| `money.ts` | domain | Money type, currency safety |
-| `economicCost.ts` | domain | Cost components with provenance |
-| `unitEconomics.ts` | domain | Per-unit economics snapshot |
-| `economicOutcome.ts` | domain | Outcome lifecycle state machine |
-| `economicCalculation.ts` | domain | Deterministic calculation engine |
-| `runIdFactory.ts` | domain | UUID-based RunIdFactory (Crypto + Deterministic) |
-| `economicEvidenceReference.ts` | domain | Evidence reference domain types |
-| `economicLearningEligibility.ts` | domain | 10-block-reason eligibility evaluator |
-| `economicOutcomeStore.ts` | memory | SQLite persistence (cost components, snapshots, outcomes) |
-| `economicEvidenceStore.ts` | memory | Evidence chain-of-custody with provenance |
-| `economicIngestionRunStore.ts` | memory | Ingestion run lifecycle + checkpoints |
-| `economicTools.ts` | agent/tools | CEO read-only inspection tools |
-| `EconomicIngestionPipeline.ts` | agent/economics | Durability-hardened ingestion pipeline |
+| File                             | Package         | Purpose                                                   |
+| -------------------------------- | --------------- | --------------------------------------------------------- |
+| `money.ts`                       | domain          | Money type, currency safety                               |
+| `economicCost.ts`                | domain          | Cost components with provenance                           |
+| `unitEconomics.ts`               | domain          | Per-unit economics snapshot                               |
+| `economicOutcome.ts`             | domain          | Outcome lifecycle state machine                           |
+| `economicCalculation.ts`         | domain          | Deterministic calculation engine                          |
+| `runIdFactory.ts`                | domain          | UUID-based RunIdFactory (Crypto + Deterministic)          |
+| `economicEvidenceReference.ts`   | domain          | Evidence reference domain types                           |
+| `economicLearningEligibility.ts` | domain          | 10-block-reason eligibility evaluator                     |
+| `economicOutcomeStore.ts`        | memory          | SQLite persistence (cost components, snapshots, outcomes) |
+| `economicEvidenceStore.ts`       | memory          | Evidence chain-of-custody with provenance                 |
+| `economicIngestionRunStore.ts`   | memory          | Ingestion run lifecycle + checkpoints                     |
+| `economicTools.ts`               | agent/tools     | CEO read-only inspection tools                            |
+| `EconomicIngestionPipeline.ts`   | agent/economics | Durability-hardened ingestion pipeline                    |
 
 ## Tests
 
 120+ tests across 7+ test files (domain + store + tools), plus 65+ durability-specific tests:
+
 - 89 domain tests (money, cost, outcome, calculation, unit economics, eligibility)
 - 17 store tests (SQLite persistence, isolation, transitions)
 - 14 tool tests (read-only, seller isolation, error handling)

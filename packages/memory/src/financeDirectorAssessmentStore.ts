@@ -52,7 +52,10 @@ type AssessmentRow = {
 // ── Public types ────────────────────────────────────────────────────────────
 
 export type FinanceDirectorAssessmentStore = {
-  insertAssessment(assessment: FinancialAssessment, opts?: { proposalId?: string }): FinancialAssessment;
+  insertAssessment(
+    assessment: FinancialAssessment,
+    opts?: { proposalId?: string },
+  ): FinancialAssessment;
   getAssessment(assessmentId: string, sellerId: string): FinancialAssessment | null;
   listBySeller(sellerId: string, opts?: { limit?: number }): FinancialAssessment[];
   listByOutcome(outcomeId: string, sellerId: string): FinancialAssessment[];
@@ -86,7 +89,11 @@ function parseHypotheses(raw: string | null): Hypothesis[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (v): v is Hypothesis =>
-        typeof v === "object" && v !== null && "statement" in v && "confidence" in v && "evidence" in v,
+        typeof v === "object" &&
+        v !== null &&
+        "statement" in v &&
+        "confidence" in v &&
+        "evidence" in v,
     );
   } catch {
     return [];
@@ -100,7 +107,11 @@ function parseRisks(raw: string | null): FinancialRisk[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (v): v is FinancialRisk =>
-        typeof v === "object" && v !== null && "description" in v && "severity" in v && "probability" in v,
+        typeof v === "object" &&
+        v !== null &&
+        "description" in v &&
+        "severity" in v &&
+        "probability" in v,
     );
   } catch {
     return [];
@@ -113,8 +124,7 @@ function parseOpportunities(raw: string | null): Opportunity[] {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
-      (v): v is Opportunity =>
-        typeof v === "object" && v !== null && "description" in v,
+      (v): v is Opportunity => typeof v === "object" && v !== null && "description" in v,
     );
   } catch {
     return [];
@@ -142,7 +152,12 @@ function parseComparisons(raw: string | null): FinancialComparison[] | undefined
     if (!Array.isArray(parsed)) return undefined;
     return parsed.filter(
       (v): v is FinancialComparison =>
-        typeof v === "object" && v !== null && "accountA" in v && "accountB" in v && "metric" in v && "finding" in v,
+        typeof v === "object" &&
+        v !== null &&
+        "accountA" in v &&
+        "accountB" in v &&
+        "metric" in v &&
+        "finding" in v,
     );
   } catch {
     return undefined;
@@ -188,7 +203,12 @@ function parseCurrencies(raw: string | null): Currency[] {
   }
 }
 
-function parsePromptBlockHashes(raw: string | null): { readonly blockA?: string; readonly blockB?: string; readonly blockC?: string; readonly blockD?: string } {
+function parsePromptBlockHashes(raw: string | null): {
+  readonly blockA?: string;
+  readonly blockB?: string;
+  readonly blockC?: string;
+  readonly blockD?: string;
+} {
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -424,15 +444,21 @@ export function createSqliteFinanceDirectorAssessmentStore(
     },
 
     listByProposal(proposalId, sellerId) {
-      return (listByProposalStmt.all(proposalId, sellerId) as AssessmentRow[]).map(assessmentFromRow);
+      return (listByProposalStmt.all(proposalId, sellerId) as AssessmentRow[]).map(
+        assessmentFromRow,
+      );
     },
 
     listBySession(workSessionId, sellerId) {
-      return (listBySessionStmt.all(workSessionId, sellerId) as AssessmentRow[]).map(assessmentFromRow);
+      return (listBySessionStmt.all(workSessionId, sellerId) as AssessmentRow[]).map(
+        assessmentFromRow,
+      );
     },
 
     listByCorrelationId(correlationId, sellerId) {
-      return (listByCorrelationStmt.all(correlationId, sellerId) as AssessmentRow[]).map(assessmentFromRow);
+      return (listByCorrelationStmt.all(correlationId, sellerId) as AssessmentRow[]).map(
+        assessmentFromRow,
+      );
     },
 
     latestByType(sellerId, assessmentType) {

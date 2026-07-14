@@ -189,9 +189,7 @@ describe("createEconomicReinforcementPlan", () => {
       confidence: 0.4,
       targetNodes: [{ nodeId: "n-1", reason: "test" }],
       targetEdges: [],
-      proposedAdjustments: [
-        { nodeId: "n-1", delta: -0.1, reason: "reduce", targetType: "node" },
-      ],
+      proposedAdjustments: [{ nodeId: "n-1", delta: -0.1, reason: "reduce", targetType: "node" }],
       lessonCandidates: [],
       blockedTargets: [{ targetId: "t-1", reason: "scope mismatch" }],
       reasonCodes: ["low-confidence"],

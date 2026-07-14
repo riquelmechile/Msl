@@ -30,18 +30,12 @@ function envVal(key: string, fallback: number): number {
  *
  * Never executes mutations. All proposals carry `noMutationExecuted: true`.
  */
-export const financeDirectorDaemon: DaemonHandler = async ({
-  reader,
-  sellerIds,
-  bus,
-}) => {
+export const financeDirectorDaemon: DaemonHandler = async ({ reader, sellerIds, bus }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
-  const maxAgeMs =
-    envVal("MSL_FINANCE_DIRECTOR_SCAN_DAYS", DEFAULT_MAX_AGE_DAYS) * 86400000;
-  const maxOutcomes =
-    envVal("MSL_FINANCE_DIRECTOR_MAX_OUTCOMES", DEFAULT_MAX_OUTCOMES);
+  const maxAgeMs = envVal("MSL_FINANCE_DIRECTOR_SCAN_DAYS", DEFAULT_MAX_AGE_DAYS) * 86400000;
+  const maxOutcomes = envVal("MSL_FINANCE_DIRECTOR_MAX_OUTCOMES", DEFAULT_MAX_OUTCOMES);
 
   const now = new Date();
   const capturedAt = now.toISOString();
@@ -93,18 +87,11 @@ export const financeDirectorDaemon: DaemonHandler = async ({
             : typeof d.netProfitMinor === "number"
               ? d.netProfitMinor
               : 0;
-        const confidence =
-          typeof d.confidence === "number"
-            ? d.confidence
-            : 0;
-        const status =
-          typeof d.status === "string"
-            ? d.status
-            : "unknown";
+        const confidence = typeof d.confidence === "number" ? d.confidence : 0;
+        const status = typeof d.status === "string" ? d.status : "unknown";
 
         outcomes.push({
-          outcomeId:
-            String(d.outcomeId ?? d.outcome_id ?? snap.itemId),
+          outcomeId: String(d.outcomeId ?? d.outcome_id ?? snap.itemId),
           sellerId,
           status,
           netProfitMinor,
@@ -126,57 +113,40 @@ export const financeDirectorDaemon: DaemonHandler = async ({
   let proposalEnqueued = false;
 
   // Signal 1: New outcomes
-  const newOutcomes = outcomes.filter(
-    (o) => o.status === "observed" || o.status === "calculated",
-  );
+  const newOutcomes = outcomes.filter((o) => o.status === "observed" || o.status === "calculated");
   if (newOutcomes.length > 0) {
     for (const outcome of newOutcomes) {
       findings.push({
         kind: "info",
         severity: "info",
         summary: `New economic outcome ${outcome.outcomeId} (${outcome.status}) for seller ${outcome.sellerId}: net profit ${outcome.netProfitMinor} minor units, confidence ${outcome.confidence}`,
-        evidenceIds: [
-          `outcome:${outcome.outcomeId}`,
-          `seller:${outcome.sellerId}`,
-        ],
+        evidenceIds: [`outcome:${outcome.outcomeId}`, `seller:${outcome.sellerId}`],
       });
     }
   }
 
   // Signal 2: Profit anomalies (negative net profit)
-  const lossOutcomes = outcomes.filter(
-    (o) =>
-      o.netProfitMinor < 0 &&
-      o.status !== "disputed",
-  );
+  const lossOutcomes = outcomes.filter((o) => o.netProfitMinor < 0 && o.status !== "disputed");
   if (lossOutcomes.length > 0) {
     for (const outcome of lossOutcomes) {
       findings.push({
         kind: "alert",
         severity: "warning",
         summary: `Negative profit outcome ${outcome.outcomeId} for seller ${outcome.sellerId}: ${outcome.netProfitMinor} minor units (confidence ${outcome.confidence})`,
-        evidenceIds: [
-          `outcome:${outcome.outcomeId}`,
-          `seller:${outcome.sellerId}`,
-        ],
+        evidenceIds: [`outcome:${outcome.outcomeId}`, `seller:${outcome.sellerId}`],
       });
     }
   }
 
   // Signal 3: Low-confidence outcomes (confidence < 0.5)
-  const lowConfidenceOutcomes = outcomes.filter(
-    (o) => o.confidence > 0 && o.confidence < 0.5,
-  );
+  const lowConfidenceOutcomes = outcomes.filter((o) => o.confidence > 0 && o.confidence < 0.5);
   if (lowConfidenceOutcomes.length > 0) {
     for (const outcome of lowConfidenceOutcomes) {
       findings.push({
         kind: "opportunity",
         severity: "info",
         summary: `Low-confidence outcome ${outcome.outcomeId} for seller ${outcome.sellerId} (confidence ${outcome.confidence}): evidence may be missing`,
-        evidenceIds: [
-          `outcome:${outcome.outcomeId}`,
-          `seller:${outcome.sellerId}`,
-        ],
+        evidenceIds: [`outcome:${outcome.outcomeId}`, `seller:${outcome.sellerId}`],
       });
     }
   }
@@ -187,32 +157,23 @@ export const financeDirectorDaemon: DaemonHandler = async ({
     // Group findings by seller
     const bySeller = new Map<string, DaemonFinding[]>();
     for (const f of findings) {
-      const sellerId = f.evidenceIds
-        .find((id) => id.startsWith("seller:"))
-        ?.replace("seller:", "") ?? "unknown";
+      const sellerId =
+        f.evidenceIds.find((id) => id.startsWith("seller:"))?.replace("seller:", "") ?? "unknown";
       const group = bySeller.get(sellerId) ?? [];
       group.push(f);
       bySeller.set(sellerId, group);
     }
 
     for (const [sellerId, sellerFindings] of bySeller) {
-      const alertCount = sellerFindings.filter(
-        (f) => f.kind === "alert",
-      ).length;
-      const infoCount = sellerFindings.filter(
-        (f) => f.kind === "info",
-      ).length;
-      const oppCount = sellerFindings.filter(
-        (f) => f.kind === "opportunity",
-      ).length;
+      const alertCount = sellerFindings.filter((f) => f.kind === "alert").length;
+      const infoCount = sellerFindings.filter((f) => f.kind === "info").length;
+      const oppCount = sellerFindings.filter((f) => f.kind === "opportunity").length;
 
       const summary =
         `Finance Director scan for seller ${sellerId}: ` +
         `${alertCount} alert(s), ${infoCount} new outcome(s), ${oppCount} investigation opportunity(ies)`;
 
-      const topSeverity = sellerFindings.some(
-        (f) => f.severity === "critical",
-      )
+      const topSeverity = sellerFindings.some((f) => f.severity === "critical")
         ? "critical"
         : sellerFindings.some((f) => f.severity === "warning")
           ? "warning"

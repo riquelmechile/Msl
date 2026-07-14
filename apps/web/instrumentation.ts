@@ -20,8 +20,8 @@ export async function register() {
   for (let i = 0; i < 10; i++) {
     try {
       const pkgPath = path.join(dir, "package.json");
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-      if (pkg.workspaces) break; // found repo root
+      const pkg: unknown = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+      if (typeof pkg === "object" && pkg !== null && "workspaces" in pkg) break; // found repo root
     } catch {
       // package.json not readable — keep walking up
     }
@@ -44,8 +44,7 @@ export async function register() {
         if (process.env[key] !== undefined) continue;
         // Strip surrounding quotes
         const value =
-          (raw.startsWith('"') && raw.endsWith('"')) ||
-          (raw.startsWith("'") && raw.endsWith("'"))
+          (raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))
             ? raw.slice(1, -1)
             : raw;
         process.env[key] = value;

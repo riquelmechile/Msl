@@ -100,10 +100,20 @@ function sanitizeError(raw: string): string {
 function parseParams(raw: string | null): Record<string, unknown> | undefined {
   if (!raw) return undefined;
   try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function asyncOperation<T>(operation: () => T): Promise<T> {
+  try {
+    return Promise.resolve(operation());
+  } catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -123,7 +133,12 @@ function runFromRow(row: RunRow): EconomicIngestionRun {
     runId: row.id,
     sellerId: row.seller_id,
     mode: row.mode as IngestionRunMode,
-    sourceKinds: (parsedParams?.sourceKinds as readonly string[]) ?? ["orders", "items", "claims", "ads"],
+    sourceKinds: (parsedParams?.sourceKinds as readonly string[]) ?? [
+      "orders",
+      "items",
+      "claims",
+      "ads",
+    ],
     startedAt: row.started_at ?? 0,
     ...(row.completed_at !== null ? { completedAt: row.completed_at } : {}),
     recordsFetched: (parsedResult?.recordsFetched as number) ?? 0,
@@ -136,7 +151,7 @@ function runFromRow(row: RunRow): EconomicIngestionRun {
     errors: [],
     status: row.status as IngestionRunStatus,
     noExternalMutationExecuted: true,
-  } as EconomicIngestionRun;
+  };
 }
 
 function checkpointFromRow(row: CheckpointRow): Checkpoint {
@@ -208,9 +223,7 @@ export function createSqliteEconomicIngestionRunStore(
     WHERE id = ?
   `);
 
-  const getRunStmt = db.prepare(
-    "SELECT * FROM economic_ingestion_runs WHERE id = ?",
-  );
+  const getRunStmt = db.prepare("SELECT * FROM economic_ingestion_runs WHERE id = ?");
 
   const getLastRunStmt = db.prepare(`
     SELECT * FROM economic_ingestion_runs
@@ -260,97 +273,111 @@ export function createSqliteEconomicIngestionRunStore(
   // ── Store implementation ─────────────────────────────────────────────────
 
   return {
-    async createRun(input: CreateRunInput): Promise<EconomicIngestionRun> {
-      const now = new Date().toISOString();
-      const error = input.error ? sanitizeError(input.error) : null;
-      const paramsJson = input.params ? JSON.stringify(input.params) : null;
-      const resultJson = input.result ? JSON.stringify(input.result) : null;
+    createRun(input: CreateRunInput): Promise<EconomicIngestionRun> {
+      return asyncOperation(() => {
+        const now = new Date().toISOString();
+        const error = input.error ? sanitizeError(input.error) : null;
+        const paramsJson = input.params ? JSON.stringify(input.params) : null;
+        const resultJson = input.result ? JSON.stringify(input.result) : null;
 
-      insertRunStmt.run(
-        input.runId,
-        input.sellerId,
-        input.status,
-        input.mode,
-        input.startedAt ?? null,
-        input.completedAt ?? null,
-        paramsJson,
-        resultJson,
-        error,
-        now,
-      );
+        insertRunStmt.run(
+          input.runId,
+          input.sellerId,
+          input.status,
+          input.mode,
+          input.startedAt ?? null,
+          input.completedAt ?? null,
+          paramsJson,
+          resultJson,
+          error,
+          now,
+        );
 
-      const row = getRunStmt.get(input.runId) as RunRow | undefined;
-      if (!row) {
-        throw new Error(`Failed to create ingestion run: ${input.runId}`);
-      }
+        const row = getRunStmt.get(input.runId) as RunRow | undefined;
+        if (!row) {
+          throw new Error(`Failed to create ingestion run: ${input.runId}`);
+        }
 
-      return runFromRow(row);
+        return runFromRow(row);
+      });
     },
 
-    async updateRun(id: string, updates: UpdateRunInput): Promise<EconomicIngestionRun> {
-      const error = updates.error ? sanitizeError(updates.error) : null;
-      const resultJson = updates.result ? JSON.stringify(updates.result) : null;
+    updateRun(id: string, updates: UpdateRunInput): Promise<EconomicIngestionRun> {
+      return asyncOperation(() => {
+        const error = updates.error ? sanitizeError(updates.error) : null;
+        const resultJson = updates.result ? JSON.stringify(updates.result) : null;
 
-      updateRunStmt.run(
-        updates.status ?? null,
-        updates.completedAt ?? null,
-        resultJson,
-        error,
-        id,
-      );
+        updateRunStmt.run(
+          updates.status ?? null,
+          updates.completedAt ?? null,
+          resultJson,
+          error,
+          id,
+        );
 
-      const row = getRunStmt.get(id) as RunRow | undefined;
-      if (!row) {
-        throw new Error(`Ingestion run not found: ${id}`);
-      }
+        const row = getRunStmt.get(id) as RunRow | undefined;
+        if (!row) {
+          throw new Error(`Ingestion run not found: ${id}`);
+        }
 
-      return runFromRow(row);
+        return runFromRow(row);
+      });
     },
 
-    async getRun(id: string): Promise<EconomicIngestionRun | null> {
-      const row = getRunStmt.get(id) as RunRow | undefined;
-      if (!row) return null;
-      return runFromRow(row);
+    getRun(id: string): Promise<EconomicIngestionRun | null> {
+      return asyncOperation(() => {
+        const row = getRunStmt.get(id) as RunRow | undefined;
+        return row ? runFromRow(row) : null;
+      });
     },
 
-    async getLastRunBySeller(sellerId: string): Promise<EconomicIngestionRun | null> {
-      const row = getLastRunStmt.get(sellerId) as RunRow | undefined;
-      if (!row) return null;
-      return runFromRow(row);
+    getLastRunBySeller(sellerId: string): Promise<EconomicIngestionRun | null> {
+      return asyncOperation(() => {
+        const row = getLastRunStmt.get(sellerId) as RunRow | undefined;
+        return row ? runFromRow(row) : null;
+      });
     },
 
-    async listRunsBySeller(sellerId: string, limit = 20): Promise<EconomicIngestionRun[]> {
-      const rows = listRunsStmt.all(sellerId, limit) as RunRow[];
-      return rows.map(runFromRow);
+    listRunsBySeller(sellerId: string, limit = 20): Promise<EconomicIngestionRun[]> {
+      return asyncOperation(() => {
+        const rows = listRunsStmt.all(sellerId, limit) as RunRow[];
+        return rows.map(runFromRow);
+      });
     },
 
-    async getActiveRun(sellerId: string): Promise<EconomicIngestionRun | null> {
-      const row = getActiveRunStmt.get(sellerId) as RunRow | undefined;
-      if (!row) return null;
-      return runFromRow(row);
+    getActiveRun(sellerId: string): Promise<EconomicIngestionRun | null> {
+      return asyncOperation(() => {
+        const row = getActiveRunStmt.get(sellerId) as RunRow | undefined;
+        return row ? runFromRow(row) : null;
+      });
     },
 
-    async recoverAbandonedRun(sellerId: string): Promise<void> {
-      recoverAbandonedRunsStmt.run(sellerId);
+    recoverAbandonedRun(sellerId: string): Promise<void> {
+      return asyncOperation(() => {
+        recoverAbandonedRunsStmt.run(sellerId);
+      });
     },
 
-    async getCheckpoint(sellerId: string): Promise<Checkpoint | null> {
-      const row = getCheckpointStmt.get(sellerId) as CheckpointRow | undefined;
-      if (!row) return null;
-      return checkpointFromRow(row);
+    getCheckpoint(sellerId: string): Promise<Checkpoint | null> {
+      return asyncOperation(() => {
+        const row = getCheckpointStmt.get(sellerId) as CheckpointRow | undefined;
+        return row ? checkpointFromRow(row) : null;
+      });
     },
 
-    async updateCheckpoint(
+    updateCheckpoint(
       sellerId: string,
       data: { lastOrderDate?: string; lastOrderId?: string; lastRunId?: string },
     ): Promise<void> {
-      upsertCheckpointStmt.run(
-        sellerId,
-        data.lastOrderDate ?? null,
-        data.lastOrderId ?? null,
-        data.lastRunId ?? null,
-        new Date().toISOString(),
-      );
+      return asyncOperation(() => {
+        upsertCheckpointStmt.run(
+          sellerId,
+          data.lastOrderDate ?? null,
+          data.lastOrderId ?? null,
+          data.lastRunId ?? null,
+          new Date().toISOString(),
+        );
+      });
     },
   };
 }
@@ -381,13 +408,7 @@ export function syncUpdateRunInTx(
   `);
   const resultJson = updates.result ? JSON.stringify(updates.result) : null;
   const errorClean = updates.error ? sanitizeError(updates.error) : null;
-  stmt.run(
-    updates.status ?? null,
-    updates.completedAt ?? null,
-    resultJson,
-    errorClean,
-    id,
-  );
+  stmt.run(updates.status ?? null, updates.completedAt ?? null, resultJson, errorClean, id);
 }
 
 /**

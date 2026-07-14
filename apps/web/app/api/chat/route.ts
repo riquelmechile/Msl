@@ -123,7 +123,7 @@ function createDemoAutonomyEngine(): AutonomyEngine {
     setLevel: (
       _sellerId: string,
       l: AutonomyLevel,
-       
+
       _reason: string,
     ) => {
       level = l;

@@ -1,9 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { EconomicIngestionRuntime, SellerSlug } from "../economics/factory.js";
-import type {
-  PipelineResult,
-  ReconciliationVerdict,
-} from "../economics/EconomicIngestionPipeline.js";
+import type { PipelineResult } from "../economics/EconomicIngestionPipeline.js";
 
 // ── Fake runtime factory ───────────────────────────────────────────────────
 
@@ -11,33 +8,34 @@ function createFakeRuntime(overrides?: {
   pipelineResult?: PipelineResult;
 }): EconomicIngestionRuntime {
   const pipelineFn = vi.fn().mockResolvedValue(
-    overrides?.pipelineResult ?? {
-      run: {
-        runId: "fake-run-1",
-        sellerId: "fake-seller-id",
-        mode: "incremental",
-        sourceKinds: ["orders"],
-        startedAt: Date.now(),
-        recordsFetched: 10,
-        recordsNormalized: 10,
-        componentsCreated: 5,
-        snapshotsCreated: 3,
-        duplicatesIgnored: 0,
-        partialSnapshots: 1,
-        disputedSnapshots: 0,
-        errors: [],
-        status: "completed",
-        noExternalMutationExecuted: true,
-      },
-      snapshots: [],
-      reconciliation: {
-        status: "balanced",
-        details: "All matched.",
-        sourceTotal: 1000,
-        computedTotal: 1000,
-        difference: 0,
-      } as ReconciliationVerdict,
-    } as PipelineResult,
+    overrides?.pipelineResult ??
+      ({
+        run: {
+          runId: "fake-run-1",
+          sellerId: "fake-seller-id",
+          mode: "incremental",
+          sourceKinds: ["orders"],
+          startedAt: Date.now(),
+          recordsFetched: 10,
+          recordsNormalized: 10,
+          componentsCreated: 5,
+          snapshotsCreated: 3,
+          duplicatesIgnored: 0,
+          partialSnapshots: 1,
+          disputedSnapshots: 0,
+          errors: [],
+          status: "completed",
+          noExternalMutationExecuted: true,
+        },
+        snapshots: [],
+        reconciliation: {
+          status: "balanced",
+          details: "All matched.",
+          sourceTotal: 1000,
+          computedTotal: 1000,
+          difference: 0,
+        },
+      } as PipelineResult),
   );
 
   return {
@@ -80,7 +78,7 @@ function createFakeRuntime(overrides?: {
       sourceTotal: 1000,
       computedTotal: 1000,
       difference: 0,
-    } as ReconciliationVerdict),
+    }),
     dataFetcher: vi.fn(),
     logger: {
       info: vi.fn(),
@@ -160,13 +158,7 @@ describe("economicCli", () => {
 
     it("parses from and to flags", async () => {
       const { parseArgs } = await importCli();
-      const args = parseArgs([
-        "node",
-        "cli.js",
-        "ingest",
-        "--from=2025-01-01",
-        "--to=2025-06-30",
-      ]);
+      const args = parseArgs(["node", "cli.js", "ingest", "--from=2025-01-01", "--to=2025-06-30"]);
       expect(args.from).toBe("2025-01-01");
       expect(args.to).toBe("2025-06-30");
     });
@@ -198,23 +190,21 @@ describe("economicCli", () => {
       const runtime = createFakeRuntime();
 
       // Set up a mock last run
-      runtime.runStore.getLastRunBySeller = vi.fn().mockResolvedValue({
+      const getLastRunBySeller = vi.fn().mockResolvedValue({
         runId: "last-run",
         mode: "incremental",
         status: "completed",
         startedAt: Date.now(),
         snapshotsCreated: 5,
       });
+      runtime.runStore.getLastRunBySeller = getLastRunBySeller;
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "status", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "status", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
-      expect(runtime.runStore.getLastRunBySeller).toHaveBeenCalledWith("fake-seller-id");
+      expect(getLastRunBySeller).toHaveBeenCalledWith("fake-seller-id");
       expect(output.result?.lastRun).not.toBeNull();
     });
 
@@ -224,10 +214,7 @@ describe("economicCli", () => {
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "coverage", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "coverage", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
       expect(output.result?.overallStatus).toBeDefined();
@@ -243,10 +230,7 @@ describe("economicCli", () => {
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "reconcile", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "reconcile", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
       expect(output.result?.verdict).toBeDefined();
@@ -256,16 +240,13 @@ describe("economicCli", () => {
       const { runCli } = await importCli();
       const runtime = createFakeRuntime();
 
-      runtime.store.listMissingInputs = vi.fn().mockReturnValue([
-        { outcomeId: "out-1", missingTypes: ["product_cost", "landed_cost"] },
-      ]);
+      runtime.store.listMissingInputs = vi
+        .fn()
+        .mockReturnValue([{ outcomeId: "out-1", missingTypes: ["product_cost", "landed_cost"] }]);
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "missing", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "missing", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
       expect(output.result?.missingInputs).toContain("product_cost");
@@ -299,37 +280,21 @@ describe("economicCli", () => {
           reconciliation: {
             status: "incomplete",
             details: "Pipeline failed: Something broke",
-          } as ReconciliationVerdict,
-        } as PipelineResult,
+          },
+        },
       });
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { exitCode } = await runCli(
-        ["node", "cli.js", "ingest", "--seller=source"],
-        factory,
-      );
+      const { exitCode } = await runCli(["node", "cli.js", "ingest", "--seller=source"], factory);
 
       expect(exitCode).toBe(1);
     });
 
-    it("rejects unknown seller in parseArgs", async () => {
+    it("accepts both known sellers in parseArgs", async () => {
       const { parseArgs } = await importCli();
-
-      // parseArgs writes to stderr and calls process.exit on unknown seller
-      // We simulate this by checking the output
-      let stderrOutput = "";
-      const origStderr = process.stderr.write.bind(process.stderr);
-      const origExit = process.exit.bind(process);
-
-      const stderrMock = (msg: string) => {
-        stderrOutput += msg;
-        return true;
-      };
-
-      // We can't call parseArgs with "invalid_seller" because it exits the process.
-      // Instead, test that valid sellers are accepted and the guard works at the runCli level.
-      // parseArgs already validates sellers, so test at the runCli level.
+      expect(parseArgs(["node", "cli.js", "status", "--seller=source"]).seller).toBe("source");
+      expect(parseArgs(["node", "cli.js", "status", "--seller=target"]).seller).toBe("target");
     });
   });
 
@@ -344,11 +309,12 @@ describe("economicCli", () => {
         factory,
       );
 
-      const json = JSON.parse(JSON.stringify(output));
-      expect(json.status).toBe("ok");
-      expect(json.command).toBe("status");
-      expect(json.seller).toBe("source");
-      expect(json.timestamp).toBeDefined();
+      const json: unknown = JSON.parse(JSON.stringify(output));
+      expect(json).toMatchObject({ status: "ok", command: "status", seller: "source" });
+      expect(typeof json === "object" && json !== null && "timestamp" in json).toBe(true);
+      if (typeof json === "object" && json !== null && "timestamp" in json) {
+        expect(json.timestamp).toBeDefined();
+      }
     });
 
     it("does not include email patterns in output", async () => {
@@ -436,8 +402,9 @@ describe("economicCli", () => {
         },
       ];
 
+      const listBySeller = vi.fn().mockReturnValue(mockRefs);
       runtime.evidenceStore = {
-        listBySeller: vi.fn().mockReturnValue(mockRefs),
+        listBySeller,
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
         insertEvidence: vi.fn(),
@@ -456,7 +423,9 @@ describe("economicCli", () => {
 
       expect(output.status).toBe("ok");
       expect(output.result?.totalReferences).toBe(1);
-      expect((output.result?.references as Array<Record<string, unknown>>)?.[0]?.evidenceId).toBe("ev-1");
+      expect((output.result?.references as Array<Record<string, unknown>>)?.[0]?.evidenceId).toBe(
+        "ev-1",
+      );
     });
 
     it("filters by run ID", async () => {
@@ -480,8 +449,9 @@ describe("economicCli", () => {
         },
       ];
 
+      const listBySeller = vi.fn().mockReturnValue(mockRefs);
       runtime.evidenceStore = {
-        listBySeller: vi.fn().mockReturnValue(mockRefs),
+        listBySeller,
         listByRun: vi.fn().mockReturnValue(mockRefs),
         listBySourceRecord: vi.fn().mockReturnValue([]),
         insertEvidence: vi.fn(),
@@ -500,7 +470,7 @@ describe("economicCli", () => {
 
       expect(output.status).toBe("ok");
       // verify listBySeller was called with ingestionRunId filter
-      expect(runtime.evidenceStore.listBySeller).toHaveBeenCalledWith(
+      expect(listBySeller).toHaveBeenCalledWith(
         "fake-seller-id",
         expect.objectContaining({ ingestionRunId: "run-specific" }),
       );
@@ -527,10 +497,11 @@ describe("economicCli", () => {
         },
       ];
 
+      const listBySourceRecord = vi.fn().mockReturnValue(mockRefs);
       runtime.evidenceStore = {
         listBySeller: vi.fn().mockReturnValue([]),
         listByRun: vi.fn().mockReturnValue([]),
-        listBySourceRecord: vi.fn().mockReturnValue(mockRefs),
+        listBySourceRecord,
         insertEvidence: vi.fn(),
         upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
@@ -546,10 +517,7 @@ describe("economicCli", () => {
       );
 
       expect(output.status).toBe("ok");
-      expect(runtime.evidenceStore.listBySourceRecord).toHaveBeenCalledWith(
-        "order-src-001",
-        "fake-seller-id",
-      );
+      expect(listBySourceRecord).toHaveBeenCalledWith("order-src-001", "fake-seller-id");
     });
 
     it("enforces default limit of 20", async () => {
@@ -658,11 +626,12 @@ describe("economicCli", () => {
         },
       ];
 
+      const listBySeller = vi.fn().mockImplementation((sellerId: string) => {
+        // Only return evidence for the queried seller
+        return sellerId === "fake-seller-id" ? plasticovRefs : [];
+      });
       runtime.evidenceStore = {
-        listBySeller: vi.fn().mockImplementation((sellerId: string) => {
-          // Only return evidence for the queried seller
-          return sellerId === "fake-seller-id" ? plasticovRefs : [];
-        }),
+        listBySeller,
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
         insertEvidence: vi.fn(),
@@ -683,7 +652,7 @@ describe("economicCli", () => {
       // Evidence should be returned (1 ref)
       expect(output.result?.totalReferences).toBe(1);
       // verify listBySeller was scoped to the correct seller
-      expect(runtime.evidenceStore.listBySeller).toHaveBeenCalledWith(
+      expect(listBySeller).toHaveBeenCalledWith(
         "fake-seller-id",
         expect.objectContaining({ limit: 20 }),
       );

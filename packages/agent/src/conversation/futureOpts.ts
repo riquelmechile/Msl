@@ -67,7 +67,7 @@ export type MultiSellerIsolation = {
  *  The `@msl/workers` package has stubs for this; wiring to agent loop
  *  tools is tracked as a LARGE effort item.
  */
- 
+
 const _workerThreadConfig = {
   /** Max worker threads to spawn for parallel sync operations. */
   maxWorkers: 4,

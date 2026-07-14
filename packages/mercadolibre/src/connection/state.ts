@@ -7,11 +7,7 @@ import type { TokenStore } from "../oauth/tokenStore.js";
 // ── Connection Status ──────────────────────────────────────────────
 
 export type MercadoLibreConnectionStatus =
-  | "ready"
-  | "degraded"
-  | "blocked"
-  | "disconnected"
-  | "reauthorization-required";
+  "ready" | "degraded" | "blocked" | "disconnected" | "reauthorization-required";
 
 // ── OAuth Token Status ─────────────────────────────────────────────
 

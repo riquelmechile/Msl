@@ -1143,7 +1143,10 @@ export { loadRepositoryEnvironment, getRepoRoot } from "./env.js";
 
 export { createMercadoLibreAccountRegistry } from "./connection/registry.js";
 
-export { createMercadoLibreConnectionHealthService, runMlConnectionHealthCheck } from "./connection/healthService.js";
+export {
+  createMercadoLibreConnectionHealthService,
+  runMlConnectionHealthCheck,
+} from "./connection/healthService.js";
 
 export { createMercadoLibreReadOnlySmokeService } from "./connection/smokeService.js";
 

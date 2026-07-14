@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { runEconomicIngestion } from "./EconomicIngestionPipeline.js";
 import type { DataFetcher, FetchedData } from "./EconomicIngestionPipeline.js";
 import type { EconomicOutcomeStore } from "@msl/memory";
@@ -13,7 +13,9 @@ import type { EconomicIngestionRunStore, EconomicEvidenceStore } from "@msl/memo
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function mockStore(overrides: Partial<Record<keyof EconomicOutcomeStore, unknown>> = {}): EconomicOutcomeStore {
+function mockStore(
+  overrides: Partial<Record<keyof EconomicOutcomeStore, unknown>> = {},
+): EconomicOutcomeStore {
   // Create a real in-memory SQLite DB so the pipeline's transaction path works.
   // The mock insert methods don't actually write to it, but getDb() and
   // transaction() use the real DB so syncUpdateRunInTx/checkpoint work.
@@ -35,8 +37,30 @@ function mockStore(overrides: Partial<Record<keyof EconomicOutcomeStore, unknown
   const store: any = {
     transaction: (fn: () => any) => db.transaction(fn)(),
     getDb: () => db,
-    insertCostComponent: vi.fn(() => ({ id: "cc-0", sellerId: "", type: "other", amount: { amountMinor: 0, currency: "CLP" }, currency: "CLP", source: "derived", occurredAt: 0, observedAt: 0, verification: "unverified", confidence: 0 })),
-    upsertCostComponent: vi.fn(() => ({ id: "cc-0", sellerId: "", type: "other", amount: { amountMinor: 0, currency: "CLP" }, currency: "CLP", source: "derived", occurredAt: 0, observedAt: 0, verification: "unverified", confidence: 0 })),
+    insertCostComponent: vi.fn(() => ({
+      id: "cc-0",
+      sellerId: "",
+      type: "other",
+      amount: { amountMinor: 0, currency: "CLP" },
+      currency: "CLP",
+      source: "derived",
+      occurredAt: 0,
+      observedAt: 0,
+      verification: "unverified",
+      confidence: 0,
+    })),
+    upsertCostComponent: vi.fn(() => ({
+      id: "cc-0",
+      sellerId: "",
+      type: "other",
+      amount: { amountMinor: 0, currency: "CLP" },
+      currency: "CLP",
+      source: "derived",
+      occurredAt: 0,
+      observedAt: 0,
+      verification: "unverified",
+      confidence: 0,
+    })),
     insertUnitEconomicsSnapshot: vi.fn((snap) => snap),
     listCostComponents: vi.fn(() => []),
     listBySourceRecord: vi.fn(() => []),
@@ -52,14 +76,24 @@ function mockStore(overrides: Partial<Record<keyof EconomicOutcomeStore, unknown
     listOutcomesByOrder: vi.fn(),
     listOutcomesByCorrelationId: vi.fn(),
     listMissingInputs: vi.fn(() => []),
-    summarizeProfit: vi.fn(() => ({ sellerId: "seller", currency: "CLP", totalRevenue: 0, totalCosts: 0, netProfit: 0, netMargin: 0, snapshotCount: 0 })),
+    summarizeProfit: vi.fn(() => ({
+      sellerId: "seller",
+      currency: "CLP",
+      totalRevenue: 0,
+      totalCosts: 0,
+      netProfit: 0,
+      netMargin: 0,
+      snapshotCount: 0,
+    })),
     ...overrides,
   };
   /* eslint-enable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
   return store as EconomicOutcomeStore;
 }
 
-function makeSampleOrder(overrides: Partial<FetchedData["orders"][number]> = {}): FetchedData["orders"][number] {
+function makeSampleOrder(
+  overrides: Partial<FetchedData["orders"][number]> = {},
+): FetchedData["orders"][number] {
   return {
     id: "order-1",
     status: "paid",
@@ -189,7 +223,8 @@ describe("EconomicIngestionPipeline", () => {
       await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental", noPersist: true },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -213,7 +248,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental", abortSignal: controller.signal },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.run.status).toBe("failed");
@@ -236,7 +272,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental", abortSignal: controller.signal },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.run.status).toBe("failed");
@@ -247,13 +284,21 @@ describe("EconomicIngestionPipeline", () => {
     it("produces balanced reconciliation for exact match", async () => {
       const store = mockStore();
       const fetcher = makeSampleFetcher({
-        orders: [makeSampleOrder({ total_amount: 10000, sale_fee_amount: 1100, shipping_cost: 800, seller_funded_discount: 500 })],
+        orders: [
+          makeSampleOrder({
+            total_amount: 10000,
+            sale_fee_amount: 1100,
+            shipping_cost: 800,
+            seller_funded_discount: 500,
+          }),
+        ],
       });
 
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.reconciliation.status).toMatch(/balanced/);
@@ -265,7 +310,9 @@ describe("EconomicIngestionPipeline", () => {
         orders: [
           makeSampleOrder({
             total_amount: 999999,
-            order_items: [{ item: { id: "MLI-123", title: "Test" }, quantity: 1, unit_price: 10000 }],
+            order_items: [
+              { item: { id: "MLI-123", title: "Test" }, quantity: 1, unit_price: 10000 },
+            ],
           }),
         ],
       });
@@ -273,7 +320,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.reconciliation.status).toBe("mismatched");
@@ -284,18 +332,19 @@ describe("EconomicIngestionPipeline", () => {
     it("reports partial snapshots when cost types are absent", async () => {
       const store = mockStore();
       const fetcher = makeSampleFetcher({
-        orders: [makeSampleOrder({ sale_fee_amount: 0, shipping_cost: 0, seller_funded_discount: 0 })],
+        orders: [
+          makeSampleOrder({ sale_fee_amount: 0, shipping_cost: 0, seller_funded_discount: 0 }),
+        ],
       });
 
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
-      const partialCount = result.snapshots.filter(
-        (s) => s.calculationStatus === "partial",
-      ).length;
+      const partialCount = result.snapshots.filter((s) => s.calculationStatus === "partial").length;
       expect(partialCount).toBeGreaterThan(0);
     });
   });
@@ -310,7 +359,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.snapshots.length).toBe(0);
@@ -337,7 +387,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.snapshots.length).toBe(3);
@@ -358,7 +409,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "incremental" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.run.status).toBe("completed");
@@ -376,12 +428,14 @@ describe("EconomicIngestionPipeline", () => {
         runEconomicIngestion(
           { sellerId: "plasticov", mode: "incremental" },
           store,
-          fetcher, runIdFactory,
+          fetcher,
+          runIdFactory,
         ),
         runEconomicIngestion(
           { sellerId: "plasticov", mode: "incremental" },
           store,
-          fetcher, runIdFactory,
+          fetcher,
+          runIdFactory,
         ),
       ]);
 
@@ -403,7 +457,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "backfill" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.run.mode).toBe("backfill");
@@ -417,7 +472,8 @@ describe("EconomicIngestionPipeline", () => {
       const result = await runEconomicIngestion(
         { sellerId: "plasticov", mode: "reconcile" },
         store,
-        fetcher, runIdFactory,
+        fetcher,
+        runIdFactory,
       );
 
       expect(result.run.mode).toBe("reconcile");
@@ -468,9 +524,6 @@ describe("EconomicIngestionPipeline", () => {
       const realStore = createSqliteEconomicOutcomeStore(db);
       const realRunStore = createSqliteEconomicIngestionRunStore(db);
 
-      // Create the initial tables
-      realRunStore;
-
       // Wrap insertCostComponent to throw on the second call
       let componentCallCount = 0;
       const throwingStore: EconomicOutcomeStore = {
@@ -480,7 +533,9 @@ describe("EconomicIngestionPipeline", () => {
           if (componentCallCount >= 2) {
             throw new Error("Simulated component insert failure");
           }
-          return realStore.insertCostComponent(input as Parameters<typeof realStore.insertCostComponent>[0]);
+          return realStore.insertCostComponent(
+            input as Parameters<typeof realStore.insertCostComponent>[0],
+          );
         }),
       };
 
@@ -503,15 +558,15 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("failed");
 
       // No partial data committed — cost components table must be empty
-      const compCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const compCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(compCount.cnt).toBe(0);
 
       // No snapshots committed
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(snapCount.cnt).toBe(0);
 
       db.close();
@@ -521,7 +576,6 @@ describe("EconomicIngestionPipeline", () => {
       const db = new Database(":memory:");
       const realStore = createSqliteEconomicOutcomeStore(db);
       const realRunStore = createSqliteEconomicIngestionRunStore(db);
-      realRunStore;
 
       // Wrap insertUnitEconomicsSnapshot to throw
       const throwingStore: EconomicOutcomeStore = {
@@ -544,14 +598,14 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("failed");
 
       // No partial data
-      const compCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const compCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(compCount.cnt).toBe(0);
 
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(snapCount.cnt).toBe(0);
 
       db.close();
@@ -563,7 +617,6 @@ describe("EconomicIngestionPipeline", () => {
       const db = new Database(":memory:");
       const realStore = createSqliteEconomicOutcomeStore(db);
       const realRunStore = createSqliteEconomicIngestionRunStore(db);
-      realRunStore;
 
       const fetcher = makeSampleFetcher();
 
@@ -579,26 +632,26 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("completed");
 
       // Verify data persisted
-      const compCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const compCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(compCount.cnt).toBeGreaterThan(0);
 
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(snapCount.cnt).toBeGreaterThan(0);
 
       // Run row is completed
-      const runStatus = db.prepare(
-        "SELECT status FROM economic_ingestion_runs WHERE seller_id = ?",
-      ).get("plasticov") as { status: string };
+      const runStatus = db
+        .prepare("SELECT status FROM economic_ingestion_runs WHERE seller_id = ?")
+        .get("plasticov") as { status: string };
       expect(runStatus.status).toBe("completed");
 
       // Checkpoint was advanced
-      const cpCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_ingestion_checkpoints WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const cpCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_ingestion_checkpoints WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(cpCount.cnt).toBe(1);
 
       db.close();
@@ -608,7 +661,6 @@ describe("EconomicIngestionPipeline", () => {
       const db = new Database(":memory:");
       const realStore = createSqliteEconomicOutcomeStore(db);
       const realRunStore = createSqliteEconomicIngestionRunStore(db);
-      realRunStore;
 
       // Drop the checkpoints table to make syncUpdateCheckpointInTx throw
       db.exec("DROP TABLE IF EXISTS economic_ingestion_checkpoints");
@@ -626,25 +678,25 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("failed");
 
       // All partial data must be rolled back
-      const compCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const compCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(compCount.cnt).toBe(0);
 
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(snapCount.cnt).toBe(0);
 
       // The initial createRun succeeded before the transaction,
       // so the run row exists but must NOT be "completed"
-      const runCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_ingestion_runs WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const runCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_ingestion_runs WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(runCount.cnt).toBe(1);
-      const runStatus = db.prepare(
-        "SELECT status FROM economic_ingestion_runs WHERE seller_id = ?",
-      ).get("plasticov") as { status: string };
+      const runStatus = db
+        .prepare("SELECT status FROM economic_ingestion_runs WHERE seller_id = ?")
+        .get("plasticov") as { status: string };
       expect(runStatus.status).toBe("failed");
 
       db.close();
@@ -654,7 +706,6 @@ describe("EconomicIngestionPipeline", () => {
       const db = new Database(":memory:");
       const realStore = createSqliteEconomicOutcomeStore(db);
       const realRunStore = createSqliteEconomicIngestionRunStore(db);
-      realRunStore;
 
       // Simulate a mid-transaction failure: the transaction wrapper itself throws
       // We do this by making insertUnitEconomicsSnapshot throw AFTER some
@@ -667,7 +718,9 @@ describe("EconomicIngestionPipeline", () => {
           if (snapCallCount >= 2) {
             throw new Error("Mid-transaction snapshot failure");
           }
-          return realStore.insertUnitEconomicsSnapshot(snap as Parameters<typeof realStore.insertUnitEconomicsSnapshot>[0]);
+          return realStore.insertUnitEconomicsSnapshot(
+            snap as Parameters<typeof realStore.insertUnitEconomicsSnapshot>[0],
+          );
         }),
       };
 
@@ -691,25 +744,25 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("failed");
 
       // ZERO partial data — transaction rollback must have cleaned everything
-      const compCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components",
-      ).get() as { cnt: number };
+      const compCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components")
+        .get() as { cnt: number };
       expect(compCount.cnt).toBe(0);
 
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots",
-      ).get() as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots")
+        .get() as { cnt: number };
       expect(snapCount.cnt).toBe(0);
 
-      const runCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_ingestion_runs WHERE status = 'completed'",
-      ).get() as { cnt: number };
+      const runCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_ingestion_runs WHERE status = 'completed'")
+        .get() as { cnt: number };
       expect(runCount.cnt).toBe(0);
 
       // Checkpoint must NOT be advanced
-      const cpCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_ingestion_checkpoints",
-      ).get() as { cnt: number };
+      const cpCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_ingestion_checkpoints")
+        .get() as { cnt: number };
       expect(cpCount.cnt).toBe(0);
 
       db.close();
@@ -743,7 +796,9 @@ describe("EconomicIngestionPipeline", () => {
         orders: [
           makeSampleOrder({
             total_amount: 999999, // will cause mismatch
-            order_items: [{ item: { id: "MLI-123", title: "Test" }, quantity: 1, unit_price: 10000 }],
+            order_items: [
+              { item: { id: "MLI-123", title: "Test" }, quantity: 1, unit_price: 10000 },
+            ],
           }),
         ],
       });
@@ -799,14 +854,14 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("failed");
 
       // No partial data — transaction must have rolled back
-      const compCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components",
-      ).get() as { cnt: number };
+      const compCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components")
+        .get() as { cnt: number };
       expect(compCount.cnt).toBe(0);
 
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots",
-      ).get() as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots")
+        .get() as { cnt: number };
       expect(snapCount.cnt).toBe(0);
 
       db.close();
@@ -1021,9 +1076,9 @@ describe("EconomicIngestionPipeline", () => {
       expect(runId1).not.toBe(runId2);
 
       // Each run creates its own cost components (no dedup on cost components currently)
-      const allComps = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const allComps = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       // Both runs create cost components (real behavior)
       expect(allComps.cnt).toBeGreaterThanOrEqual(2);
 
@@ -1061,9 +1116,9 @@ describe("EconomicIngestionPipeline", () => {
       );
 
       // Evidence should have exactly 1 row (composite unique key prevents duplicates)
-      const row = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_evidence_references WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const row = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_evidence_references WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(row.cnt).toBe(1);
 
       db.close();
@@ -1095,9 +1150,9 @@ describe("EconomicIngestionPipeline", () => {
       );
 
       // Both runs create snapshots — verify they exist
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?",
-      ).get("plasticov") as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots WHERE seller_id = ?")
+        .get("plasticov") as { cnt: number };
       expect(snapCount.cnt).toBeGreaterThanOrEqual(1);
 
       db.close();
@@ -1167,10 +1222,7 @@ describe("EconomicIngestionPipeline", () => {
       };
 
       const fetcher = makeSampleFetcher({
-        orders: [
-          makeSampleOrder({ id: "order-rb-1" }),
-          makeSampleOrder({ id: "order-rb-2" }),
-        ],
+        orders: [makeSampleOrder({ id: "order-rb-1" }), makeSampleOrder({ id: "order-rb-2" })],
       });
 
       const result = await runEconomicIngestion(
@@ -1183,14 +1235,14 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("failed");
 
       // Verify ZERO partial rows across all tables
-      const compCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM economic_cost_components",
-      ).get() as { cnt: number };
+      const compCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM economic_cost_components")
+        .get() as { cnt: number };
       expect(compCount.cnt).toBe(0);
 
-      const snapCount = db.prepare(
-        "SELECT COUNT(*) as cnt FROM unit_economics_snapshots",
-      ).get() as { cnt: number };
+      const snapCount = db
+        .prepare("SELECT COUNT(*) as cnt FROM unit_economics_snapshots")
+        .get() as { cnt: number };
       expect(snapCount.cnt).toBe(0);
 
       db.close();
@@ -1217,9 +1269,11 @@ describe("EconomicIngestionPipeline", () => {
 
       // Verify no checkpoint was inserted — if the table doesn't exist,
       // the transaction rolled back and no checkpoint could be written
-      const tableExists = db.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='economic_ingestion_checkpoints'",
-      ).get() as { name: string } | undefined;
+      const tableExists = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='economic_ingestion_checkpoints'",
+        )
+        .get() as { name: string } | undefined;
       expect(tableExists).toBeUndefined();
 
       db.close();
@@ -1251,9 +1305,9 @@ describe("EconomicIngestionPipeline", () => {
       expect(result.run.status).toBe("failed");
 
       // Verify the persisted run row shows "failed" status
-      const runStatus = db.prepare(
-        "SELECT status FROM economic_ingestion_runs WHERE seller_id = ?",
-      ).get("plasticov") as { status: string } | undefined;
+      const runStatus = db
+        .prepare("SELECT status FROM economic_ingestion_runs WHERE seller_id = ?")
+        .get("plasticov") as { status: string } | undefined;
       if (runStatus) {
         expect(runStatus.status).toBe("failed");
       }
