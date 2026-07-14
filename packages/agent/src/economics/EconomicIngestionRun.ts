@@ -4,9 +4,7 @@ import { createEconomicIngestionRun } from "@msl/domain";
 
 // ── Valid transitions ──────────────────────────────────────────────────────
 
-const VALID_TRANSITIONS: Readonly<
-  Record<IngestionRunStatus, readonly IngestionRunStatus[]>
-> = {
+const VALID_TRANSITIONS: Readonly<Record<IngestionRunStatus, readonly IngestionRunStatus[]>> = {
   pending: ["fetching"],
   fetching: ["normalizing"],
   normalizing: ["adapting"],
@@ -63,9 +61,7 @@ export function transitionRun(
     sourceKinds: run.sourceKinds,
     startedAt: run.startedAt,
     ...(to === "completed" || to === "failed" ? { completedAt: now } : {}),
-    ...(run.checkpointAfter !== undefined
-      ? { checkpointBefore: run.checkpointAfter }
-      : {}),
+    ...(run.checkpointAfter !== undefined ? { checkpointBefore: run.checkpointAfter } : {}),
     ...(to === "completed" || to === "failed"
       ? { checkpointAfter: `checkpoint-${to}-${now}` }
       : {}),

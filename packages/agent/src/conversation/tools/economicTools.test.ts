@@ -1,13 +1,16 @@
-import { describe, expect, it } from "vitest";
-import Database from "better-sqlite3";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UnitEconomicsSnapshot } from "@msl/domain";
 import {
   createEconomicCostComponent,
   createEconomicOutcome,
   createUnitEconomicsSnapshot,
 } from "@msl/domain";
-import type { EconomicOutcomeStore } from "@msl/memory";
-import { createSqliteEconomicOutcomeStore } from "@msl/memory";
+import type { EconomicOutcomeReaderFixture as EconomicOutcomeStore } from "../../../tests/economicReaderFixture.js";
+import {
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../../../tests/economicReaderFixture.js";
 import {
   createInspectUnitEconomicsTool,
   createInspectEconomicOutcomeTool,
@@ -18,13 +21,17 @@ import {
   createInspectCoverageTool,
   createReconcileSellerEconomicsTool,
 } from "./economicTools.js";
+import { createAgentLoop } from "../agentLoop.js";
+import type { ConversationState } from "../types.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+afterEach(cleanupEconomicFixtureDatabases);
+
 function createStore(): EconomicOutcomeStore {
-  const db = new Database(":memory:");
+  const db = createEconomicFixtureDatabase();
   db.pragma("journal_mode = WAL");
-  return createSqliteEconomicOutcomeStore(db);
+  return createEconomicOutcomeReaderFixture(db);
 }
 
 function makeOutcome(sellerId: string, overrides: Record<string, string> = {}) {
@@ -39,9 +46,10 @@ function makeSnapshot(
 ): UnitEconomicsSnapshot {
   return createUnitEconomicsSnapshot({
     sellerId: overrides.sellerId,
-    grossRevenue: 100000,
+    grossRevenue: overrides.grossRevenue ?? 100000,
     currency: overrides.currency ?? "CLP",
     costComponents: [],
+    ...(overrides.sourceVersion !== undefined ? { sourceVersion: overrides.sourceVersion } : {}),
     ...(overrides.sku !== undefined ? { sku: overrides.sku } : {}),
     ...(overrides.orderId !== undefined ? { orderId: overrides.orderId } : {}),
     ...(overrides.itemId !== undefined ? { itemId: overrides.itemId } : {}),
@@ -51,6 +59,90 @@ function makeSnapshot(
     ...(overrides.period !== undefined ? { period: overrides.period } : {}),
   });
 }
+
+function makeConversationState(): ConversationState {
+  const now = new Date("2026-07-13T00:00:00.000Z");
+  return {
+    messages: [],
+    contextWindowLimit: 20,
+    sessionMetadata: { sellerId: "plasticov", startedAt: now, lastActivityAt: now },
+  };
+}
+
+describe("financial tool seller authorization", () => {
+  it.each(["inspect_unit_economics", "ask_finance_director"])(
+    "blocks cross-seller execution for %s before invoking the backend",
+    async (name) => {
+      const execute = vi.fn(() => ({ status: "ok" }));
+      let calls = 0;
+      const loop = createAgentLoop({
+        systemPrompt: "CEO",
+        sellerId: "plasticov",
+        tools: [{ name, description: "Test financial read", parameters: {}, execute }],
+        llmClient: {
+          chat: () =>
+            Promise.resolve(
+              calls++ === 0
+                ? {
+                    content: "",
+                    toolCalls: [{ name, arguments: { sellerId: "maustian" } }],
+                  }
+                : { content: "La consulta fue rechazada." },
+            ),
+          stream: () =>
+            (async function* streamResponse() {
+              await Promise.resolve();
+              yield { delta: "", done: true };
+            })(),
+        },
+      });
+
+      await loop.converse("Revisá la información financiera.", makeConversationState());
+
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it("passes only the configured seller identity to an authorized financial backend", async () => {
+    const execute = vi.fn(() => ({ status: "ok" }));
+    let calls = 0;
+    const loop = createAgentLoop({
+      systemPrompt: "CEO",
+      sellerId: "plasticov",
+      tools: [
+        {
+          name: "inspect_unit_economics",
+          description: "Test financial read",
+          parameters: {},
+          execute,
+        },
+      ],
+      llmClient: {
+        chat: () =>
+          Promise.resolve(
+            calls++ === 0
+              ? {
+                  content: "",
+                  toolCalls: [
+                    { name: "inspect_unit_economics", arguments: { sellerId: "plasticov" } },
+                  ],
+                }
+              : { content: "Consulta completada." },
+          ),
+        stream: () =>
+          (async function* streamResponse() {
+            await Promise.resolve();
+            yield { delta: "", done: true };
+          })(),
+      },
+    });
+
+    await loop.converse("Revisá la información financiera.", makeConversationState());
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith({ sellerId: "plasticov" });
+  });
+});
 
 // ── inspct_unit_economics tests ─────────────────────────────────────────────
 
@@ -70,10 +162,35 @@ describe("inspect_unit_economics", () => {
     expect(result.noExternalMutationExecuted).toBe(true);
   });
 
-  it("returns snapshots for valid seller", async () => {
+  it("deduplicates identical snapshots and returns distinct business identities", async () => {
     const store = createStore();
-    store.insertUnitEconomicsSnapshot(makeSnapshot({ sellerId: "plasticov" }));
-    store.insertUnitEconomicsSnapshot(makeSnapshot({ sellerId: "plasticov" }));
+    const identical = makeSnapshot({
+      sellerId: "plasticov",
+      orderId: "order-1",
+      itemId: "item-1",
+      sourceVersion: "v1",
+    });
+    const repeated = makeSnapshot({
+      sellerId: "plasticov",
+      orderId: "order-1",
+      itemId: "item-1",
+      sourceVersion: "v1",
+    });
+    const successor = makeSnapshot({
+      sellerId: "plasticov",
+      orderId: "order-2",
+      itemId: "item-2",
+      sourceVersion: "v2",
+      grossRevenue: 100001,
+    });
+
+    expect(repeated.snapshotId).toBe(identical.snapshotId);
+    expect(successor.snapshotId).not.toBe(identical.snapshotId);
+    expect(successor.economicChecksum).not.toBe(identical.economicChecksum);
+
+    store.insertUnitEconomicsSnapshot(identical);
+    store.insertUnitEconomicsSnapshot(repeated);
+    store.insertUnitEconomicsSnapshot(successor);
 
     const tool = createInspectUnitEconomicsTool(store);
     const result = await tool.execute({ sellerId: "plasticov" });

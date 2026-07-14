@@ -4,7 +4,7 @@ import { createDeepSeekProviderFromEnv } from "./transports/deepseekFactory.js";
 import { resolveDeepSeekRuntimeConfig, resolveDeepSeekUserId } from "./deepseekRuntime.js";
 import type {
   EconomicLearningStore,
-  EconomicOutcomeStore,
+  EconomicOutcomeReader as EconomicOutcomeStore,
   FinanceDirectorAssessmentStore,
   GraphEngine,
   OwnedEcommerceStore,
@@ -231,6 +231,35 @@ export type LlmUsageMetadata = {
   model: string;
   usage: Record<string, unknown>;
 };
+
+const SELLER_SCOPED_FINANCIAL_TOOLS = new Set([
+  "inspect_unit_economics",
+  "inspect_economic_outcome",
+  "list_missing_economic_inputs",
+  "summarize_profit",
+  "inspect_cost_components",
+  "inspect_evidence_references",
+  "inspect_coverage",
+  "reconcile_seller_economics",
+  "ask_finance_director",
+  "review_financial_health",
+  "explain_economic_outcome",
+  "review_proposal_profitability",
+]);
+
+function authorizeFinancialToolArguments(
+  toolName: string,
+  args: Record<string, unknown>,
+  configuredSellerId?: string,
+): Record<string, unknown> {
+  if (!SELLER_SCOPED_FINANCIAL_TOOLS.has(toolName)) return args;
+  const requestedSellerId =
+    typeof args["sellerId"] === "string" ? args["sellerId"].trim() : undefined;
+  if (!configuredSellerId || requestedSellerId !== configuredSellerId) {
+    throw new Error("Financial tool seller authorization failed");
+  }
+  return { ...args, sellerId: configuredSellerId };
+}
 
 // Also export OpenAiFunctionToolDefinition from the barrel
 export type { OpenAiFunctionToolDefinition };
@@ -933,7 +962,12 @@ ${strategyLines.join("\n")}`;
             metrics?.record("tool.call", 1, { name: tc.name });
 
             try {
-              const result = await tool.execute(tc.arguments);
+              const authorizedArguments = authorizeFinancialToolArguments(
+                tc.name,
+                tc.arguments,
+                config.accountContext?.sellerId ?? config.sellerId,
+              );
+              const result = await tool.execute(authorizedArguments);
               recordReturnedToolIssue(metrics, tc.name, result);
               if (config.escribano) {
                 void config.escribano.observeToolResult(tc.name, result);

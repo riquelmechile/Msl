@@ -52,11 +52,26 @@ export {
   createSqliteOperationalReadModel,
   migrateOperationalStore,
 } from "./operationalReadModel.js";
-export type { EconomicOutcomeStore, ProfitSummary } from "./economicOutcomeStore.js";
-export {
-  createSqliteEconomicOutcomeStore,
-  migrateEconomicOutcomeStore,
-} from "./economicOutcomeStore.js";
+export type { EconomicOutcomeReader, ProfitSummary } from "./economicOutcomeStore.js";
+export { createEconomicMemoryRuntime } from "./economicWriteSession.js";
+export type {
+  AdmittedEconomicWriteSession,
+  EconomicCheckpointCommit,
+  EconomicEvidenceReader,
+  EconomicIngestionCommit,
+  EconomicIngestionCommitResult,
+  EconomicIngestionFailure,
+  EconomicMemoryReaders,
+  EconomicMemoryRuntime,
+  EconomicMemoryRuntimeOptions,
+  EconomicRunReader,
+  EconomicSourceHealthUpdate,
+  OpenEconomicWriteSession,
+  EconomicWriteSessionClock,
+  EconomicWriteSessionFactory,
+} from "./economicWriteSession.js";
+export { createExecutionBudget } from "./databaseWriteAdmission.js";
+export type { ExecutionBudget, MaintenanceWriteAdmission } from "./databaseWriteAdmission.js";
 export type { FinanceDirectorAssessmentStore } from "./financeDirectorAssessmentStore.js";
 export {
   createSqliteFinanceDirectorAssessmentStore,
@@ -70,16 +85,15 @@ export {
 export type { EvidenceRequestStore, EnqueueResult, ClaimResult } from "./evidenceRequestStore.js";
 export { createSqliteEvidenceRequestStore, migrateEvidenceStore } from "./evidenceRequestStore.js";
 export type {
-  EconomicIngestionRunStore,
   Checkpoint,
-  CreateRunInput,
-  UpdateRunInput,
-} from "./economicIngestionRunStore.js";
-export {
-  createSqliteEconomicIngestionRunStore,
-  migrateEconomicIngestionRunStore,
-  syncUpdateRunInTx,
-  syncUpdateCheckpointInTx,
+  SourceCheckpoint,
+  ClaimsBacklog,
+  ClaimsBacklogClaim,
+  ClaimsBacklogState,
+  SourceHealth,
+  OperationalAlertIntent,
+  OperationalAlertIntentCreateResult,
+  OperationalAlertIntentConsumeResult,
 } from "./economicIngestionRunStore.js";
 export type { SupplierMirrorStore } from "./supplierMirrorStore.js";
 export {
@@ -96,17 +110,12 @@ export {
   migrateOwnedEcommerceStore,
 } from "./ownedEcommerceStore.js";
 
-// Re-export shared connection pool and backup utilities.
-export { getSharedDb, closeSharedDb, getSharedManager } from "./connectionPool.js";
+// The public package intentionally exposes capabilities, never raw SQLite handles.
 export { backupDatabase } from "./backup.js";
 export { createMigrationRegistry } from "./migrationRegistry.js";
-export type { MigrationRegistry, MigrationStep, MigrationApplyResult } from "./migrationRegistry.js";
-export type { EconomicEvidenceStore, ListEvidenceOptions } from "./economicEvidenceStore.js";
-export {
-  createSqliteEconomicEvidenceStore,
-  migrateEconomicEvidenceStore,
-  migrateEconomicDurabilityColumns,
-} from "./economicEvidenceStore.js";
+export type { MigrationRegistry } from "./migrationRegistry.js";
+export { ECONOMIC_SQLITE_WRITERS } from "./economicWriterInventory.js";
+export type { ListEvidenceOptions } from "./economicEvidenceStore.js";
 export { createDatabaseManager } from "./databaseManager.js";
 export type {
   DatabaseManager,
@@ -115,11 +124,7 @@ export type {
   WalCheckpointResult,
 } from "./databaseManager.js";
 export { BackupScheduler, createBackupScheduler } from "./backupScheduler.js";
-export type {
-  DbEntry,
-  BackupSchedulerConfig,
-  BackupMetadata,
-} from "./backupScheduler.js";
+export type { DbEntry, BackupSchedulerConfig, BackupMetadata } from "./backupScheduler.js";
 
 export type LocalDataResidency = "local-only" | "selective-remote-sync";
 

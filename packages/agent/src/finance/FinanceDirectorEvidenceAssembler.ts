@@ -1,10 +1,16 @@
-import type { EconomicOutcomeStore } from "@msl/memory";
+import type { EconomicOutcomeReader as EconomicOutcomeStore } from "@msl/memory";
 import type { Currency, EconomicOutcome, UnitEconomicsSnapshot } from "@msl/domain";
 
 export type FinanceDirectorEvidence = {
   snapshots: readonly UnitEconomicsSnapshot[];
   outcomes: readonly EconomicOutcome[];
-  profitSummary: { totalRevenue: number; totalCosts: number; netProfit: number; netMargin: number; snapshotCount: number } | null;
+  profitSummary: {
+    totalRevenue: number;
+    totalCosts: number;
+    netProfit: number;
+    netMargin: number;
+    snapshotCount: number;
+  } | null;
   missingInputs: string[];
   sellerCurrency: Currency;
   evidenceTimestamp: number;
@@ -31,7 +37,9 @@ export class FinanceDirectorEvidenceAssembler {
     const maxOutcomes = Math.min(opts.maxOutcomes ?? 20, 50);
 
     // Get snapshots from store
-    const allSnapshots = this.store.listUnitEconomicsSnapshots(opts.sellerId, { limit: maxSnapshots });
+    const allSnapshots = this.store.listUnitEconomicsSnapshots(opts.sellerId, {
+      limit: maxSnapshots,
+    });
 
     // Filter by age if specified
     const now = Date.now();

@@ -1,4 +1,5 @@
 import type { Currency, Money } from "./money.js";
+import { randomUUID } from "node:crypto";
 
 // ── Cost component type enumeration ────────────────────────────────────────
 
@@ -36,6 +37,12 @@ export type EconomicCostComponent = {
   readonly currency: Currency;
   readonly source: CostDataSource;
   readonly sourceRecordId?: string;
+  /** Stable source revision used by the seller-scoped business identity. */
+  readonly sourceVersion?: string;
+  /** Economic interpretation used by the seller-scoped business identity. */
+  readonly economicMeaning?: string;
+  /** Nullable for legacy rows whose producing run cannot be reconstructed. */
+  readonly ingestionRunId?: string;
   readonly occurredAt: number;
   readonly observedAt: number;
   readonly verification: CostVerification;
@@ -83,8 +90,6 @@ function isValidCostType(type: string): type is CostComponentType {
 export type CreateEconomicCostComponentResult =
   { success: true; component: EconomicCostComponent } | { success: false; error: Error };
 
-let costComponentCounter = 0;
-
 export function createEconomicCostComponent(
   input: EconomicCostComponentInput,
 ): CreateEconomicCostComponentResult {
@@ -109,8 +114,7 @@ export function createEconomicCostComponent(
     };
   }
 
-  costComponentCounter++;
-  const id = `costcomp-${costComponentCounter}`;
+  const id = `costcomp-${randomUUID()}`;
 
   return {
     success: true,

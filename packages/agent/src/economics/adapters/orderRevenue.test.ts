@@ -7,11 +7,13 @@ import { extractOrderRevenue } from "./orderRevenue.js";
  * Build a valid NormalizedCommerceTransaction for test use.
  * Only passed fields are used; sensible defaults are applied.
  */
-function buildTx(overrides: Partial<{
-  orderStatus: string;
-  grossRevenueMinor: number;
-  currency: Currency;
-}> = {}): NormalizedCommerceTransaction {
+function buildTx(
+  overrides: Partial<{
+    orderStatus: string;
+    grossRevenueMinor: number;
+    currency: Currency;
+  }> = {},
+): NormalizedCommerceTransaction {
   const status = overrides.orderStatus ?? "paid";
   const amount = overrides.grossRevenueMinor ?? 15990;
   const currency: Currency = overrides.currency ?? "CLP";

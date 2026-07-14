@@ -87,7 +87,7 @@ describe("EconomicEvidenceStore", () => {
       // Same composite key, different evidenceId
       const duplicate = makeRef({
         sourceRecordId: ref.sourceRecordId,
-        sourceVersion: ref.sourceVersion,
+        sourceVersion: ref.sourceVersion ?? "",
         checksum: ref.checksum,
         sellerId: ref.sellerId,
         sourceSystem: ref.sourceSystem,
@@ -105,27 +105,32 @@ describe("EconomicEvidenceStore", () => {
       store.upsertEvidence(ref);
 
       // Upsert again
-      store.upsertEvidence(makeRef({
-        sourceRecordId: ref.sourceRecordId,
-        sourceVersion: ref.sourceVersion,
-        checksum: ref.checksum,
-        sellerId: ref.sellerId,
-        sourceSystem: ref.sourceSystem,
-        sourceEntityType: ref.sourceEntityType,
-      }));
+      store.upsertEvidence(
+        makeRef({
+          sourceRecordId: ref.sourceRecordId,
+          sourceVersion: ref.sourceVersion ?? "",
+          checksum: ref.checksum,
+          sellerId: ref.sellerId,
+          sourceSystem: ref.sourceSystem,
+          sourceEntityType: ref.sourceEntityType,
+        }),
+      );
 
-      const count = store.countByRun("run-001");
+      const count = store.countByRun("plasticov", "run-001");
       expect(count).toBe(1);
     });
 
     it("creates distinct rows for different composite keys", () => {
       const ref1 = makeRef({ sourceRecordId: "order-001" });
-      const ref2 = makeRef({ sourceRecordId: "order-002", checksum: "sha256:order:order-002:20000" });
+      const ref2 = makeRef({
+        sourceRecordId: "order-002",
+        checksum: "sha256:order:order-002:20000",
+      });
 
       store.upsertEvidence(ref1);
       store.upsertEvidence(ref2);
 
-      expect(store.countByRun("run-001")).toBe(2);
+      expect(store.countByRun("plasticov", "run-001")).toBe(2);
     });
 
     it("inserts correctly with nullable fields present", () => {
@@ -170,7 +175,9 @@ describe("EconomicEvidenceStore", () => {
   describe("listBySeller", () => {
     it("returns all evidence for a seller", () => {
       store.upsertEvidence(makeRef({ sourceRecordId: "order-001" }));
-      store.upsertEvidence(makeRef({ sourceRecordId: "order-002", checksum: "sha256:order:order-002:20000" }));
+      store.upsertEvidence(
+        makeRef({ sourceRecordId: "order-002", checksum: "sha256:order:order-002:20000" }),
+      );
 
       const results = store.listBySeller("plasticov");
       expect(results).toHaveLength(2);
@@ -184,10 +191,12 @@ describe("EconomicEvidenceStore", () => {
 
     it("respects explicit limit", () => {
       for (let i = 0; i < 5; i++) {
-        store.upsertEvidence(makeRef({
-          sourceRecordId: `order-${String(i).padStart(3, "0")}`,
-          checksum: `sha256:order:order-${i}:10000`,
-        }));
+        store.upsertEvidence(
+          makeRef({
+            sourceRecordId: `order-${String(i).padStart(3, "0")}`,
+            checksum: `sha256:order:order-${i}:10000`,
+          }),
+        );
       }
 
       const results = store.listBySeller("plasticov", { limit: 2 });
@@ -196,16 +205,20 @@ describe("EconomicEvidenceStore", () => {
 
     it("filters by ingestionRunId", () => {
       store.upsertEvidence(makeRef({ ingestionRunId: "run-001", sourceRecordId: "order-001" }));
-      store.upsertEvidence(makeRef({
-        ingestionRunId: "run-001",
-        sourceRecordId: "order-002",
-        checksum: "sha256:order:order-002:20000",
-      }));
-      store.upsertEvidence(makeRef({
-        ingestionRunId: "run-002",
-        sourceRecordId: "order-003",
-        checksum: "sha256:order:order-003:30000",
-      }));
+      store.upsertEvidence(
+        makeRef({
+          ingestionRunId: "run-001",
+          sourceRecordId: "order-002",
+          checksum: "sha256:order:order-002:20000",
+        }),
+      );
+      store.upsertEvidence(
+        makeRef({
+          ingestionRunId: "run-002",
+          sourceRecordId: "order-003",
+          checksum: "sha256:order:order-003:30000",
+        }),
+      );
 
       const results = store.listBySeller("plasticov", { ingestionRunId: "run-001" });
       expect(results).toHaveLength(2);
@@ -214,11 +227,13 @@ describe("EconomicEvidenceStore", () => {
 
     it("filters by verification", () => {
       store.upsertEvidence(makeRef({ sourceRecordId: "order-001", verification: "verified" }));
-      store.upsertEvidence(makeRef({
-        sourceRecordId: "order-002",
-        checksum: "sha256:order:order-002:20000",
-        verification: "unverified",
-      }));
+      store.upsertEvidence(
+        makeRef({
+          sourceRecordId: "order-002",
+          checksum: "sha256:order:order-002:20000",
+          verification: "unverified",
+        }),
+      );
 
       const results = store.listBySeller("plasticov", { verification: "verified" });
       expect(results).toHaveLength(1);
@@ -226,16 +241,21 @@ describe("EconomicEvidenceStore", () => {
     });
 
     it("combines runId and verification filters", () => {
-      store.upsertEvidence(makeRef({
-        sourceRecordId: "order-001",
-        ingestionRunId: "run-001",
-        verification: "verified",
-      }));
-      store.upsertEvidence(makeRef({
-        sourceRecordId: "order-002",
-        checksum: "sha256:order:order-002:20000",
-        ingestionRunId: "run-001", verification: "unverified",
-      }));
+      store.upsertEvidence(
+        makeRef({
+          sourceRecordId: "order-001",
+          ingestionRunId: "run-001",
+          verification: "verified",
+        }),
+      );
+      store.upsertEvidence(
+        makeRef({
+          sourceRecordId: "order-002",
+          checksum: "sha256:order:order-002:20000",
+          ingestionRunId: "run-001",
+          verification: "unverified",
+        }),
+      );
 
       const results = store.listBySeller("plasticov", {
         ingestionRunId: "run-001",
@@ -250,24 +270,28 @@ describe("EconomicEvidenceStore", () => {
   describe("listByRun", () => {
     it("returns evidence for a specific run, scoped to seller", () => {
       store.upsertEvidence(makeRef({ ingestionRunId: "run-001", sourceRecordId: "order-001" }));
-      store.upsertEvidence(makeRef({
-        ingestionRunId: "run-001",
-        sourceRecordId: "order-002",
-        checksum: "sha256:order:order-002:20000",
-      }));
-      store.upsertEvidence(makeRef({
-        ingestionRunId: "run-002",
-        sourceRecordId: "order-003",
-        checksum: "sha256:order:order-003:30000",
-      }));
+      store.upsertEvidence(
+        makeRef({
+          ingestionRunId: "run-001",
+          sourceRecordId: "order-002",
+          checksum: "sha256:order:order-002:20000",
+        }),
+      );
+      store.upsertEvidence(
+        makeRef({
+          ingestionRunId: "run-002",
+          sourceRecordId: "order-003",
+          checksum: "sha256:order:order-003:30000",
+        }),
+      );
 
-      const results = store.listByRun("run-001", "plasticov");
+      const results = store.listByRun("plasticov", "run-001");
       expect(results).toHaveLength(2);
       results.forEach((r) => expect(r.ingestionRunId).toBe("run-001"));
     });
 
     it("returns empty for run with no evidence", () => {
-      const results = store.listByRun("run-999", "plasticov");
+      const results = store.listByRun("plasticov", "run-999");
       expect(results).toHaveLength(0);
     });
   });
@@ -277,11 +301,13 @@ describe("EconomicEvidenceStore", () => {
   describe("listBySourceRecord", () => {
     it("returns evidence for a source record, scoped to seller", () => {
       store.upsertEvidence(makeRef({ sourceRecordId: "order-001" }));
-      store.upsertEvidence(makeRef({
-        sourceRecordId: "order-001",
-        checksum: "sha256:order:order-001-v2:12000",
-        sourceVersion: "2026-02-01T10:00:00Z",
-      }));
+      store.upsertEvidence(
+        makeRef({
+          sourceRecordId: "order-001",
+          checksum: "sha256:order:order-001-v2:12000",
+          sourceVersion: "2026-02-01T10:00:00Z",
+        }),
+      );
 
       // Both share same sourceRecordId = "order-001"
       // But composite key includes version+checksum so both can co-exist
@@ -304,7 +330,11 @@ describe("EconomicEvidenceStore", () => {
   describe("markSuperseded", () => {
     it("sets superseded_by on the target evidence", () => {
       const ev1 = makeRef({ sourceRecordId: "order-001", confidence: 0.5 });
-      const ev2 = makeRef({ sourceVersion: "2026-03-01T10:00:00Z", sourceRecordId: "order-002", confidence: 0.9 });
+      const ev2 = makeRef({
+        sourceVersion: "2026-03-01T10:00:00Z",
+        sourceRecordId: "order-002",
+        confidence: 0.9,
+      });
 
       store.insertEvidence(ev1);
       store.insertEvidence(ev2);
@@ -312,15 +342,15 @@ describe("EconomicEvidenceStore", () => {
       store.markSuperseded(ev1.evidenceId, ev2.evidenceId);
 
       // Verify ev1 has superseded_by set
-      const row = db.prepare(
-        "SELECT superseded_by FROM economic_evidence_references WHERE evidence_id = ?",
-      ).get(ev1.evidenceId) as { superseded_by: string | null };
+      const row = db
+        .prepare("SELECT superseded_by FROM economic_evidence_references WHERE evidence_id = ?")
+        .get(ev1.evidenceId) as { superseded_by: string | null };
       expect(row.superseded_by).toBe(ev2.evidenceId);
 
       // ev2 should NOT be modified
-      const row2 = db.prepare(
-        "SELECT superseded_by FROM economic_evidence_references WHERE evidence_id = ?",
-      ).get(ev2.evidenceId) as { superseded_by: string | null };
+      const row2 = db
+        .prepare("SELECT superseded_by FROM economic_evidence_references WHERE evidence_id = ?")
+        .get(ev2.evidenceId) as { superseded_by: string | null };
       expect(row2.superseded_by).toBeNull();
     });
 
@@ -344,22 +374,26 @@ describe("EconomicEvidenceStore", () => {
   describe("countByRun", () => {
     it("counts evidence for a run", () => {
       store.upsertEvidence(makeRef({ ingestionRunId: "run-001", sourceRecordId: "order-001" }));
-      store.upsertEvidence(makeRef({
-        ingestionRunId: "run-001",
-        sourceRecordId: "order-002",
-        checksum: "sha256:order:order-002:20000",
-      }));
-      store.upsertEvidence(makeRef({
-        ingestionRunId: "run-001",
-        sourceRecordId: "order-003",
-        checksum: "sha256:order:order-003:30000",
-      }));
+      store.upsertEvidence(
+        makeRef({
+          ingestionRunId: "run-001",
+          sourceRecordId: "order-002",
+          checksum: "sha256:order:order-002:20000",
+        }),
+      );
+      store.upsertEvidence(
+        makeRef({
+          ingestionRunId: "run-001",
+          sourceRecordId: "order-003",
+          checksum: "sha256:order:order-003:30000",
+        }),
+      );
 
-      expect(store.countByRun("run-001")).toBe(3);
+      expect(store.countByRun("plasticov", "run-001")).toBe(3);
     });
 
     it("returns 0 for run with no evidence", () => {
-      expect(store.countByRun("no-such-run")).toBe(0);
+      expect(store.countByRun("plasticov", "no-such-run")).toBe(0);
     });
   });
 
@@ -368,11 +402,13 @@ describe("EconomicEvidenceStore", () => {
   describe("cross-seller isolation", () => {
     it("listBySeller scopes to seller", () => {
       store.upsertEvidence(makeRef({ sellerId: "plasticov", sourceRecordId: "order-pl-001" }));
-      store.upsertEvidence(makeRef({
-        sellerId: "maustian",
-        sourceRecordId: "order-mau-001",
-        checksum: "sha256:order:order-mau-001:50000",
-      }));
+      store.upsertEvidence(
+        makeRef({
+          sellerId: "maustian",
+          sourceRecordId: "order-mau-001",
+          checksum: "sha256:order:order-mau-001:50000",
+        }),
+      );
 
       const plasticovResults = store.listBySeller("plasticov");
       expect(plasticovResults).toHaveLength(1);
@@ -419,9 +455,9 @@ describe("EconomicEvidenceStore", () => {
       const ref = makeRef({ sourceRecordId: "order-001" });
       store.insertEvidence(ref);
 
-      const row = db.prepare(
-        "SELECT * FROM economic_evidence_references WHERE evidence_id = ?",
-      ).get(ref.evidenceId) as Record<string, unknown> | undefined;
+      const row = db
+        .prepare("SELECT * FROM economic_evidence_references WHERE evidence_id = ?")
+        .get(ref.evidenceId) as Record<string, unknown> | undefined;
 
       expect(row).not.toBeNull();
       const rowStr = JSON.stringify(row);
@@ -436,9 +472,9 @@ describe("EconomicEvidenceStore", () => {
       const ref = makeRef();
       store.insertEvidence(ref);
 
-      const row = db.prepare(
-        "SELECT * FROM economic_evidence_references WHERE evidence_id = ?",
-      ).get(ref.evidenceId) as Record<string, unknown> | undefined;
+      const row = db
+        .prepare("SELECT * FROM economic_evidence_references WHERE evidence_id = ?")
+        .get(ref.evidenceId) as Record<string, unknown> | undefined;
 
       const rowStr = JSON.stringify(row);
       expect(rowStr).not.toContain("buyer");
@@ -455,14 +491,33 @@ describe("EconomicEvidenceStore", () => {
   // ── Edge cases ────────────────────────────────────────────────────────
 
   describe("edge cases", () => {
+    it("keeps unavailable legacy occurrence and source version absent rather than inventing defaults", () => {
+      db.prepare(
+        `INSERT INTO economic_evidence_references
+          (evidence_id, seller_id, source_system, source_entity_type, source_record_id,
+           observed_at, occurred_at, source_version, checksum, ingestion_run_id, created_at)
+         VALUES ('legacy-unavailable', 'plasticov', 'mercadolibre', 'order', 'legacy-order',
+           1, NULL, NULL, 'legacy-checksum', 'legacy-run', 1)`,
+      ).run();
+
+      expect(store.getEvidence("legacy-unavailable", "plasticov")).toMatchObject({
+        evidenceId: "legacy-unavailable",
+        observedAt: 1,
+      });
+      expect(store.getEvidence("legacy-unavailable", "plasticov")).not.toHaveProperty("occurredAt");
+      expect(store.getEvidence("legacy-unavailable", "plasticov")).not.toHaveProperty(
+        "sourceVersion",
+      );
+    });
+
     it("handle null source_field", () => {
       const ref = makeRef();
       // sourceField is undefined — should be stored as null
       store.insertEvidence(ref);
 
-      const row = db.prepare(
-        "SELECT source_field FROM economic_evidence_references WHERE evidence_id = ?",
-      ).get(ref.evidenceId) as { source_field: string | null };
+      const row = db
+        .prepare("SELECT source_field FROM economic_evidence_references WHERE evidence_id = ?")
+        .get(ref.evidenceId) as { source_field: string | null };
       expect(row.source_field).toBeNull();
     });
 
@@ -472,19 +527,21 @@ describe("EconomicEvidenceStore", () => {
       const ref = makeRef({ confidence: 0.8 });
       store.insertEvidence(ref);
 
-      const row = db.prepare(
-        "SELECT confidence FROM economic_evidence_references WHERE evidence_id = ?",
-      ).get(ref.evidenceId) as { confidence: number | null };
+      const row = db
+        .prepare("SELECT confidence FROM economic_evidence_references WHERE evidence_id = ?")
+        .get(ref.evidenceId) as { confidence: number | null };
       expect(row.confidence).toBeCloseTo(0.8);
     });
 
     it("limit enforcement at high values", () => {
       // Insert 25 evidence refs
       for (let i = 0; i < 25; i++) {
-        store.upsertEvidence(makeRef({
-          sourceRecordId: `order-${String(i).padStart(3, "0")}`,
-          checksum: `sha256:order:order-${i}:10000`,
-        }));
+        store.upsertEvidence(
+          makeRef({
+            sourceRecordId: `order-${String(i).padStart(3, "0")}`,
+            checksum: `sha256:order:order-${i}:10000`,
+          }),
+        );
       }
 
       // Default limit of 20
@@ -511,9 +568,9 @@ describe("EconomicEvidenceStore", () => {
 
   describe("table structure", () => {
     it("creates economic_evidence_references table with all columns", () => {
-      const tableInfo = db.prepare(
-        "PRAGMA table_info(economic_evidence_references)",
-      ).all() as Array<{ name: string; type: string; notnull: number }>;
+      const tableInfo = db
+        .prepare("PRAGMA table_info(economic_evidence_references)")
+        .all() as Array<{ name: string; type: string; notnull: number }>;
 
       const colNames = tableInfo.map((c) => c.name);
       expect(colNames).toContain("evidence_id");
@@ -534,16 +591,18 @@ describe("EconomicEvidenceStore", () => {
     });
 
     it("creates composite unique index", () => {
-      const indexes = db.prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%evidence%composite%'",
-      ).all() as Array<{ name: string }>;
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%evidence%composite%'",
+        )
+        .all() as Array<{ name: string }>;
       expect(indexes.length).toBeGreaterThanOrEqual(1);
     });
 
     it("creates scan indexes", () => {
-      const indexes = db.prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_evidence_%'",
-      ).all() as Array<{ name: string }>;
+      const indexes = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_evidence_%'")
+        .all() as Array<{ name: string }>;
 
       const idxNames = indexes.map((i) => i.name);
       expect(idxNames.some((n) => n.includes("ingestion_run"))).toBe(true);

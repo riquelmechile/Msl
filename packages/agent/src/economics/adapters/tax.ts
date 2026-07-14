@@ -13,8 +13,6 @@ import type { EconomicCostComponent } from "@msl/domain";
  * This PR leaves this as a declared missing input. The pipeline
  * will report "tax" as missing in coverage analysis.
  */
-export function adaptTax(
-  _tx: NormalizedCommerceTransaction,
-): EconomicCostComponent[] {
+export function adaptTax(_tx: NormalizedCommerceTransaction): EconomicCostComponent[] {
   return [];
 }

@@ -30,7 +30,11 @@ function buildTx(): NormalizedCommerceTransaction {
 describe("adaptSellerDiscount", () => {
   it("creates a seller_discount component for seller-funded discount", () => {
     const tx = buildTx();
-    const discountData: DiscountData = { sellerFundedAmount: 1000, mlFundedAmount: 500, totalDiscount: 1500 };
+    const discountData: DiscountData = {
+      sellerFundedAmount: 1000,
+      mlFundedAmount: 500,
+      totalDiscount: 1500,
+    };
 
     const result = adaptSellerDiscount(tx, discountData);
     expect(result).toHaveLength(1);
@@ -44,7 +48,11 @@ describe("adaptSellerDiscount", () => {
 
   it("ignores mlFundedAmount (returns empty since sellerFundedAmount is 0)", () => {
     const tx = buildTx();
-    const discountData: DiscountData = { sellerFundedAmount: 0, mlFundedAmount: 500, totalDiscount: 500 };
+    const discountData: DiscountData = {
+      sellerFundedAmount: 0,
+      mlFundedAmount: 500,
+      totalDiscount: 500,
+    };
 
     expect(adaptSellerDiscount(tx, discountData)).toEqual([]);
   });

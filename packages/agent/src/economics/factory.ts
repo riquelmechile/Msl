@@ -7,46 +7,42 @@ import {
   createMercadoLibreApiFetchTransport,
 } from "@msl/mercadolibre";
 import type { MlcApiClient, OAuthManager } from "@msl/mercadolibre";
-import {
-  getSharedDb,
-  createSqliteEconomicOutcomeStore,
-  createSqliteEconomicIngestionRunStore,
-  createSqliteEconomicEvidenceStore,
-  migrateEconomicOutcomeStore,
-  migrateEconomicIngestionRunStore,
-  migrateEconomicDurabilityColumns,
+import type {
+  EconomicEvidenceReader,
+  EconomicMemoryRuntime,
+  EconomicOutcomeReader,
+  EconomicRunReader,
+  MaintenanceWriteAdmission,
 } from "@msl/memory";
-import type { EconomicOutcomeStore, EconomicIngestionRunStore, EconomicEvidenceStore } from "@msl/memory";
+import { createEconomicMemoryRuntime, createExecutionBudget } from "@msl/memory";
 import { CryptoRunIdFactory } from "@msl/domain";
 import type { RunIdFactory } from "@msl/domain";
-import { createProductionDataFetcher } from "./dataFetcher.js";
+import { createProductionDataFetcher, type EconomicReadClient } from "./dataFetcher.js";
 import { runEconomicIngestion } from "./EconomicIngestionPipeline.js";
 import type { DataFetcher, PipelineConfig, PipelineResult } from "./EconomicIngestionPipeline.js";
+import { DEFAULT_ECONOMIC_DEADLINE_CONFIG } from "./runtimeDeadline.js";
 import { reconcileEconomics } from "./EconomicReconciliationService.js";
-import type { ReconciliationVerdict } from "./EconomicIngestionPipeline.js";
 import { createMetrics, createLogger } from "../conversation/observability.js";
 import type { MetricsCollector, Logger } from "../conversation/observability.js";
-import type Database from "better-sqlite3";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type SellerSlug = "source" | "target";
+const ECONOMIC_WRITE_SESSION_RENEWAL_INTERVAL_MS = 20_000;
 
 export type RuntimeOverrides = {
-  store?: EconomicOutcomeStore;
-  runStore?: EconomicIngestionRunStore;
-  evidenceStore?: EconomicEvidenceStore;
+  memoryRuntime?: EconomicMemoryRuntime;
   runIdFactory?: RunIdFactory;
   dataFetcher?: DataFetcher;
   pipeline?: (config: PipelineConfig) => Promise<PipelineResult>;
   mlClient?: MlcApiClient;
-  db?: Database.Database;
+  databasePath?: string;
 };
 
 export type EconomicIngestionRuntime = {
-  store: EconomicOutcomeStore;
-  runStore: EconomicIngestionRunStore;
-  evidenceStore: EconomicEvidenceStore;
+  store: EconomicOutcomeReader;
+  runStore: EconomicRunReader;
+  evidenceStore: EconomicEvidenceReader;
   pipeline: (config: PipelineConfig) => Promise<PipelineResult>;
   reconciliation: typeof reconcileEconomics;
   dataFetcher: DataFetcher;
@@ -65,7 +61,37 @@ export type EconomicIngestionHealth = {
   evidenceStoreReady: boolean;
   dataFetcherReady: boolean;
   featureGateEnabled: boolean;
+  maintenanceAdmissionReady: boolean;
 };
+
+function adaptMlcEconomicReadClient(client: MlcApiClient): EconomicReadClient {
+  return {
+    getOrders: (sellerId, options) =>
+      client.getOrders(sellerId, {
+        ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options?.offset !== undefined ? { offset: options.offset } : {}),
+        ...(options?.maxPages !== undefined ? { maxPages: options.maxPages } : {}),
+        ...(options?.dateCreatedFrom !== undefined
+          ? { dateCreatedFrom: options.dateCreatedFrom }
+          : {}),
+        ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+      }),
+    ...(client.getProductAdsInsights
+      ? {
+          getProductAdsInsights: (sellerId, options) =>
+            client.getProductAdsInsights!(sellerId, {
+              ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+            }),
+        }
+      : {}),
+  };
+}
+
+function assertRuntimeSeller(actualSellerId: string, expectedSellerId: string): void {
+  if (actualSellerId !== expectedSellerId) {
+    throw new Error("Economic ingestion runtime seller mismatch");
+  }
+}
 
 // ── Factory ────────────────────────────────────────────────────────────────
 
@@ -91,7 +117,8 @@ export function createEconomicIngestionRuntime(
 
   // ── 2. Resolve seller account ───────────────────────────────────────────
   const roleConfig = getMlAccountRoleConfig(env);
-  const numericSellerId = seller === "source" ? roleConfig.sourceSellerId : roleConfig.targetSellerId;
+  const numericSellerId =
+    seller === "source" ? roleConfig.sourceSellerId : roleConfig.targetSellerId;
   // Pipeline uses friendly slugs: source→plasticov, target→maustian
   const pipelineSellerId = seller === "source" ? "plasticov" : "maustian";
 
@@ -99,9 +126,8 @@ export function createEconomicIngestionRuntime(
   const featureGateEnabled = env.MSL_ECONOMIC_INGESTION_ENABLED?.trim() === "true";
 
   // ── 4. OAuth and ML client ──────────────────────────────────────────────
-  let mlClient: MlcApiClient | undefined;
+  let mlClient: MlcApiClient | undefined = overrides?.mlClient;
   let oauthManager: OAuthManager | undefined;
-  let ownDb: Database.Database | undefined;
 
   if (!overrides?.mlClient && !overrides?.dataFetcher) {
     const oauthConfigs = resolveOAuthConfigs(env);
@@ -112,53 +138,79 @@ export function createEconomicIngestionRuntime(
         oauthManager,
         transport,
         now: () => new Date(),
-        allowedSellerIds: [roleConfig.sourceSellerId, roleConfig.targetSellerId].filter(Boolean),
+        allowedSellerIds: [numericSellerId],
       });
     }
   }
 
   // ── 5. SQLite stores ────────────────────────────────────────────────────
   const cortexPath = env.MSL_CORTEX_SQLITE_PATH?.trim();
-  const db = overrides?.db ?? getSharedDb(cortexPath);
-  ownDb = overrides?.db ? undefined : db;
-
-  const store = overrides?.store ?? createSqliteEconomicOutcomeStore(db);
-  const runStore = overrides?.runStore ?? createSqliteEconomicIngestionRunStore(db);
-  const evidenceStore = overrides?.evidenceStore ?? createSqliteEconomicEvidenceStore(db);
-
-  // Ensure economic tables exist before any operations
-  if (!overrides?.store) migrateEconomicOutcomeStore(db);
-  if (!overrides?.runStore) migrateEconomicIngestionRunStore(db);
-  if (!overrides?.evidenceStore) migrateEconomicDurabilityColumns(db);
+  const databasePath = overrides?.databasePath ?? cortexPath;
+  const memoryRuntime =
+    overrides?.memoryRuntime ??
+    createEconomicMemoryRuntime({
+      ...(databasePath === undefined ? {} : { databasePath }),
+      applyMigrations: true,
+      writeSessionRenewalIntervalMs: ECONOMIC_WRITE_SESSION_RENEWAL_INTERVAL_MS,
+    });
+  const { outcomes: store, runs: runStore, evidence: evidenceStore } = memoryRuntime.readers;
+  const { writeSessionFactory } = memoryRuntime;
+  const maintenanceAdmission: MaintenanceWriteAdmission = memoryRuntime.maintenanceAdmission;
 
   // ── 5b. RunIdFactory ────────────────────────────────────────────────────
   const runIdFactory = overrides?.runIdFactory ?? new CryptoRunIdFactory();
 
   // ── 6. DataFetcher ──────────────────────────────────────────────────────
-  const sellerIdMap: Record<string, string> = {
-    plasticov: roleConfig.sourceSellerId,
-    maustian: roleConfig.targetSellerId,
-  };
+  const sellerIdMap: Record<string, string> = { [pipelineSellerId]: numericSellerId };
 
-  const dataFetcher =
+  const configuredDataFetcher =
     overrides?.dataFetcher ??
     (mlClient
-      ? createProductionDataFetcher({ mlClient, sellerIdMap })
-      : createProductionDataFetcher({
-          mlClient: mlClient!,
+      ? createProductionDataFetcher({
+          mlClient: adaptMlcEconomicReadClient(mlClient),
           sellerIdMap,
+          requestTimeoutMs: DEFAULT_ECONOMIC_DEADLINE_CONFIG.requestTimeoutMs,
+          retryBudgetMs: DEFAULT_ECONOMIC_DEADLINE_CONFIG.retryBudgetMs,
+          fanoutTimeoutMs: DEFAULT_ECONOMIC_DEADLINE_CONFIG.fanoutTimeoutMs,
+        })
+      : createProductionDataFetcher({
+          mlClient: adaptMlcEconomicReadClient(mlClient!),
+          sellerIdMap,
+          requestTimeoutMs: DEFAULT_ECONOMIC_DEADLINE_CONFIG.requestTimeoutMs,
+          retryBudgetMs: DEFAULT_ECONOMIC_DEADLINE_CONFIG.retryBudgetMs,
+          fanoutTimeoutMs: DEFAULT_ECONOMIC_DEADLINE_CONFIG.fanoutTimeoutMs,
         }));
+  const dataFetcher: DataFetcher = (sellerId, options) => {
+    assertRuntimeSeller(sellerId, pipelineSellerId);
+    return configuredDataFetcher(sellerId, options);
+  };
 
   // ── 7. Observability ────────────────────────────────────────────────────
   const logger = createLogger("economic-ingestion");
   const metrics = createMetrics();
 
   // ── 8. Pipeline ─────────────────────────────────────────────────────────
-  const pipeline =
+  const configuredPipeline =
     overrides?.pipeline ??
     (async (config: PipelineConfig) => {
-      return runEconomicIngestion(config, store, dataFetcher, runIdFactory, runStore, evidenceStore);
+      return runEconomicIngestion(
+        config,
+        memoryRuntime.readers,
+        writeSessionFactory,
+        dataFetcher,
+        createExecutionBudget(
+          config.maxTime ??
+            config.deadlineConfig?.maxTimeMs ??
+            DEFAULT_ECONOMIC_DEADLINE_CONFIG.maxTimeMs,
+          () => config.runtimeClock?.now() ?? Date.now(),
+        ),
+        runIdFactory,
+      );
     });
+  const pipeline = (config: PipelineConfig): Promise<PipelineResult> => {
+    assertRuntimeSeller(config.sellerId, pipelineSellerId);
+    return configuredPipeline(config);
+  };
 
   // ── 9. Health ───────────────────────────────────────────────────────────
   const health: EconomicIngestionHealth = {
@@ -170,14 +222,14 @@ export function createEconomicIngestionRuntime(
     evidenceStoreReady: true,
     dataFetcherReady: mlClient !== undefined || overrides?.dataFetcher !== undefined,
     featureGateEnabled,
+    maintenanceAdmissionReady:
+      maintenanceAdmission.purpose === "migration" || maintenanceAdmission.purpose === "bootstrap",
   };
 
   // ── 10. Cleanup ─────────────────────────────────────────────────────────
   const close = () => {
     oauthManager?.close?.();
-    if (ownDb && overrides?.db === undefined) {
-      // Don't close shared DB — connection pool manages it
-    }
+    memoryRuntime.close();
   };
 
   return {

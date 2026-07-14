@@ -1,28 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
+import { createEconomicOutcome, transitionOutcome } from "@msl/domain";
+import type { EconomicOutcome, UnitEconomicsSnapshot } from "@msl/domain";
+import type { EconomicLearningStore, GraphEngine } from "@msl/memory";
+import type { EconomicOutcomeReader as EconomicOutcomeStore } from "@msl/memory";
+import { createSqliteEconomicLearningStore } from "@msl/memory";
 import {
-  createEconomicOutcome,
-  transitionOutcome,
-} from "@msl/domain";
-import type {
-  EconomicOutcome,
-  UnitEconomicsSnapshot,
-} from "@msl/domain";
-import type {
-  EconomicLearningStore,
-  EconomicOutcomeStore,
-  GraphEngine,
-} from "@msl/memory";
-import {
-  createSqliteEconomicLearningStore,
-  createSqliteEconomicOutcomeStore,
-} from "@msl/memory";
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../../tests/economicReaderFixture.js";
 import { EconomicLearningTrigger, type TriggerInput } from "./EconomicLearningTrigger.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+afterEach(cleanupEconomicFixtureDatabases);
+
 function createOutcomeStore(db: Database.Database): EconomicOutcomeStore {
-  return createSqliteEconomicOutcomeStore(db);
+  return createEconomicOutcomeReaderFixture(db);
 }
 
 function createLearningStore(db: Database.Database): EconomicLearningStore {
@@ -41,9 +36,7 @@ function makeVerifiedOutcome(
   const raw = createEconomicOutcome({
     sellerId,
     ...(opts?.proposalId ? { proposalId: opts.proposalId } : {}),
-    ...(opts?.originatingAgentId
-      ? { originatingAgentId: opts.originatingAgentId }
-      : {}),
+    ...(opts?.originatingAgentId ? { originatingAgentId: opts.originatingAgentId } : {}),
     ...(opts?.workSessionId ? { workSessionId: opts.workSessionId } : {}),
     ...(opts?.observedEconomicImpactId
       ? { observedEconomicImpactId: opts.observedEconomicImpactId }
@@ -131,10 +124,7 @@ class FakeGraphEngine {
   nodes: FakeNode[] = [];
   private nextNodeId = 1;
 
-  getOrCreateNode(
-    label: string,
-    metadata: Record<string, unknown> = {},
-  ): FakeNode {
+  getOrCreateNode(label: string, metadata: Record<string, unknown> = {}): FakeNode {
     const existing = this.nodes.find((n) => n.label === label);
     if (existing) return existing;
     const node: FakeNode = {
@@ -177,8 +167,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 1. Verified outcome triggers learning pipeline ────────────────────
 
   it("verified outcome triggers learning pipeline", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -192,7 +182,13 @@ describe("EconomicLearningTrigger", () => {
 
     const trigger = new EconomicLearningTrigger();
     const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore, engine as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        snapshot,
+      ),
     );
 
     expect(result.triggered).toBe(true);
@@ -203,8 +199,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 2. Disputed outcome triggers reversal ─────────────────────────────
 
   it("disputed outcome triggers reversal", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -214,9 +210,7 @@ describe("EconomicLearningTrigger", () => {
     });
 
     const trigger = new EconomicLearningTrigger();
-    const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore),
-    );
+    const result = trigger.onOutcomeTransition(triggerInput(outcome, economicStore, learningStore));
 
     expect(result.triggered).toBe(true);
     expect(result.event).toBeDefined();
@@ -226,8 +220,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 3. Invalidated outcome triggers reversal ──────────────────────────
 
   it("invalidated outcome triggers reversal", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -237,9 +231,7 @@ describe("EconomicLearningTrigger", () => {
     });
 
     const trigger = new EconomicLearningTrigger();
-    const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore),
-    );
+    const result = trigger.onOutcomeTransition(triggerInput(outcome, economicStore, learningStore));
 
     expect(result.triggered).toBe(true);
     expect(result.event).toBeDefined();
@@ -249,17 +241,15 @@ describe("EconomicLearningTrigger", () => {
   // ── 4. Pending outcome does NOT trigger ──────────────────────────────
 
   it("pending outcome does NOT trigger", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
     const outcome = makePendingOutcome("plasticov");
 
     const trigger = new EconomicLearningTrigger();
-    const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore),
-    );
+    const result = trigger.onOutcomeTransition(triggerInput(outcome, economicStore, learningStore));
 
     expect(result.triggered).toBe(false);
     expect(result.status).toBe("blocked");
@@ -269,8 +259,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 5. Duplicate outcome within cooldown deduplicates ─────────────────
 
   it("duplicate outcome within cooldown deduplicates", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -286,14 +276,26 @@ describe("EconomicLearningTrigger", () => {
 
     // First trigger — should process
     const first = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore, engine as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        snapshot,
+      ),
     );
     expect(first.triggered).toBe(true);
     expect(first.status).toBe("processed");
 
     // Second trigger within cooldown — should deduplicate
     const second = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, learningStore, engine as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        snapshot,
+      ),
     );
     expect(second.triggered).toBe(false);
     expect(second.status).toBe("blocked");
@@ -303,8 +305,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 6. Different sellers don't mix ────────────────────────────────────
 
   it("different sellers don't mix — Plasticov outcome doesn't affect Maustian", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -323,10 +325,22 @@ describe("EconomicLearningTrigger", () => {
     const trigger = new EconomicLearningTrigger();
 
     const resultA = trigger.onOutcomeTransition(
-      triggerInput(plasticovOutcome, economicStore, learningStore, engine as unknown as GraphEngine, makeSnapshot(plasticovOutcome)),
+      triggerInput(
+        plasticovOutcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        makeSnapshot(plasticovOutcome),
+      ),
     );
     const resultB = trigger.onOutcomeTransition(
-      triggerInput(maustianOutcome, economicStore, learningStore, engine as unknown as GraphEngine, makeSnapshot(maustianOutcome)),
+      triggerInput(
+        maustianOutcome,
+        economicStore,
+        learningStore,
+        engine as unknown as GraphEngine,
+        makeSnapshot(maustianOutcome),
+      ),
     );
 
     expect(resultA.triggered).toBe(true);
@@ -348,8 +362,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 7. Cortex failure does not corrupt EconomicOutcome ────────────────
 
   it("Cortex failure does not corrupt EconomicOutcome", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -378,8 +392,8 @@ describe("EconomicLearningTrigger", () => {
 
   it("trigger failure returns failed status gracefully", () => {
     // Use a store method that throws to simulate failure
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     // Use a malformed store that will throw
     const brokenLearningStore = {
@@ -398,7 +412,13 @@ describe("EconomicLearningTrigger", () => {
 
     const trigger = new EconomicLearningTrigger();
     const result = trigger.onOutcomeTransition(
-      triggerInput(outcome, economicStore, brokenLearningStore, new FakeGraphEngine() as unknown as GraphEngine, snapshot),
+      triggerInput(
+        outcome,
+        economicStore,
+        brokenLearningStore,
+        new FakeGraphEngine() as unknown as GraphEngine,
+        snapshot,
+      ),
     );
 
     expect(result.status).toBe("failed");
@@ -408,8 +428,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 9. pruneDedupCache removes old entries ────────────────────────────
 
   it("pruneDedupCache removes old entries", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -438,8 +458,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 10. Failed transition does not emit event ─────────────────────────
 
   it("Failed transition does not emit event", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 

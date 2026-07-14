@@ -8,7 +8,11 @@ import type {
 } from "@msl/domain";
 import { evaluateEconomicLearningEligibility } from "@msl/domain";
 import { computeEconomicSignal as computeSignal } from "@msl/domain";
-import type { EconomicLearningStore, EconomicOutcomeStore, GraphEngine } from "@msl/memory";
+import type {
+  EconomicLearningStore,
+  EconomicOutcomeReader as EconomicOutcomeStore,
+  GraphEngine,
+} from "@msl/memory";
 import { EconomicAttributionEvaluator } from "./EconomicAttributionEvaluator.js";
 import { EconomicReinforcementPlanner } from "./EconomicReinforcementPlanner.js";
 import { CortexEconomicReinforcementBridge } from "./CortexEconomicReinforcementBridge.js";
@@ -47,7 +51,7 @@ export class EconomicLearningPipeline {
    * learning pipeline.
    */
   processVerifiedOutcome(input: PipelineInput): PipelineResult {
-    const { outcome, learningStore, engine, snapshot } = input;    
+    const { outcome, learningStore, engine, snapshot } = input;
     if (learningStore.isAlreadyProcessed(outcome.outcomeId, outcome.sellerId, POLICY_VERSION)) {
       const existingEvents = learningStore.listByOutcome(outcome.outcomeId, outcome.sellerId);
       const latest = existingEvents[0];
@@ -87,9 +91,7 @@ export class EconomicLearningPipeline {
       outcome,
       sellerId: outcome.sellerId,
     };
-    const attrInput = snapshot === undefined
-      ? attributionInput
-      : { ...attributionInput, snapshot };
+    const attrInput = snapshot === undefined ? attributionInput : { ...attributionInput, snapshot };
     const attributions = this.attributionEvaluator.evaluateFastPath(attrInput);
 
     // Persist attributions
@@ -168,9 +170,8 @@ export class EconomicLearningPipeline {
       plan,
       event: bridgeResult.event,
       status: finalStatus,
-      reasonCodes: finalStatus === "failed" && bridgeResult.errorCode
-        ? [bridgeResult.errorCode]
-        : [],
+      reasonCodes:
+        finalStatus === "failed" && bridgeResult.errorCode ? [bridgeResult.errorCode] : [],
     };
   }
 
@@ -181,10 +182,7 @@ export class EconomicLearningPipeline {
   handleDisputedOutcome(input: PipelineInput): PipelineResult {
     const { outcome, learningStore } = input;
 
-    const bridgeResult = this.bridge.reverseLearning(
-      outcome.outcomeId,
-      outcome.sellerId,
-    );
+    const bridgeResult = this.bridge.reverseLearning(outcome.outcomeId, outcome.sellerId);
 
     // Persist the reversal event
     try {

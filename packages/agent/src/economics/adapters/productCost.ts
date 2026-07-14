@@ -13,8 +13,6 @@ import type { EconomicCostComponent } from "@msl/domain";
  * This PR leaves this as a declared missing input. The pipeline
  * will report "product_cost" as missing in coverage analysis.
  */
-export function adaptProductCost(
-  _tx: NormalizedCommerceTransaction,
-): EconomicCostComponent[] {
+export function adaptProductCost(_tx: NormalizedCommerceTransaction): EconomicCostComponent[] {
   return [];
 }

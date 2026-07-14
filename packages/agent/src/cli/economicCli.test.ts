@@ -1,9 +1,57 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { EconomicIngestionRuntime, SellerSlug } from "../economics/factory.js";
 import type {
   PipelineResult,
   ReconciliationVerdict,
 } from "../economics/EconomicIngestionPipeline.js";
+import { runEconomicIngestion } from "../economics/EconomicIngestionPipeline.js";
+import { DeterministicRunIdFactory } from "@msl/domain";
+import { createEconomicMemoryRuntime, createExecutionBudget } from "@msl/memory";
+import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { sanitizeEconomicDetails } from "../economics/economicSanitizer.js";
+
+type CliFactory = (seller: SellerSlug) => EconomicIngestionRuntime;
+
+type ParsedCliOutput = {
+  readonly status: string;
+  readonly command: string;
+  readonly seller: string;
+  readonly timestamp: string;
+};
+
+function parseCliOutput(value: unknown): ParsedCliOutput {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new Error("CLI output is not JSON serializable");
+  const parsed: unknown = JSON.parse(serialized);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    !("status" in parsed) ||
+    typeof parsed.status !== "string" ||
+    !("command" in parsed) ||
+    typeof parsed.command !== "string" ||
+    !("seller" in parsed) ||
+    typeof parsed.seller !== "string" ||
+    !("timestamp" in parsed) ||
+    typeof parsed.timestamp !== "string"
+  ) {
+    throw new Error("CLI output does not match the expected JSON schema");
+  }
+  return {
+    status: parsed.status,
+    command: parsed.command,
+    seller: parsed.seller,
+    timestamp: parsed.timestamp,
+  };
+}
+
+function runtimeFactoryFor(runtime: EconomicIngestionRuntime): CliFactory {
+  return (_seller: SellerSlug): EconomicIngestionRuntime => runtime;
+}
 
 // ── Fake runtime factory ───────────────────────────────────────────────────
 
@@ -11,33 +59,34 @@ function createFakeRuntime(overrides?: {
   pipelineResult?: PipelineResult;
 }): EconomicIngestionRuntime {
   const pipelineFn = vi.fn().mockResolvedValue(
-    overrides?.pipelineResult ?? {
-      run: {
-        runId: "fake-run-1",
-        sellerId: "fake-seller-id",
-        mode: "incremental",
-        sourceKinds: ["orders"],
-        startedAt: Date.now(),
-        recordsFetched: 10,
-        recordsNormalized: 10,
-        componentsCreated: 5,
-        snapshotsCreated: 3,
-        duplicatesIgnored: 0,
-        partialSnapshots: 1,
-        disputedSnapshots: 0,
-        errors: [],
-        status: "completed",
-        noExternalMutationExecuted: true,
-      },
-      snapshots: [],
-      reconciliation: {
-        status: "balanced",
-        details: "All matched.",
-        sourceTotal: 1000,
-        computedTotal: 1000,
-        difference: 0,
-      } as ReconciliationVerdict,
-    } as PipelineResult,
+    overrides?.pipelineResult ??
+      ({
+        run: {
+          runId: "fake-run-1",
+          sellerId: "fake-seller-id",
+          mode: "incremental",
+          sourceKinds: ["orders"],
+          startedAt: Date.now(),
+          recordsFetched: 10,
+          recordsNormalized: 10,
+          componentsCreated: 5,
+          snapshotsCreated: 3,
+          duplicatesIgnored: 0,
+          partialSnapshots: 1,
+          disputedSnapshots: 0,
+          errors: [],
+          status: "completed",
+          noExternalMutationExecuted: true,
+        },
+        snapshots: [],
+        reconciliation: {
+          status: "balanced",
+          details: "All matched.",
+          sourceTotal: 1000,
+          computedTotal: 1000,
+          difference: 0,
+        } as ReconciliationVerdict,
+      } as PipelineResult),
   );
 
   return {
@@ -80,7 +129,7 @@ function createFakeRuntime(overrides?: {
       sourceTotal: 1000,
       computedTotal: 1000,
       difference: 0,
-    } as ReconciliationVerdict),
+    }),
     dataFetcher: vi.fn(),
     logger: {
       info: vi.fn(),
@@ -160,13 +209,7 @@ describe("economicCli", () => {
 
     it("parses from and to flags", async () => {
       const { parseArgs } = await importCli();
-      const args = parseArgs([
-        "node",
-        "cli.js",
-        "ingest",
-        "--from=2025-01-01",
-        "--to=2025-06-30",
-      ]);
+      const args = parseArgs(["node", "cli.js", "ingest", "--from=2025-01-01", "--to=2025-06-30"]);
       expect(args.from).toBe("2025-01-01");
       expect(args.to).toBe("2025-06-30");
     });
@@ -208,14 +251,54 @@ describe("economicCli", () => {
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "status", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "status", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
       expect(runtime.runStore.getLastRunBySeller).toHaveBeenCalledWith("fake-seller-id");
       expect(output.result?.lastRun).not.toBeNull();
+    });
+
+    it("returns only the requested seller-scoped run for status", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+      const getRun = vi.fn().mockResolvedValue({
+        runId: "run-source",
+        sellerId: "fake-seller-id",
+        mode: "incremental",
+        status: "completed",
+        startedAt: 1,
+        snapshotsCreated: 2,
+        noExternalMutationExecuted: true,
+      });
+      runtime.runStore.getRun = getRun;
+
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "status", "--seller=source", "--run=run-source", "--json"],
+        vi.fn().mockReturnValue(runtime),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(getRun).toHaveBeenCalledWith("run-source");
+      expect(output.result?.run).toMatchObject({ runId: "run-source" });
+      expect(output.result).not.toHaveProperty("totalRuns");
+      expect(JSON.stringify(output)).toContain("noExternalMutationExecuted");
+    });
+
+    it("rejects a selected run owned by another seller without exposing it", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+      runtime.runStore.getRun = vi
+        .fn()
+        .mockResolvedValue({ runId: "other-run", sellerId: "maustian" });
+
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "status", "--seller=source", "--run=other-run", "--json"],
+        vi.fn().mockReturnValue(runtime),
+      );
+
+      expect(exitCode).toBe(1);
+      expect(output.error).toBe("Run not found for seller.");
+      expect(JSON.stringify(output)).not.toContain("maustian");
     });
 
     it("calls store for coverage", async () => {
@@ -224,15 +307,81 @@ describe("economicCli", () => {
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "coverage", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "coverage", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
       expect(output.result?.overallStatus).toBeDefined();
       expect(output.result?.dimensions).toBeDefined();
     });
+
+    it("uses seller-and-run component and snapshot APIs for run coverage", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+      const getRun = vi
+        .fn()
+        .mockResolvedValue({ runId: "run-coverage", sellerId: "fake-seller-id" });
+      const listComponentsByRun = vi.fn().mockReturnValue([]);
+      const listSnapshotsByRun = vi.fn().mockReturnValue([]);
+      runtime.runStore.getRun = getRun;
+      runtime.store.listComponentsByRun = listComponentsByRun;
+      runtime.store.listSnapshotsByRun = listSnapshotsByRun;
+
+      const { output } = await runCli(
+        ["node", "cli.js", "coverage", "--seller=source", "--run=run-coverage"],
+        vi.fn().mockReturnValue(runtime),
+      );
+
+      expect(listComponentsByRun).toHaveBeenCalledWith("fake-seller-id", "run-coverage");
+      expect(listSnapshotsByRun).toHaveBeenCalledWith("fake-seller-id", "run-coverage");
+      expect(output.result?.cumulativeMetrics).toMatchObject({ status: "unavailable" });
+    });
+
+    it.each(["status", "coverage", "reconcile", "missing", "inspect-evidence"] as const)(
+      "returns safe non-zero JSON for an unknown selected run on %s",
+      async (command) => {
+        const { runCli } = await importCli();
+        const runtime = createFakeRuntime();
+        runtime.runStore.getRun = vi.fn().mockResolvedValue(null);
+
+        const { output, exitCode } = await runCli(
+          ["node", "cli.js", command, "--seller=source", "--run=missing-run", "--json"],
+          runtimeFactoryFor(runtime),
+        );
+
+        const json = JSON.stringify(output);
+        expect((): void => {
+          JSON.parse(json);
+        }).not.toThrow();
+        expect(exitCode).toBe(1);
+        expect(output).toMatchObject({ status: "error", error: "Run not found for seller." });
+        expect(json).not.toContain("missing-run");
+      },
+    );
+
+    it.each(["coverage", "reconcile", "missing", "inspect-evidence"] as const)(
+      "returns safe non-zero JSON for a wrong-seller selected run on %s",
+      async (command) => {
+        const { runCli } = await importCli();
+        const runtime = createFakeRuntime();
+        runtime.runStore.getRun = vi.fn().mockResolvedValue({
+          runId: "foreign-run",
+          sellerId: "other-seller",
+        });
+
+        const { output, exitCode } = await runCli(
+          ["node", "cli.js", command, "--seller=source", "--run=foreign-run", "--json"],
+          runtimeFactoryFor(runtime),
+        );
+
+        const json = JSON.stringify(output);
+        expect((): void => {
+          JSON.parse(json);
+        }).not.toThrow();
+        expect(exitCode).toBe(1);
+        expect(output.error).toBe("Run not found for seller.");
+        expect(json).not.toContain("other-seller");
+      },
+    );
 
     it("calls reconciliation for reconcile", async () => {
       const { runCli } = await importCli();
@@ -243,10 +392,7 @@ describe("economicCli", () => {
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "reconcile", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "reconcile", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
       expect(output.result?.verdict).toBeDefined();
@@ -256,20 +402,59 @@ describe("economicCli", () => {
       const { runCli } = await importCli();
       const runtime = createFakeRuntime();
 
-      runtime.store.listMissingInputs = vi.fn().mockReturnValue([
-        { outcomeId: "out-1", missingTypes: ["product_cost", "landed_cost"] },
-      ]);
+      runtime.store.listMissingInputs = vi
+        .fn()
+        .mockReturnValue([{ outcomeId: "out-1", missingTypes: ["product_cost", "landed_cost"] }]);
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { output } = await runCli(
-        ["node", "cli.js", "missing", "--seller=source"],
-        factory,
-      );
+      const { output } = await runCli(["node", "cli.js", "missing", "--seller=source"], factory);
 
       expect(output.status).toBe("ok");
       expect(output.result?.missingInputs).toContain("product_cost");
       expect(output.result?.missingInputs).toContain("landed_cost");
+    });
+
+    it("uses only selected-run snapshots for missing inputs", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+      const getRun = vi
+        .fn()
+        .mockResolvedValue({ runId: "run-missing", sellerId: "fake-seller-id" });
+      const listSnapshotsByRun = vi
+        .fn()
+        .mockReturnValue([{ snapshotId: "snapshot-run-missing", missingInputs: ["product_cost"] }]);
+      runtime.runStore.getRun = getRun;
+      runtime.store.listSnapshotsByRun = listSnapshotsByRun;
+
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "missing", "--seller=source", "--run=run-missing", "--json"],
+        vi.fn().mockReturnValue(runtime),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(output.result?.missingInputs).toEqual(["product_cost"]);
+      expect(listSnapshotsByRun).toHaveBeenCalledWith("fake-seller-id", "run-missing");
+    });
+
+    it("uses only selected-run snapshots for reconciliation", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+      const getRun = vi
+        .fn()
+        .mockResolvedValue({ runId: "run-reconcile", sellerId: "fake-seller-id" });
+      const listSnapshotsByRun = vi.fn().mockReturnValue([]);
+      runtime.runStore.getRun = getRun;
+      runtime.store.listSnapshotsByRun = listSnapshotsByRun;
+
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "reconcile", "--seller=source", "--run=run-reconcile", "--json"],
+        vi.fn().mockReturnValue(runtime),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(output.result?.verdict).toBe("incomplete");
+      expect(listSnapshotsByRun).toHaveBeenCalledWith("fake-seller-id", "run-reconcile");
     });
   });
 
@@ -300,36 +485,213 @@ describe("economicCli", () => {
             status: "incomplete",
             details: "Pipeline failed: Something broke",
           } as ReconciliationVerdict,
-        } as PipelineResult,
+        },
       });
 
       const factory = vi.fn().mockReturnValue(runtime);
 
-      const { exitCode } = await runCli(
-        ["node", "cli.js", "ingest", "--seller=source"],
-        factory,
-      );
+      const { exitCode } = await runCli(["node", "cli.js", "ingest", "--seller=source"], factory);
 
       expect(exitCode).toBe(1);
     });
 
-    it("rejects unknown seller in parseArgs", async () => {
-      const { parseArgs } = await importCli();
+    it("sanitizes failed reconciliation details while preserving reason code and no-mutation status", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime({
+        pipelineResult: {
+          run: {
+            runId: "failed-safe-run",
+            sellerId: "fake-seller-id",
+            mode: "incremental",
+            sourceKinds: [],
+            startedAt: Date.now(),
+            recordsFetched: 0,
+            recordsNormalized: 0,
+            componentsCreated: 0,
+            snapshotsCreated: 0,
+            duplicatesIgnored: 0,
+            partialSnapshots: 0,
+            disputedSnapshots: 0,
+            errors: [],
+            status: "failed",
+            noExternalMutationExecuted: true,
+          },
+          snapshots: [],
+          reconciliation: {
+            status: "mismatched",
+            details:
+              "buyer@example.com raw_payload=private token=top-secret /home/agent/private.ts\n    at run (/home/agent/private.ts:1:1)",
+            reasonCodes: ["reconciliation-mismatch"],
+          } satisfies ReconciliationVerdict,
+        } satisfies PipelineResult,
+      });
 
-      // parseArgs writes to stderr and calls process.exit on unknown seller
-      // We simulate this by checking the output
-      let stderrOutput = "";
-      const origStderr = process.stderr.write.bind(process.stderr);
-      const origExit = process.exit.bind(process);
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "ingest", "--seller=source", "--json"],
+        runtimeFactoryFor(runtime),
+      );
 
-      const stderrMock = (msg: string) => {
-        stderrOutput += msg;
-        return true;
+      const json = JSON.stringify(output);
+      expect((): void => {
+        JSON.parse(json);
+      }).not.toThrow();
+      expect(exitCode).toBe(1);
+      expect(output.result).toMatchObject({
+        status: "failed",
+        noExternalMutationExecuted: true,
+        reconciliation: { reasonCodes: ["reconciliation-mismatch"] },
+      });
+      expect(json).not.toMatch(/buyer@example\.com|private|top-secret|\/home\/|\bat\s/);
+    });
+
+    it("propagates a real finalization failure as sanitized non-zero JSON with the original run ID", async () => {
+      const { runCli } = await importCli();
+      const runId = "economic-ingestion-00000000-0000-4000-a000-000000000127";
+      const directory = mkdtempSync(join(tmpdir(), "msl-cli-finalization-"));
+      const databasePath = join(directory, "economic.sqlite");
+      const memoryRuntime = createEconomicMemoryRuntime({ databasePath });
+      const db = new Database(databasePath);
+      const store = memoryRuntime.readers.outcomes;
+      const runStore = memoryRuntime.readers.runs;
+      const evidenceStore = memoryRuntime.readers.evidence;
+      db.exec(`
+        CREATE TRIGGER reject_completed_economic_run_for_cli
+        BEFORE UPDATE OF status ON economic_ingestion_runs
+        WHEN NEW.status = 'completed'
+        BEGIN
+          SELECT RAISE(ABORT, 'finalization secret=super-secret');
+        END;
+      `);
+      const runtime = createFakeRuntime();
+      runtime.store = store;
+      runtime.runStore = runStore;
+      runtime.evidenceStore = evidenceStore;
+      runtime.health = {
+        ...runtime.health,
+        sellerId: "plasticov",
+        sellerSlug: "source",
+      };
+      runtime.pipeline = (config) =>
+        runEconomicIngestion(
+          config,
+          memoryRuntime.readers,
+          memoryRuntime.writeSessionFactory,
+          () =>
+            Promise.resolve({
+              orders: [
+                {
+                  id: "order-cli-finalization-failure",
+                  status: "paid",
+                  total_amount: 10000,
+                  currency_id: "CLP",
+                  date_created: "2026-01-15T10:00:00Z",
+                  order_items: [
+                    {
+                      item: { id: "MLI-CLI", title: "CLI test item" },
+                      quantity: 1,
+                      unit_price: 10000,
+                    },
+                  ],
+                  sale_fee_amount: 1100,
+                  shipping_cost: 800,
+                  shipping_mode: "seller",
+                },
+              ],
+              items: [],
+              claims: [],
+              ads: [],
+            }),
+          createExecutionBudget(60_000),
+          new DeterministicRunIdFactory([runId]),
+        );
+      runtime.close = () => {
+        db.close();
+        memoryRuntime.close();
+        rmSync(directory, { recursive: true, force: true });
       };
 
-      // We can't call parseArgs with "invalid_seller" because it exits the process.
-      // Instead, test that valid sellers are accepted and the guard works at the runCli level.
-      // parseArgs already validates sellers, so test at the runCli level.
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "ingest", "--seller=source", "--json"],
+        vi.fn().mockReturnValue(runtime),
+      );
+
+      const json = JSON.parse(JSON.stringify(output)) as {
+        status: string;
+        result?: Record<string, unknown>;
+        error?: string;
+      };
+      expect(exitCode).toBe(1);
+      expect(json.status).toBe("error");
+      expect(json.result).toMatchObject({
+        runId,
+        status: "failed",
+        noExternalMutationExecuted: true,
+      });
+      expect(json.error).not.toContain("super-secret");
+      expect(json.error).not.toMatch(/\bat\s+.*\//);
+    });
+
+    it.each([
+      ["invalid command", ["node", "cli.js", "credential=secret", "--json"]],
+      ["invalid seller", ["node", "cli.js", "status", "--seller=buyer@example.com", "--json"]],
+    ])("returns safe non-zero JSON for %s", async (_name, argv) => {
+      const { runCli } = await importCli();
+
+      const { output, exitCode } = await runCli(argv, vi.fn());
+      const json = JSON.stringify(output);
+
+      expect((): void => {
+        JSON.parse(json);
+      }).not.toThrow();
+      expect(exitCode).toBe(1);
+      expect(output).toMatchObject({
+        status: "error",
+        result: { noExternalMutationExecuted: true },
+      });
+      expect(json).not.toMatch(/secret|buyer@example\.com/);
+    });
+
+    it("returns safe non-zero JSON when runtime factory construction throws", async () => {
+      const { runCli } = await importCli();
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "status", "--seller=source", "--json"],
+        () => {
+          throw new Error(
+            "buyer@example.com token=top-secret /private/runtime.ts\n    at factory (/private/runtime.ts:1:1)",
+          );
+        },
+      );
+      const json = JSON.stringify(output);
+
+      expect((): void => {
+        JSON.parse(json);
+      }).not.toThrow();
+      expect(exitCode).toBe(1);
+      expect(output.result).toMatchObject({ noExternalMutationExecuted: true });
+      expect(json).not.toMatch(/buyer@example\.com|top-secret|\/private\/|\bat\s/);
+    });
+
+    it("returns safe non-zero JSON when a handler store call throws", async () => {
+      const { runCli } = await importCli();
+      const runtime = createFakeRuntime();
+      runtime.runStore.getLastRunBySeller = vi
+        .fn()
+        .mockRejectedValue(
+          new Error("buyer@example.com raw_payload=private token=top-secret /private/store.ts"),
+        );
+
+      const { output, exitCode } = await runCli(
+        ["node", "cli.js", "status", "--seller=source", "--json"],
+        runtimeFactoryFor(runtime),
+      );
+      const json = JSON.stringify(output);
+
+      expect((): void => {
+        JSON.parse(json);
+      }).not.toThrow();
+      expect(exitCode).toBe(1);
+      expect(output.result).toMatchObject({ noExternalMutationExecuted: true });
+      expect(json).not.toMatch(/buyer@example\.com|private|top-secret|\/private\//);
     });
   });
 
@@ -344,7 +706,7 @@ describe("economicCli", () => {
         factory,
       );
 
-      const json = JSON.parse(JSON.stringify(output));
+      const json = parseCliOutput(output);
       expect(json.status).toBe("ok");
       expect(json.command).toBe("status");
       expect(json.seller).toBe("source");
@@ -396,10 +758,7 @@ describe("economicCli", () => {
         listBySeller: vi.fn().mockReturnValue([]),
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn().mockReturnValue(null),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn().mockReturnValue(0),
       };
 
@@ -440,10 +799,7 @@ describe("economicCli", () => {
         listBySeller: vi.fn().mockReturnValue(mockRefs),
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn(),
       };
 
@@ -456,7 +812,9 @@ describe("economicCli", () => {
 
       expect(output.status).toBe("ok");
       expect(output.result?.totalReferences).toBe(1);
-      expect((output.result?.references as Array<Record<string, unknown>>)?.[0]?.evidenceId).toBe("ev-1");
+      expect((output.result?.references as Array<Record<string, unknown>>)?.[0]?.evidenceId).toBe(
+        "ev-1",
+      );
     });
 
     it("filters by run ID", async () => {
@@ -479,15 +837,15 @@ describe("economicCli", () => {
           occurredAt: Date.now() - 86400000,
         },
       ];
+      runtime.runStore.getRun = vi
+        .fn()
+        .mockResolvedValue({ runId: "run-specific", sellerId: "fake-seller-id" });
 
       runtime.evidenceStore = {
         listBySeller: vi.fn().mockReturnValue(mockRefs),
         listByRun: vi.fn().mockReturnValue(mockRefs),
         listBySourceRecord: vi.fn().mockReturnValue([]),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn(),
       };
 
@@ -531,10 +889,7 @@ describe("economicCli", () => {
         listBySeller: vi.fn().mockReturnValue([]),
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue(mockRefs),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn(),
       };
 
@@ -576,10 +931,7 @@ describe("economicCli", () => {
         listBySeller: vi.fn().mockReturnValue(manyRefs),
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn(),
       };
 
@@ -618,10 +970,7 @@ describe("economicCli", () => {
         listBySeller: vi.fn().mockReturnValue(manyRefs),
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn(),
       };
 
@@ -665,10 +1014,7 @@ describe("economicCli", () => {
         }),
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn(),
       };
 
@@ -716,10 +1062,7 @@ describe("economicCli", () => {
         listBySeller: vi.fn().mockReturnValue(mockRefs),
         listByRun: vi.fn().mockReturnValue([]),
         listBySourceRecord: vi.fn().mockReturnValue([]),
-        insertEvidence: vi.fn(),
-        upsertEvidence: vi.fn(),
         getEvidence: vi.fn(),
-        markSuperseded: vi.fn(),
         countByRun: vi.fn(),
       };
 
@@ -740,5 +1083,94 @@ describe("economicCli", () => {
         expect(refs[0]!.checksum.length).toBe(12);
       }
     });
+  });
+});
+
+describe("sanitizeEconomicDetails", () => {
+  it("returns bounded JSON-safe output and never invokes getters", () => {
+    let getterCalls = 0;
+    const cycle: Record<string, unknown> = { safe: "economic source" };
+    cycle.self = cycle;
+    Object.defineProperty(cycle, "danger", {
+      enumerable: true,
+      get(): string {
+        getterCalls += 1;
+        throw new Error("must not run");
+      },
+    });
+    const large = "x".repeat(50_000);
+    const result = sanitizeEconomicDetails({
+      reasonCode: "reconciliation-mismatch",
+      amountMinor: 12,
+      difference: 1,
+      tolerance: 1,
+      currency: "CLP",
+      sellerId: "plasticov",
+      source: "orders",
+      count: 2,
+      email: "buyer@example.com",
+      rawPayload: { private: true },
+      authorization: "Bearer secret-value",
+      nested: cycle,
+      error: new Error(
+        "token=secret /home/private/file.ts\n    at stack (/home/private/file.ts:1:1)",
+      ),
+      date: new Date(),
+      binary: new Uint8Array([1, 2]),
+      callback: () => undefined,
+      marker: Symbol("marker"),
+      big: 10n,
+      large,
+      deep: { a: { b: { c: { d: { e: { f: { g: "too deep" } } } } } } },
+      entries: Array.from({ length: 100 }, (_, index) => ({ index })),
+    });
+
+    const json = JSON.stringify(result);
+    expect((): void => {
+      JSON.parse(json);
+    }).not.toThrow();
+    expect(getterCalls).toBe(0);
+    expect(json.length).toBeLessThanOrEqual(10_000);
+    expect(json).toContain("reconciliation-mismatch");
+    expect(json).toContain("plasticov");
+    expect(json).toMatch(/\[redacted\]|\[email\]/);
+    expect(json).not.toMatch(/buyer@example\.com|secret-value|\/home\/private|must not run/);
+    expect(json).toContain("[cycle]");
+    expect(json).toContain("[getter-omitted]");
+    expect(json).toContain("[unsupported-object]");
+  });
+
+  it("keeps adversarial nested numeric, sentinel, wide, and huge values within the global JSON budget", () => {
+    const nestedNumbers: unknown[] = [];
+    let cursor = nestedNumbers;
+    for (let level = 0; level < 20; level += 1) {
+      const next = Array.from({ length: 100 }, (_, index) => index);
+      cursor.push(next);
+      cursor = next;
+    }
+    const sentinelObjects = Array.from({ length: 100 }, (_, index) => ({
+      [`key-${index}`]: {
+        deep: { unsupported: new Date(), value: "v".repeat(10_000) },
+      },
+    }));
+    const wideObject = Object.fromEntries(
+      Array.from({ length: 500 }, (_, index) => [`numeric-${index}`, index]),
+    );
+    const hugeValues = Array.from({ length: 10_000 }, (_, index) => index);
+
+    expect(() => {
+      const result = sanitizeEconomicDetails({
+        nestedNumbers,
+        sentinelObjects,
+        wideObject,
+        hugeValues,
+        finite: Number.MAX_VALUE,
+        boolean: true,
+        empty: null,
+      });
+      const json = JSON.stringify(result);
+      expect(JSON.parse(json)).toBeDefined();
+      expect(json.length).toBeLessThanOrEqual(10_000);
+    }).not.toThrow();
   });
 });

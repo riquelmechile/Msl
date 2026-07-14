@@ -1,28 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
+import { createEconomicOutcome, transitionOutcome } from "@msl/domain";
+import type { EconomicOutcome, UnitEconomicsSnapshot } from "@msl/domain";
+import type { EconomicLearningStore, GraphEngine } from "@msl/memory";
+import type { EconomicOutcomeReader as EconomicOutcomeStore } from "@msl/memory";
+import { createSqliteEconomicLearningStore } from "@msl/memory";
 import {
-  createEconomicOutcome,
-  transitionOutcome,
-} from "@msl/domain";
-import type {
-  EconomicOutcome,
-  UnitEconomicsSnapshot,
-} from "@msl/domain";
-import type {
-  EconomicLearningStore,
-  EconomicOutcomeStore,
-  GraphEngine,
-} from "@msl/memory";
-import {
-  createSqliteEconomicLearningStore,
-  createSqliteEconomicOutcomeStore,
-} from "@msl/memory";
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../../tests/economicReaderFixture.js";
 import { EconomicLearningPipeline } from "./EconomicLearningPipeline.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+afterEach(cleanupEconomicFixtureDatabases);
+
 function createOutcomeStore(db: Database.Database): EconomicOutcomeStore {
-  return createSqliteEconomicOutcomeStore(db);
+  return createEconomicOutcomeReaderFixture(db);
 }
 
 function createLearningStore(db: Database.Database): EconomicLearningStore {
@@ -41,9 +36,7 @@ function makeOutcome(
   const raw = createEconomicOutcome({
     sellerId,
     ...(opts?.proposalId ? { proposalId: opts.proposalId } : {}),
-    ...(opts?.originatingAgentId
-      ? { originatingAgentId: opts.originatingAgentId }
-      : {}),
+    ...(opts?.originatingAgentId ? { originatingAgentId: opts.originatingAgentId } : {}),
     ...(opts?.workSessionId ? { workSessionId: opts.workSessionId } : {}),
     ...(opts?.observedEconomicImpactId
       ? { observedEconomicImpactId: opts.observedEconomicImpactId }
@@ -63,9 +56,7 @@ function makeOutcome(
   return verified;
 }
 
-function makeSnapshot(
-  outcome: EconomicOutcome,
-): UnitEconomicsSnapshot {
+function makeSnapshot(outcome: EconomicOutcome): UnitEconomicsSnapshot {
   const sellerId = outcome.sellerId;
   return {
     snapshotId: `snap-${outcome.outcomeId}`,
@@ -140,8 +131,8 @@ class FakeGraphEngine {
 
 describe("EconomicLearningPipeline", () => {
   it("verified outcome → full pipeline: eligibility→attribution→plan→event", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -173,8 +164,8 @@ describe("EconomicLearningPipeline", () => {
   });
 
   it("non-verified outcome → blocked", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -202,8 +193,8 @@ describe("EconomicLearningPipeline", () => {
   });
 
   it("incomplete outcome (no observed impact) → blocked", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -225,8 +216,8 @@ describe("EconomicLearningPipeline", () => {
   });
 
   it("disputed outcome → reversal", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -253,8 +244,8 @@ describe("EconomicLearningPipeline", () => {
   });
 
   it("invalidated outcome → reversal", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -281,8 +272,8 @@ describe("EconomicLearningPipeline", () => {
   });
 
   it("cortex unavailable → failed but no crash", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -310,8 +301,8 @@ describe("EconomicLearningPipeline", () => {
   });
 
   it("idempotent re-processing", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -350,8 +341,8 @@ describe("EconomicLearningPipeline", () => {
   });
 
   it("seller isolation maintained", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();

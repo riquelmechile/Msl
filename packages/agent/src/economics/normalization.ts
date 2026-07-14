@@ -43,9 +43,7 @@ export type NormalizeOrdersInput = {
  * - occurredAt = parseISO(date_created) as epoch ms.
  * - updatedAt = parseISO(last_updated) ?? occurredAt.
  */
-export function normalizeOrders(
-  input: NormalizeOrdersInput,
-): NormalizedCommerceTransaction[] {
+export function normalizeOrders(input: NormalizeOrdersInput): NormalizedCommerceTransaction[] {
   const results: NormalizedCommerceTransaction[] = [];
 
   for (const order of input.orders) {

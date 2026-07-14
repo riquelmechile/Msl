@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import Database from "better-sqlite3";
-import type { EconomicOutcomeStore } from "@msl/memory";
-import { createSqliteEconomicOutcomeStore } from "@msl/memory";
+import { afterEach, describe, expect, it } from "vitest";
+import type { EconomicOutcomeReaderFixture as EconomicOutcomeStore } from "../../tests/economicReaderFixture.js";
+import {
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../../tests/economicReaderFixture.js";
 import {
   createEconomicCostComponent,
   createEconomicOutcome,
@@ -12,10 +15,12 @@ import { FinanceDirectorEvidenceAssembler } from "./FinanceDirectorEvidenceAssem
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+afterEach(cleanupEconomicFixtureDatabases);
+
 function createStore(): EconomicOutcomeStore {
-  const db = new Database(":memory:");
+  const db = createEconomicFixtureDatabase();
   db.pragma("journal_mode = WAL");
-  return createSqliteEconomicOutcomeStore(db);
+  return createEconomicOutcomeReaderFixture(db);
 }
 
 function clp(n: number) {
@@ -68,9 +73,7 @@ function makeSnapshot(
   });
 }
 
-function makeOutcome(
-  overrides: Partial<EconomicOutcome> & { sellerId: string },
-): EconomicOutcome {
+function makeOutcome(overrides: Partial<EconomicOutcome> & { sellerId: string }): EconomicOutcome {
   return createEconomicOutcome({
     sellerId: overrides.sellerId,
     ...(overrides.accountId !== undefined ? { accountId: overrides.accountId } : {}),
@@ -138,9 +141,7 @@ describe("FinanceDirectorEvidenceAssembler", () => {
     const store = createStore();
     const assembler = new FinanceDirectorEvidenceAssembler(store);
 
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 100000, "CLP", ["product_cost"]),
-    );
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 100000, "CLP", ["product_cost"]));
 
     const evidence = assembler.assembleEvidence({
       sellerId: "plasticov",
@@ -162,9 +163,7 @@ describe("FinanceDirectorEvidenceAssembler", () => {
 
     // Insert 60 snapshots
     for (let i = 0; i < 60; i++) {
-      store.insertUnitEconomicsSnapshot(
-        makeSnapshot("plasticov", 10000, "CLP", ["product_cost"]),
-      );
+      store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 10000, "CLP", ["product_cost"]));
     }
 
     const evidence = assembler.assembleEvidence({
@@ -180,9 +179,7 @@ describe("FinanceDirectorEvidenceAssembler", () => {
     const assembler = new FinanceDirectorEvidenceAssembler(store);
 
     for (let i = 0; i < 30; i++) {
-      store.insertUnitEconomicsSnapshot(
-        makeSnapshot("plasticov", 10000, "CLP", ["product_cost"]),
-      );
+      store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 10000, "CLP", ["product_cost"]));
     }
 
     const evidence = assembler.assembleEvidence({
@@ -263,9 +260,7 @@ describe("FinanceDirectorEvidenceAssembler", () => {
     const store = createStore();
     const assembler = new FinanceDirectorEvidenceAssembler(store);
 
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 50000, "CLP", ["product_cost"]),
-    );
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 50000, "CLP", ["product_cost"]));
 
     // Max age of 100 years should include everything
     const evidence = assembler.assembleEvidence({
@@ -284,9 +279,7 @@ describe("FinanceDirectorEvidenceAssembler", () => {
     const assembler = new FinanceDirectorEvidenceAssembler(store);
 
     // Only provide shipping — product_cost and marketplace_fee missing
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 50000, "CLP", ["shipping"]),
-    );
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 50000, "CLP", ["shipping"]));
 
     const evidence = assembler.assembleEvidence({
       sellerId: "plasticov",
@@ -302,12 +295,8 @@ describe("FinanceDirectorEvidenceAssembler", () => {
     const assembler = new FinanceDirectorEvidenceAssembler(store);
 
     // Both snapshots only have product_cost — both miss shipping
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 50000, "CLP", ["product_cost"]),
-    );
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 30000, "CLP", ["product_cost"]),
-    );
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 50000, "CLP", ["product_cost"]));
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 30000, "CLP", ["product_cost"]));
 
     const evidence = assembler.assembleEvidence({
       sellerId: "plasticov",
@@ -325,12 +314,8 @@ describe("FinanceDirectorEvidenceAssembler", () => {
     const store = createStore();
     const assembler = new FinanceDirectorEvidenceAssembler(store);
 
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 100000, "CLP", ["product_cost"]),
-    );
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("maustian", 200000, "CLP", ["product_cost"]),
-    );
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 100000, "CLP", ["product_cost"]));
+    store.insertUnitEconomicsSnapshot(makeSnapshot("maustian", 200000, "CLP", ["product_cost"]));
     store.insertOutcome(makeOutcome({ sellerId: "plasticov" }));
     store.insertOutcome(makeOutcome({ sellerId: "maustian" }));
 
@@ -361,12 +346,8 @@ describe("FinanceDirectorEvidenceAssembler", () => {
     const store = createStore();
     const assembler = new FinanceDirectorEvidenceAssembler(store);
 
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 100000, "CLP", ["product_cost"]),
-    );
-    store.insertUnitEconomicsSnapshot(
-      makeSnapshot("plasticov", 50000, "USD", ["product_cost"]),
-    );
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 100000, "CLP", ["product_cost"]));
+    store.insertUnitEconomicsSnapshot(makeSnapshot("plasticov", 50000, "USD", ["product_cost"]));
 
     const clpEvidence = assembler.assembleEvidence({
       sellerId: "plasticov",

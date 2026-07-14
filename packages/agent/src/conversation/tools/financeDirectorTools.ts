@@ -1,6 +1,9 @@
 import type { ToolDefinition } from "./types.js";
 import { safeString } from "./types.js";
-import type { EconomicOutcomeStore, FinanceDirectorAssessmentStore } from "@msl/memory";
+import type {
+  EconomicOutcomeReader as EconomicOutcomeStore,
+  FinanceDirectorAssessmentStore,
+} from "@msl/memory";
 import type { AssessmentType } from "@msl/domain";
 import { FinanceDirectorEvidenceAssembler } from "../../finance/FinanceDirectorEvidenceAssembler.js";
 import type { FinanceDirectorAdvisor } from "../../finance/FinanceDirectorAdvisor.js";
@@ -47,11 +50,13 @@ export function createAskFinanceDirectorTool(input: FinanceDirectorToolsInput): 
         },
         question: {
           type: "string",
-          description: "The financial question to ask the Finance Director. E.g., 'Are we profitable on product X?', 'What risks do we face?', 'Is this proposal financially viable?'",
+          description:
+            "The financial question to ask the Finance Director. E.g., 'Are we profitable on product X?', 'What risks do we face?', 'Is this proposal financially viable?'",
         },
         assessmentType: {
           type: "string",
-          description: "Optional assessment type. One of: account-health, order-profitability, product-profitability, ads-profitability, proposal-review, outcome-review, missing-cost-review, cross-account-comparison, cash-risk-indicator.",
+          description:
+            "Optional assessment type. One of: account-health, order-profitability, product-profitability, ads-profitability, proposal-review, outcome-review, missing-cost-review, cross-account-comparison, cash-risk-indicator.",
         },
       },
       required: ["sellerId", "question"],
@@ -84,7 +89,8 @@ export function createAskFinanceDirectorTool(input: FinanceDirectorToolsInput): 
       }
 
       const question = safeString(args.question);
-      const assessmentType = safeAssessmentType(args.assessmentType ?? args.question) ?? "account-health";
+      const assessmentType =
+        safeAssessmentType(args.assessmentType ?? args.question) ?? "account-health";
 
       try {
         const assembler = new FinanceDirectorEvidenceAssembler(input.economicStore);
@@ -336,7 +342,9 @@ export function createExplainEconomicOutcomeTool(input: FinanceDirectorToolsInpu
 
 // ── review_proposal_profitability ──────────────────────────────────────────
 
-export function createReviewProposalProfitabilityTool(input: FinanceDirectorToolsInput): ToolDefinition {
+export function createReviewProposalProfitabilityTool(
+  input: FinanceDirectorToolsInput,
+): ToolDefinition {
   return {
     name: "review_proposal_profitability",
     description:

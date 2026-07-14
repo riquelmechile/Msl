@@ -925,6 +925,7 @@ export type MercadoLibreApiRequest = {
   headers?: Readonly<Record<string, string>>;
   body?: unknown;
   retryOnRateLimit?: boolean;
+  signal?: AbortSignal;
 };
 
 export type MercadoLibreApiTransport = {
@@ -954,7 +955,13 @@ export type MlcApiClient = {
   getItem(sellerId: string, itemId: string): Promise<MlItem>;
   getOrders(
     sellerId: string,
-    options?: { limit?: number; offset?: number },
+    options?: {
+      limit?: number;
+      offset?: number;
+      maxPages?: number;
+      dateCreatedFrom?: string;
+      signal?: AbortSignal;
+    },
   ): Promise<MlcOrdersSnapshot>;
   getMessages(
     sellerId: string,
@@ -1081,12 +1088,14 @@ export type MlcProductAdsInsightsOptions = {
   itemId?: string;
   campaignId?: string;
   status?: string;
+  signal?: AbortSignal;
 };
 
 type MlcReadRequestOptions = {
   method?: "POST" | "PUT";
   body?: unknown;
   retryOnRateLimit?: boolean;
+  signal?: AbortSignal;
 };
 
 type MlcReadRequest = (
@@ -1143,7 +1152,10 @@ export { loadRepositoryEnvironment, getRepoRoot } from "./env.js";
 
 export { createMercadoLibreAccountRegistry } from "./connection/registry.js";
 
-export { createMercadoLibreConnectionHealthService, runMlConnectionHealthCheck } from "./connection/healthService.js";
+export {
+  createMercadoLibreConnectionHealthService,
+  runMlConnectionHealthCheck,
+} from "./connection/healthService.js";
 
 export { createMercadoLibreReadOnlySmokeService } from "./connection/smokeService.js";
 
@@ -1396,9 +1408,19 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
       const baseQuery: Record<string, string> = { seller: sellerId, site: "MLC" };
       if (options?.limit !== undefined) baseQuery.limit = String(options.limit);
       if (options?.offset !== undefined) baseQuery.offset = String(options.offset);
+      if (options?.dateCreatedFrom !== undefined) {
+        baseQuery["order.date_created.from"] = options.dateCreatedFrom;
+      }
 
       const path = "/orders/search";
-      const firstPayload = await input.request(sellerId, path, { ...baseQuery });
+      const requestOptions = options?.signal ? { signal: options.signal } : undefined;
+      const firstPayload = await input.request(
+        sellerId,
+        path,
+        { ...baseQuery },
+        undefined,
+        requestOptions,
+      );
       const firstRoot = asRecord(firstPayload);
       const paging = asRecord(firstRoot?.paging);
       const total = numberValue(paging?.total) ?? 0;
@@ -1406,12 +1428,20 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
 
       let allResults = asArray(firstRoot?.results ?? firstRoot?.orders);
 
-      if (total > 1000) {
+      const maxPages = options?.maxPages ?? Number.POSITIVE_INFINITY;
+      let pagesFetched = 1;
+      if (total > 1000 && pagesFetched < maxPages) {
         // Use scan + scroll_id for more than 1000 orders
         const scanQuery: Record<string, string> = { ...baseQuery, search_type: "scan" };
         delete scanQuery.offset;
         delete scanQuery.limit;
-        const scanPayload = await input.request(sellerId, path, scanQuery);
+        const scanPayload = await input.request(
+          sellerId,
+          path,
+          scanQuery,
+          undefined,
+          requestOptions,
+        );
         const scanRoot = asRecord(scanPayload);
         let scrollId = stringValue(scanRoot?.scroll_id) ?? "";
         const scanResults = asArray(scanRoot?.results ?? scanRoot?.orders);
@@ -1424,14 +1454,22 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
             search_type: "scan",
             scroll_id: scrollId,
           };
-          const nextPayload = await input.request(sellerId, path, nextQuery);
+          const nextPayload = await input.request(
+            sellerId,
+            path,
+            nextQuery,
+            undefined,
+            requestOptions,
+          );
           const nextRoot = asRecord(nextPayload);
           const nextResults = asArray(nextRoot?.results ?? nextRoot?.orders);
           if (nextResults.length === 0) break;
           allResults = allResults.concat(nextResults);
+          pagesFetched++;
+          if (pagesFetched >= maxPages) break;
           scrollId = stringValue(nextRoot?.scroll_id) ?? "";
         }
-      } else if (total > allResults.length) {
+      } else if (total > allResults.length && pagesFetched < maxPages) {
         let offset = (options?.offset ?? 0) + allResults.length;
         while (offset < total) {
           await new Promise((r) => setTimeout(r, 300));
@@ -1440,11 +1478,19 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
             offset: String(offset),
             limit: String(pageLimit),
           };
-          const pagePayload = await input.request(sellerId, path, pageQuery);
+          const pagePayload = await input.request(
+            sellerId,
+            path,
+            pageQuery,
+            undefined,
+            requestOptions,
+          );
           const pageRoot = asRecord(pagePayload);
           const pageResults = asArray(pageRoot?.results ?? pageRoot?.orders);
           if (pageResults.length === 0) break;
           allResults = allResults.concat(pageResults);
+          pagesFetched++;
+          if (pagesFetched >= maxPages) break;
           offset += pageResults.length;
         }
       }
@@ -1492,14 +1538,27 @@ function createMlcReadMethods(input: { request: MlcReadRequest; now(): Date }): 
         "/advertising/advertisers",
         { product_id: "PADS" },
         { "Content-Type": "application/json", "Api-Version": "1" },
+        options.signal ? { signal: options.signal } : undefined,
       );
       const advertiser = findProductAdsAdvertiser(advertiserPayload);
       const basePath = `/advertising/${advertiser.siteId}/advertisers/${advertiser.id}/product_ads`;
       const query = productAdsQuery(options);
       const headers = { "api-version": "2" };
       const [campaignsPayload, adsPayload] = await Promise.all([
-        input.request(sellerId, `${basePath}/campaigns/search`, query, headers),
-        input.request(sellerId, `${basePath}/ads/search`, query, headers),
+        input.request(
+          sellerId,
+          `${basePath}/campaigns/search`,
+          query,
+          headers,
+          options.signal ? { signal: options.signal } : undefined,
+        ),
+        input.request(
+          sellerId,
+          `${basePath}/ads/search`,
+          query,
+          headers,
+          options.signal ? { signal: options.signal } : undefined,
+        ),
       ]);
 
       return normalizeProductAdsInsights({
@@ -2027,6 +2086,7 @@ export function createMlcApiClient(input: {
     if (reqOptions?.retryOnRateLimit !== undefined) {
       apiRequest.retryOnRateLimit = reqOptions.retryOnRateLimit;
     }
+    if (reqOptions?.signal !== undefined) apiRequest.signal = reqOptions.signal;
 
     return input.transport.request(apiRequest);
   };
@@ -2092,6 +2152,7 @@ export function createOAuthMlcApiClient(input: {
     if (reqOptions?.retryOnRateLimit !== undefined) {
       apiRequest.retryOnRateLimit = reqOptions.retryOnRateLimit;
     }
+    if (reqOptions?.signal !== undefined) apiRequest.signal = reqOptions.signal;
 
     return input.transport.request(apiRequest);
   };
@@ -2149,6 +2210,7 @@ async function fetchWithBackoff(
       lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
     } catch (err) {
       lastError = err;
+      if (init.signal?.aborted) throw err;
       if (attempt === MAX_RETRIES) throw err;
     }
   }
@@ -2167,6 +2229,7 @@ export function createMercadoLibreApiFetchTransport(): MercadoLibreApiTransport 
       const init: RequestInit & { headers: Record<string, string> } = {
         method: request.method,
         headers: { Authorization: `Bearer ${request.accessToken}`, ...request.headers },
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
       };
 
       if (request.body !== undefined && request.method !== "GET") {

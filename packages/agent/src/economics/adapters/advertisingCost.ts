@@ -38,6 +38,10 @@ export function adaptAdvertisingCost(
     amount: moneyResult.money,
     source: hasOrderContext ? ("mercadolibre" as const) : ("derived" as const),
     sourceRecordId: tx?.orderId ?? adData.campaignId,
+    ...(tx !== undefined
+      ? { sourceVersion: tx.sourceVersion, ingestionRunId: tx.ingestionRunId }
+      : {}),
+    economicMeaning: "advertising",
     occurredAt: tx?.occurredAt ?? adData.period?.start ?? Date.now(),
     observedAt: Date.now(),
     verification: hasOrderContext ? ("verified" as const) : ("unverified" as const),

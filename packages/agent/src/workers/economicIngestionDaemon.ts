@@ -1,7 +1,29 @@
 import type { DaemonHandler } from "./daemonTypes.js";
-import type { EconomicOutcomeStore } from "@msl/memory";
-import type { DataFetcher } from "../economics/EconomicIngestionPipeline.js";
-import { runEconomicIngestion } from "../economics/EconomicIngestionPipeline.js";
+import {
+  createEconomicIngestionRuntime,
+  type EconomicIngestionRuntime,
+  type SellerSlug,
+} from "../economics/factory.js";
+import { safeEconomicErrorMessage } from "../economics/economicSanitizer.js";
+import type { AgentMessage } from "../conversation/agentMessageBusStore.js";
+
+function runtimeSeller(sellerId: string): SellerSlug | null {
+  if (sellerId === "plasticov") return "source";
+  if (sellerId === "maustian") return "target";
+  return null;
+}
+
+function claimedSellerId(claim: AgentMessage): string | null {
+  let payloadSellerId: string | undefined;
+  try {
+    const payload = JSON.parse(claim.payloadJson) as { sellerId?: unknown };
+    if (typeof payload.sellerId === "string") payloadSellerId = payload.sellerId;
+  } catch {
+    return null;
+  }
+  if (claim.sellerId && payloadSellerId && claim.sellerId !== payloadSellerId) return null;
+  return claim.sellerId ?? payloadSellerId ?? null;
+}
 
 /**
  * Create an economic ingestion daemon that periodically runs the economic
@@ -12,37 +34,17 @@ import { runEconomicIngestion } from "../economics/EconomicIngestionPipeline.js"
  */
 export function createEconomicIngestionDaemon(opts: {
   enabled: boolean;
-  store?: EconomicOutcomeStore;
-  dataFetcher?: DataFetcher;
-  defaultSellerId?: string;
+  sellerRoutes?: ReadonlyMap<string, SellerSlug>;
+  runtimeFactory?: (seller: SellerSlug) => EconomicIngestionRuntime;
 }): DaemonHandler {
   const isEnabled = opts.enabled && process.env.MSL_ECONOMIC_INGESTION_ENABLED === "true";
 
-  return async ({ sellerIds }) => {
+  return async ({ claim }) => {
     if (!isEnabled) {
       return { findings: [], proposalEnqueued: false, messageIds: [] };
     }
 
-    const store = opts.store;
-    const dataFetcher = opts.dataFetcher;
-
-    if (!store || !dataFetcher) {
-      return {
-        findings: [
-          {
-            kind: "alert",
-            severity: "warning",
-            summary: "Economic ingestion daemon: missing store or dataFetcher dependency.",
-            evidenceIds: [],
-          },
-        ],
-        proposalEnqueued: false,
-        messageIds: [],
-      };
-    }
-
-    // Use the default seller from opts, or fall back to the first available seller
-    const sellerId = opts.defaultSellerId ?? sellerIds[0];
+    const sellerId = claimedSellerId(claim);
     if (!sellerId) {
       return {
         findings: [
@@ -57,18 +59,37 @@ export function createEconomicIngestionDaemon(opts: {
         messageIds: [],
       };
     }
+    const sellerSlug = opts.sellerRoutes?.get(sellerId) ?? runtimeSeller(sellerId);
+    if (!sellerSlug) {
+      return {
+        findings: [
+          {
+            kind: "alert",
+            severity: "warning",
+            summary: "Economic ingestion daemon: seller is not configured for the durable runtime.",
+            evidenceIds: [],
+          },
+        ],
+        proposalEnqueued: false,
+        messageIds: [],
+      };
+    }
 
+    let runtime: EconomicIngestionRuntime | undefined;
     try {
-      const result = await runEconomicIngestion(
-        {
-          sellerId,
-          mode: "incremental",
-          maxPages: 2, // small page limit for daemon tick
-          noPersist: false,
-        },
-        store,
-        dataFetcher,
-      );
+      runtime = (opts.runtimeFactory ?? createEconomicIngestionRuntime)(sellerSlug);
+      if (
+        opts.sellerRoutes &&
+        (runtime.health.numericSellerId !== sellerId || runtime.health.sellerSlug !== sellerSlug)
+      ) {
+        throw new Error("Economic ingestion runtime seller mismatch");
+      }
+      const result = await runtime.pipeline({
+        sellerId: runtime.health.sellerId,
+        mode: "incremental",
+        maxPages: 2, // small page limit for daemon tick
+        noPersist: false,
+      });
 
       if (result.run.status === "failed") {
         return {
@@ -76,7 +97,7 @@ export function createEconomicIngestionDaemon(opts: {
             {
               kind: "alert",
               severity: "warning",
-              summary: `Economic ingestion failed for ${sellerId}: ${result.reconciliation.details}`,
+              summary: `Economic ingestion failed for ${sellerId}: ${safeEconomicErrorMessage(result.reconciliation.details)}`,
               evidenceIds: [`run:${result.run.runId}`],
             },
           ],
@@ -90,7 +111,7 @@ export function createEconomicIngestionDaemon(opts: {
           {
             kind: "info",
             severity: "info",
-            summary: `Economic ingestion completed for ${sellerId}: ${result.snapshots.length} snapshots, reconciliation ${result.reconciliation.status}`,
+            summary: `Economic ingestion completed for ${sellerId}: ${result.snapshots.length} snapshots, reconciliation ${result.reconciliation.status}, checkpoint ${result.run.checkpointAfter ?? "unchanged"}, noExternalMutationExecuted=true`,
             evidenceIds: [`run:${result.run.runId}`],
           },
         ],
@@ -103,13 +124,15 @@ export function createEconomicIngestionDaemon(opts: {
           {
             kind: "alert",
             severity: "warning",
-            summary: `Economic ingestion daemon error for ${sellerId}: ${err instanceof Error ? err.message : String(err)}`,
+            summary: `Economic ingestion daemon error for ${sellerId}: ${safeEconomicErrorMessage(err)}`,
             evidenceIds: [],
           },
         ],
         proposalEnqueued: false,
         messageIds: [],
       };
+    } finally {
+      runtime?.close();
     }
   };
 }
