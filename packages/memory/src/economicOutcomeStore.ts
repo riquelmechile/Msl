@@ -10,6 +10,7 @@ import type {
 import { transitionOutcome } from "@msl/domain";
 import type { Currency } from "@msl/domain";
 import Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 
 // ── Row types ──────────────────────────────────────────────────────────────
 
@@ -58,6 +59,11 @@ type UnitEconomicsRow = {
   currency: string;
   snapshot_json: string;
   calculated_at: number;
+  ingestion_run_id: string | null;
+  source_version: string | null;
+  economic_meaning: string | null;
+  economic_algorithm_version: string | null;
+  economic_checksum: string | null;
 };
 
 type CostComponentRow = {
@@ -78,6 +84,7 @@ type CostComponentRow = {
   superseded_at: number | null;
   reversed_at: number | null;
   reversed_reason: string | null;
+  ingestion_run_id: string | null;
 };
 
 // ── Public types ───────────────────────────────────────────────────────────
@@ -95,6 +102,8 @@ export type ProfitSummary = {
 };
 
 export type CostComponentInsertInput = {
+  /** Optional domain UUID; absent only for legacy callers. */
+  id?: string;
   sellerId: string;
   type: CostComponentType;
   amount: { amountMinor: number; currency: Currency };
@@ -102,6 +111,7 @@ export type CostComponentInsertInput = {
   sourceRecordId?: string;
   economicMeaning?: string;
   sourceVersion?: string;
+  ingestionRunId?: string;
   occurredAt: number;
   observedAt: number;
   verification: CostVerification;
@@ -140,6 +150,8 @@ export type EconomicOutcomeStore = {
     sellerId: string,
   ): Array<{ outcomeId: string; missingTypes: CostComponentType[] }>;
   insertUnitEconomicsSnapshot(snapshot: UnitEconomicsSnapshot): UnitEconomicsSnapshot;
+  listSnapshotsByRun(sellerId: string, ingestionRunId: string): UnitEconomicsSnapshot[];
+  countSnapshotsByRun(sellerId: string, ingestionRunId: string): number;
   listUnitEconomicsSnapshots(
     sellerId: string,
     opts?: { snapshotId?: string; orderId?: string; itemId?: string; sku?: string; limit?: number },
@@ -153,10 +165,38 @@ export type EconomicOutcomeStore = {
   // ── Cost component methods ──────────────────────────────────────────
   insertCostComponent(input: CostComponentInsertInput): EconomicCostComponent;
   upsertCostComponent(input: CostComponentInsertInput): EconomicCostComponent;
+  listComponentsByRun(sellerId: string, ingestionRunId: string): EconomicCostComponent[];
+  countComponentsByRun(sellerId: string, ingestionRunId: string): number;
+  countSellerAggregates(sellerId: string): { components: number; snapshots: number };
+  countSellerReconciliationAggregates?(sellerId: string): {
+    partialSnapshots: number;
+    disputedSnapshots: number;
+  };
   listCostComponents(sellerId: string, opts?: ListCostComponentsOptions): EconomicCostComponent[];
   listBySourceRecord(sellerId: string, sourceRecordId: string): EconomicCostComponent[];
   reverseCostComponent(id: string, reason: string): EconomicCostComponent | null;
 };
+
+/** Read-only public projection; writers are internal admission-only capabilities. */
+export type EconomicOutcomeReader = Pick<
+  EconomicOutcomeStore,
+  | "getOutcome"
+  | "listOutcomesBySeller"
+  | "listOutcomesByProposal"
+  | "listOutcomesByOrder"
+  | "listOutcomesByCorrelationId"
+  | "listMissingInputs"
+  | "listSnapshotsByRun"
+  | "countSnapshotsByRun"
+  | "listUnitEconomicsSnapshots"
+  | "summarizeProfit"
+  | "listComponentsByRun"
+  | "countComponentsByRun"
+  | "countSellerAggregates"
+  | "countSellerReconciliationAggregates"
+  | "listCostComponents"
+  | "listBySourceRecord"
+>;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -226,6 +266,12 @@ function snapshotFromRow(row: UnitEconomicsRow): UnitEconomicsSnapshot {
     snapshotId: row.snapshot_id,
     sellerId: row.seller_id,
     currency: row.currency as Currency,
+    ...(row.ingestion_run_id === null ? {} : { ingestionRunId: row.ingestion_run_id }),
+    ...(row.source_version === null ? {} : { sourceVersion: row.source_version }),
+    ...(row.economic_algorithm_version === null
+      ? {}
+      : { economicAlgorithmVersion: row.economic_algorithm_version }),
+    ...(row.economic_checksum === null ? {} : { economicChecksum: row.economic_checksum }),
     calculatedAt: row.calculated_at,
   } as unknown as UnitEconomicsSnapshot;
 }
@@ -238,7 +284,10 @@ function costComponentFromRow(row: CostComponentRow): EconomicCostComponent {
     amount: { amountMinor: row.amount_minor, currency: row.currency as Currency },
     currency: row.currency as Currency,
     source: row.source as CostDataSource,
+    ...(row.ingestion_run_id === null ? {} : { ingestionRunId: row.ingestion_run_id }),
     ...(row.source_record_id ? { sourceRecordId: row.source_record_id } : {}),
+    ...(row.source_version === null ? {} : { sourceVersion: row.source_version }),
+    ...(row.economic_meaning === null ? {} : { economicMeaning: row.economic_meaning }),
     occurredAt: row.occurred_at,
     observedAt: row.observed_at,
     verification: row.verification as CostVerification,
@@ -251,11 +300,8 @@ function costComponentFromRow(row: CostComponentRow): EconomicCostComponent {
 
 // ── ID generation ──────────────────────────────────────────────────────────
 
-let costComponentIdCounter = 0;
-
 function nextCostComponentId(): string {
-  costComponentIdCounter++;
-  return `costcomp-db-${costComponentIdCounter}`;
+  return `costcomp-db-${randomUUID()}`;
 }
 
 // ── Idempotency key ────────────────────────────────────────────────────────
@@ -329,7 +375,9 @@ export function migrateEconomicOutcomeStore(db: Database.Database): void {
       observed_at INTEGER NOT NULL,
       verification TEXT NOT NULL DEFAULT 'unverified',
       confidence REAL NOT NULL DEFAULT 0,
-      metadata_json TEXT DEFAULT '{}'
+       metadata_json TEXT DEFAULT '{}'
+       ,identity_enforced INTEGER NOT NULL DEFAULT 1,
+       ingestion_run_id TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_economic_cost_components_seller ON economic_cost_components(seller_id);
@@ -344,9 +392,13 @@ export function migrateEconomicOutcomeStore(db: Database.Database): void {
       sku TEXT,
       product TEXT,
       period TEXT,
-      currency TEXT NOT NULL,
-      snapshot_json TEXT NOT NULL,
-      calculated_at INTEGER NOT NULL
+       currency TEXT NOT NULL,
+       snapshot_json TEXT NOT NULL,
+       calculated_at INTEGER NOT NULL,
+       ingestion_run_id TEXT,
+       source_version TEXT,
+       economic_algorithm_version TEXT,
+       economic_checksum TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_unit_economics_seller ON unit_economics_snapshots(seller_id);
@@ -361,6 +413,7 @@ export function migrateEconomicOutcomeStore(db: Database.Database): void {
     { name: "superseded_at", type: "INTEGER" },
     { name: "reversed_at", type: "INTEGER" },
     { name: "reversed_reason", type: "TEXT" },
+    { name: "identity_enforced", type: "INTEGER NOT NULL DEFAULT 1" },
   ];
 
   for (const col of newColumns) {
@@ -373,16 +426,22 @@ export function migrateEconomicOutcomeStore(db: Database.Database): void {
 
   // ── Composite unique index for idempotency ───────────────────────────────
   db.exec(`
+    DROP INDEX IF EXISTS idx_cost_component_idempotency;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_component_idempotency
-      ON economic_cost_components(seller_id, source, source_record_id, economic_meaning, source_version)
+      ON economic_cost_components(seller_id, source, source_record_id, economic_meaning, source_version, currency, amount_minor)
       WHERE reversed_at IS NULL AND superseded_at IS NULL;
   `);
 }
 
 // ── Factory ────────────────────────────────────────────────────────────────
 
-export function createSqliteEconomicOutcomeStore(db: Database.Database): EconomicOutcomeStore {
-  migrateEconomicOutcomeStore(db);
+export function createSqliteEconomicOutcomeStore(
+  db: Database.Database,
+  options: { readonly skipMigration?: boolean } = {},
+): EconomicOutcomeStore {
+  if (!options.skipMigration && process.env.MSL_MIGRATION_ENABLED !== "true") {
+    migrateEconomicOutcomeStore(db);
+  }
 
   // ── Prepared statements ───────────────────────────────────────────────
 
@@ -462,10 +521,12 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
   `);
 
   const insertSnapshotStmt = db.prepare(`
-    INSERT OR REPLACE INTO unit_economics_snapshots
+    INSERT INTO unit_economics_snapshots
       (snapshot_id, seller_id, account_id, channel, order_id, item_id, sku,
-       product, period, currency, snapshot_json, calculated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       product, period, currency, snapshot_json, calculated_at, ingestion_run_id,
+       source_version, economic_algorithm_version, economic_checksum)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT DO NOTHING
   `);
 
   const getSnapshotByIdStmt = db.prepare(
@@ -499,6 +560,18 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
     ORDER BY calculated_at DESC
     LIMIT ?
   `);
+  const listSnapshotsByRunStmt = db.prepare(
+    "SELECT * FROM unit_economics_snapshots WHERE seller_id = ? AND ingestion_run_id = ? ORDER BY calculated_at DESC",
+  );
+  const countSnapshotsByRunStmt = db.prepare(
+    "SELECT COUNT(*) AS count FROM unit_economics_snapshots WHERE seller_id = ? AND ingestion_run_id = ?",
+  );
+  const findSnapshotByBusinessKeyStmt = db.prepare(`
+    SELECT * FROM unit_economics_snapshots
+    WHERE seller_id = ? AND order_id = ? AND item_id = ? AND currency = ?
+      AND source_version = ? AND economic_algorithm_version = ? AND economic_checksum = ?
+    LIMIT 1
+  `);
 
   // ── Cost component prepared statements ────────────────────────────────
 
@@ -525,6 +598,20 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
     LIMIT 1
   `);
 
+  const findComponentByBusinessKeyStmt = db.prepare(`
+    SELECT * FROM economic_cost_components
+    WHERE seller_id = ?
+      AND source = ?
+      AND COALESCE(source_record_id, '') = ?
+      AND COALESCE(economic_meaning, '') = ?
+      AND COALESCE(source_version, '') = ?
+      AND currency = ?
+      AND amount_minor = ?
+      AND reversed_at IS NULL
+      AND superseded_at IS NULL
+    LIMIT 1
+  `);
+
   const supersedeByDedupBaseStmt = db.prepare(`
     UPDATE economic_cost_components
     SET superseded_at = ?
@@ -538,10 +625,11 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
 
   const insertCostCompStmt = db.prepare(`
     INSERT INTO economic_cost_components
-      (id, seller_id, type, amount_minor, currency, source, source_record_id,
-       economic_meaning, source_version, occurred_at, observed_at,
-       verification, confidence, metadata_json, superseded_at, reversed_at, reversed_reason)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+       (id, seller_id, type, amount_minor, currency, source, source_record_id,
+         economic_meaning, source_version, occurred_at, observed_at,
+         verification, confidence, metadata_json, ingestion_run_id, identity_enforced, superseded_at, reversed_at, reversed_reason)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, NULL, NULL)
+     ON CONFLICT DO NOTHING
   `);
 
   const getCostCompByIdStmt = db.prepare("SELECT * FROM economic_cost_components WHERE id = ?");
@@ -557,10 +645,28 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
     WHERE seller_id = ? AND source_record_id = ?
     ORDER BY occurred_at DESC
   `);
+  const listComponentsByRunStmt = db.prepare(
+    "SELECT * FROM economic_cost_components WHERE seller_id = ? AND ingestion_run_id = ? ORDER BY occurred_at DESC",
+  );
+  const countComponentsByRunStmt = db.prepare(
+    "SELECT COUNT(*) AS count FROM economic_cost_components WHERE seller_id = ? AND ingestion_run_id = ?",
+  );
+  const countSellerAggregatesStmt = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM economic_cost_components WHERE seller_id = ?) AS components,
+      (SELECT COUNT(*) FROM unit_economics_snapshots WHERE seller_id = ?) AS snapshots
+  `);
+  const countSellerReconciliationAggregatesStmt = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM unit_economics_snapshots
+        WHERE seller_id = ? AND json_extract(snapshot_json, '$.calculationStatus') = 'partial') AS partial_snapshots,
+      (SELECT COUNT(*) FROM unit_economics_snapshots
+        WHERE seller_id = ? AND json_extract(snapshot_json, '$.calculationStatus') = 'disputed') AS disputed_snapshots
+  `);
 
   return {
     transaction<T>(fn: () => T): T {
-      return db.transaction(fn)();
+      return db.transaction(fn).immediate();
     },
 
     getDb(): Database.Database {
@@ -748,9 +854,31 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
         snapshot.currency,
         snapshotJson,
         snapshot.calculatedAt,
+        snapshot.ingestionRunId ?? null,
+        snapshot.sourceVersion ?? null,
+        snapshot.economicAlgorithmVersion ?? null,
+        snapshot.economicChecksum ?? null,
       );
 
-      return snapshot;
+      const row =
+        snapshot.orderId &&
+        snapshot.itemId &&
+        snapshot.sourceVersion &&
+        snapshot.economicAlgorithmVersion &&
+        snapshot.economicChecksum
+          ? (findSnapshotByBusinessKeyStmt.get(
+              snapshot.sellerId,
+              snapshot.orderId,
+              snapshot.itemId,
+              snapshot.currency,
+              snapshot.sourceVersion,
+              snapshot.economicAlgorithmVersion,
+              snapshot.economicChecksum,
+            ) as UnitEconomicsRow | undefined)
+          : (getSnapshotByIdStmt.get(snapshot.snapshotId, snapshot.sellerId) as
+              UnitEconomicsRow | undefined);
+      if (!row) throw new Error("Failed to persist unit economics snapshot");
+      return snapshotFromRow(row);
     },
 
     listUnitEconomicsSnapshots(sellerId, opts = {}) {
@@ -781,6 +909,16 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
       }
 
       return rows.map(snapshotFromRow);
+    },
+
+    listSnapshotsByRun(sellerId, ingestionRunId) {
+      return (listSnapshotsByRunStmt.all(sellerId, ingestionRunId) as UnitEconomicsRow[]).map(
+        snapshotFromRow,
+      );
+    },
+
+    countSnapshotsByRun(sellerId, ingestionRunId) {
+      return (countSnapshotsByRunStmt.get(sellerId, ingestionRunId) as { count: number }).count;
     },
 
     summarizeProfit(sellerId, currency, opts = {}) {
@@ -890,7 +1028,7 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
       }
 
       // No active component exists — insert a new one
-      const id = nextCostComponentId();
+      const id = input.id ?? nextCostComponentId();
       const now = Date.now();
 
       insertCostCompStmt.run(
@@ -908,15 +1046,38 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
         input.verification,
         input.confidence,
         input.metadata ? JSON.stringify(input.metadata) : null,
+        input.ingestionRunId ?? null,
       );
 
-      const row = getCostCompByIdStmt.get(id) as CostComponentRow;
+      const row =
+        (getCostCompByIdStmt.get(id) as CostComponentRow | undefined) ??
+        (findComponentByBusinessKeyStmt.get(
+          key.sellerId,
+          key.source,
+          key.sourceRecordId,
+          key.economicMeaning,
+          key.sourceVersion,
+          input.amount.currency,
+          input.amount.amountMinor,
+        ) as CostComponentRow | undefined);
+      if (!row) throw new Error("Failed to persist economic cost component");
       return costComponentFromRow(row);
     },
 
     upsertCostComponent(input) {
       const key = buildIdempotencyKey(input);
       const now = Date.now();
+
+      const exact = findComponentByBusinessKeyStmt.get(
+        key.sellerId,
+        key.source,
+        key.sourceRecordId,
+        key.economicMeaning,
+        key.sourceVersion,
+        input.amount.currency,
+        input.amount.amountMinor,
+      ) as CostComponentRow | undefined;
+      if (exact) return costComponentFromRow(exact);
 
       // Supersede all active versions matching the dedup base
       supersedeByDedupBaseStmt.run(
@@ -928,7 +1089,7 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
       );
 
       // Insert the new version
-      const id = nextCostComponentId();
+      const id = input.id ?? nextCostComponentId();
       insertCostCompStmt.run(
         id,
         input.sellerId,
@@ -944,9 +1105,21 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
         input.verification,
         input.confidence,
         input.metadata ? JSON.stringify(input.metadata) : null,
+        input.ingestionRunId ?? null,
       );
 
-      const row = getCostCompByIdStmt.get(id) as CostComponentRow;
+      const row =
+        (getCostCompByIdStmt.get(id) as CostComponentRow | undefined) ??
+        (findComponentByBusinessKeyStmt.get(
+          key.sellerId,
+          key.source,
+          key.sourceRecordId,
+          key.economicMeaning,
+          key.sourceVersion,
+          input.amount.currency,
+          input.amount.amountMinor,
+        ) as CostComponentRow | undefined);
+      if (!row) throw new Error("Failed to persist economic cost component");
       return costComponentFromRow(row);
     },
 
@@ -986,6 +1159,34 @@ export function createSqliteEconomicOutcomeStore(db: Database.Database): Economi
         sourceRecordId,
       ) as CostComponentRow[];
       return rows.map(costComponentFromRow);
+    },
+
+    listComponentsByRun(sellerId, ingestionRunId) {
+      return (listComponentsByRunStmt.all(sellerId, ingestionRunId) as CostComponentRow[]).map(
+        costComponentFromRow,
+      );
+    },
+
+    countComponentsByRun(sellerId, ingestionRunId) {
+      return (countComponentsByRunStmt.get(sellerId, ingestionRunId) as { count: number }).count;
+    },
+
+    countSellerAggregates(sellerId) {
+      return countSellerAggregatesStmt.get(sellerId, sellerId) as {
+        components: number;
+        snapshots: number;
+      };
+    },
+
+    countSellerReconciliationAggregates(sellerId) {
+      const counts = countSellerReconciliationAggregatesStmt.get(sellerId, sellerId) as {
+        partial_snapshots: number;
+        disputed_snapshots: number;
+      };
+      return {
+        partialSnapshots: counts.partial_snapshots,
+        disputedSnapshots: counts.disputed_snapshots,
+      };
     },
 
     reverseCostComponent(id, reason) {

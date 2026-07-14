@@ -1,15 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { createEconomicOutcome, transitionOutcome } from "@msl/domain";
 import type { EconomicOutcome, UnitEconomicsSnapshot } from "@msl/domain";
-import type { EconomicLearningStore, EconomicOutcomeStore, GraphEngine } from "@msl/memory";
-import { createSqliteEconomicLearningStore, createSqliteEconomicOutcomeStore } from "@msl/memory";
+import type { EconomicLearningStore, GraphEngine } from "@msl/memory";
+import type { EconomicOutcomeReader as EconomicOutcomeStore } from "@msl/memory";
+import { createSqliteEconomicLearningStore } from "@msl/memory";
+import {
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../../tests/economicReaderFixture.js";
 import { EconomicLearningTrigger, type TriggerInput } from "./EconomicLearningTrigger.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+afterEach(cleanupEconomicFixtureDatabases);
+
 function createOutcomeStore(db: Database.Database): EconomicOutcomeStore {
-  return createSqliteEconomicOutcomeStore(db);
+  return createEconomicOutcomeReaderFixture(db);
 }
 
 function createLearningStore(db: Database.Database): EconomicLearningStore {
@@ -159,8 +167,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 1. Verified outcome triggers learning pipeline ────────────────────
 
   it("verified outcome triggers learning pipeline", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -191,8 +199,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 2. Disputed outcome triggers reversal ─────────────────────────────
 
   it("disputed outcome triggers reversal", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -212,8 +220,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 3. Invalidated outcome triggers reversal ──────────────────────────
 
   it("invalidated outcome triggers reversal", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -233,8 +241,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 4. Pending outcome does NOT trigger ──────────────────────────────
 
   it("pending outcome does NOT trigger", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -251,8 +259,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 5. Duplicate outcome within cooldown deduplicates ─────────────────
 
   it("duplicate outcome within cooldown deduplicates", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -297,8 +305,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 6. Different sellers don't mix ────────────────────────────────────
 
   it("different sellers don't mix — Plasticov outcome doesn't affect Maustian", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -354,8 +362,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 7. Cortex failure does not corrupt EconomicOutcome ────────────────
 
   it("Cortex failure does not corrupt EconomicOutcome", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 
@@ -384,8 +392,8 @@ describe("EconomicLearningTrigger", () => {
 
   it("trigger failure returns failed status gracefully", () => {
     // Use a store method that throws to simulate failure
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     // Use a malformed store that will throw
     const brokenLearningStore = {
@@ -420,8 +428,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 9. pruneDedupCache removes old entries ────────────────────────────
 
   it("pruneDedupCache removes old entries", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
     const engine = new FakeGraphEngine();
@@ -450,8 +458,8 @@ describe("EconomicLearningTrigger", () => {
   // ── 10. Failed transition does not emit event ─────────────────────────
 
   it("Failed transition does not emit event", () => {
-    const db1 = new Database(":memory:");
-    const db2 = new Database(":memory:");
+    const db1 = createEconomicFixtureDatabase();
+    const db2 = createEconomicFixtureDatabase();
     const economicStore = createOutcomeStore(db1);
     const learningStore = createLearningStore(db2);
 

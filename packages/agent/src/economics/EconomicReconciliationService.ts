@@ -35,6 +35,17 @@ export function reconcileEconomics(
   },
   computed: UnitEconomicsSnapshot[],
   tolerance: number,
+  context: {
+    currencies?: readonly string[];
+    normalizedLines?: number;
+    normalizedSellerIds?: readonly string[];
+    expectedSellerId?: string;
+    normalizationConsistent?: boolean;
+    criticalDispute?: boolean;
+    observedZeroDimensions?: Partial<
+      Record<"marketplaceFee" | "shipping" | "ads" | "productCost", "observed-zero">
+    >;
+  } = {},
 ): ReconciliationVerdict {
   const computedTotals = {
     grossRevenue: 0,
@@ -96,20 +107,45 @@ export function reconcileEconomics(
 
   // ── Coverage ───────────────────────────────────────────────────────────
 
-  const productCostMissing = computedTotals.productCost === 0;
+  const productCostMissing =
+    computedTotals.productCost === 0 &&
+    context.observedZeroDimensions?.productCost !== "observed-zero";
   const landedCostMissing = computedTotals.landedCost === 0;
 
   const coverage: ReconciliationVerdict["coverage"] = {
     meaningful: !productCostMissing || !landedCostMissing || computed.length > 0,
     dimensions: {
-      marketplaceFee: computedTotals.fees > 0 ? "complete" : "missing",
-      shipping: computedTotals.shipping > 0 ? "complete" : "missing",
-      ads: computedTotals.ads > 0 ? "complete" : "missing",
+      marketplaceFee:
+        computedTotals.fees > 0
+          ? "complete"
+          : (context.observedZeroDimensions?.marketplaceFee ?? "missing"),
+      shipping:
+        computedTotals.shipping > 0
+          ? "complete"
+          : (context.observedZeroDimensions?.shipping ?? "missing"),
+      ads: computedTotals.ads > 0 ? "complete" : (context.observedZeroDimensions?.ads ?? "missing"),
       refunds: computedTotals.refunds > 0 ? "complete" : "missing",
-      productCost: productCostMissing ? "missing" : "complete",
+      productCost: productCostMissing
+        ? "missing"
+        : computedTotals.productCost > 0
+          ? "complete"
+          : "observed-zero",
       landedCost: landedCostMissing ? "missing" : "complete",
     },
   };
+  const reasonCodes: string[] = [];
+  if ((context.currencies?.length ?? 0) > 1) reasonCodes.push("currency-mismatch");
+  if (context.normalizedLines !== undefined && computed.length !== context.normalizedLines) {
+    reasonCodes.push("normalization-mismatch");
+  }
+  if (context.normalizationConsistent === false) reasonCodes.push("normalization-mismatch");
+  if (
+    context.expectedSellerId !== undefined &&
+    context.normalizedSellerIds?.some((sellerId) => sellerId !== context.expectedSellerId)
+  ) {
+    reasonCodes.push("seller-mismatch");
+  }
+  if (context.criticalDispute === true) reasonCodes.push("critical-dispute");
 
   // ── Overall status ─────────────────────────────────────────────────────
 
@@ -126,12 +162,13 @@ export function reconcileEconomics(
       coverage,
       productCostMissing,
       landedCostMissing,
+      reasonCodes: [...reasonCodes, "no-snapshots"],
     };
   }
 
   // Any disputed snapshots?
   const disputedCount = computed.filter((s) => s.calculationStatus === "disputed").length;
-  if (disputedCount > 0) {
+  if (disputedCount > 0 || context.criticalDispute === true) {
     const totalSource = sourceTotals.grossRevenue + sourceCost;
     const totalComputed = computedTotals.grossRevenue + computedCost;
     return {
@@ -145,6 +182,7 @@ export function reconcileEconomics(
       coverage,
       productCostMissing,
       landedCostMissing,
+      reasonCodes: [...reasonCodes, "critical-dispute"],
     };
   }
 
@@ -170,6 +208,7 @@ export function reconcileEconomics(
       },
       productCostMissing,
       landedCostMissing,
+      reasonCodes: [...reasonCodes, "zero-values"],
     };
   }
 
@@ -194,6 +233,7 @@ export function reconcileEconomics(
       coverage,
       productCostMissing,
       landedCostMissing,
+      reasonCodes,
     };
   }
 
@@ -223,5 +263,6 @@ export function reconcileEconomics(
     coverage,
     productCostMissing,
     landedCostMissing,
+    reasonCodes: [...reasonCodes, "reconciliation-mismatch"],
   };
 }

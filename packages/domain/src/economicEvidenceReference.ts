@@ -10,8 +10,10 @@ export type EconomicEvidenceReference = {
   readonly sourceRecordId: string;
   readonly sourceField?: string;
   readonly observedAt: number; // epoch ms
-  readonly occurredAt: number;
-  readonly sourceVersion: string;
+  /** Absent only for a legacy persisted reference with no trustworthy value. */
+  readonly occurredAt?: number;
+  /** Absent only for a legacy persisted reference with no trustworthy value. */
+  readonly sourceVersion?: string;
   readonly checksum: string; // SHA-256 hex of selected economic fields
   readonly verification: CostVerification;
   readonly confidence: number; // 0..1

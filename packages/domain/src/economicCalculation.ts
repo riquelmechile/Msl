@@ -6,6 +6,7 @@ import {
   type UnitEconomicsInput,
   type UnitEconomicsSnapshot,
 } from "./unitEconomics.js";
+import { createHash } from "node:crypto";
 
 // ── Cost classification ────────────────────────────────────────────────────
 
@@ -146,17 +147,55 @@ export function computeUnitEconomics(input: UnitEconomicsInput): UnitEconomicsSn
   const netMargin = grossRevenue === 0 ? 0 : netProfit / grossRevenue;
 
   // Build result — handle exactOptionalPropertyTypes by only including defined optionals
+  const economicAlgorithmVersion = input.economicAlgorithmVersion ?? "economic-v1";
+  const economicChecksum = createHash("sha256")
+    .update(
+      JSON.stringify({
+        grossRevenue,
+        costs: costs
+          .map((cost) => ({
+            type: cost.type,
+            amountMinor: cost.amount.amountMinor,
+            currency: cost.currency,
+            source: cost.source,
+            sourceRecordId: cost.sourceRecordId ?? "",
+            sourceVersion: cost.sourceVersion ?? "",
+            economicMeaning: cost.economicMeaning ?? cost.type,
+          }))
+          .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+      }),
+    )
+    .digest("hex");
+  const snapshotId = createHash("sha256")
+    .update(
+      JSON.stringify({
+        sellerId,
+        orderId: input.orderId ?? "",
+        itemId: input.itemId ?? "",
+        variationId: input.variationId ?? "",
+        sourceVersion: input.sourceVersion ?? "",
+        currency,
+        economicAlgorithmVersion,
+        economicChecksum,
+      }),
+    )
+    .digest("hex");
+
   const snapshot: UnitEconomicsSnapshot = {
-    snapshotId: `snapshot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    snapshotId: `snapshot-${snapshotId}`,
     sellerId,
     ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
     ...(input.channel !== undefined ? { channel: input.channel } : {}),
     ...(input.orderId !== undefined ? { orderId: input.orderId } : {}),
     ...(input.itemId !== undefined ? { itemId: input.itemId } : {}),
+    ...(input.variationId !== undefined ? { variationId: input.variationId } : {}),
     ...(input.sku !== undefined ? { sku: input.sku } : {}),
     ...(input.product !== undefined ? { product: input.product } : {}),
     ...(input.period !== undefined ? { period: input.period } : {}),
     currency,
+    ...(input.sourceVersion !== undefined ? { sourceVersion: input.sourceVersion } : {}),
+    economicAlgorithmVersion,
+    economicChecksum,
     grossRevenue,
     sellerFundedDiscounts,
     refunds,

@@ -47,9 +47,51 @@ export type EconomicIngestionRun = {
   readonly partialSnapshots: number;
   readonly disputedSnapshots: number;
   readonly errors: readonly string[]; // sanitized error messages only
+  readonly reconciliation?: DurableReconciliation;
+  readonly cumulativeMetrics?: DurableCumulativeMetrics;
   readonly status: IngestionRunStatus;
   readonly noExternalMutationExecuted: true;
 };
+
+export type DurableReconciliation = {
+  readonly status:
+    "balanced" | "balanced-with-tolerance" | "incomplete" | "mismatched" | "disputed";
+  readonly details: string;
+  readonly sourceTotal?: number;
+  readonly computedTotal?: number;
+  readonly difference?: number;
+  readonly revenueReconciliation?: {
+    readonly status: "balanced" | "balanced-with-tolerance" | "mismatched" | "incomplete";
+    readonly sourceTotal: number;
+    readonly computedTotal: number;
+    readonly difference: number;
+  };
+  readonly costReconciliation?: {
+    readonly status: "balanced" | "balanced-with-tolerance" | "mismatched" | "incomplete";
+    readonly sourceTotal: number;
+    readonly computedTotal: number;
+    readonly difference: number;
+  };
+  readonly coverage?: {
+    readonly meaningful: boolean;
+    readonly dimensions: Record<string, "complete" | "missing" | "observed-zero">;
+  };
+  readonly productCostMissing?: boolean;
+  readonly landedCostMissing?: boolean;
+  readonly reasonCodes: readonly string[];
+};
+
+export type DurableCumulativeMetrics =
+  | {
+      readonly status: "available";
+      readonly components: number;
+      readonly snapshots: number;
+      readonly evidence: number;
+      readonly runs: number;
+      readonly partialSnapshots: number;
+      readonly disputedSnapshots: number;
+    }
+  | { readonly status: "unavailable"; readonly reason: "aggregate-query-failed" };
 
 // ── Errors ──────────────────────────────────────────────────────────────────
 
@@ -103,6 +145,24 @@ export type CreateEconomicIngestionRunInput = {
 export type CreateEconomicIngestionRunResult =
   | { success: true; run: EconomicIngestionRun }
   | { success: false; error: EconomicIngestionRunError };
+
+export type FinalizeEconomicIngestionRunResult = Pick<
+  EconomicIngestionRun,
+  | "status"
+  | "completedAt"
+  | "checkpointBefore"
+  | "checkpointAfter"
+  | "recordsFetched"
+  | "recordsNormalized"
+  | "componentsCreated"
+  | "snapshotsCreated"
+  | "duplicatesIgnored"
+  | "partialSnapshots"
+  | "disputedSnapshots"
+  | "errors"
+  | "reconciliation"
+  | "cumulativeMetrics"
+>;
 
 export function createEconomicIngestionRun(
   input: CreateEconomicIngestionRunInput,
@@ -203,5 +263,32 @@ export function createEconomicIngestionRun(
       status: input.status,
       noExternalMutationExecuted: true,
     },
+  };
+}
+
+/**
+ * Produces a terminal aggregate without allocating another run identity.
+ * Persistence belongs to the caller so this transition remains deterministic.
+ */
+export function finalizeEconomicIngestionRun(
+  existingRun: EconomicIngestionRun,
+  result: FinalizeEconomicIngestionRunResult,
+): EconomicIngestionRun {
+  if (result.status !== "completed" && result.status !== "failed") {
+    throw new EconomicIngestionRunError("finalized run status must be completed or failed");
+  }
+  if (result.completedAt === undefined || !Number.isFinite(result.completedAt)) {
+    throw new EconomicIngestionRunError("finalized run requires a finite completedAt");
+  }
+
+  return {
+    ...existingRun,
+    ...result,
+    runId: existingRun.runId,
+    sellerId: existingRun.sellerId,
+    mode: existingRun.mode,
+    sourceKinds: existingRun.sourceKinds,
+    startedAt: existingRun.startedAt,
+    noExternalMutationExecuted: true,
   };
 }

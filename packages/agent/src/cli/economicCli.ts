@@ -23,7 +23,7 @@
  *   --resume                 Resume from checkpoint (incremental mode)
  *   --strict                 Exit non-zero on partial/reconciliation issues
  *   --json                   Output as JSON
- *   --run <id>               Filter by ingestion run ID (inspect-evidence)
+ *   --run <id>               Filter seller-scoped status, coverage, reconciliation, missing inputs, or evidence
  *   --source <id>            Filter by source record ID (inspect-evidence)
  *   --verification <v>       Filter by verification status (inspect-evidence)
  */
@@ -31,6 +31,10 @@
 import { createEconomicIngestionRuntime } from "../economics/factory.js";
 import type { SellerSlug, EconomicIngestionRuntime } from "../economics/factory.js";
 import type { PipelineConfig } from "../economics/EconomicIngestionPipeline.js";
+import {
+  safeEconomicErrorMessage,
+  sanitizeEconomicRecord,
+} from "../economics/economicSanitizer.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +66,8 @@ type CliOutput = {
   error?: string;
 };
 
+class CliInputError extends Error {}
+
 // ── Argument parsing ───────────────────────────────────────────────────────
 
 const VALID_SELLER_SLUGS = new Set(["source", "target"]);
@@ -79,11 +85,7 @@ export function parseArgs(raw: string[]): CliArgs {
   const command = args[0] as CliArgs["command"] | undefined;
 
   if (!command || !VALID_COMMANDS.has(command)) {
-    const cmds = [...VALID_COMMANDS].join("|");
-    process.stderr.write(
-      `Usage: npx tsx economicCli.ts <${cmds}> [--seller=source|target] [--json]\n`,
-    );
-    process.exit(1);
+    throw new CliInputError("Invalid economic command.");
   }
 
   const flags: Record<string, string> = {};
@@ -107,10 +109,7 @@ export function parseArgs(raw: string[]): CliArgs {
 
   const seller = flags.seller?.trim().toLowerCase() ?? "source";
   if (!VALID_SELLER_SLUGS.has(seller)) {
-    process.stderr.write(
-      `Invalid seller "${seller}". Must be "source" (Plasticov) or "target" (Maustian).\n`,
-    );
-    process.exit(1);
+    throw new CliInputError("Invalid economic seller.");
   }
 
   const maxPages = parseInt(flags["max-pages"] ?? "5", 10);
@@ -154,6 +153,7 @@ function errOutput(args: CliArgs, error: string): CliOutput {
     command: args.command,
     seller: args.seller,
     timestamp: new Date().toISOString(),
+    result: { noExternalMutationExecuted: true },
     error,
   };
 }
@@ -182,29 +182,37 @@ function emit(output: CliOutput, useJson: boolean): void {
  * This is a defense-in-depth measure — the pipeline should not have PII,
  * but we sanitize at the output boundary as well.
  */
-function sanitizeForOutput(obj: unknown): unknown {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj === "string") {
-    // Strip email patterns
-    let sanitized = obj.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[email]");
-    // Strip potential document numbers (simple pattern)
-    sanitized = sanitized.replace(/\b\d{7,10}\b/g, (m) => m.slice(0, 2) + "***");
-    return sanitized;
+async function getSelectedRun(args: CliArgs, runtime: EconomicIngestionRuntime) {
+  const run = args.runId
+    ? await runtime.runStore.getRun(args.runId)
+    : await runtime.runStore.getLastRunBySeller(runtime.health.sellerId);
+  if (run?.sellerId && run.sellerId !== runtime.health.sellerId) {
+    throw new Error("Run not found for seller.");
   }
-  if (Array.isArray(obj)) return obj.map(sanitizeForOutput);
-  if (typeof obj === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      // Never emit secrets
-      if (key.toLowerCase().includes("token") || key.toLowerCase().includes("secret")) {
-        result[key] = "***REDACTED***";
-        continue;
-      }
-      result[key] = sanitizeForOutput(value);
-    }
-    return result;
+  if (args.runId && !run) {
+    throw new Error("Run not found for seller.");
   }
-  return obj;
+  return run;
+}
+
+function runSummary(
+  run: NonNullable<Awaited<ReturnType<EconomicIngestionRuntime["runStore"]["getRun"]>>>,
+) {
+  return {
+    runId: run.runId,
+    mode: run.mode,
+    status: run.status,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt ?? null,
+    snapshotsCreated: run.snapshotsCreated,
+    reconciliation: run.reconciliation ?? null,
+    checkpoint: {
+      before: run.checkpointBefore ?? null,
+      after: run.checkpointAfter ?? null,
+    },
+    cumulativeMetrics: run.cumulativeMetrics ?? { status: "unavailable", reason: "Not recorded." },
+    noExternalMutationExecuted: true,
+  };
 }
 
 // ── Command handlers ───────────────────────────────────────────────────────
@@ -225,11 +233,24 @@ async function handleIngest(args: CliArgs, runtime: EconomicIngestionRuntime): P
 
   const output: Record<string, unknown> = {
     runId: result.run.runId,
+    sellerId: result.run.sellerId,
     mode: result.run.mode,
     status: result.run.status,
     snapshotsCreated: result.snapshots.length,
-    reconciliation: result.reconciliation.status,
+    reconciliation: {
+      status: result.reconciliation.status,
+      reasonCodes: result.reconciliation.reasonCodes ?? [],
+    },
     details: result.reconciliation.details,
+    coverage: {
+      partialSnapshots: result.run.partialSnapshots,
+      disputedSnapshots: result.run.disputedSnapshots,
+    },
+    checkpoint: {
+      before: result.run.checkpointBefore ?? null,
+      after: result.run.checkpointAfter ?? null,
+    },
+    noExternalMutationExecuted: result.run.noExternalMutationExecuted,
   };
 
   if (result.run.status === "failed") {
@@ -239,39 +260,48 @@ async function handleIngest(args: CliArgs, runtime: EconomicIngestionRuntime): P
       command: args.command,
       seller: args.seller,
       timestamp: new Date().toISOString(),
-      error: isPersistenceFailure
-        ? `Persistence failure: ${result.reconciliation.details}`
-        : result.reconciliation.details,
+      result: {
+        ...sanitizeEconomicRecord({
+          ...output,
+          noExternalMutationExecuted: result.run.noExternalMutationExecuted,
+        }),
+        // The durable run identity is a technical UUID, not PII. Preserve it
+        // verbatim so a failed invocation can be correlated with its row.
+        runId: result.run.runId,
+      },
+      error: safeEconomicErrorMessage(
+        isPersistenceFailure
+          ? `Persistence failure: ${result.reconciliation.details}`
+          : result.reconciliation.details,
+      ),
     };
   }
 
-  return okOutput(args, sanitizeForOutput(output) as Record<string, unknown>);
+  return okOutput(args, sanitizeEconomicRecord(output));
 }
 
 async function handleStatus(args: CliArgs, runtime: EconomicIngestionRuntime): Promise<CliOutput> {
-  const lastRun = await runtime.runStore.getLastRunBySeller(runtime.health.sellerId);
-  const runs = await runtime.runStore.listRunsBySeller(runtime.health.sellerId, 10);
+  const lastRun = await getSelectedRun(args, runtime);
+  const result: Record<string, unknown> = args.runId
+    ? { run: runSummary(lastRun!) }
+    : { lastRun: lastRun ? runSummary(lastRun) : null };
 
-  const result: Record<string, unknown> = {
-    lastRun: lastRun
-      ? {
-          runId: lastRun.runId,
-          mode: lastRun.mode,
-          status: lastRun.status,
-          startedAt: lastRun.startedAt,
-          completedAt: lastRun.completedAt ?? null,
-          snapshotsCreated: lastRun.snapshotsCreated,
-        }
-      : null,
-    totalRuns: runs.length,
-  };
-
-  return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
+  return okOutput(args, sanitizeEconomicRecord(result));
 }
 
-function handleCoverage(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
+async function handleCoverage(
+  args: CliArgs,
+  runtime: EconomicIngestionRuntime,
+): Promise<CliOutput> {
   const store = runtime.store;
   const sellerId = runtime.health.sellerId;
+  const selectedRun = args.runId ? await getSelectedRun(args, runtime) : null;
+  const components = args.runId
+    ? store.listComponentsByRun(sellerId, args.runId)
+    : store.listCostComponents(sellerId, { limit: 5000 });
+  const snapshots = args.runId
+    ? store.listSnapshotsByRun(sellerId, args.runId)
+    : store.listUnitEconomicsSnapshots(sellerId, { limit: 1000 });
 
   // Query cost components per dimension to determine coverage
   const dimensionTypes: Record<string, string> = {
@@ -291,18 +321,15 @@ function handleCoverage(args: CliArgs, runtime: EconomicIngestionRuntime): CliOu
   for (const [dim, type] of Object.entries(dimensionTypes)) {
     if (dim === "refund_return") {
       // Check both refund and return types
-      const refundComponents = store.listCostComponents(sellerId, { type: "refund", limit: 1 });
-      const returnComponents = store.listCostComponents(sellerId, { type: "return", limit: 1 });
+      const refundComponents = components.filter((component) => component.type === "refund");
+      const returnComponents = components.filter((component) => component.type === "return");
       const hasData = refundComponents.length > 0 || returnComponents.length > 0;
       dimensions[dim] = hasData ? "complete" : "partial";
       if (hasData) hasAnyData = true;
     } else {
-      const components = store.listCostComponents(sellerId, {
-        type: type as never,
-        limit: 1,
-      });
-      dimensions[dim] = components.length > 0 ? "complete" : "partial";
-      if (components.length > 0) hasAnyData = true;
+      const matchingComponents = components.filter((component) => component.type === type);
+      dimensions[dim] = matchingComponents.length > 0 ? "complete" : "partial";
+      if (matchingComponents.length > 0) hasAnyData = true;
     }
   }
 
@@ -310,16 +337,28 @@ function handleCoverage(args: CliArgs, runtime: EconomicIngestionRuntime): CliOu
     overallStatus: hasAnyData ? "partial" : "unavailable",
     confidence: hasAnyData ? 0.7 : 0.3,
     dimensions,
+    counts: { components: components.length, snapshots: snapshots.length },
+    cumulativeMetrics: selectedRun?.cumulativeMetrics ?? {
+      status: "unavailable",
+      reason: "Run-scoped coverage does not infer historical metrics.",
+    },
   };
 
-  return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
+  return okOutput(args, sanitizeEconomicRecord(result));
 }
 
-function handleReconcile(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
+async function handleReconcile(
+  args: CliArgs,
+  runtime: EconomicIngestionRuntime,
+): Promise<CliOutput> {
   const store = runtime.store;
   const sellerId = runtime.health.sellerId;
-
-  const snapshots = store.listUnitEconomicsSnapshots(sellerId, { limit: 500 });
+  if (args.runId) {
+    await getSelectedRun(args, runtime);
+  }
+  const snapshots = args.runId
+    ? store.listSnapshotsByRun(sellerId, args.runId)
+    : store.listUnitEconomicsSnapshots(sellerId, { limit: 500 });
 
   if (snapshots.length === 0) {
     return okOutput(args, {
@@ -354,14 +393,30 @@ function handleReconcile(args: CliArgs, runtime: EconomicIngestionRuntime): CliO
     snapshotsAnalyzed: snapshots.length,
   };
 
-  return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
+  return okOutput(args, sanitizeEconomicRecord(result));
 }
 
-function handleMissing(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
+async function handleMissing(args: CliArgs, runtime: EconomicIngestionRuntime): Promise<CliOutput> {
   const store = runtime.store;
   const sellerId = runtime.health.sellerId;
-
-  const missingInputs = store.listMissingInputs(sellerId);
+  if (args.runId) {
+    await getSelectedRun(args, runtime);
+  }
+  const missingInputs = args.runId
+    ? store.listSnapshotsByRun(sellerId, args.runId).flatMap((snapshot) => {
+        const missingTypes = (snapshot as { missingInputs?: unknown }).missingInputs;
+        return Array.isArray(missingTypes)
+          ? [
+              {
+                outcomeId: snapshot.snapshotId,
+                missingTypes: missingTypes.filter(
+                  (value): value is string => typeof value === "string",
+                ),
+              },
+            ]
+          : [];
+      })
+    : store.listMissingInputs(sellerId);
 
   // Deduplicate across all results
   const allMissingTypes = new Set<string>();
@@ -377,23 +432,22 @@ function handleMissing(args: CliArgs, runtime: EconomicIngestionRuntime): CliOut
     details: missingInputs.slice(0, 20), // bounded
   };
 
-  return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
+  return okOutput(args, sanitizeEconomicRecord(result));
 }
 
-function handleInspectEvidence(args: CliArgs, runtime: EconomicIngestionRuntime): CliOutput {
+async function handleInspectEvidence(
+  args: CliArgs,
+  runtime: EconomicIngestionRuntime,
+): Promise<CliOutput> {
   const evidenceStore = runtime.evidenceStore;
   const sellerId = runtime.health.sellerId;
 
   // Validate seller
   if (!sellerId) {
-    return {
-      status: "error",
-      command: args.command,
-      seller: args.seller,
-      timestamp: new Date().toISOString(),
-      error: "Cannot determine seller ID from runtime.",
-    };
+    return errOutput(args, "Cannot determine seller ID from runtime.");
   }
+
+  if (args.runId) await getSelectedRun(args, runtime);
 
   const limit = args.limit > 0 ? Math.min(args.limit, 100) : 20;
 
@@ -414,20 +468,23 @@ function handleInspectEvidence(args: CliArgs, runtime: EconomicIngestionRuntime)
     });
   }
 
-  const evidenceRows = refs.slice(0, limit).map((ref) => ({
-    evidenceId: ref.evidenceId,
-    sourceSystem: ref.sourceSystem,
-    sourceEntityType: ref.sourceEntityType,
-    sourceRecordId: ref.sourceRecordId,
-    sourceVersion: ref.sourceVersion,
-    checksum: ref.checksum.length > 12 ? ref.checksum.slice(0, 12) : ref.checksum,
-    verification: ref.verification,
-    confidence: ref.confidence,
-    ingestionRunId: ref.ingestionRunId,
-    observedAt: ref.observedAt,
-    occurredAt: ref.occurredAt,
-    createdAt: ref.observedAt, // approximate — created_at is internal
-  }));
+  const evidenceRows = refs
+    .filter((ref) => !args.runId || ref.ingestionRunId === args.runId)
+    .slice(0, limit)
+    .map((ref) => ({
+      evidenceId: ref.evidenceId,
+      sourceSystem: ref.sourceSystem,
+      sourceEntityType: ref.sourceEntityType,
+      sourceRecordId: ref.sourceRecordId,
+      sourceVersion: ref.sourceVersion,
+      checksum: ref.checksum.length > 12 ? ref.checksum.slice(0, 12) : ref.checksum,
+      verification: ref.verification,
+      confidence: ref.confidence,
+      ingestionRunId: ref.ingestionRunId,
+      observedAt: ref.observedAt,
+      occurredAt: ref.occurredAt,
+      createdAt: ref.observedAt, // approximate — created_at is internal
+    }));
 
   const result: Record<string, unknown> = {
     sellerId,
@@ -435,56 +492,53 @@ function handleInspectEvidence(args: CliArgs, runtime: EconomicIngestionRuntime)
     references: evidenceRows,
   };
 
-  return okOutput(args, sanitizeForOutput(result) as Record<string, unknown>);
+  return okOutput(args, sanitizeEconomicRecord(result));
 }
 
 // ── Seller slug validation ─────────────────────────────────────────────────
 
-function rejectUnknownSeller(seller: string): never {
-  process.stderr.write(
-    `Unknown seller "${seller}". Valid sellers: source (Plasticov), target (Maustian).\n`,
-  );
-  process.exit(1);
-}
-
-// ── Runtime factory ────────────────────────────────────────────────────────
-
-function createRuntime(seller: SellerSlug): EconomicIngestionRuntime {
-  try {
-    return createEconomicIngestionRuntime(seller);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`Failed to create economic ingestion runtime: ${msg}\n`);
-    process.exit(1);
-  }
-}
-
 // ── Main ───────────────────────────────────────────────────────────────────
+
+function jsonRequested(argv: string[]): boolean {
+  return argv.slice(2).some((arg) => arg === "--json" || arg === "--json=true");
+}
+
+function invalidInputOutput(error: unknown): CliOutput {
+  return {
+    status: "error",
+    command: "unknown",
+    seller: "unknown",
+    timestamp: new Date().toISOString(),
+    result: { noExternalMutationExecuted: true },
+    error: safeEconomicErrorMessage(error),
+  };
+}
 
 export async function runCli(
   argv: string[],
-  factory: (seller: SellerSlug) => EconomicIngestionRuntime = createRuntime,
+  factory: (seller: SellerSlug) => EconomicIngestionRuntime = createEconomicIngestionRuntime,
 ): Promise<{ output: CliOutput; exitCode: number }> {
-  const args = parseArgs(argv);
-
-  // Validate seller
-  if (!VALID_SELLER_SLUGS.has(args.seller)) {
-    rejectUnknownSeller(args.seller);
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (err) {
+    return { output: invalidInputOutput(err), exitCode: 1 };
   }
 
   // Emit warning when seller defaults
-  if (!argv.slice(2).some((a) => a.startsWith("--seller"))) {
+  if (!args.json && !argv.slice(2).some((a) => a.startsWith("--seller"))) {
     process.stderr.write(
       "[warn] No --seller specified, defaulting to 'source' (Plasticov). " +
         "Use --seller=source or --seller=target to be explicit.\n",
     );
   }
 
-  const runtime = factory(args.seller);
+  let runtime: EconomicIngestionRuntime | undefined;
   let output: CliOutput;
   let exitCode = 0;
 
   try {
+    runtime = factory(args.seller);
     switch (args.command) {
       case "ingest":
         output = await handleIngest(args, runtime);
@@ -493,24 +547,28 @@ export async function runCli(
         output = await handleStatus(args, runtime);
         break;
       case "coverage":
-        output = handleCoverage(args, runtime);
+        output = await handleCoverage(args, runtime);
         break;
       case "reconcile":
-        output = handleReconcile(args, runtime);
+        output = await handleReconcile(args, runtime);
         break;
       case "missing":
-        output = handleMissing(args, runtime);
+        output = await handleMissing(args, runtime);
         break;
       case "inspect-evidence":
-        output = handleInspectEvidence(args, runtime);
+        output = await handleInspectEvidence(args, runtime);
         break;
       default:
         output = errOutput(args, `Unknown command: ${String(args.command)}`);
     }
   } catch (err) {
-    output = errOutput(args, err instanceof Error ? err.message : String(err));
+    output = errOutput(args, safeEconomicErrorMessage(err));
   } finally {
-    runtime.close();
+    try {
+      runtime?.close();
+    } catch {
+      // Runtime cleanup must never replace the already-sanitized CLI boundary.
+    }
   }
 
   if (output.status === "error") {
@@ -522,7 +580,7 @@ export async function runCli(
 
 async function main(): Promise<void> {
   const { output, exitCode } = await runCli(process.argv);
-  emit(output, parseArgs(process.argv).json);
+  emit(output, jsonRequested(process.argv));
   if (exitCode !== 0) {
     process.exit(exitCode);
   }

@@ -13,14 +13,20 @@ export type MissingCostLabel = CostComponentType;
 export type UnitEconomicsSnapshot = {
   readonly snapshotId: string;
   readonly sellerId: string;
+  /** Nullable for legacy rows whose producing run cannot be reconstructed. */
+  readonly ingestionRunId?: string;
   readonly accountId?: string;
   readonly channel?: string;
   readonly orderId?: string;
   readonly itemId?: string;
+  readonly variationId?: string;
   readonly sku?: string;
   readonly product?: string;
   readonly period?: { readonly start: number; readonly end: number };
   readonly currency: Currency;
+  readonly sourceVersion?: string;
+  readonly economicAlgorithmVersion?: string;
+  readonly economicChecksum?: string;
   readonly grossRevenue: number; // amountMinor
   readonly sellerFundedDiscounts: number;
   readonly refunds: number;
@@ -50,6 +56,9 @@ export type UnitEconomicsInput = {
   readonly channel?: string;
   readonly orderId?: string;
   readonly itemId?: string;
+  readonly variationId?: string;
+  readonly sourceVersion?: string;
+  readonly economicAlgorithmVersion?: string;
   readonly sku?: string;
   readonly product?: string;
   readonly period?: { readonly start: number; readonly end: number };

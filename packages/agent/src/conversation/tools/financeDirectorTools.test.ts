@@ -1,10 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
-import type { EconomicOutcomeStore, FinanceDirectorAssessmentStore } from "@msl/memory";
+import type { FinanceDirectorAssessmentStore } from "@msl/memory";
+import type { EconomicOutcomeReaderFixture as EconomicOutcomeStore } from "../../../tests/economicReaderFixture.js";
+import { createSqliteFinanceDirectorAssessmentStore } from "@msl/memory";
 import {
-  createSqliteEconomicOutcomeStore,
-  createSqliteFinanceDirectorAssessmentStore,
-} from "@msl/memory";
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../../../tests/economicReaderFixture.js";
 import { createEconomicOutcome } from "@msl/domain";
 import type { FinancialAssessment } from "@msl/domain";
 import type { FinanceDirectorAdvisor, AnalyzeInput } from "../../finance/FinanceDirectorAdvisor.js";
@@ -18,8 +21,10 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+afterEach(cleanupEconomicFixtureDatabases);
+
 function createEconomicStore(db: Database.Database): EconomicOutcomeStore {
-  return createSqliteEconomicOutcomeStore(db);
+  return createEconomicOutcomeReaderFixture(db);
 }
 
 function createAssessmentStore(db: Database.Database): FinanceDirectorAssessmentStore {
@@ -79,8 +84,8 @@ function fakeAdvisor(): FinanceDirectorAdvisor {
 // ── Test setup ───────────────────────────────────────────────────────
 
 function setupDbs() {
-  const db1 = new Database(":memory:");
-  const db2 = new Database(":memory:");
+  const db1 = createEconomicFixtureDatabase();
+  const db2 = createEconomicFixtureDatabase();
   const economicStore = createEconomicStore(db1);
   const assessmentStore = createAssessmentStore(db2);
   return { db1, db2, economicStore, assessmentStore };

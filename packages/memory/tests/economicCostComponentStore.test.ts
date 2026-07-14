@@ -118,27 +118,25 @@ describe("Cost Component Store", () => {
 
   // ── Upsert ────────────────────────────────────────────────────────────
 
-  it("upsert — supersedes prior active version and inserts new", () => {
+  it("upsert — exact business identity is idempotent and retains the canonical component", () => {
     const store = createStore();
     const input = makeInput({ sellerId: "plasticov" });
 
     const first = store.insertCostComponent(input);
     const second = store.upsertCostComponent(input);
 
-    // Different IDs
-    expect(second.id).not.toBe(first.id);
+    // An exact repeat keeps the canonical technical ID; it is not a successor.
+    expect(second.id).toBe(first.id);
 
-    // Only the new one is active
+    // Only the canonical component is active.
     const active = store.listCostComponents("plasticov");
     expect(active).toHaveLength(1);
-    expect(active[0]!.id).toBe(second.id);
+    expect(active[0]!.id).toBe(first.id);
 
-    // Both versions visible via listBySourceRecord
+    // Exact repeats do not manufacture history rows.
     const all = store.listBySourceRecord("plasticov", "order-123");
-    expect(all).toHaveLength(2);
-    const ids = all.map((c) => c.id);
-    expect(ids).toContain(first.id);
-    expect(ids).toContain(second.id);
+    expect(all).toHaveLength(1);
+    expect(all[0]!.sourceVersion).toBe("v1");
   });
 
   // ── Reverse (soft delete) ─────────────────────────────────────────────

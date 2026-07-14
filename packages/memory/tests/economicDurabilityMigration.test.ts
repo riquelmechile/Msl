@@ -1,9 +1,19 @@
 import { describe, it, expect, afterEach } from "vitest";
 import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   migrateEconomicEvidenceStore,
   migrateEconomicDurabilityColumns,
+  createSqliteEconomicEvidenceStore,
 } from "../src/economicEvidenceStore.js";
+import { createEconomicMigrationPlan } from "../src/migrationRegistry.js";
+import { createSqliteEconomicOutcomeStore } from "../src/economicOutcomeStore.js";
+import {
+  createSqliteEconomicIngestionRunStore,
+  migrateEconomicIngestionRunStore,
+} from "../src/economicIngestionRunStore.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -355,7 +365,8 @@ describe("Economic Durability Migration", () => {
           );
         `);
 
-        // Apply migrations through registry
+        // The runtime applies the canonical plan before stores prepare statements.
+        createEconomicMigrationPlan().apply(db);
         migrateEconomicDurabilityColumns(db);
         migrateEconomicEvidenceStore(db);
 
@@ -372,6 +383,300 @@ describe("Economic Durability Migration", () => {
         expect(versions.cnt).toBeGreaterThanOrEqual(1);
       } finally {
         process.env.MSL_MIGRATION_ENABLED = original!;
+      }
+    });
+  });
+
+  describe("canonical economic migration plan", () => {
+    it("creates the full schema once on a fresh database", () => {
+      db = new Database(":memory:");
+
+      const first = createEconomicMigrationPlan().apply(db);
+      const second = createEconomicMigrationPlan().apply(db);
+
+      expect(first.applied).toBe(11);
+      expect(second).toEqual({ applied: 0, skipped: 11 });
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='economic_evidence_references'",
+          )
+          .get(),
+      ).toBeDefined();
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='economic_operational_alert_intents'",
+          )
+          .get(),
+      ).toBeDefined();
+    });
+
+    it("delegates legacy run-store migration to the canonical 1001–1010 plan", () => {
+      db = new Database(":memory:");
+
+      expect(() => migrateEconomicIngestionRunStore(db)).not.toThrow();
+      expect(
+        db
+          .prepare(
+            "SELECT version FROM schema_version WHERE version IN (1007, 1008, 1010) ORDER BY version",
+          )
+          .all(),
+      ).toEqual([{ version: 1007 }, { version: 1008 }, { version: 1010 }]);
+      expect(() => migrateEconomicIngestionRunStore(db)).not.toThrow();
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM schema_version WHERE version IN (1007, 1008, 1010)",
+          )
+          .get(),
+      ).toEqual({ count: 3 });
+    });
+
+    it("preserves null legacy provenance while adding run columns", () => {
+      db = createV1Database();
+
+      createEconomicMigrationPlan().apply(db);
+
+      const row = db
+        .prepare("SELECT ingestion_run_id FROM economic_cost_components WHERE id = 'cc-v1'")
+        .get() as { ingestion_run_id: string | null };
+      expect(row.ingestion_run_id).toBeNull();
+    });
+
+    it("reports duplicate legacy component identities without deleting rows", () => {
+      db = createV1Database();
+      db.prepare(
+        `
+        INSERT INTO economic_cost_components
+          (id, seller_id, type, source, source_record_id, occurred_at, observed_at)
+        VALUES ('cc-v1-duplicate', 'plasticov', 'marketplace_fee', 'mercadolibre', 'same-order', 1, 1)
+      `,
+      ).run();
+      db.prepare(
+        "UPDATE economic_cost_components SET source_record_id = 'same-order' WHERE id = 'cc-v1'",
+      ).run();
+
+      createEconomicMigrationPlan().apply(db);
+
+      const components = db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM economic_cost_components WHERE source_record_id = 'same-order'",
+        )
+        .get() as { count: number };
+      const conflicts = db
+        .prepare("SELECT COUNT(*) AS count FROM economic_migration_conflicts")
+        .get() as { count: number };
+      expect(components.count).toBe(2);
+      expect(conflicts.count).toBe(1);
+
+      expect(() => {
+        db.prepare(
+          `INSERT INTO economic_cost_components
+            (id, seller_id, type, amount_minor, currency, source, source_record_id,
+             occurred_at, observed_at, verification, confidence, identity_enforced)
+           VALUES ('new-component', 'plasticov', 'marketplace_fee', 1, 'CLP', 'mercadolibre',
+             'new-order', 1, 1, 'unverified', 0, 1)`,
+        ).run();
+        db.prepare(
+          `INSERT INTO economic_cost_components
+            (id, seller_id, type, amount_minor, currency, source, source_record_id,
+             occurred_at, observed_at, verification, confidence, identity_enforced)
+           VALUES ('new-conflict', 'plasticov', 'marketplace_fee', 1, 'CLP', 'mercadolibre',
+             'new-order', 1, 1, 'unverified', 0, 1)`,
+        ).run();
+      }).toThrow();
+
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+      expect(
+        db.prepare("SELECT COUNT(*) AS count FROM economic_migration_conflicts").get(),
+      ).toEqual({ count: 1 });
+    });
+
+    it("quarantines duplicate legacy snapshot identities, reports them, and preserves them on rerun", () => {
+      db = new Database(":memory:");
+      createEconomicMigrationPlan().apply(db);
+      db.exec("DROP INDEX idx_snapshot_business_key");
+      db.prepare("DELETE FROM schema_version WHERE version = 1006").run();
+
+      const insertLegacy = db.prepare(`
+        INSERT INTO unit_economics_snapshots
+          (snapshot_id, seller_id, order_id, item_id, currency, snapshot_json, calculated_at,
+           source_version, economic_algorithm_version, economic_checksum)
+        VALUES (?, 'plasticov', 'legacy-order', 'legacy-item', 'CLP', '{}', 1,
+          'legacy-v1', 'economic-v1', 'legacy-checksum')
+      `);
+      insertLegacy.run("legacy-snapshot-a");
+      insertLegacy.run("legacy-snapshot-b");
+
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 1, skipped: 10 });
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM unit_economics_snapshots WHERE order_id = 'legacy-order'",
+          )
+          .get(),
+      ).toEqual({ count: 2 });
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM economic_migration_conflicts WHERE table_name = 'unit_economics_snapshots'",
+          )
+          .get(),
+      ).toEqual({ count: 1 });
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM unit_economics_snapshots WHERE identity_enforced = 0",
+          )
+          .get(),
+      ).toEqual({ count: 2 });
+      expect(() => {
+        db.prepare(
+          `
+          INSERT INTO unit_economics_snapshots
+            (snapshot_id, seller_id, order_id, item_id, currency, snapshot_json, calculated_at,
+             source_version, economic_algorithm_version, economic_checksum, identity_enforced)
+          VALUES ('new-snapshot-a', 'plasticov', 'new-order', 'new-item', 'CLP', '{}', 1,
+            'v1', 'economic-v1', 'checksum', 1)
+        `,
+        ).run();
+        db.prepare(
+          `
+          INSERT INTO unit_economics_snapshots
+            (snapshot_id, seller_id, order_id, item_id, currency, snapshot_json, calculated_at,
+             source_version, economic_algorithm_version, economic_checksum, identity_enforced)
+          VALUES ('new-snapshot-b', 'plasticov', 'new-order', 'new-item', 'CLP', '{}', 1,
+            'v1', 'economic-v1', 'checksum', 1)
+        `,
+        ).run();
+      }).toThrow();
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM economic_migration_conflicts WHERE table_name = 'unit_economics_snapshots'",
+          )
+          .get(),
+      ).toEqual({ count: 1 });
+    });
+
+    it("does not let an unrelated higher global version skip economic ownership", () => {
+      db = new Database(":memory:");
+      db.exec("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT)");
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)").run(
+        9_999,
+        "now",
+      );
+
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 11, skipped: 0 });
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM schema_version WHERE version BETWEEN 1001 AND 1005",
+          )
+          .get(),
+      ).toEqual({ count: 5 });
+    });
+
+    it("keeps migration-mode store constructors preparation-only", () => {
+      const original = process.env.MSL_MIGRATION_ENABLED;
+      process.env.MSL_MIGRATION_ENABLED = "true";
+      db = new Database(":memory:");
+
+      try {
+        migrateEconomicDurabilityColumns(db);
+        migrateEconomicEvidenceStore(db);
+        expect(
+          db
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
+            .get(),
+        ).toBeUndefined();
+      } finally {
+        process.env.MSL_MIGRATION_ENABLED = original;
+      }
+    });
+
+    it("upgrades legacy snapshots without loss and supports migration-mode store reads and writes", async () => {
+      const original = process.env.MSL_MIGRATION_ENABLED;
+      process.env.MSL_MIGRATION_ENABLED = "true";
+      db = createV1Database();
+      db.prepare(
+        `INSERT INTO unit_economics_snapshots (id, seller_id, order_id, item_id, currency)
+         VALUES ('legacy-snapshot', 'plasticov', 'legacy-order', 'legacy-item', 'CLP')`,
+      ).run();
+
+      try {
+        createEconomicMigrationPlan().apply(db);
+        const outcomeStore = createSqliteEconomicOutcomeStore(db);
+        const runStore = createSqliteEconomicIngestionRunStore(db);
+        createSqliteEconomicEvidenceStore(db);
+
+        expect(outcomeStore.listUnitEconomicsSnapshots("plasticov")[0]?.snapshotId).toBe(
+          "legacy-snapshot",
+        );
+        outcomeStore.insertUnitEconomicsSnapshot({
+          snapshotId: "current-snapshot",
+          sellerId: "plasticov",
+          currency: "CLP",
+          calculatedAt: 42,
+          orderId: "current-order",
+          itemId: "current-item",
+        } as never);
+        expect(
+          outcomeStore.listUnitEconomicsSnapshots("plasticov", { snapshotId: "current-snapshot" }),
+        ).toHaveLength(1);
+
+        await runStore.updateCheckpoint("plasticov", {
+          occurredAt: 42,
+          sourceRecordId: "order-42",
+        });
+        await expect(runStore.getCheckpoint("plasticov")).resolves.toMatchObject({
+          occurredAt: 42,
+          sourceRecordId: "order-42",
+        });
+        await runStore.createRun({
+          runId: "checkpoint-result-run",
+          sellerId: "plasticov",
+          mode: "incremental",
+          status: "completed",
+          checkpointAdvanced: true,
+        });
+        expect(
+          db
+            .prepare("SELECT checkpoint_advanced FROM economic_ingestion_runs WHERE id = ?")
+            .get("checkpoint-result-run"),
+        ).toEqual({ checkpoint_advanced: 1 });
+        await runStore.updateRun("checkpoint-result-run", { checkpointAdvanced: false });
+        expect(
+          db
+            .prepare("SELECT checkpoint_advanced FROM economic_ingestion_runs WHERE id = ?")
+            .get("checkpoint-result-run"),
+        ).toEqual({ checkpoint_advanced: 0 });
+      } finally {
+        process.env.MSL_MIGRATION_ENABLED = original;
+      }
+    });
+
+    it("migrates an isolated temporary database without touching shared state", () => {
+      const directory = mkdtempSync(join(tmpdir(), "msl-economic-migration-"));
+      const databasePath = join(directory, "economic.sqlite");
+
+      try {
+        db = new Database(databasePath);
+        createEconomicMigrationPlan().apply(db);
+        db.close();
+
+        const reopened = new Database(databasePath, { readonly: true });
+        const result = reopened
+          .prepare(
+            "SELECT COUNT(*) AS count FROM schema_version WHERE version BETWEEN 1001 AND 1005",
+          )
+          .get() as { count: number };
+        reopened.close();
+        expect(result.count).toBe(5);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
       }
     });
   });

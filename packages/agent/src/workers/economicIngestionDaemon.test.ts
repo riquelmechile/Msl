@@ -1,111 +1,41 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createEconomicIngestionDaemon } from "./economicIngestionDaemon.js";
-import type { EconomicOutcomeStore } from "@msl/memory";
-import type { EconomicCostComponent } from "@msl/domain";
-import type { DataFetcher } from "../economics/EconomicIngestionPipeline.js";
+import type { EconomicIngestionRuntime } from "../economics/factory.js";
 import type { AgentMessage } from "../conversation/agentMessageBusStore.js";
-import Database from "better-sqlite3";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function makeDummyComponent(): EconomicCostComponent {
+function createDurableRuntime(
+  sellerSlug: "source" | "target" = "source",
+  numericSellerId = "plasticov",
+): EconomicIngestionRuntime {
+  const sellerId = sellerSlug === "source" ? "plasticov" : "maustian";
   return {
-    id: "cc-1",
-    sellerId: "plasticov",
-    type: "other",
-    amount: { amountMinor: 0, currency: "CLP" },
-    currency: "CLP",
-    source: "derived",
-    occurredAt: 0,
-    observedAt: 0,
-    verification: "unverified",
-    confidence: 0,
-  };
-}
-
-function mockStore(): EconomicOutcomeStore {
-  // Create a real in-memory DB so the transaction path works
-  const db = new Database(":memory:");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS economic_ingestion_runs (
-      id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, status TEXT NOT NULL,
-      mode TEXT NOT NULL, started_at INTEGER, completed_at INTEGER,
-      params TEXT, result TEXT, error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS economic_ingestion_checkpoints (
-      seller_id TEXT PRIMARY KEY, last_order_date TEXT, last_order_id TEXT,
-      last_run_id TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-  const store: any = {
-    transaction: (fn: () => any) => db.transaction(fn)(),
-    getDb: () => db,
-    insertCostComponent: vi.fn(() => makeDummyComponent()),
-    upsertCostComponent: vi.fn(() => makeDummyComponent()),
-    insertUnitEconomicsSnapshot: vi.fn((snap) => snap),
-    listCostComponents: vi.fn(() => []),
-    listBySourceRecord: vi.fn(() => []),
-    reverseCostComponent: vi.fn(() => null),
-    listUnitEconomicsSnapshots: vi.fn(() => []),
-    insertOutcome: vi.fn(),
-    updateOutcomeStatus: vi.fn(),
-    verifyOutcome: vi.fn(),
-    disputeOutcome: vi.fn(),
-    getOutcome: vi.fn(),
-    listOutcomesBySeller: vi.fn(),
-    listOutcomesByProposal: vi.fn(),
-    listOutcomesByOrder: vi.fn(),
-    listOutcomesByCorrelationId: vi.fn(),
-    listMissingInputs: vi.fn(() => []),
-    summarizeProfit: vi.fn(() => ({
-      sellerId: "seller",
-      currency: "CLP" as const,
-      totalRevenue: 0,
-      totalCosts: 0,
-      netProfit: 0,
-      netMargin: 0,
-      snapshotCount: 0,
-    })),
-  };
-  /* eslint-enable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-  return store as EconomicOutcomeStore;
-}
-
-function makeSampleFetcher(): DataFetcher {
-  return vi.fn().mockResolvedValue({
-    orders: [
-      {
-        id: "order-1",
-        status: "paid",
-        total_amount: 10000,
-        currency_id: "CLP",
-        date_created: "2026-01-15T10:00:00Z",
-        order_items: [{ item: { id: "MLI-123", title: "Test" }, quantity: 1, unit_price: 10000 }],
-        sale_fee_amount: 1100,
-        shipping_cost: 800,
-        shipping_mode: "seller",
-        seller_funded_discount: 500,
+    pipeline: vi.fn().mockResolvedValue({
+      run: {
+        runId: "economic-ingestion-daemon-run",
+        sellerId,
+        status: "completed",
+        checkpointAfter: "order-1",
+        noExternalMutationExecuted: true,
       },
-    ],
-    items: [],
-    claims: [],
-    ads: [],
-  });
+      snapshots: [{}],
+      reconciliation: { status: "balanced", details: "balanced" },
+    }),
+    health: { sellerId, numericSellerId, sellerSlug },
+    close: vi.fn(),
+  } as unknown as EconomicIngestionRuntime;
 }
 
 function makeClaim(overrides?: Partial<AgentMessage>): AgentMessage {
+  const sellerId = overrides?.sellerId ?? "plasticov";
   return {
     id: 1,
     messageId: "msg-1",
     senderAgentId: "system",
     receiverAgentId: "economic-ingestion",
     messageType: "daemon-tick",
-    payloadJson: JSON.stringify({
-      cycleTimestamp: new Date().toISOString(),
-      sellerId: "plasticov",
-    }),
+    payloadJson: JSON.stringify({ cycleTimestamp: new Date().toISOString(), sellerId }),
     status: "pending",
     priority: 0,
     attempts: 0,
@@ -176,15 +106,16 @@ describe("economicIngestionDaemon", () => {
     });
 
     it("runs pipeline and returns findings", async () => {
+      const runtime = createDurableRuntime("source", "1001");
+      const runtimeFactory = vi.fn().mockReturnValue(runtime);
       const handler = createEconomicIngestionDaemon({
         enabled: true,
-        store: mockStore(),
-        dataFetcher: makeSampleFetcher(),
-        defaultSellerId: "plasticov",
+        sellerRoutes: new Map([["1001", "source"]]),
+        runtimeFactory,
       });
 
       const result = await handler({
-        claim: makeClaim(),
+        claim: makeClaim({ sellerId: "1001" }),
         reader: {} as never,
         cortex: {} as never,
         bus: {} as never,
@@ -193,13 +124,38 @@ describe("economicIngestionDaemon", () => {
 
       expect(result.findings.length).toBeGreaterThan(0);
       expect(result.findings[0]!.kind).toBe("info");
-      expect(result.findings[0]!.summary).toContain("plasticov");
+      expect(result.findings[0]!.summary).toContain("1001");
+      expect(result.findings[0]!.summary).toContain("noExternalMutationExecuted=true");
+      expect(runtimeFactory).toHaveBeenCalledWith("source");
+      expect(runtime.pipeline).toHaveBeenCalledWith(expect.objectContaining({ noPersist: false }));
+      expect(runtime.close).toHaveBeenCalledOnce();
     });
 
-    it("alerts when store dependency is missing", async () => {
+    it("alerts when seller cannot select a durable runtime", async () => {
       const handler = createEconomicIngestionDaemon({
         enabled: true,
-        dataFetcher: makeSampleFetcher(),
+      });
+
+      const result = await handler({
+        claim: makeClaim({ sellerId: "unknown-seller" }),
+        reader: {} as never,
+        cortex: {} as never,
+        bus: {} as never,
+        sellerIds: ["plasticov"],
+      });
+
+      expect(result.findings[0]!.kind).toBe("alert");
+      expect(result.findings[0]!.summary).toContain("durable runtime");
+    });
+
+    it("redacts PII, credentials, raw payloads, and stack paths from daemon errors", async () => {
+      const handler = createEconomicIngestionDaemon({
+        enabled: true,
+        runtimeFactory: vi.fn(() => {
+          throw new Error(
+            "buyer@example.com token=secret-value raw_payload=private /home/user/app.ts\n    at run (/home/user/app.ts:1:1)",
+          );
+        }),
       });
 
       const result = await handler({
@@ -210,44 +166,33 @@ describe("economicIngestionDaemon", () => {
         sellerIds: ["plasticov"],
       });
 
-      expect(result.findings[0]!.kind).toBe("alert");
-      expect(result.findings[0]!.summary).toContain("missing store");
+      const summary = result.findings[0]!.summary;
+      expect(summary).not.toMatch(/buyer@example\.com|secret-value|private|\/home\/|\bat\s/);
+      expect(summary).toContain("[email]");
     });
 
-    it("alerts when dataFetcher dependency is missing", async () => {
+    it("routes a target tick from its claimed seller", async () => {
+      const runtime = createDurableRuntime("target", "1002");
+      const runtimeFactory = vi.fn().mockReturnValue(runtime);
       const handler = createEconomicIngestionDaemon({
         enabled: true,
-        store: mockStore(),
+        sellerRoutes: new Map([["1002", "target"]]),
+        runtimeFactory,
       });
 
       const result = await handler({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: {} as never,
-        sellerIds: ["plasticov"],
-      });
-
-      expect(result.findings[0]!.kind).toBe("alert");
-      expect(result.findings[0]!.summary).toContain("missing store");
-    });
-
-    it("falls back to first sellerId when defaultSellerId is not set", async () => {
-      const handler = createEconomicIngestionDaemon({
-        enabled: true,
-        store: mockStore(),
-        dataFetcher: makeSampleFetcher(),
-      });
-
-      const result = await handler({
-        claim: makeClaim(),
+        claim: makeClaim({ sellerId: "1002" }),
         reader: {} as never,
         cortex: {} as never,
         bus: {} as never,
         sellerIds: ["plasticov", "maustian"],
       });
 
-      expect(result.findings[0]!.summary).toContain("plasticov");
+      expect(result.findings[0]!.summary).toContain("1002");
+      expect(runtimeFactory).toHaveBeenCalledWith("target");
+      expect(runtime.pipeline).toHaveBeenCalledWith(
+        expect.objectContaining({ sellerId: "maustian" }),
+      );
     });
   });
 
@@ -259,9 +204,7 @@ describe("economicIngestionDaemon", () => {
     it("can be called multiple times without errors", async () => {
       const handler = createEconomicIngestionDaemon({
         enabled: true,
-        store: mockStore(),
-        dataFetcher: makeSampleFetcher(),
-        defaultSellerId: "plasticov",
+        runtimeFactory: vi.fn().mockReturnValue(createDurableRuntime()),
       });
 
       const ctx = {

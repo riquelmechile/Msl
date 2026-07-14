@@ -1,8 +1,13 @@
 import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterAll } from "vitest";
 import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
-import { createSqliteEconomicOutcomeStore, createSqliteEconomicLearningStore } from "@msl/memory";
+import { createSqliteEconomicLearningStore } from "@msl/memory";
+import {
+  cleanupEconomicFixtureDatabases,
+  createEconomicFixtureDatabase,
+  createEconomicOutcomeReaderFixture,
+} from "../economicReaderFixture.js";
 import type { AgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
 import {
@@ -22,9 +27,14 @@ describe("daemonScheduler", () => {
   let bus: AgentMessageBusStore;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = createEconomicFixtureDatabase();
     db.pragma("journal_mode = WAL");
     bus = createAgentMessageBusStore(db);
+  });
+
+  afterAll(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    cleanupEconomicFixtureDatabases();
   });
 
   describe("lifecycle", () => {
@@ -375,12 +385,12 @@ describe("daemonScheduler", () => {
     let bus: AgentMessageBusStore;
 
     beforeEach(() => {
-      ecoOutcomeDb = new Database(":memory:");
+      ecoOutcomeDb = createEconomicFixtureDatabase();
       ecoOutcomeDb.pragma("journal_mode = WAL");
-      ecoLearnDb = new Database(":memory:");
+      ecoLearnDb = createEconomicFixtureDatabase();
       ecoLearnDb.pragma("journal_mode = WAL");
 
-      const testDb = new Database(":memory:");
+      const testDb = createEconomicFixtureDatabase();
       testDb.pragma("journal_mode = WAL");
       bus = createAgentMessageBusStore(testDb);
     });
@@ -389,13 +399,13 @@ describe("daemonScheduler", () => {
       it("registers economic-learning when enabled", () => {
         process.env.MSL_ECONOMIC_LEARNING_ENABLED = "true";
         try {
-          const outcomeStore = createSqliteEconomicOutcomeStore(ecoOutcomeDb);
+          const outcomeStore = createEconomicOutcomeReaderFixture(ecoOutcomeDb);
           const learnStore = createSqliteEconomicLearningStore(ecoLearnDb);
           const daemon = createEconomicLearningDaemon(outcomeStore, learnStore);
 
           const scheduler = startDaemonScheduler({
             bus,
-            reader: createSqliteOperationalReadModel(new Database(":memory:")),
+            reader: createSqliteOperationalReadModel(createEconomicFixtureDatabase()),
             cortex: createGraphEngine(":memory:"),
             sellerIds: ["seller-1"],
             intervalMs: 60_000,
@@ -411,13 +421,13 @@ describe("daemonScheduler", () => {
 
       it("excludes economic-learning when disabled", () => {
         delete process.env.MSL_ECONOMIC_LEARNING_ENABLED;
-        const outcomeStore = createSqliteEconomicOutcomeStore(ecoOutcomeDb);
+        const outcomeStore = createEconomicOutcomeReaderFixture(ecoOutcomeDb);
         const learnStore = createSqliteEconomicLearningStore(ecoLearnDb);
         const daemon = createEconomicLearningDaemon(outcomeStore, learnStore);
 
         const scheduler = startDaemonScheduler({
           bus,
-          reader: createSqliteOperationalReadModel(new Database(":memory:")),
+          reader: createSqliteOperationalReadModel(createEconomicFixtureDatabase()),
           cortex: createGraphEngine(":memory:"),
           sellerIds: ["seller-1"],
           intervalMs: 60_000,
@@ -433,7 +443,7 @@ describe("daemonScheduler", () => {
         try {
           const scheduler = startDaemonScheduler({
             bus,
-            reader: createSqliteOperationalReadModel(new Database(":memory:")),
+            reader: createSqliteOperationalReadModel(createEconomicFixtureDatabase()),
             cortex: createGraphEngine(":memory:"),
             sellerIds: ["seller-1"],
             intervalMs: 60_000,
@@ -461,7 +471,7 @@ describe("daemonScheduler", () => {
       });
 
       it("enqueueDaemonTick enqueues for all base lanes", () => {
-        const testDb = new Database(":memory:");
+        const testDb = createEconomicFixtureDatabase();
         testDb.pragma("journal_mode = WAL");
         const localBus = createAgentMessageBusStore(testDb);
 
@@ -476,7 +486,7 @@ describe("daemonScheduler", () => {
       });
 
       it("enqueueDaemonTick includes extra lanes when provided", () => {
-        const testDb = new Database(":memory:");
+        const testDb = createEconomicFixtureDatabase();
         testDb.pragma("journal_mode = WAL");
         const localBus = createAgentMessageBusStore(testDb);
 
@@ -521,7 +531,7 @@ describe("daemonScheduler", () => {
       it("scheduler does not crash when economic learning daemon is dispatched", async () => {
         process.env.MSL_ECONOMIC_LEARNING_ENABLED = "true";
         try {
-          const outcomeStore = createSqliteEconomicOutcomeStore(ecoOutcomeDb);
+          const outcomeStore = createEconomicOutcomeReaderFixture(ecoOutcomeDb);
           const learnStore = createSqliteEconomicLearningStore(ecoLearnDb);
           const daemon = createEconomicLearningDaemon(outcomeStore, learnStore);
 
@@ -538,7 +548,7 @@ describe("daemonScheduler", () => {
 
           const scheduler = startDaemonScheduler({
             bus,
-            reader: createSqliteOperationalReadModel(new Database(":memory:")),
+            reader: createSqliteOperationalReadModel(createEconomicFixtureDatabase()),
             cortex: createGraphEngine(":memory:"),
             sellerIds: ["seller-1"],
             intervalMs: 60_000,
