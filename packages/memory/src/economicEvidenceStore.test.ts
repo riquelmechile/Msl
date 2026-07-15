@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import type { EconomicEvidenceReference } from "@msl/domain";
 import { createSqliteEconomicEvidenceStore } from "./economicEvidenceStore.js";
 import type { EconomicEvidenceStore } from "./economicEvidenceStore.js";
+import { createEconomicMigrationPlan } from "./migrationRegistry.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -328,44 +329,189 @@ describe("EconomicEvidenceStore", () => {
   // ── 7. markSuperseded ─────────────────────────────────────────────────
 
   describe("markSuperseded", () => {
-    it("sets superseded_by on the target evidence", () => {
-      const ev1 = makeRef({ sourceRecordId: "order-001", confidence: 0.5 });
-      const ev2 = makeRef({
-        sourceVersion: "2026-03-01T10:00:00Z",
-        sourceRecordId: "order-002",
-        confidence: 0.9,
+    const addPair = (sellerId: string, suffix: string) => {
+      const target = makeRef({
+        evidenceId: `${sellerId}-target-${suffix}`,
+        sellerId,
+        sourceRecordId: `${sellerId}-target-${suffix}`,
+        checksum: `${sellerId}-target-checksum-${suffix}`,
       });
+      const successor = makeRef({
+        evidenceId: `${sellerId}-successor-${suffix}`,
+        sellerId,
+        sourceRecordId: `${sellerId}-successor-${suffix}`,
+        checksum: `${sellerId}-successor-checksum-${suffix}`,
+      });
+      store.insertEvidence(target);
+      store.insertEvidence(successor);
+      return { target, successor };
+    };
 
-      store.insertEvidence(ev1);
-      store.insertEvidence(ev2);
+    it("links valid Plasticov and Maustian evidence while preserving seller-scoped reads", () => {
+      const plasticov = addPair("plasticov", "valid");
+      const maustian = addPair("maustian", "valid");
+      store.markSuperseded(
+        "plasticov",
+        plasticov.target.evidenceId,
+        plasticov.successor.evidenceId,
+      );
+      store.markSuperseded("maustian", maustian.target.evidenceId, maustian.successor.evidenceId);
 
-      store.markSuperseded(ev1.evidenceId, ev2.evidenceId);
-
-      // Verify ev1 has superseded_by set
-      const row = db
-        .prepare("SELECT superseded_by FROM economic_evidence_references WHERE evidence_id = ?")
-        .get(ev1.evidenceId) as { superseded_by: string | null };
-      expect(row.superseded_by).toBe(ev2.evidenceId);
-
-      // ev2 should NOT be modified
-      const row2 = db
-        .prepare("SELECT superseded_by FROM economic_evidence_references WHERE evidence_id = ?")
-        .get(ev2.evidenceId) as { superseded_by: string | null };
-      expect(row2.superseded_by).toBeNull();
+      expect(
+        db
+          .prepare(
+            "SELECT evidence_id, superseded_by FROM economic_evidence_references ORDER BY evidence_id",
+          )
+          .all(),
+      ).toEqual(
+        expect.arrayContaining([
+          {
+            evidence_id: plasticov.target.evidenceId,
+            superseded_by: plasticov.successor.evidenceId,
+          },
+          { evidence_id: maustian.target.evidenceId, superseded_by: maustian.successor.evidenceId },
+        ]),
+      );
+      expect(store.getEvidence(plasticov.target.evidenceId, "plasticov")?.evidenceId).toBe(
+        plasticov.target.evidenceId,
+      );
+      expect(store.listBySeller("plasticov").every((ref) => ref.sellerId === "plasticov")).toBe(
+        true,
+      );
+      expect(store.listBySeller("maustian").every((ref) => ref.sellerId === "maustian")).toBe(true);
     });
 
-    it("old evidence remains queryable after supersede", () => {
-      const ev1 = makeRef({ sourceRecordId: "order-001" });
-      const ev2 = makeRef({ sourceVersion: "2026-03-01T10:00:00Z", sourceRecordId: "order-002" });
+    it("rejects foreign or missing participants without changing any evidence", () => {
+      const plasticov = addPair("plasticov", "rejections");
+      const maustian = addPair("maustian", "rejections");
+      const before = db
+        .prepare(
+          "SELECT evidence_id, seller_id, superseded_by FROM economic_evidence_references ORDER BY evidence_id",
+        )
+        .all();
+      const calls: Array<[string, string, string]> = [
+        ["plasticov", maustian.target.evidenceId, plasticov.successor.evidenceId],
+        ["maustian", plasticov.target.evidenceId, maustian.successor.evidenceId],
+        ["plasticov", plasticov.target.evidenceId, maustian.successor.evidenceId],
+        ["maustian", maustian.target.evidenceId, plasticov.successor.evidenceId],
+        ["plasticov", "missing-target", plasticov.successor.evidenceId],
+        ["plasticov", plasticov.target.evidenceId, "missing-successor"],
+      ];
+      for (const args of calls) {
+        expect(store.markSuperseded(...args)).toBeUndefined();
+        expect(
+          db
+            .prepare(
+              "SELECT evidence_id, seller_id, superseded_by FROM economic_evidence_references ORDER BY evidence_id",
+            )
+            .all(),
+        ).toEqual(before);
+      }
+    });
 
-      store.insertEvidence(ev1);
-      store.insertEvidence(ev2);
-      store.markSuperseded(ev1.evidenceId, ev2.evidenceId);
+    it("rejects same-seller self-supersession without mutation or disclosure", () => {
+      const evidence = makeRef({ evidenceId: "plasticov-self-supersession" });
+      store.insertEvidence(evidence);
+      const select = db.prepare("SELECT * FROM economic_evidence_references WHERE evidence_id = ?");
+      const before = select.get(evidence.evidenceId);
+      const logs = (["error", "warn", "log"] as const).map((method) =>
+        vi.spyOn(console, method).mockImplementation(() => undefined),
+      );
 
-      // ev1 should still be retrievable
-      const retrieved = store.getEvidence(ev1.evidenceId, "plasticov");
-      expect(retrieved).not.toBeNull();
-      expect(retrieved!.evidenceId).toBe(ev1.evidenceId);
+      expect(
+        store.markSuperseded(evidence.sellerId, evidence.evidenceId, evidence.evidenceId),
+      ).toBeUndefined();
+      expect(select.get(evidence.evidenceId)).toEqual(before);
+      expect(logs.flatMap((log) => log.mock.calls)).toEqual([]);
+      logs.forEach((log) => log.mockRestore());
+    });
+
+    it("fails closed for malformed runtime inputs without diagnostic disclosure or adjacent mutations", () => {
+      const boundaryDb = new Database(":memory:");
+      createEconomicMigrationPlan().apply(boundaryDb);
+      const boundaryStore = createSqliteEconomicEvidenceStore(boundaryDb, { skipMigration: true });
+      const target = makeRef({
+        evidenceId: "plasticov-target-boundary",
+        sourceRecordId: "boundary-target",
+        checksum: "boundary-target",
+      });
+      const successor = makeRef({
+        evidenceId: "plasticov-successor-boundary",
+        sourceRecordId: "boundary-successor",
+        checksum: "boundary-successor",
+      });
+      boundaryStore.insertEvidence(target);
+      boundaryStore.insertEvidence(successor);
+      boundaryDb.exec(`INSERT INTO economic_ingestion_runs (id, seller_id, status, mode, checkpoint_advanced) VALUES ('run-boundary', 'plasticov', 'persisting', 'manual', 0);
+        INSERT INTO economic_ingestion_checkpoints (seller_id, last_run_id) VALUES ('plasticov', 'run-boundary');
+        INSERT INTO economic_source_checkpoints (seller_id, source, version, last_run_id, updated_at) VALUES ('plasticov', 'orders', 1, 'run-boundary', 1);
+        INSERT INTO economic_seller_leases (seller_id, owner_run_id, lease_token_digest, generation, database_generation, fence_generation, expires_at, updated_at) VALUES ('plasticov', 'run-boundary', 'digest', 1, 1, 1, 2, 1);
+        INSERT INTO economic_source_health (seller_id, source, ready, requested_at, attempts, pages, records, retryable, updated_at) VALUES ('plasticov', 'orders', 1, 1, 0, 0, 0, 0, 1);`);
+      const tables = [
+        "economic_evidence_references",
+        "economic_source_health",
+        "economic_ingestion_checkpoints",
+        "economic_ingestion_runs",
+        "economic_seller_leases",
+        "economic_database_fence",
+        "economic_database_metadata",
+      ];
+      const snapshot = () =>
+        tables.map((table) => boundaryDb.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+      const before = snapshot();
+      const logs = (["error", "warn", "log"] as const).map((method) =>
+        vi.spyOn(console, method).mockImplementation(() => undefined),
+      );
+      const secret = "maustian payload@example.test Bearer token /tmp/private SELECT";
+      for (const args of [
+        ["", target.evidenceId, successor.evidenceId],
+        ["   ", target.evidenceId, successor.evidenceId],
+        [`${secret}\0`, target.evidenceId, successor.evidenceId],
+        ["plasticov", "\0", successor.evidenceId],
+        ["plasticov", target.evidenceId, "  "],
+        ["plasticov", undefined, successor.evidenceId],
+      ] as unknown as Array<[string, string, string]>) {
+        expect(boundaryStore.markSuperseded(...args)).toBeUndefined();
+        expect(snapshot()).toEqual(before);
+      }
+      const diagnostics = logs
+        .flatMap((log) => log.mock.calls)
+        .flat()
+        .join(" ");
+      for (const sensitive of [
+        "maustian",
+        "payload",
+        "@example.test",
+        "Bearer",
+        "token",
+        "/tmp/private",
+        "SELECT",
+      ]) {
+        expect(diagnostics).not.toContain(sensitive);
+      }
+      logs.forEach((log) => log.mockRestore());
+      boundaryDb.close();
+    });
+
+    it("is deterministic for repeats", () => {
+      const plasticov = addPair("plasticov", "repeat");
+      store.markSuperseded(
+        "plasticov",
+        plasticov.target.evidenceId,
+        plasticov.successor.evidenceId,
+      );
+      expect(() =>
+        store.markSuperseded(
+          "plasticov",
+          plasticov.target.evidenceId,
+          plasticov.successor.evidenceId,
+        ),
+      ).not.toThrow();
+      expect(
+        db
+          .prepare("SELECT superseded_by FROM economic_evidence_references WHERE evidence_id = ?")
+          .get(plasticov.target.evidenceId),
+      ).toEqual({ superseded_by: plasticov.successor.evidenceId });
     });
   });
 

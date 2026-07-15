@@ -54,8 +54,8 @@ export type EconomicEvidenceStore = {
   /** List evidence refs originating from a specific source record, scoped to seller. */
   listBySourceRecord(sourceRecordId: string, sellerId: string): EconomicEvidenceReference[];
 
-  /** Mark an evidence reference as superseded by another. */
-  markSuperseded(evidenceId: string, supersededBy: string): void;
+  /** Mark an authorized seller's evidence reference as superseded by another. */
+  markSuperseded(sellerId: string, evidenceId: string, supersedingEvidenceId: string): void;
 
   /** Count evidence refs for a specific ingestion run. */
   countByRun(sellerId: string, ingestionRunId: string): number;
@@ -243,9 +243,13 @@ export function createSqliteEconomicEvidenceStore(
   `);
 
   const markSupersededStmt = db.prepare(`
-    UPDATE economic_evidence_references
+    UPDATE economic_evidence_references AS target
     SET superseded_by = ?
-    WHERE evidence_id = ?
+    WHERE target.evidence_id = ? AND target.seller_id = ?
+      AND EXISTS (
+        SELECT 1 FROM economic_evidence_references AS successor
+        WHERE successor.evidence_id = ? AND successor.seller_id = ?
+      )
   `);
 
   const countByRunStmt = db.prepare(
@@ -371,8 +375,16 @@ export function createSqliteEconomicEvidenceStore(
       return rows.map(evidenceFromRow);
     },
 
-    markSuperseded(evidenceId: string, supersededBy: string): void {
-      markSupersededStmt.run(supersededBy, evidenceId);
+    markSuperseded(sellerId: string, evidenceId: string, supersedingEvidenceId: string): void {
+      if (![sellerId, evidenceId, supersedingEvidenceId].every(isNonEmptyIdentifier)) return;
+      if (evidenceId === supersedingEvidenceId) return;
+      markSupersededStmt.run(
+        supersedingEvidenceId,
+        evidenceId,
+        sellerId,
+        supersedingEvidenceId,
+        sellerId,
+      );
     },
 
     countByRun(sellerId: string, ingestionRunId: string): number {
@@ -385,4 +397,8 @@ export function createSqliteEconomicEvidenceStore(
       return row?.cnt ?? 0;
     },
   };
+}
+
+function isNonEmptyIdentifier(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && !value.includes("\0");
 }

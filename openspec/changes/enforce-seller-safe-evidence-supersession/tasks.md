@@ -36,13 +36,13 @@ Chain strategy: PR 1 merge → fresh `origin/main` branch/worktree → Draft PR 
 
 ## Phase 2: PR 2 — RED SQLite Proofs
 
-- [ ] 2.1 In `packages/memory/src/economicEvidenceStore.test.ts`, write RED cases for Plasticov and Maustian valid links; both foreign-target directions; both foreign-successor directions; missing target; missing successor.
-- [ ] 2.2 Add RED cases for malformed seller, malformed/runtime-missing IDs, unchanged supersession plus source-health/checkpoint/run/lease/fence/epoch state, and non-disclosing void/errors/logs.
-- [ ] 2.3 Add RED cases for repeated valid calls and seller-scoped read isolation in `packages/memory/src/economicEvidenceStore.test.ts`.
-- [ ] 2.4 In `packages/memory/tests/economicRunProvenanceStore.test.ts`, add the RED temporary-WAL two-worker case proving concurrent Plasticov/Maustian links remain isolated.
+- [x] 2.1 In `packages/memory/src/economicEvidenceStore.test.ts`, write RED cases for Plasticov and Maustian valid links; both foreign-target directions; both foreign-successor directions; missing target; missing successor.
+- [x] 2.2 Add RED cases for malformed seller, malformed/runtime-missing IDs, unchanged supersession plus source-health/checkpoint/run/lease/fence/epoch state, and non-disclosing void/errors/logs.
+- [x] 2.3 Add RED cases for repeated valid calls and seller-scoped read isolation in `packages/memory/src/economicEvidenceStore.test.ts`.
+- [x] 2.4 In `packages/memory/tests/economicRunProvenanceStore.test.ts`, add the RED temporary-WAL two-worker case proving concurrent Plasticov/Maustian links remain isolated.
 
 ## Phase 3: PR 2 — Atomic Boundary and Verification
 
-- [ ] 3.1 In `packages/memory/src/economicEvidenceStore.ts`, change `markSuperseded` to `(sellerId, evidenceId, supersedingEvidenceId): void`; update only compiler-required local callers/mocks.
-- [ ] 3.2 Add the non-empty/non-whitespace/no-NUL guard and one seller-scoped conditional `UPDATE ... EXISTS`; bind five values and ignore `.run()` output.
-- [ ] 3.3 Run focused Vitest and `npm run typecheck`; validate the WAL harness and inspect that no migration, external call, other R6–R8 work, or unrelated file entered PR 2.
+- [x] 3.1 In `packages/memory/src/economicEvidenceStore.ts`, change `markSuperseded` to `(sellerId, evidenceId, supersedingEvidenceId): void`; update only compiler-required local callers/mocks.
+- [x] 3.2 Add the non-empty/non-whitespace/no-NUL guard and one seller-scoped conditional `UPDATE ... EXISTS`; bind five values and ignore `.run()` output.
+- [x] 3.3 Run focused Vitest and `npm run typecheck`; validate the WAL harness and inspect that no migration, external call, other R6–R8 work, or unrelated file entered PR 2.
