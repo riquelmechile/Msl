@@ -19,7 +19,9 @@ type WorkerMessage =
       type: "result";
       evidenceOutcome: "inserted" | "conflict";
       role: "holder" | "contender";
-    };
+    }
+  | { type: "supersession-result"; sellerId: string }
+  | { type: "error"; message: string };
 
 type WorkerSession = {
   worker: Worker;
@@ -107,6 +109,41 @@ const writerWorkerSource = String.raw`
       parentPort.postMessage({ type: "result", role: "contender", evidenceOutcome });
     } finally {
       if (db.inTransaction) db.exec("ROLLBACK");
+      db.close();
+    }
+  }
+
+  main().catch((error) => {
+    parentPort.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
+  });
+`;
+
+const supersessionWorkerSource = String.raw`
+  const Database = require("better-sqlite3");
+  const { parentPort, workerData } = require("node:worker_threads");
+
+  function waitForStart() {
+    return new Promise((resolve) => parentPort.once("message", resolve));
+  }
+
+  async function main() {
+    const db = new Database(workerData.databasePath);
+    try {
+      db.pragma("journal_mode = WAL");
+      db.pragma("busy_timeout = 150");
+      parentPort.postMessage({ type: "ready" });
+      await waitForStart();
+      db.prepare(
+        "UPDATE economic_evidence_references AS target SET superseded_by = ? WHERE target.evidence_id = ? AND target.seller_id = ? AND EXISTS (SELECT 1 FROM economic_evidence_references AS successor WHERE successor.evidence_id = ? AND successor.seller_id = ?)",
+      ).run(
+        workerData.supersedingEvidenceId,
+        workerData.evidenceId,
+        workerData.sellerId,
+        workerData.supersedingEvidenceId,
+        workerData.sellerId,
+      );
+      parentPort.postMessage({ type: "supersession-result", sellerId: workerData.sellerId });
+    } finally {
       db.close();
     }
   }
@@ -368,6 +405,97 @@ describe("economic run provenance stores", () => {
       verificationDb?.close();
       db?.close();
       await Promise.all([holder?.worker.terminate(), contender?.worker.terminate()]);
+      rmSync(directory, { recursive: true, force: true });
+      expect(existsSync(directory)).toBe(false);
+    }
+  });
+
+  it("proves concurrent Plasticov and Maustian supersession isolation with WAL workers", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "msl-supersession-workers-"));
+    const databasePath = join(directory, "economic.sqlite");
+    let plasticovWorker: WorkerSession | undefined;
+    let maustianWorker: WorkerSession | undefined;
+
+    try {
+      db = new Database(databasePath);
+      db.pragma("journal_mode = WAL");
+      createEconomicMigrationPlan().apply(db);
+      const evidenceStore = createSqliteEconomicEvidenceStore(db);
+      const plasticovTarget = evidence("plasticov", "run-plasticov", "target");
+      const plasticovSuccessor = evidence("plasticov", "run-plasticov", "successor");
+      const maustianTarget = evidence("maustian", "run-maustian", "target");
+      const maustianSuccessor = evidence("maustian", "run-maustian", "successor");
+      [plasticovTarget, plasticovSuccessor, maustianTarget, maustianSuccessor].forEach((ref) =>
+        evidenceStore.insertEvidence(ref),
+      );
+      db.close();
+      db = undefined;
+
+      plasticovWorker = createWorkerSession(
+        new Worker(supersessionWorkerSource, {
+          eval: true,
+          workerData: {
+            databasePath,
+            sellerId: "plasticov",
+            evidenceId: plasticovTarget.evidenceId,
+            supersedingEvidenceId: plasticovSuccessor.evidenceId,
+          },
+        }),
+      );
+      maustianWorker = createWorkerSession(
+        new Worker(supersessionWorkerSource, {
+          eval: true,
+          workerData: {
+            databasePath,
+            sellerId: "maustian",
+            evidenceId: maustianTarget.evidenceId,
+            supersedingEvidenceId: maustianSuccessor.evidenceId,
+          },
+        }),
+      );
+      await Promise.all([
+        waitForMessage(plasticovWorker, "ready"),
+        waitForMessage(maustianWorker, "ready"),
+      ]);
+      plasticovWorker.worker.postMessage("start");
+      maustianWorker.worker.postMessage("start");
+      await Promise.all([
+        waitForMessage(plasticovWorker, "supersession-result"),
+        waitForMessage(maustianWorker, "supersession-result"),
+      ]);
+
+      db = new Database(databasePath);
+      expect(
+        db
+          .prepare(
+            "SELECT evidence_id, seller_id, superseded_by FROM economic_evidence_references ORDER BY evidence_id",
+          )
+          .all(),
+      ).toEqual([
+        {
+          evidence_id: maustianSuccessor.evidenceId,
+          seller_id: "maustian",
+          superseded_by: null,
+        },
+        {
+          evidence_id: maustianTarget.evidenceId,
+          seller_id: "maustian",
+          superseded_by: maustianSuccessor.evidenceId,
+        },
+        {
+          evidence_id: plasticovSuccessor.evidenceId,
+          seller_id: "plasticov",
+          superseded_by: null,
+        },
+        {
+          evidence_id: plasticovTarget.evidenceId,
+          seller_id: "plasticov",
+          superseded_by: plasticovSuccessor.evidenceId,
+        },
+      ]);
+    } finally {
+      db?.close();
+      await Promise.all([plasticovWorker?.worker.terminate(), maustianWorker?.worker.terminate()]);
       rmSync(directory, { recursive: true, force: true });
       expect(existsSync(directory)).toBe(false);
     }
