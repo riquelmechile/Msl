@@ -81,14 +81,12 @@ export function createAgentDaemonPersistenceRuntime(
   const databaseManager = new Proxy(manager, {
     get(target, property) {
       if (property === "restoreFrom") {
-        return async (backupPath: string) => {
-          close();
-          try {
-            await target.restoreFrom(backupPath);
-          } finally {
-            open();
-          }
-        };
+        return () =>
+          Promise.reject(
+            new Error(
+              "Generic restoreFrom is forbidden for the economic database; use restoreEconomicFrom",
+            ),
+          );
       }
       const value: unknown = Reflect.get(target, property);
       return typeof value === "function" ? (value.bind(target) as unknown) : value;

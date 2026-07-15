@@ -36,8 +36,15 @@ Chain strategy: stacked-to-main
 
 - [x] 2.1 RED: Create `packages/memory/src/economicDatabaseLifecycle.test.ts` for epochs, stale permits, mismatched fences, draining, renewal cancellation, authority-compatible path sharing, and release/eviction without mutation.
 - [x] 2.2 GREEN: Create `packages/memory/src/economicDatabaseLifecycle.ts`; register epoch-bound participants, drain writes, validate fence identity before destructive boundaries, own/release path leases safely, and block admission on failure.
-- [ ] 2.3 RED: Add `packages/memory/src/databaseManager.test.ts` cases for checkpoint zero frames, absent sidecars accepted, busy/nonzero WAL rejected, independent staging verification, atomic promotion, and retained verified prior.
-- [ ] 2.4 GREEN: Add `restoreEconomicFrom` in `packages/memory/src/databaseManager.ts` with same-filesystem stage/prior/manifest, durable transitions, quiescence, atomic rename, and post-1011 verification.
+- [ ] 2.3 RED: Add `packages/memory/src/databaseManager.test.ts` cases for checkpoint zero frames, absent sidecars accepted, busy/nonzero WAL rejected, independent staging verification, atomic promotion, and retained verified prior. Reopened after R7 Unit 2B phase-gate rejection.
+- [ ] 2.4 GREEN: Add `restoreEconomicFrom` in `packages/memory/src/databaseManager.ts` with same-filesystem stage/prior/manifest, durable transitions, quiescence, atomic rename, and post-1011 verification. Reopened after R7 Unit 2B phase-gate rejection.
+
+### Unit 2B-1 Protocol-Hardening Sub-slice (parent tasks remain pending)
+
+- Prepared, but did not promote, immutable backup/stage identity, canonical lifecycle-path binding, strict checkpoint receipts, durable manifest/journal phase evidence, and fail-closed cleanup/reopen behavior.
+- [x] 2B-1a: Snapshot and bind filesystem/economic input identities; strictly parse checkpoint receipts; independently prove post-migration stage integrity/identity; atomically fsync manifest evidence and prove race/fault cleanup. Revalidated after frozen gate corrections; parent tasks remain pending.
+- [x] 2B-1b: Release the pre-drain journal handle; reopen it by canonical path only after quiescence, retain root failure evidence while lifecycle recovery is safe, and reject generic daemon restore without any economic rename.
+- Parent tasks 2.3–2.4 intentionally remain unchecked until Unit 2B-2 implements and proves atomic promotion, final relational verification, and terminal completion.
 
 ## Phase 3: Runtime Integration and Recovery
 
