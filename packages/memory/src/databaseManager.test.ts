@@ -1072,12 +1072,84 @@ describe("DatabaseManager", () => {
       ).toEqual({ count: 0 });
       intactTarget.close();
       expect(existsSync(join(dirname(TEST_DB), `.msl-test-dm.db.${restoreId}.prior`))).toBe(false);
-      expect(existsSync(stagePath)).toBe(false);
+      expect(readFileSync(stagePath)).toEqual(readFileSync(backupPath));
+      expect(existsSync(originalStagePath)).toBe(true);
       expect(lifecycle.state).toBe("open");
     } finally {
       registration.release();
       rmSync(originalStagePath, { force: true });
     }
+  });
+
+  it("does not mutate an existing invocation when restore IDs collide", async () => {
+    const { db, manager, cleanup } = setupTestDb();
+    _cleanup = cleanup;
+    const plan = createEconomicMigrationPlan();
+    plan.apply(db);
+    const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "restore-id-owner" });
+    if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+    const backupPath = join(BACKUP_DIR, "restore-id-collision.db");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    copyFileSync(TEST_DB, backupPath);
+    db.close();
+    const lifecycle = createEconomicDatabaseLifecycle({
+      path: TEST_DB,
+      authority: {},
+      readFence: () => acquired.fence,
+    });
+    economicLifecycle = lifecycle;
+    economicFence = acquired.fence;
+    const input = {
+      backupPath,
+      fence: acquired.fence,
+      lifecycle,
+      migrationRegistry: plan,
+      restoreId: "shared-restore-id",
+    };
+    const original = await manager.restoreEconomicFrom(input);
+    const heldStage = join(BACKUP_DIR, "owned-stage.db");
+    const heldManifest = join(BACKUP_DIR, "owned-manifest.json");
+    const targetBefore = readFileSync(TEST_DB);
+    const stageBefore = readFileSync(original.stagePath);
+    const manifestBefore = readFileSync(original.manifestPath);
+    const originalDb = new Database(TEST_DB, { readonly: true });
+    const journalBefore = originalDb
+      .prepare("SELECT * FROM economic_restore_journal WHERE restore_id = ?")
+      .get(input.restoreId);
+    originalDb.close();
+    renameSync(original.stagePath, heldStage);
+    renameSync(original.manifestPath, heldManifest);
+    let artifactsRepublished = false;
+    const collidingManager = createDatabaseManager(TEST_DB, () => {
+      if (!artifactsRepublished) {
+        renameSync(heldStage, original.stagePath);
+        renameSync(heldManifest, original.manifestPath);
+        artifactsRepublished = true;
+      }
+      return new Database(TEST_DB);
+    });
+
+    await expect(collidingManager.restoreEconomicFrom(input)).rejects.toThrow(/unique constraint/i);
+
+    expect(readFileSync(TEST_DB)).toEqual(targetBefore);
+    expect(readFileSync(original.stagePath)).toEqual(stageBefore);
+    expect(readFileSync(original.manifestPath)).toEqual(manifestBefore);
+    const intact = new Database(TEST_DB, { readonly: true });
+    expect(
+      intact
+        .prepare("SELECT * FROM economic_restore_journal WHERE restore_id = ?")
+        .get(input.restoreId),
+    ).toEqual(journalBefore);
+    expect(
+      intact
+        .prepare(
+          "SELECT COUNT(*) AS count FROM economic_restore_journal WHERE outcome = 'completed'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    intact.close();
+    expect(manager.verifyBackup(original.stagePath).ok).toBe(true);
+    expect(existsSync(original.priorPath)).toBe(false);
   });
 
   it("snapshots migration, lifecycle, checkpoint, and durability callables before callbacks mutate their containers", async () => {

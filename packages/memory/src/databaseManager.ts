@@ -282,6 +282,8 @@ class LiveDatabaseManager implements DatabaseManager {
         );
         rejectExistingArtifacts(stagePath, priorPath, manifestPath);
         let journalDb: Database.Database | undefined;
+        let journalOwned = false;
+        let manifestIdentity: FileIdentity | undefined;
         let stageCreated = false;
         let quiesced = false;
         const checkpoint = input.checkpoint;
@@ -311,6 +313,10 @@ class LiveDatabaseManager implements DatabaseManager {
           syncDirectory(dirname(path));
         };
         const writeManifest = (phase: string, extra: object = {}): void => {
+          if (!journalOwned) throw new Error("Economic restore journal row is not owned");
+          if (manifestIdentity && !samePathFileIdentity(manifestPath, manifestIdentity))
+            throw new Error("Economic restore manifest path is no longer owned");
+          if (!manifestIdentity) rejectExistingArtifacts(manifestPath);
           if (phase === "quiesced") {
             assertBackupPathBinding();
             if (stage) assertStagePathBinding();
@@ -337,6 +343,7 @@ class LiveDatabaseManager implements DatabaseManager {
               syncArtifacts,
             },
           );
+          manifestIdentity = fileIdentity(manifestPath);
         };
         const assertBoundFence = (db?: Database.Database): void => {
           const owned = db ?? new Database(targetPath, { readonly: true });
@@ -369,6 +376,7 @@ class LiveDatabaseManager implements DatabaseManager {
           db: Database.Database,
           phase: "draining" | "staged" | "quiesced" | "failed",
         ): void => {
+          if (!journalOwned) throw new Error("Economic restore journal row is not owned");
           assertTargetBinding();
           db.prepare(
             "UPDATE economic_restore_journal SET phase = ?, updated_at = unixepoch() WHERE restore_id = ?",
@@ -385,6 +393,7 @@ class LiveDatabaseManager implements DatabaseManager {
           const stageStillBound = !stage || sameBoundPathObjectIdentity(stage);
           try {
             if (!targetStillBound) throw new Error("Economic restore target binding was lost");
+            if (!journalOwned) throw new Error("Economic restore journal row is not owned");
             const failureJournal = journalDb ?? new Database(targetPath);
             try {
               failureJournal
@@ -401,17 +410,19 @@ class LiveDatabaseManager implements DatabaseManager {
           } finally {
             journalDb?.close();
           }
-          try {
-            writeManifest("failed", {
-              failureDetail: detail,
-              targetStillBound,
-              backupStillBound,
-              stageStillBound,
-            });
-          } catch {
-            // Earlier durable phase evidence remains authoritative.
+          if (journalOwned) {
+            try {
+              writeManifest("failed", {
+                failureDetail: detail,
+                targetStillBound,
+                backupStillBound,
+                stageStillBound,
+              });
+            } catch {
+              // Earlier durable phase evidence remains authoritative.
+            }
           }
-          if (stageCreated) {
+          if (stageCreated && stage && sameBoundPathObjectIdentity(stage)) {
             try {
               unlinkSync(stagePath);
             } catch {
@@ -465,6 +476,7 @@ class LiveDatabaseManager implements DatabaseManager {
           writeEpoch: live.writeEpoch,
           phase: "fence-acquired",
         });
+        journalOwned = true;
         assertTargetBinding();
         syncJournalArtifacts(targetPath, { syncFile, syncDirectory });
         writeManifest("fence-acquired", {
@@ -1004,6 +1016,7 @@ function writeDurableJson(
   let descriptor: number | undefined;
   let temporaryCreated = false;
   let published = false;
+  let publishedIdentity: FileIdentity | undefined;
   let completed = false;
   try {
     descriptor = openSync(temporaryPath, "wx", 0o600);
@@ -1015,6 +1028,7 @@ function writeDurableJson(
     durability.renameArtifact(temporaryPath, path);
     temporaryCreated = false;
     published = true;
+    publishedIdentity = fileIdentity(path);
     // A manifest only claims a phase after the final file and parent are durable.
     durability.syncArtifacts(path);
     completed = true;
@@ -1027,7 +1041,12 @@ function writeDurableJson(
         // Preserve the root write/fsync/rename/directory-sync error.
       }
     }
-    if (!completed && published) {
+    if (
+      !completed &&
+      published &&
+      publishedIdentity &&
+      samePathFileIdentity(path, publishedIdentity)
+    ) {
       try {
         unlinkSync(path);
         durability.syncDirectory(dirname(path));
