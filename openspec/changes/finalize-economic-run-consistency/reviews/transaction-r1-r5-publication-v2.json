@@ -1,0 +1,551 @@
+{
+  "schema": "gentle-ai.review-transaction/v1",
+  "lineage_id": "finalize-economic-run-consistency-r1-r5-publication-v2",
+  "mode": "ordinary_4r",
+  "generation": 1,
+  "state": "approved",
+  "snapshot": {
+    "kind": "fix-diff",
+    "base_tree": "1373431579b47ffd5217eedeb66b647f90f01d33",
+    "candidate_tree": "216aedae5e0cb8e91a0d851a7db6d30aa48c1551",
+    "paths_digest": "sha256:bdadc9a1beab9f8300410ad83e407d3ac9dbaa3f083e2625d726c11341cd51f8",
+    "intended_untracked": [
+      "openspec/changes/finalize-economic-run-consistency/apply-progress.md",
+      "openspec/changes/finalize-economic-run-consistency/confirmed-findings.md",
+      "openspec/changes/finalize-economic-run-consistency/cumulative-metrics-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/design.md",
+      "openspec/changes/finalize-economic-run-consistency/exploration.md",
+      "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/idempotent-entity-identities.md",
+      "openspec/changes/finalize-economic-run-consistency/migration-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/proposal.md",
+      "openspec/changes/finalize-economic-run-consistency/r5-economic-sqlite-writer-inventory.md",
+      "openspec/changes/finalize-economic-run-consistency/real-smoke-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md",
+      "openspec/changes/finalize-economic-run-consistency/rollback-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/run-association-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/run-identity-invariant.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/economic-evidence-store/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/economic-ingestion-durability/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/tasks.md",
+      "packages/agent/src/economics/boundedFanout.test.ts",
+      "packages/agent/src/economics/boundedFanout.ts",
+      "packages/agent/src/economics/dataFetcher.test.ts",
+      "packages/agent/src/economics/economicSanitizer.ts",
+      "packages/agent/src/economics/factory.test.ts",
+      "packages/agent/src/economics/runtimeDeadline.test.ts",
+      "packages/agent/src/economics/runtimeDeadline.ts",
+      "packages/agent/src/economics/sourceFetchContract.test.ts",
+      "packages/agent/src/economics/sourceFetchContract.ts",
+      "packages/agent/tests/economicReaderFixture.ts",
+      "packages/domain/src/economicIdentity.test.ts",
+      "packages/domain/src/sourceFetch.test.ts",
+      "packages/domain/src/sourceFetch.ts",
+      "packages/memory/src/databaseWriteAdmission.ts",
+      "packages/memory/src/economicWriteSession.ts",
+      "packages/memory/src/economicWriterInventory.ts",
+      "packages/memory/tests/databaseWriteAdmission.test.ts",
+      "packages/memory/tests/economicDatabaseAdmissionReceipt.test.ts",
+      "packages/memory/tests/economicRunProvenanceStore.test.ts",
+      "packages/memory/tests/economicSellerLeaseStore.test.ts",
+      "packages/memory/tests/economicSourceCheckpointStore.test.ts",
+      "packages/memory/tests/economicSourceRetryBacklogStore.test.ts",
+      "packages/memory/tests/economicWriteSessionRenewal.test.ts",
+      "packages/memory/tests/economicWriterInventory.test.ts",
+      "packages/memory/tests/publicEconomicBoundary.test.ts"
+    ],
+    "intended_untracked_proof": "sha256:89dd4fedf458a081a2288d96320d150a4a3ffe7b512b6d31958dd90f221f7b91",
+    "ledger_ids": [
+      "RELIABILITY-001",
+      "RELIABILITY-002",
+      "RESILIENCE-001",
+      "RESILIENCE-002",
+      "RISK-001"
+    ],
+    "paths": [
+      "packages/agent/src/conversation/agentLoop.ts",
+      "packages/agent/src/conversation/tools/economicTools.test.ts",
+      "packages/agent/src/economics/EconomicIngestionPipeline.ts",
+      "packages/agent/src/economics/factory.test.ts",
+      "packages/agent/src/economics/factory.ts",
+      "packages/agent/src/economics/pipeline.test.ts",
+      "packages/memory/src/economicWriteSession.ts",
+      "packages/mercadolibre/src/index.ts",
+      "packages/mercadolibre/src/mercadolibre.test.ts"
+    ],
+    "identity": "sha256:9f5ea9f7452509186035e6189a167e5ae19fbf097aaba871142e8d488ff09c9d"
+  },
+  "genesis_paths": [
+    "openspec/changes/finalize-economic-run-consistency/apply-progress.md",
+    "openspec/changes/finalize-economic-run-consistency/confirmed-findings.md",
+    "openspec/changes/finalize-economic-run-consistency/cumulative-metrics-policy.md",
+    "openspec/changes/finalize-economic-run-consistency/design.md",
+    "openspec/changes/finalize-economic-run-consistency/exploration.md",
+    "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md",
+    "openspec/changes/finalize-economic-run-consistency/idempotent-entity-identities.md",
+    "openspec/changes/finalize-economic-run-consistency/migration-plan.md",
+    "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md",
+    "openspec/changes/finalize-economic-run-consistency/proposal.md",
+    "openspec/changes/finalize-economic-run-consistency/r5-economic-sqlite-writer-inventory.md",
+    "openspec/changes/finalize-economic-run-consistency/real-smoke-plan.md",
+    "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md",
+    "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md",
+    "openspec/changes/finalize-economic-run-consistency/rollback-plan.md",
+    "openspec/changes/finalize-economic-run-consistency/run-association-policy.md",
+    "openspec/changes/finalize-economic-run-consistency/run-identity-invariant.md",
+    "openspec/changes/finalize-economic-run-consistency/specs/economic-evidence-store/spec.md",
+    "openspec/changes/finalize-economic-run-consistency/specs/economic-ingestion-durability/spec.md",
+    "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md",
+    "openspec/changes/finalize-economic-run-consistency/tasks.md",
+    "packages/agent/src/cli/economicCli.test.ts",
+    "packages/agent/src/cli/economicCli.ts",
+    "packages/agent/src/conversation/agentLoop.ts",
+    "packages/agent/src/conversation/tools/economicTools.test.ts",
+    "packages/agent/src/conversation/tools/economicTools.ts",
+    "packages/agent/src/conversation/tools/financeDirectorTools.test.ts",
+    "packages/agent/src/conversation/tools/financeDirectorTools.ts",
+    "packages/agent/src/economics/EconomicIngestionPipeline.ts",
+    "packages/agent/src/economics/EconomicIngestionRun.ts",
+    "packages/agent/src/economics/EconomicReconciliationService.ts",
+    "packages/agent/src/economics/adapters/advertisingCost.ts",
+    "packages/agent/src/economics/adapters/financing.ts",
+    "packages/agent/src/economics/adapters/landedCost.ts",
+    "packages/agent/src/economics/adapters/marketplaceFee.test.ts",
+    "packages/agent/src/economics/adapters/marketplaceFee.ts",
+    "packages/agent/src/economics/adapters/orderRevenue.test.ts",
+    "packages/agent/src/economics/adapters/orderRevenue.ts",
+    "packages/agent/src/economics/adapters/other.ts",
+    "packages/agent/src/economics/adapters/packaging.ts",
+    "packages/agent/src/economics/adapters/productCost.ts",
+    "packages/agent/src/economics/adapters/refundReturn.ts",
+    "packages/agent/src/economics/adapters/sellerDiscount.test.ts",
+    "packages/agent/src/economics/adapters/sellerDiscount.ts",
+    "packages/agent/src/economics/adapters/shippingCost.ts",
+    "packages/agent/src/economics/adapters/tax.ts",
+    "packages/agent/src/economics/boundedFanout.test.ts",
+    "packages/agent/src/economics/boundedFanout.ts",
+    "packages/agent/src/economics/dataFetcher.test.ts",
+    "packages/agent/src/economics/dataFetcher.ts",
+    "packages/agent/src/economics/economicSanitizer.ts",
+    "packages/agent/src/economics/factory.test.ts",
+    "packages/agent/src/economics/factory.ts",
+    "packages/agent/src/economics/normalization.test.ts",
+    "packages/agent/src/economics/normalization.ts",
+    "packages/agent/src/economics/pipeline.test.ts",
+    "packages/agent/src/economics/runtimeDeadline.test.ts",
+    "packages/agent/src/economics/runtimeDeadline.ts",
+    "packages/agent/src/economics/sourceFetchContract.test.ts",
+    "packages/agent/src/economics/sourceFetchContract.ts",
+    "packages/agent/src/finance/EconomicLearningPipeline.test.ts",
+    "packages/agent/src/finance/EconomicLearningPipeline.ts",
+    "packages/agent/src/finance/EconomicLearningTrigger.test.ts",
+    "packages/agent/src/finance/EconomicLearningTrigger.ts",
+    "packages/agent/src/finance/FinanceDirectorEvidenceAssembler.test.ts",
+    "packages/agent/src/finance/FinanceDirectorEvidenceAssembler.ts",
+    "packages/agent/src/index.ts",
+    "packages/agent/src/workers/economicIngestionDaemon.test.ts",
+    "packages/agent/src/workers/economicIngestionDaemon.ts",
+    "packages/agent/src/workers/economicLearningDaemon.ts",
+    "packages/agent/tests/economicReaderFixture.ts",
+    "packages/agent/tests/workers/daemonScheduler.test.ts",
+    "packages/domain/src/economicCalculation.ts",
+    "packages/domain/src/economicCost.ts",
+    "packages/domain/src/economicEvidenceReference.ts",
+    "packages/domain/src/economicIdentity.test.ts",
+    "packages/domain/src/economicIngestionRun.ts",
+    "packages/domain/src/index.ts",
+    "packages/domain/src/sourceFetch.test.ts",
+    "packages/domain/src/sourceFetch.ts",
+    "packages/domain/src/unitEconomics.ts",
+    "packages/memory/src/databaseWriteAdmission.ts",
+    "packages/memory/src/economicEvidenceStore.test.ts",
+    "packages/memory/src/economicEvidenceStore.ts",
+    "packages/memory/src/economicIngestionRunStore.ts",
+    "packages/memory/src/economicOutcomeStore.ts",
+    "packages/memory/src/economicWriteSession.ts",
+    "packages/memory/src/economicWriterInventory.ts",
+    "packages/memory/src/index.ts",
+    "packages/memory/src/migrationRegistry.ts",
+    "packages/memory/tests/databaseWriteAdmission.test.ts",
+    "packages/memory/tests/economicCostComponentStore.test.ts",
+    "packages/memory/tests/economicDatabaseAdmissionReceipt.test.ts",
+    "packages/memory/tests/economicDurabilityMigration.test.ts",
+    "packages/memory/tests/economicRunProvenanceStore.test.ts",
+    "packages/memory/tests/economicSellerLeaseStore.test.ts",
+    "packages/memory/tests/economicSourceCheckpointStore.test.ts",
+    "packages/memory/tests/economicSourceRetryBacklogStore.test.ts",
+    "packages/memory/tests/economicWriteSessionRenewal.test.ts",
+    "packages/memory/tests/economicWriterInventory.test.ts",
+    "packages/memory/tests/publicEconomicBoundary.test.ts",
+    "packages/mercadolibre/src/index.ts",
+    "packages/mercadolibre/src/mercadolibre.test.ts"
+  ],
+  "base_tree": "f716409129a3231c673936278415d3cb2cac9596",
+  "paths_digest": "sha256:064f9b694a9fc2c61abcbf2721554aabb6fb85d5bc26ee746ed844d57e103fc4",
+  "initial_review_tree": "1373431579b47ffd5217eedeb66b647f90f01d33",
+  "final_candidate_tree": "216aedae5e0cb8e91a0d851a7db6d30aa48c1551",
+  "fix_delta_hash": "sha256:2d40f54da55e4c4b67ea8d4ae591e5ff69591223b8e0cd5f6a7d66f805dc7b2b",
+  "policy_hash": "sha256:077ad6c6cdf3dfbf8c3addbecbff06df1d65df706ba1d70fe74e625296e32b35",
+  "ledger_hash": "sha256:625df0b38dadf5a0f35aca4883942bd005119ea26ff8368e9dd396a20fe6c035",
+  "ledger_findings_hash": "sha256:973f2e739e173cba44ceef61b6b75c863cba54e22ef64794a5e98dee0c6712e6",
+  "evidence_hash": "sha256:8b1daa25f1887f02e932bc24be035a272e8e07d3614d022fa65f0f109d8d9041",
+  "judge_proofs": [],
+  "failed_evidence_revision": "sha256:5246908adcb34b022c06ead0450d9cf8048c4b86c8d7c7b911fa1915f92bb478",
+  "counters": {
+    "full_reviews": 1,
+    "refuter_batches": 0,
+    "fix_batches": 1,
+    "scoped_fix_validations": 1,
+    "final_verifications": 1,
+    "fix_rounds": 0,
+    "scoped_rejudgments": 0,
+    "judge_executions": 0
+  },
+  "findings": [
+    {
+      "id": "RISK-001",
+      "lens": "risk",
+      "location": "packages/agent/src/conversation/agentLoop.ts:905-936",
+      "severity": "BLOCKER",
+      "claim": "The backend executes model-supplied economic tool arguments unchanged. Economic and Finance Director tools use the supplied sellerId to query shared stores without verifying it against the configured account seller, permitting cross-seller financial-data reads.",
+      "proof_refs": [
+        "packages/agent/src/conversation/agentLoop.ts:180-190",
+        "packages/agent/src/conversation/agentLoop.ts:593-626",
+        "packages/agent/src/conversation/agentLoop.ts:905-936",
+        "packages/agent/src/conversation/agentLoop.ts:1346-1360",
+        "packages/agent/src/conversation/tools/economicTools.ts:17-41",
+        "packages/agent/src/conversation/tools/economicTools.ts:75",
+        "packages/agent/src/conversation/tools/financeDirectorTools.ts:47-65",
+        "packages/agent/src/conversation/tools/financeDirectorTools.ts:95-110",
+        "packages/agent/src/conversation/types.ts:234-240"
+      ]
+    },
+    {
+      "id": "RESILIENCE-001",
+      "lens": "resilience",
+      "location": "packages/agent/src/economics/factory.ts:68-88",
+      "severity": "BLOCKER",
+      "claim": "The production MLC adapter discards derived AbortSignals. Request deadlines reject the wrapper promise but cannot cancel the underlying provider operation, violating the explicit productive-transport cancellation criterion.",
+      "proof_refs": [
+        "packages/agent/src/economics/factory.ts:68-88",
+        "packages/agent/src/economics/dataFetcher.ts:300-307",
+        "packages/agent/src/economics/dataFetcher.ts:493-512"
+      ]
+    },
+    {
+      "id": "RESILIENCE-002",
+      "lens": "resilience",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:501-507",
+      "severity": "CRITICAL",
+      "claim": "A mandatory Orders failure throws before source-health persistence. Failure recovery records only the failed run, so previously persisted Orders readiness can remain stale after timeout, authentication, or provider failures.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:501-507",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:828-845",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:986-1010",
+        "packages/memory/src/economicWriteSession.ts:429-436"
+      ]
+    },
+    {
+      "id": "RESILIENCE-003",
+      "lens": "resilience",
+      "location": "packages/memory/src/economicWriteSession.ts:442-475",
+      "severity": "WARNING",
+      "claim": "Runtime initialization opens SQLite before validation, maintenance admission, migrations, and store construction, but provides no failure cleanup path to close the handle when any subsequent step throws.",
+      "proof_refs": [
+        "packages/memory/src/economicWriteSession.ts:442-475",
+        "packages/memory/src/economicWriteSession.ts:668-672"
+      ]
+    },
+    {
+      "id": "RESILIENCE-004",
+      "lens": "resilience",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:398-402",
+      "severity": "WARNING",
+      "claim": "Successful-run telemetry always reports zero components, snapshots, and evidence because the logged counters are fixed constants rather than committed run values.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:398-402",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:773-840",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:866-889"
+      ]
+    },
+    {
+      "id": "READABILITY-001",
+      "lens": "readability",
+      "location": "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md:7-14",
+      "severity": "WARNING",
+      "claim": "The requirement adds migration 1011, but its upgrade scenario says only 1007-1010 are pending, leaving the expected 1006 upgrade path ambiguous.",
+      "proof_refs": [
+        "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md:7-14"
+      ]
+    },
+    {
+      "id": "READABILITY-002",
+      "lens": "readability",
+      "location": "openspec/changes/finalize-economic-run-consistency/apply-progress.md:3-54",
+      "severity": "WARNING",
+      "claim": "The progress document presents R5 PASS, R5 incomplete, awaiting-gate, and not-accepted states consecutively without a current-versus-history boundary.",
+      "proof_refs": [
+        "openspec/changes/finalize-economic-run-consistency/apply-progress.md:3-5",
+        "openspec/changes/finalize-economic-run-consistency/apply-progress.md:26-54"
+      ]
+    },
+    {
+      "id": "READABILITY-003",
+      "lens": "readability",
+      "location": "openspec/changes/finalize-economic-run-consistency/tasks.md:3-29",
+      "severity": "WARNING",
+      "claim": "The task plan still describes auto-chained, stacked delivery through four PRs as the resolved strategy, while the publication policy authorizes one exceptional draft PR.",
+      "proof_refs": [
+        "openspec/changes/finalize-economic-run-consistency/tasks.md:10-29",
+        "openspec/changes/finalize-economic-run-consistency/reviews/policy-r1-r5-publication.md:14-15"
+      ]
+    },
+    {
+      "id": "READABILITY-004",
+      "lens": "readability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:370-378",
+      "severity": "SUGGESTION",
+      "claim": "runEconomicIngestion exposes seven positional parameters, making call-site intent and argument ordering difficult to verify.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:370-378",
+        "packages/agent/src/economics/pipeline.test.ts:3471-3484"
+      ]
+    },
+    {
+      "id": "READABILITY-005",
+      "lens": "readability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:370-1037",
+      "severity": "WARNING",
+      "claim": "runEconomicIngestion combines admission, locking, fetch, normalization, adaptation, reconciliation, persistence, metrics, failure reconstruction, and cleanup in one 668-line function.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:404-518",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:518-753",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:754-1037"
+      ]
+    },
+    {
+      "id": "READABILITY-006",
+      "lens": "readability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:773-865",
+      "severity": "WARNING",
+      "claim": "Persisted and non-persisted branches duplicate the ingestion-run finalization payload, so changes to final metrics or reconciliation fields must be synchronized manually.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:773-795",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:848-865"
+      ]
+    },
+    {
+      "id": "READABILITY-007",
+      "lens": "readability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:398-402",
+      "severity": "WARNING",
+      "claim": "Four values described as run-scoped counters are immutable zero constants but are later emitted as runtime metrics, obscuring whether they are placeholders or actual counters.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:398-402",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:875-882"
+      ]
+    },
+    {
+      "id": "READABILITY-008",
+      "lens": "readability",
+      "location": "packages/memory/src/economicWriteSession.ts:207-217",
+      "severity": "WARNING",
+      "claim": "The same BEGIN IMMEDIATE, COMMIT, and ROLLBACK wrapper is independently implemented in four Memory modules.",
+      "proof_refs": [
+        "packages/memory/src/economicWriteSession.ts:207-217",
+        "packages/memory/src/databaseWriteAdmission.ts:37-47",
+        "packages/memory/src/economicIngestionRunStore.ts:804-814",
+        "packages/memory/src/migrationRegistry.ts:156-166"
+      ]
+    },
+    {
+      "id": "READABILITY-009",
+      "lens": "readability",
+      "location": "packages/memory/src/economicIngestionRunStore.ts:1247-1345",
+      "severity": "WARNING",
+      "claim": "Source-checkpoint insertion, comparison, CAS update, and readback logic is duplicated between asynchronous and in-transaction implementations.",
+      "proof_refs": [
+        "packages/memory/src/economicIngestionRunStore.ts:1247-1345",
+        "packages/memory/src/economicIngestionRunStore.ts:1870-1953"
+      ]
+    },
+    {
+      "id": "READABILITY-010",
+      "lens": "readability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:263-283",
+      "severity": "WARNING",
+      "claim": "The compound strict-after cursor rule is implemented separately in the pipeline and data fetcher, with different string comparison expressions.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:247-283",
+        "packages/agent/src/economics/dataFetcher.ts:398-411"
+      ]
+    },
+    {
+      "id": "READABILITY-011",
+      "lens": "readability",
+      "location": "packages/memory/src/economicIngestionRunStore.ts:895-905",
+      "severity": "SUGGESTION",
+      "claim": "classifyLeaseOwner ends with a conditional whose true and false branches both return lease-replaced, leaving a dead distinction in the ownership classification.",
+      "proof_refs": [
+        "packages/memory/src/economicIngestionRunStore.ts:895-905"
+      ]
+    },
+    {
+      "id": "READABILITY-012",
+      "lens": "readability",
+      "location": "packages/agent/src/cli/economicCli.ts:220-226",
+      "severity": "SUGGESTION",
+      "claim": "The resume conditional selects incremental mode in both branches, so the branch communicates a distinction that does not exist.",
+      "proof_refs": [
+        "packages/agent/src/cli/economicCli.ts:220-226"
+      ]
+    },
+    {
+      "id": "READABILITY-013",
+      "lens": "readability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:705",
+      "severity": "SUGGESTION",
+      "claim": "The economic reconciliation tolerance is passed as an unnamed literal 1, hiding a business rule expressed elsewhere as a minor-unit tolerance.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:705",
+        "packages/agent/src/economics/EconomicReconciliationService.ts:23-38"
+      ]
+    },
+    {
+      "id": "READABILITY-014",
+      "lens": "readability",
+      "location": "packages/agent/src/cli/economicCli.ts:336-345",
+      "severity": "SUGGESTION",
+      "claim": "Coverage confidence is assigned through unexplained 0.7 and 0.3 business literals rather than named policy values.",
+      "proof_refs": [
+        "packages/agent/src/cli/economicCli.ts:336-345"
+      ]
+    },
+    {
+      "id": "READABILITY-015",
+      "lens": "readability",
+      "location": "packages/mercadolibre/src/index.ts:1322-1975",
+      "severity": "WARNING",
+      "claim": "createMlcReadMethods constructs more than thirty endpoint implementations in one 653-line object and duplicates scan and offset pagination, delays, and page thresholds between listings and orders.",
+      "proof_refs": [
+        "packages/mercadolibre/src/index.ts:1322-1466",
+        "packages/mercadolibre/src/index.ts:1467-1975"
+      ]
+    },
+    {
+      "id": "READABILITY-016",
+      "lens": "readability",
+      "location": "packages/agent/src/economics/pipeline.test.ts:573-3551",
+      "severity": "SUGGESTION",
+      "claim": "The pipeline suite places basic flow, failure parity, identity, reconciliation, durability, source outcomes, and fencing in one 3,551-line test module, making scenario ownership difficult to locate.",
+      "proof_refs": [
+        "packages/agent/src/economics/pipeline.test.ts:573-1730",
+        "packages/agent/src/economics/pipeline.test.ts:1730-3349",
+        "packages/agent/src/economics/pipeline.test.ts:3349-3551"
+      ]
+    },
+    {
+      "id": "RELIABILITY-001",
+      "lens": "reliability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:557-673",
+      "severity": "CRITICAL",
+      "claim": "Each snapshot receives every cost component belonging to the seller. Multi-order and multi-item runs therefore duplicate unrelated fees, shipping, refunds, discounts, and advertising costs across snapshots.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:557-636",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:660-674",
+        "packages/agent/src/economics/normalization.ts:29-37",
+        "packages/agent/src/economics/pipeline.test.ts:817-864",
+        "packages/agent/src/economics/pipeline.test.ts:3020-3048"
+      ]
+    },
+    {
+      "id": "RELIABILITY-002",
+      "lens": "reliability",
+      "location": "packages/agent/src/economics/EconomicIngestionPipeline.ts:738-845",
+      "severity": "CRITICAL",
+      "claim": "Completion eligibility checks only revenue reconciliation. A run whose cost reconciliation is mismatched can be marked completed, persist corrupted snapshots and components, and advance its checkpoint.",
+      "proof_refs": [
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:738-751",
+        "packages/agent/src/economics/EconomicIngestionPipeline.ts:769-837",
+        "packages/agent/src/economics/EconomicReconciliationService.ts:87-106",
+        "packages/agent/src/economics/EconomicReconciliationService.ts:240-266",
+        "packages/agent/src/economics/pipeline.test.ts:1701-1725"
+      ]
+    }
+  ],
+  "classifications": {
+    "RELIABILITY-001": {
+      "finding_id": "RELIABILITY-001",
+      "class": "deterministic",
+      "proof": "Snapshot component selection at EconomicIngestionPipeline.ts:660-674 accepts every component with the same sellerId, so unrelated order components enter each snapshot."
+    },
+    "RELIABILITY-002": {
+      "finding_id": "RELIABILITY-002",
+      "class": "deterministic",
+      "proof": "Eligibility at EconomicIngestionPipeline.ts:738-751 checks revenue status but not cost reconciliation before persistence and checkpoint advancement at 769-837."
+    },
+    "RESILIENCE-001": {
+      "finding_id": "RESILIENCE-001",
+      "class": "deterministic",
+      "proof": "Production adapter signatures in factory.ts:68-88 omit AbortSignal while dataFetcher.ts:300-307 and 493-512 depend on that signal reaching transport."
+    },
+    "RESILIENCE-002": {
+      "finding_id": "RESILIENCE-002",
+      "class": "deterministic",
+      "proof": "Orders failure throws at EconomicIngestionPipeline.ts:501-507 before source-health updates at 828-845; failure session at 986-1010 records only the failed run."
+    },
+    "RISK-001": {
+      "finding_id": "RISK-001",
+      "class": "deterministic",
+      "proof": "Direct call path passes model-supplied sellerId into economic and finance tool handlers without binding it to the configured seller; see agentLoop.ts:905-936 and economicTools.ts:17-75."
+    }
+  },
+  "outcomes": {
+    "READABILITY-001": "info",
+    "READABILITY-002": "info",
+    "READABILITY-003": "info",
+    "READABILITY-004": "info",
+    "READABILITY-005": "info",
+    "READABILITY-006": "info",
+    "READABILITY-007": "info",
+    "READABILITY-008": "info",
+    "READABILITY-009": "info",
+    "READABILITY-010": "info",
+    "READABILITY-011": "info",
+    "READABILITY-012": "info",
+    "READABILITY-013": "info",
+    "READABILITY-014": "info",
+    "READABILITY-015": "info",
+    "READABILITY-016": "info",
+    "RELIABILITY-001": "corroborated",
+    "RELIABILITY-002": "corroborated",
+    "RESILIENCE-001": "corroborated",
+    "RESILIENCE-002": "corroborated",
+    "RESILIENCE-003": "info",
+    "RESILIENCE-004": "info",
+    "RISK-001": "corroborated"
+  },
+  "fix_finding_ids": [
+    "RELIABILITY-001",
+    "RELIABILITY-002",
+    "RESILIENCE-001",
+    "RESILIENCE-002",
+    "RISK-001"
+  ],
+  "pending_refuter_ids": [],
+  "fix_caused_findings": [],
+  "follow_ups": [],
+  "original_criteria": {
+    "evidence_hash": "sha256:7323e0d95fac00509814fdcf9fddae88259ae5f22ef31ca0b979f71b357bfe36",
+    "fix_delta_hash": "sha256:2d40f54da55e4c4b67ea8d4ae591e5ff69591223b8e0cd5f6a7d66f805dc7b2b",
+    "passed": true
+  },
+  "correction_regression": {
+    "evidence_hash": "sha256:7323e0d95fac00509814fdcf9fddae88259ae5f22ef31ca0b979f71b357bfe36",
+    "fix_delta_hash": "sha256:2d40f54da55e4c4b67ea8d4ae591e5ff69591223b8e0cd5f6a7d66f805dc7b2b",
+    "passed": true
+  }
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
-import { createMigrationRegistry } from "./migrationRegistry.js";
+import { createEconomicMigrationPlan, createMigrationRegistry } from "./migrationRegistry.js";
 
 describe("MigrationRegistry", () => {
   // ── Fresh DB ───────────────────────────────────────────────────
@@ -276,6 +276,39 @@ describe("MigrationRegistry", () => {
     db.close();
   });
 
+  it("rolls back a migration's schema and version record together", () => {
+    const db = new Database(":memory:");
+    const registry = createMigrationRegistry();
+    registry.register({
+      version: 1,
+      name: "baseline",
+      up: (d) => d.exec("CREATE TABLE baseline (id INTEGER PRIMARY KEY)"),
+    });
+    registry.apply(db);
+    registry.register({
+      version: 2,
+      name: "schema_failure",
+      up: (d) => {
+        d.exec("CREATE TABLE transient_schema (id INTEGER PRIMARY KEY)");
+        d.exec("CREATE INDEX invalid_index ON missing_table (id)");
+      },
+    });
+
+    expect(() => registry.apply(db)).toThrow(/Migration v2 \("schema_failure"\) failed/);
+    expect(db.prepare("SELECT version FROM schema_version ORDER BY version").all()).toEqual([
+      { version: 1 },
+    ]);
+    expect(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'transient_schema'",
+        )
+        .get(),
+    ).toBeUndefined();
+
+    db.close();
+  });
+
   // ── expectedVersion ────────────────────────────────────────────
 
   it("returns expectedVersion as the highest registered version", () => {
@@ -378,5 +411,31 @@ describe("MigrationRegistry", () => {
   it("expectedVersion returns 0 for empty registry", () => {
     const registry = createMigrationRegistry();
     expect(registry.expectedVersion()).toBe(0);
+  });
+
+  it("keeps the canonical economic migration plan ordered through 1013", () => {
+    const db = new Database(":memory:");
+
+    createEconomicMigrationPlan().apply(db);
+
+    expect(
+      db
+        .prepare(
+          "SELECT version FROM schema_version WHERE version BETWEEN 1007 AND 1013 ORDER BY version",
+        )
+        .all(),
+    ).toEqual([
+      { version: 1007 },
+      { version: 1008 },
+      { version: 1009 },
+      { version: 1010 },
+      { version: 1011 },
+      { version: 1013 },
+    ]);
+    expect(
+      db.prepare("SELECT version FROM schema_version WHERE version = 1012").get(),
+    ).toBeUndefined();
+
+    db.close();
   });
 });
