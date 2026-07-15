@@ -89,3 +89,96 @@ remediation within the completed Unit 1 boundary; it does not begin Unit 2.
 - Excluded: Unit 2+, migration implementation changes, external/production work,
   secrets, VCS/PR activity, and archive work.
 - Review budget: 11 changed assertion/list lines plus this audit record.
+
+## R7 Work Unit 2A: Lifecycle Coordinator
+
+**Delivery mode**: Chained delivery, stacked-to-main. Explicit auto-chain sub-split;
+this safe slice contains tasks 2.1–2.2 only.
+
+### Completed Tasks
+
+- [x] 2.1 RED: Added deterministic lifecycle behavior tests for distinct
+  equivalent-path joins, epoch-bound permits and references, live-fence rejection,
+  idempotent owner/registration release, released-handle operations, safe
+  quiesced eviction, blocked-state retention, recreation, drain, and recovery.
+- [x] 2.2 GREEN: Added a path-scoped lifecycle coordinator with participant,
+  lease-owner, and in-flight accounting; exact live-fence validation before write
+  and close boundaries; bounded quiescence; explicit quiesced/recover transitions;
+  safe eviction; and blocked admission after failures.
+
+### Work Unit Evidence
+
+| Evidence | Command / scenario | Exact result |
+|---|---|---|
+| RED test | `npm test -- packages/memory/src/economicDatabaseLifecycle.test.ts` before implementation | Exit 1; 1 test suite failed during module load because `economicDatabaseLifecycle.js` did not exist. |
+| Focused test | `npm test -- packages/memory/src/economicDatabaseLifecycle.test.ts` | Ordinary-review correction result: Exit 0; 1 test file passed, 19 tests passed. |
+| Runtime harness | N/A — Unit 2A is an isolated in-process coordinator; file-backed promotion/runtime wiring begins in tasks 2.3+ and Unit 3, which are excluded. | N/A by isolated-unit boundary. |
+| Typecheck | `npm run typecheck --workspace @msl/memory` | Exit 0. |
+| Format / diff safety | `npx prettier --check packages/memory/src/economicDatabaseLifecycle.ts packages/memory/src/economicDatabaseLifecycle.test.ts openspec/changes/finalize-economic-run-consistency/tasks.md openspec/changes/finalize-economic-run-consistency/apply-progress.md && git diff --check` | Final result: Exit 0; all matched files formatted and no whitespace errors. |
+| Rollback boundary | `packages/memory/src/economicDatabaseLifecycle.ts`, `packages/memory/src/economicDatabaseLifecycle.test.ts`, `.gitignore`, and this ledger entry | Revert the coordinator/proof together and remove the local CodeGraph ignore rule. No DatabaseManager promotion, runtime/daemon wiring, crash matrix, external, or production behavior is included. |
+
+### Corrective Rerun: Live Fence and Shared Coordinator State
+
+- Root cause: permits only retained a generation and were not revalidated against
+  the live owner/token/database-generation/expiry at use time; separate factory
+  calls resolved a path but constructed isolated state; and invalidation/renewal
+  hooks were not timeout-bounded before destructive readiness.
+- Correction: permits retain their admitted fence snapshot and reject changed or
+  expired live fences before invoking the callback; canonical-path factories return
+  one shared coordinator; every quiescence hook is bounded and failures block the
+  path before close. The expanded 9-test suite proves those cases plus successful
+  quiesced reopen and blocked recovery.
+- Task accuracy: Tasks 2.1 and 2.2 remain complete because the focused lifecycle
+  suite, memory typecheck, Prettier, and whitespace diff check all pass after the
+  correction. Tasks 2.3+ remain untouched.
+
+### Final Corrective Proof: Determinism and Test Cleanup
+
+- Root cause: the prior proof used duplicate path strings, omitted idempotence and
+  several released-handle operations, and left owners/registrations in the module
+  registry after tests.
+- Correction: a shared `afterEach` release stack tracks every test-created handle
+  and registration. The final 15-test suite proves distinct lexical path joining,
+  idempotent release, all released-handle operations, quiesced eviction with a new
+  authority/open epoch, and blocked retention until explicit recovery. Tests recover
+  every intentionally blocked lifecycle before cleanup; no test-only registry reset
+  exists to conceal a leak.
+- Repository hygiene: `.gitignore` now excludes `.codegraph/`; the index remains
+  intact and `git status --short` no longer reports it.
+- Task accuracy: these corrections complete only tasks 2.1–2.2. Tasks 2.3+ remain
+  untouched.
+
+### Third-Reopened Corrective Retry: Immutable Drain Fence
+
+- Root cause: `enterDraining` retained the caller-owned fence across participant awaits,
+  allowing a callback to alias and mutate the caller object as the live fence.
+- Correction: synchronously snapshot every drain fence field before `assertFence` or any
+  awaited hook; use that immutable value for the initial and pre-close checks.
+- Proof: the late-mismatch callback aliases and mutates the original caller/live fence;
+  drain rejects before `close`, blocks fail-closed, then recovers for registry cleanup.
+- Task accuracy: focused lifecycle tests, memory typecheck, Prettier, and whitespace
+  diff check pass; only Unit 2A tasks 2.1–2.2 are affected.
+
+#### Ordinary-Review Correction `review-bcedc44c94caa35b`
+
+- Root causes: timeout bounded only the caller while writes/hooks remained active;
+  reopen trusted a one-time fence check across awaits; and concurrent open transitions
+  had no single owner.
+- Correction: recovery rejects until tracked writes and hooks settle, reopen snapshots
+  and revalidates the fence after every hook and before commit, and one caller reserves
+  the transition through its sole epoch increment.
+- Proof: the focused 19-test suite covers late close side effects, write/hook settlement,
+  replacement and expiry between reopen hooks, and concurrent reopen ownership.
+- Size exception: maintainer-approved, bounded to the native 180-line correction forecast.
+
+### Scope and Boundary
+
+- Start: completed migration 1013 foundation and an open economic path.
+- End: tested path-scoped lifecycle contract ready for later promotion wiring.
+- Excluded: tasks 2.3+, `DatabaseManager` restore/promotion, daemon/direct runtime
+  wiring, crash/recovery matrix, external/production operations, VCS/PR activity,
+  and archive work.
+- Review budget: 840 source-and-test lines plus this existing Unit 2A artifact boundary.
+  The ordinary-review correction adds 136 net source/test lines plus this audit entry,
+  within its approved 180 changed-line forecast. `.codegraph/` remains excluded and
+  untouched.
