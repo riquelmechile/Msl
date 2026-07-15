@@ -20,7 +20,7 @@ describe("agent daemon startup contract", () => {
     expect(memory).not.toHaveProperty("createSqliteEconomicOutcomeStore");
   });
 
-  it("rebinds existing capabilities after restoring the owned database", async () => {
+  it("fails closed for generic economic restore while delegated capabilities remain usable", async () => {
     const directory = mkdtempSync(join(tmpdir(), "msl-agent-daemons-"));
     const durabilityEnabled = process.env.MSL_DURABILITY_ENABLED;
     process.env.MSL_DURABILITY_ENABLED = "true";
@@ -37,10 +37,13 @@ describe("agent daemon startup contract", () => {
       const backupPath = join(directory, "backup.sqlite");
       await runtime.databaseManager.backup(backupPath);
       enqueue("transient");
-      await runtime.databaseManager.restoreFrom(backupPath);
-      expect(runtime.bus.getPendingCount()).toBe(1);
-      enqueue("after-restore");
+      await expect(runtime.databaseManager.restoreFrom(backupPath)).rejects.toThrow(/forbidden/i);
       expect(runtime.bus.getPendingCount()).toBe(2);
+      enqueue("after-rejected-restore");
+      expect(runtime.bus.getPendingCount()).toBe(3);
+      await expect(
+        runtime.databaseManager.backup(join(directory, "still-usable.sqlite")),
+      ).resolves.toBeGreaterThan(0);
     } finally {
       runtime.close();
       if (durabilityEnabled === undefined) delete process.env.MSL_DURABILITY_ENABLED;
