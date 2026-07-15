@@ -739,6 +739,29 @@ describe("Economic Durability Migration", () => {
       ).toBeUndefined();
     });
 
+    it("rejects an exact 1013 record paired with a malformed same-name journal", () => {
+      db = new Database(":memory:");
+      db.exec(`
+        CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT);
+        INSERT INTO schema_version (version, applied_at) VALUES (1013, 'unrelated-owner');
+        CREATE TABLE economic_restore_journal (restore_id TEXT PRIMARY KEY);
+      `);
+
+      expect(() => createEconomicMigrationPlan().apply(db)).toThrow(
+        /Migration v1013 \("economic_restore_journal"\) failed/,
+      );
+      expect(
+        db.prepare("SELECT applied_at FROM schema_version WHERE version = 1013").get(),
+      ).toEqual({ applied_at: "unrelated-owner" });
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE name = 'idx_economic_restore_journal_phase'",
+          )
+          .get(),
+      ).toBeUndefined();
+    });
+
     it("keeps migration-mode store constructors preparation-only", () => {
       const original = process.env.MSL_MIGRATION_ENABLED;
       process.env.MSL_MIGRATION_ENABLED = "true";
