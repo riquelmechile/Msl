@@ -431,7 +431,7 @@ describe("DatabaseManager", () => {
     const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "restore-run" });
     if (acquired.status !== "acquired") throw new Error("test fence unavailable");
     const fence = acquired.fence;
-    let liveFence = { ...fence };
+    const liveFence = { ...fence };
     const lifecycle = createEconomicDatabaseLifecycle({
       path: join(dirname(TEST_DB), ".", basename(TEST_DB)),
       authority: {},
@@ -964,15 +964,18 @@ describe("DatabaseManager", () => {
       );
       expect(
         intactTarget
-          .prepare(
-            "SELECT phase, outcome, failure_detail FROM economic_restore_journal WHERE restore_id = ?",
-          )
+          .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
           .get(restoreId),
       ).toMatchObject({
         phase: "failed",
         outcome: "failed",
-        failure_detail: expect.stringMatching(/backup path is no longer bound/i),
       });
+      expect(
+        intactTarget
+          .prepare("SELECT failure_detail FROM economic_restore_journal WHERE restore_id = ?")
+          .pluck()
+          .get(restoreId),
+      ).toMatch(/backup path is no longer bound/i);
       expect(
         intactTarget
           .prepare(
@@ -1048,15 +1051,18 @@ describe("DatabaseManager", () => {
       );
       expect(
         intactTarget
-          .prepare(
-            "SELECT phase, outcome, failure_detail FROM economic_restore_journal WHERE restore_id = ?",
-          )
+          .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
           .get(restoreId),
       ).toMatchObject({
         phase: "failed",
         outcome: "failed",
-        failure_detail: expect.stringMatching(/stage path is no longer bound/i),
       });
+      expect(
+        intactTarget
+          .prepare("SELECT failure_detail FROM economic_restore_journal WHERE restore_id = ?")
+          .pluck()
+          .get(restoreId),
+      ).toMatch(/stage path is no longer bound/i);
       expect(
         intactTarget
           .prepare(

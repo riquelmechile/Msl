@@ -373,7 +373,7 @@ class LiveDatabaseManager implements DatabaseManager {
           db.prepare(
             "UPDATE economic_restore_journal SET phase = ?, updated_at = unixepoch() WHERE restore_id = ?",
           ).run(phase, restoreId);
-          const receipt = db.pragma("wal_checkpoint(TRUNCATE)") as unknown;
+          const receipt = db.pragma("wal_checkpoint(TRUNCATE)");
           if (!isZeroCheckpointReceipt(receipt))
             throw new Error("Economic restore journal checkpoint did not reach zero frames");
           syncJournalArtifacts(targetPath, { syncFile, syncDirectory }); // Journal is durable before its matching manifest.
@@ -499,7 +499,7 @@ class LiveDatabaseManager implements DatabaseManager {
           assertBackupPathBinding();
           assertStagePathBinding();
           const stageCheckpointReceipt =
-            stageCheckpoint?.(stageDb) ?? (stageDb.pragma("wal_checkpoint(TRUNCATE)") as unknown);
+            stageCheckpoint?.(stageDb) ?? stageDb.pragma("wal_checkpoint(TRUNCATE)");
           assertBackupPathBinding();
           assertStagePathBinding();
           if (!isZeroCheckpointReceipt(stageCheckpointReceipt))
@@ -845,10 +845,6 @@ function sameBoundPathObjectIdentity(bound: BoundRegularFile): boolean {
   } catch {
     return false;
   }
-}
-
-function sameBoundPathFileIdentity(bound: BoundRegularFile): boolean {
-  return sameBoundFileIdentity(bound) && samePathFileIdentity(bound.bindingPath, bound.identity);
 }
 
 function verifyBoundBackup(backup: BoundRegularFile): BackupVerifyResult {

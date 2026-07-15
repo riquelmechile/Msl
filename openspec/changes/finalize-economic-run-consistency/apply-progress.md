@@ -491,6 +491,21 @@ promotion/2B-2 remains out of scope.
 intentionally unchecked; no VCS publication, external operation, prior creation,
 promotion, or completed outcome occurred.
 
+### PR #146 CI Lint Remediation
+
+- Replaced the forbidden async rejection proxy with `Promise.reject`, made the
+  immutable fence binding `const`, separated journal failure-detail assertions,
+  removed two redundant checkpoint casts, and deleted the unused path-identity helper.
+- No runtime behavior or task completion changed.
+
+| Evidence | Command / scenario | Exact result |
+|---|---|---|
+| Repository lint | `npm run lint` | Exit 0; no lint errors. |
+| Focused regression suite | `npm test -- packages/memory/src/databaseManager.test.ts packages/memory/src/backupScheduler.test.ts packages/agent/src/runtime/agentDaemonPersistence.test.ts scripts/start-agent-daemons.test.mjs` | Exit 0; 4 test files passed, 71 tests passed. |
+| Typecheck | `npm run typecheck --workspace @msl/memory && npm run typecheck --workspace @msl/agent` | Exit 0 for both workspaces. |
+| Format / diff safety | `npx prettier --check packages/agent/src/runtime/agentDaemonPersistence.ts packages/memory/src/databaseManager.test.ts packages/memory/src/databaseManager.ts && git diff --check` | Exit 0; all matched files formatted and no whitespace errors. |
+| Rollback boundary | `packages/agent/src/runtime/agentDaemonPersistence.ts`, `packages/memory/src/databaseManager.test.ts`, `packages/memory/src/databaseManager.ts`, and this evidence entry | Revert only the seven CI lint remediations and this record; economic restore behavior remains unchanged. |
+
 ### Final Gate Correction: Descriptor Cleanup and Final Manifest Durability
 
 - Moved lifecycle-path canonicalization, artifact directory/path derivation, and
