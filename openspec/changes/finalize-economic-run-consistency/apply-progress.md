@@ -54,3 +54,38 @@ that historical work.
 - [ ] 2.1–2.4 Fenced restore protocol.
 - [ ] 3.1–3.5 Runtime integration and deterministic recovery.
 - [ ] 4.1–4.2 Offline verification.
+
+## R7 Work Unit 1 CI Remediation: Migration-Plan Expectations
+
+**Delivery mode**: Chained delivery, stacked-to-main. This is a minimal CI-only
+remediation within the completed Unit 1 boundary; it does not begin Unit 2.
+
+### Root Cause and Fix
+
+- Root cause: migration 1013 expanded the canonical economic migration plan from
+  11 to 12 steps. Three legacy tests still expected the previous skipped/applied
+  totals, and the checkpoint upgrade list omitted version 1013.
+- Fix: updated only those stale assertions in the three affected test files.
+  The checkpoint test now expects the six registered upgrades after 1006 and
+  explicitly lists 1013 after 1011. No production migration behavior or test
+  strictness changed.
+
+### Work Unit Evidence
+
+| Evidence | Command / scenario | Exact result |
+|---|---|---|
+| Focused test | `npm test -- packages/memory/tests/economicDatabaseAdmissionReceipt.test.ts packages/memory/tests/economicSourceCheckpointStore.test.ts packages/memory/tests/economicSourceRetryBacklogStore.test.ts` | Exit 0; 3 test files passed, 22 tests passed. |
+| Runtime harness | Same focused command; real file-backed SQLite migration, rerun, and reopen paths exercised by the three legacy stores | Exit 0; 3 test files passed, 22 tests passed. |
+| Original Unit 1 migration tests | `npm test -- packages/memory/src/migrationRegistry.test.ts packages/memory/tests/economicDurabilityMigration.test.ts` | Exit 0; 2 test files passed, 31 tests passed. |
+| Full suite | `npm test` | Exit 0; 198 test files passed, 2 skipped; 3,584 tests passed, 7 skipped. |
+| Format / diff safety | `npx prettier --check packages/memory/tests/economicDatabaseAdmissionReceipt.test.ts packages/memory/tests/economicSourceCheckpointStore.test.ts packages/memory/tests/economicSourceRetryBacklogStore.test.ts openspec/changes/finalize-economic-run-consistency/apply-progress.md && git diff --check` | Exit 0; all four files formatted and no whitespace errors. |
+| Rollback boundary | `packages/memory/tests/economicDatabaseAdmissionReceipt.test.ts`, `packages/memory/tests/economicSourceCheckpointStore.test.ts`, `packages/memory/tests/economicSourceRetryBacklogStore.test.ts`, and this apply-progress entry | Revert only stale expectations and this remediation record; migration 1013 and all production behavior remain intact. |
+
+### Scope and Boundary
+
+- Start: completed Unit 1 migration 1013 with stale legacy CI expectations.
+- End: legacy assertions aligned with the 12-step migration plan and explicit
+  checkpoint version 1013 coverage.
+- Excluded: Unit 2+, migration implementation changes, external/production work,
+  secrets, VCS/PR activity, and archive work.
+- Review budget: 11 changed assertion/list lines plus this audit record.

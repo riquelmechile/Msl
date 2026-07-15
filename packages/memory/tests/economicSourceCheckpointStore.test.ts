@@ -83,7 +83,7 @@ function waitForWorkerMessage<T extends RaceMessage["type"]>(
 describe("R3 source checkpoint CAS", () => {
   it("applies 1007/1008 on fresh, recorded-1006 upgrade, and rerun", () => {
     const { db } = openFile("migration");
-    expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+    expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
     expect(
       db
         .prepare("SELECT COUNT(*) AS count FROM schema_version WHERE version IN (1007, 1008)")
@@ -94,7 +94,7 @@ describe("R3 source checkpoint CAS", () => {
     ).toEqual({ name: "economic_source_checkpoints" });
   });
 
-  it("upgrades a recorded 1006 database through the registered 1007–1011 plan", () => {
+  it("upgrades a recorded 1006 database through the registered 1007–1013 plan", () => {
     const directory = mkdtempSync(join(tmpdir(), "msl-r3-upgrade-"));
     const db = new Database(join(directory, "economic.sqlite"));
     opened.push({ db, directory });
@@ -106,7 +106,7 @@ describe("R3 source checkpoint CAS", () => {
         );
       }
 
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 5, skipped: 6 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 6, skipped: 6 });
       expect(
         db
           .prepare("SELECT version FROM schema_version WHERE version >= 1007 ORDER BY version")
@@ -117,8 +117,9 @@ describe("R3 source checkpoint CAS", () => {
         { version: 1009 },
         { version: 1010 },
         { version: 1011 },
+        { version: 1013 },
       ]);
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
     } finally {
       // The shared afterEach owns cleanup; close here only to prove no handles leak.
       db.close();
