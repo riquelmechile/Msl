@@ -403,6 +403,24 @@ describe("EconomicDatabaseLifecycle", () => {
     expect(blocked.lifecycle.state).toBe("open");
   });
 
+  it("keeps admission closed between participant reopen and the synchronous admission commit", async () => {
+    const { lifecycle } = setup();
+    const reopened = vi.fn();
+    register(lifecycle, { invalidate: vi.fn(), reopen: reopened });
+    await lifecycle.enterDraining(fence());
+
+    await lifecycle.prepareReopen(fence());
+    expect(reopened).toHaveBeenCalledOnce();
+    expect(lifecycle.state).toBe("quiesced");
+    expect(() => lifecycle.admitWrite(fence())).toThrow("ECONOMIC_DATABASE_LIFECYCLE_DRAINING");
+
+    lifecycle.commitReopen(fence());
+    expect(lifecycle.state).toBe("open");
+    await expect(
+      lifecycle.withWritePermit(lifecycle.admitWrite(fence()), () => "admitted"),
+    ).resolves.toBe("admitted");
+  });
+
   it("bounds a hanging reopen hook and blocks the lifecycle", async () => {
     const hanging = setup();
     const reopened = deferred();

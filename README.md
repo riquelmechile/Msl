@@ -198,7 +198,7 @@ npm run typecheck     # TypeScript strict
 npm run lint          # ESLint
 npm run format:check  # Prettier
 npm test              # Vitest (unitarios + integración)
-npm run test:e2e      # Playwright E2E
+npm run test:e2e      # Contratos E2E con Vitest
 npm run build         # Build completo del workspace
 npm run production:readiness  # Diagnóstico de production readiness
 npm run economic:ingest      # Ejecutar ingesta económica (leer ML, calcular costos)

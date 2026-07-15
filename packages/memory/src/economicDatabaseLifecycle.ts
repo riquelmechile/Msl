@@ -49,6 +49,12 @@ export type EconomicDatabaseLifecycle = {
   admitWrite(fence: EconomicDatabaseFenceIdentity): EconomicWritePermit;
   withWritePermit<T>(permit: EconomicWritePermit, operation: () => T | Promise<T>): Promise<T>;
   enterDraining(fence: EconomicDatabaseFenceIdentity): Promise<void>;
+  /** Rebuild participants while admission remains closed. Must be followed by commitReopen. */
+  prepareReopen(fence: EconomicDatabaseFenceIdentity): Promise<void>;
+  /** Synchronously make a prepared lifecycle admissible under the validated fence. */
+  commitReopen(fence: EconomicDatabaseFenceIdentity): void;
+  /** Preserve a non-admissible state after unrecoverable restore evidence failures. */
+  block(): void;
   reopen(fence: EconomicDatabaseFenceIdentity): Promise<void>;
   recover(fence: EconomicDatabaseFenceIdentity): Promise<void>;
   release(): void;
@@ -182,8 +188,13 @@ function createCoordinator(
     throw new EconomicDatabaseLifecycleError("ECONOMIC_DATABASE_LIFECYCLE_BLOCKED");
   };
 
-  const transitionToOpen = async (fence: EconomicDatabaseFenceIdentity): Promise<void> => {
-    if (opening || inFlight !== 0 || unsettled.size !== 0)
+  const prepareTransitionToOpen = async (fence: EconomicDatabaseFenceIdentity): Promise<void> => {
+    if (
+      opening ||
+      inFlight !== 0 ||
+      unsettled.size !== 0 ||
+      (state !== "quiesced" && state !== "blocked")
+    )
       throw new EconomicDatabaseLifecycleError("ECONOMIC_DATABASE_LIFECYCLE_BLOCKED");
     const openingFence = { ...fence };
     assertFence(openingFence);
@@ -194,6 +205,17 @@ function createCoordinator(
         assertFence(openingFence);
       }
       assertFence(openingFence);
+    } catch (error) {
+      opening = false;
+      failClosed(error);
+    }
+  };
+
+  const commitTransitionToOpen = (fence: EconomicDatabaseFenceIdentity): void => {
+    if (!opening || (state !== "quiesced" && state !== "blocked"))
+      throw new EconomicDatabaseLifecycleError("ECONOMIC_DATABASE_LIFECYCLE_BLOCKED");
+    try {
+      assertFence(fence);
       epoch += 1;
       state = "open";
     } catch (error) {
@@ -292,13 +314,30 @@ function createCoordinator(
           assertActive();
           if (state !== "quiesced")
             throw new EconomicDatabaseLifecycleError("ECONOMIC_DATABASE_LIFECYCLE_BLOCKED");
-          await transitionToOpen(fence);
+          await prepareTransitionToOpen(fence);
+          commitTransitionToOpen(fence);
+        },
+        async prepareReopen(fence) {
+          assertActive();
+          if (state !== "quiesced" && state !== "blocked")
+            throw new EconomicDatabaseLifecycleError("ECONOMIC_DATABASE_LIFECYCLE_BLOCKED");
+          await prepareTransitionToOpen(fence);
+        },
+        commitReopen(fence) {
+          assertActive();
+          commitTransitionToOpen(fence);
+        },
+        block() {
+          assertActive();
+          opening = false;
+          state = "blocked";
         },
         async recover(fence) {
           assertActive();
           if (state !== "blocked")
             throw new EconomicDatabaseLifecycleError("ECONOMIC_DATABASE_LIFECYCLE_BLOCKED");
-          await transitionToOpen(fence);
+          await prepareTransitionToOpen(fence);
+          commitTransitionToOpen(fence);
         },
         release() {
           if (released) return;
