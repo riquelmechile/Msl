@@ -1,0 +1,458 @@
+{
+  "schema": "gentle-ai.review-resume/v1",
+  "operation": "review/resume",
+  "target": {
+    "kind": "fix-diff",
+    "base_tree": "c7627b773a80f50c9b5d248b74ccf56c8135b488",
+    "candidate_tree": "324400af46c6988201fd3633a6f40be3a16d7a4f",
+    "paths_digest": "sha256:363346338eb096f909f797402491cecc0dca8af1670e3a7769da3023fa515a8c",
+    "intended_untracked": [
+      "openspec/changes/finalize-economic-run-consistency/apply-progress.md",
+      "openspec/changes/finalize-economic-run-consistency/confirmed-findings.md",
+      "openspec/changes/finalize-economic-run-consistency/cumulative-metrics-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/design.md",
+      "openspec/changes/finalize-economic-run-consistency/exploration.md",
+      "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/idempotent-entity-identities.md",
+      "openspec/changes/finalize-economic-run-consistency/migration-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/proposal.md",
+      "openspec/changes/finalize-economic-run-consistency/real-smoke-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md",
+      "openspec/changes/finalize-economic-run-consistency/rollback-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/run-association-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/run-identity-invariant.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/economic-evidence-store/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/economic-ingestion-durability/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/tasks.md",
+      "packages/agent/src/economics/economicSanitizer.ts",
+      "packages/domain/src/economicIdentity.test.ts",
+      "packages/memory/tests/economicRunProvenanceStore.test.ts"
+    ],
+    "intended_untracked_proof": "sha256:4292212ef5851edef58f963f4733303e20799366dc36f2c6d31a87ef485f84ee",
+    "ledger_ids": [
+      "READABILITY-001",
+      "READABILITY-002",
+      "RELIABILITY-001",
+      "RELIABILITY-002",
+      "RESILIENCE-001",
+      "RESILIENCE-002",
+      "RESILIENCE-003",
+      "RESILIENCE-004",
+      "RISK-001",
+      "RISK-002",
+      "RISK-003",
+      "RISK-004"
+    ],
+    "paths": [
+      "openspec/changes/finalize-economic-run-consistency/apply-progress.md",
+      "openspec/changes/finalize-economic-run-consistency/confirmed-findings.md",
+      "openspec/changes/finalize-economic-run-consistency/design.md",
+      "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/migration-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/real-smoke-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md",
+      "openspec/changes/finalize-economic-run-consistency/rollback-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/economic-ingestion-durability/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/tasks.md"
+    ],
+    "identity": "sha256:8328ef73165844ec956a1de405dcc5e53e7cc9937567544bb6009366d1c71d24"
+  },
+  "transaction": {
+    "schema": "gentle-ai.review-transaction/v1",
+    "lineage_id": "finalize-economic-run-consistency-fetch-remediation-v4-complete",
+    "mode": "ordinary_4r",
+    "generation": 1,
+    "state": "approved",
+    "snapshot": {
+      "kind": "fix-diff",
+      "base_tree": "c7627b773a80f50c9b5d248b74ccf56c8135b488",
+      "candidate_tree": "324400af46c6988201fd3633a6f40be3a16d7a4f",
+      "paths_digest": "sha256:363346338eb096f909f797402491cecc0dca8af1670e3a7769da3023fa515a8c",
+      "intended_untracked": [
+        "openspec/changes/finalize-economic-run-consistency/apply-progress.md",
+        "openspec/changes/finalize-economic-run-consistency/confirmed-findings.md",
+        "openspec/changes/finalize-economic-run-consistency/cumulative-metrics-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/design.md",
+        "openspec/changes/finalize-economic-run-consistency/exploration.md",
+        "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/idempotent-entity-identities.md",
+        "openspec/changes/finalize-economic-run-consistency/migration-plan.md",
+        "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/proposal.md",
+        "openspec/changes/finalize-economic-run-consistency/real-smoke-plan.md",
+        "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md",
+        "openspec/changes/finalize-economic-run-consistency/rollback-plan.md",
+        "openspec/changes/finalize-economic-run-consistency/run-association-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/run-identity-invariant.md",
+        "openspec/changes/finalize-economic-run-consistency/specs/economic-evidence-store/spec.md",
+        "openspec/changes/finalize-economic-run-consistency/specs/economic-ingestion-durability/spec.md",
+        "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md",
+        "openspec/changes/finalize-economic-run-consistency/tasks.md",
+        "packages/agent/src/economics/economicSanitizer.ts",
+        "packages/domain/src/economicIdentity.test.ts",
+        "packages/memory/tests/economicRunProvenanceStore.test.ts"
+      ],
+      "intended_untracked_proof": "sha256:4292212ef5851edef58f963f4733303e20799366dc36f2c6d31a87ef485f84ee",
+      "ledger_ids": [
+        "READABILITY-001",
+        "READABILITY-002",
+        "RELIABILITY-001",
+        "RELIABILITY-002",
+        "RESILIENCE-001",
+        "RESILIENCE-002",
+        "RESILIENCE-003",
+        "RESILIENCE-004",
+        "RISK-001",
+        "RISK-002",
+        "RISK-003",
+        "RISK-004"
+      ],
+      "paths": [
+        "openspec/changes/finalize-economic-run-consistency/apply-progress.md",
+        "openspec/changes/finalize-economic-run-consistency/confirmed-findings.md",
+        "openspec/changes/finalize-economic-run-consistency/design.md",
+        "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/migration-plan.md",
+        "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/real-smoke-plan.md",
+        "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md",
+        "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md",
+        "openspec/changes/finalize-economic-run-consistency/rollback-plan.md",
+        "openspec/changes/finalize-economic-run-consistency/specs/economic-ingestion-durability/spec.md",
+        "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md",
+        "openspec/changes/finalize-economic-run-consistency/tasks.md"
+      ],
+      "identity": "sha256:8328ef73165844ec956a1de405dcc5e53e7cc9937567544bb6009366d1c71d24"
+    },
+    "genesis_paths": [
+      "openspec/changes/finalize-economic-run-consistency/apply-progress.md",
+      "openspec/changes/finalize-economic-run-consistency/confirmed-findings.md",
+      "openspec/changes/finalize-economic-run-consistency/cumulative-metrics-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/design.md",
+      "openspec/changes/finalize-economic-run-consistency/exploration.md",
+      "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/idempotent-entity-identities.md",
+      "openspec/changes/finalize-economic-run-consistency/migration-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/proposal.md",
+      "openspec/changes/finalize-economic-run-consistency/real-smoke-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md",
+      "openspec/changes/finalize-economic-run-consistency/rollback-plan.md",
+      "openspec/changes/finalize-economic-run-consistency/run-association-policy.md",
+      "openspec/changes/finalize-economic-run-consistency/run-identity-invariant.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/economic-evidence-store/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/economic-ingestion-durability/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md",
+      "openspec/changes/finalize-economic-run-consistency/tasks.md",
+      "packages/agent/src/cli/economicCli.test.ts",
+      "packages/agent/src/cli/economicCli.ts",
+      "packages/agent/src/conversation/tools/economicTools.test.ts",
+      "packages/agent/src/economics/EconomicIngestionPipeline.ts",
+      "packages/agent/src/economics/EconomicReconciliationService.ts",
+      "packages/agent/src/economics/adapters/advertisingCost.ts",
+      "packages/agent/src/economics/adapters/marketplaceFee.ts",
+      "packages/agent/src/economics/adapters/refundReturn.ts",
+      "packages/agent/src/economics/adapters/sellerDiscount.ts",
+      "packages/agent/src/economics/adapters/shippingCost.ts",
+      "packages/agent/src/economics/dataFetcher.ts",
+      "packages/agent/src/economics/economicSanitizer.ts",
+      "packages/agent/src/economics/factory.ts",
+      "packages/agent/src/economics/pipeline.test.ts",
+      "packages/agent/src/workers/economicIngestionDaemon.test.ts",
+      "packages/agent/src/workers/economicIngestionDaemon.ts",
+      "packages/domain/src/economicCalculation.ts",
+      "packages/domain/src/economicCost.ts",
+      "packages/domain/src/economicEvidenceReference.ts",
+      "packages/domain/src/economicIdentity.test.ts",
+      "packages/domain/src/economicIngestionRun.ts",
+      "packages/domain/src/unitEconomics.ts",
+      "packages/memory/src/economicEvidenceStore.test.ts",
+      "packages/memory/src/economicEvidenceStore.ts",
+      "packages/memory/src/economicIngestionRunStore.ts",
+      "packages/memory/src/economicOutcomeStore.ts",
+      "packages/memory/src/index.ts",
+      "packages/memory/src/migrationRegistry.ts",
+      "packages/memory/tests/economicCostComponentStore.test.ts",
+      "packages/memory/tests/economicDurabilityMigration.test.ts",
+      "packages/memory/tests/economicRunProvenanceStore.test.ts"
+    ],
+    "base_tree": "f716409129a3231c673936278415d3cb2cac9596",
+    "paths_digest": "sha256:7f91cf12868192e8ea29b2d913f3da778cc55129d428a19033e429ca72ac7c45",
+    "initial_review_tree": "c7627b773a80f50c9b5d248b74ccf56c8135b488",
+    "final_candidate_tree": "324400af46c6988201fd3633a6f40be3a16d7a4f",
+    "fix_delta_hash": "sha256:63f0beea5192ea592469312b56044154ab8158ccd9c6e3b812598adbd615e80e",
+    "policy_hash": "sha256:5825a28d0b7d91213579e330fcfdde5a765ad4c8702dd348c88b0bb2e87fbe65",
+    "ledger_hash": "sha256:bb5c9afce0d0610b14eac0117e23dbc6e1103b92c259e69407121a9b1cb052e2",
+    "ledger_findings_hash": "sha256:b8a2c223d1a36048d81810a48e066decce09446f1141a828c1e30c1f5e4b55ea",
+    "evidence_hash": "sha256:98accbe5916bb4ce4442356166ff77ef390dab279d3e14768291f537179444a6",
+    "judge_proofs": [],
+    "failed_evidence_revision": "sha256:800eb9082bcb60eee59d433ad2fd1cc55f036530b56073521ac14c3306a57bcf",
+    "counters": {
+      "full_reviews": 1,
+      "refuter_batches": 1,
+      "fix_batches": 1,
+      "scoped_fix_validations": 1,
+      "final_verifications": 1,
+      "fix_rounds": 0,
+      "scoped_rejudgments": 0,
+      "judge_executions": 0
+    },
+    "findings": [
+      {
+        "id": "RISK-001",
+        "lens": "RISK",
+        "location": "openspec/changes/finalize-economic-run-consistency/migration-plan.md:10-15; openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md:7-12",
+        "severity": "CRITICAL",
+        "claim": "Migrations 1007-1009 deterministically precede fence migration 1010, so those migration writers cannot satisfy the design's fence-validation requirement while the fence does not yet exist.",
+        "proof_refs": [
+          "migration-plan.md:10-13 orders 1007 checkpoints/health, 1008 leases/backlog, 1009 alerts, then 1010 metadata/fence.",
+          "migration-framework/spec.md:7-12 requires adding and applying 1007-1010 in that order."
+        ]
+      },
+      {
+        "id": "RISK-002",
+        "lens": "RISK",
+        "location": "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md:12-13; openspec/changes/finalize-economic-run-consistency/rollback-plan.md:5",
+        "severity": "CRITICAL",
+        "claim": "The deterministic post-swap rollback path restores the retained candidate without requiring closure of the newly reopened restored handle or removal of the restored database WAL/SHM sidecars.",
+        "proof_refs": [
+          "operations-restore-alert-policy.md:12 reopens a new handle before post-swap validation.",
+          "operations-restore-alert-policy.md:13 restores the retained candidate on validation failure but specifies neither closing that reopened handle nor removing WAL/SHM sidecars."
+        ]
+      },
+      {
+        "id": "RISK-003",
+        "lens": "RISK",
+        "location": "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md:11-15; openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md:14-21",
+        "severity": "CRITICAL",
+        "claim": "Restore validation deterministically lacks an immutable match between the backup manifest's tenant/economic database identity and the live target identity before swap.",
+        "proof_refs": [
+          "operations-restore-alert-policy.md:11 validates integrity, registry, and metadata but does not require tenant or economic database identity equality.",
+          "operations-restore-alert-policy.md:15 records a generic manifest identity and safe path identifier without defining or comparing an immutable tenant/economic database identity."
+        ]
+      },
+      {
+        "id": "RISK-004",
+        "lens": "RISK",
+        "location": "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md:3-7",
+        "severity": "CRITICAL",
+        "claim": "The post-rollback operational transaction may be admitted without the original admission generation/token, allowing an inferred stale operation to persist state across a fence generation change.",
+        "proof_refs": [
+          "reconciliation-checkpoint-policy.md:3 requires admission to record the open fence generation/token for normal writers.",
+          "reconciliation-checkpoint-policy.md:7 says the separate transaction validates fence state but does not require the lost lease and does not state that it validates the admission generation/token."
+        ]
+      },
+      {
+        "id": "RESILIENCE-001",
+        "lens": "RESILIENCE",
+        "location": "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md:7-11; openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md:5,23; openspec/changes/finalize-economic-run-consistency/migration-plan.md:19-33",
+        "severity": "CRITICAL",
+        "claim": "Lease and fence TTL, renewal timing, expiry ownership, and recovery behavior are deterministically absent despite persisted expiry fields and required expiry recovery.",
+        "proof_refs": [
+          "fetch-data-quality-policy.md:7-11 defines due/lease fields and acquire/renew/release but no TTL or renewal cadence.",
+          "operations-restore-alert-policy.md:23 requires expired backlog lease recovery without defining timing.",
+          "migration-plan.md:26 and 33 define alert claim expiry and a fence row but no bounded TTL/recovery timing."
+        ]
+      },
+      {
+        "id": "RESILIENCE-002",
+        "lens": "RESILIENCE",
+        "location": "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md:5-7; openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md:26",
+        "severity": "CRITICAL",
+        "claim": "A deterministic crash window exists after the failed final transaction rolls back and before the separate operational transaction durably records the failed run, CAS detail, health, and alert intent.",
+        "proof_refs": [
+          "reconciliation-checkpoint-policy.md:5 requires missing or retry-exhausted CAS to roll back the final transaction.",
+          "reconciliation-checkpoint-policy.md:7 persists failure evidence only afterward in a separate transaction, leaving an unjournaled interval between transactions."
+        ]
+      },
+      {
+        "id": "RESILIENCE-003",
+        "lens": "RESILIENCE",
+        "location": "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md:9-15; openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md:14-21",
+        "severity": "CRITICAL",
+        "claim": "The deterministic two-rename restore sequence has no durable phase journal or startup recovery contract for a crash between retaining the live file and promoting staging.",
+        "proof_refs": [
+          "operations-restore-alert-policy.md:12 specifies rename live to retained candidate followed by rename staging to live.",
+          "operations-restore-alert-policy.md:9-15 defines no durable restore phase record or startup reconciliation for interruption between the two renames."
+        ]
+      },
+      {
+        "id": "RESILIENCE-004",
+        "lens": "RESILIENCE",
+        "location": "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md:3-5,28; openspec/changes/finalize-economic-run-consistency/migration-plan.md:19-33",
+        "severity": "CRITICAL",
+        "claim": "Alert dispatch deterministically lacks bounded visibility objectives and an independent paging fallback when its transport degrades or records dead-letter.",
+        "proof_refs": [
+          "operations-restore-alert-policy.md:5 names bounded backoff, dead-letter, and degraded readiness but provides no delivery/dead-letter time objective or paging fallback.",
+          "migration-plan.md:22-33 defines durable alert lifecycle fields without bounded dispatch visibility objectives or a separate fallback channel."
+        ]
+      },
+      {
+        "id": "READABILITY-001",
+        "lens": "READABILITY",
+        "location": "openspec/changes/finalize-economic-run-consistency/review-framework-incident.md:27-31; openspec/changes/finalize-economic-run-consistency/tasks.md:73; openspec/changes/finalize-economic-run-consistency/specs/migration-framework/spec.md:23-25",
+        "severity": "CRITICAL",
+        "claim": "Review documents deterministically conflict over whether a positive refuter counter is mandatory when no genuine inferential severe finding exists, preventing one unambiguous acceptance rule.",
+        "proof_refs": [
+          "review-framework-incident.md:29 says a refuter batch runs only when pending inferential severe candidates exist.",
+          "review-framework-incident.md:31 says a demanded positive counter blocks PASS when none exist, while tasks.md:73 and migration-framework/spec.md:23-25 state the conditional rule as the R8 acceptance contract."
+        ]
+      },
+      {
+        "id": "READABILITY-002",
+        "lens": "READABILITY",
+        "location": "openspec/changes/finalize-economic-run-consistency/fetch-data-quality-policy.md:7-11; openspec/changes/finalize-economic-run-consistency/tasks.md:69-70",
+        "severity": "CRITICAL",
+        "claim": "The intended lease duration and renewal cadence are inferential because the design requires short leases, expiry recovery, and renewal tests without specifying concrete timing values or bounds.",
+        "proof_refs": [
+          "fetch-data-quality-policy.md:7-11 defines lease fields, expiry behavior, and renew operations without duration or cadence.",
+          "tasks.md:69-70 requires short leases, expiry recovery, and fake-clock renewal coverage without giving implementable timing bounds."
+        ]
+      },
+      {
+        "id": "RELIABILITY-001",
+        "lens": "RELIABILITY",
+        "location": "openspec/changes/finalize-economic-run-consistency/reconciliation-checkpoint-policy.md:3-9; openspec/changes/finalize-economic-run-consistency/tasks.md:68-72",
+        "severity": "CRITICAL",
+        "claim": "Release-fence behavior is inferentially under-tested because acceptance does not explicitly cover release under generation/token mismatch, expiry, ownership loss, and restore-state transitions.",
+        "proof_refs": [
+          "reconciliation-checkpoint-policy.md:3 requires lease release to validate the admission fence generation/token.",
+          "tasks.md:68-72 covers fenced writer rejection and fence checks broadly but provides no explicit release-fence acceptance matrix for mismatch, expiry, ownership loss, and restore transitions."
+        ]
+      },
+      {
+        "id": "RELIABILITY-002",
+        "lens": "RELIABILITY",
+        "location": "openspec/changes/finalize-economic-run-consistency/operations-restore-alert-policy.md:3-5; openspec/changes/finalize-economic-run-consistency/tasks.md:72",
+        "severity": "CRITICAL",
+        "claim": "Hostile alert payload sanitization and expired dispatcher-claim recovery are inferentially missing from the explicit acceptance tests.",
+        "proof_refs": [
+          "operations-restore-alert-policy.md:5 requires allowlisted sanitized payloads and says claim expiry returns work to retrying.",
+          "tasks.md:72 lists alert lifecycle coverage but does not explicitly require hostile payload cases or expired claim recovery races."
+        ]
+      }
+    ],
+    "classifications": {
+      "READABILITY-001": {
+        "finding_id": "READABILITY-001",
+        "class": "deterministic",
+        "proof": "review-framework-incident.md:29-31 preserves both a conditional refuter rule and a positive-counter PASS blocker, while tasks.md:73 and migration-framework/spec.md:23-25 use the conditional rule."
+      },
+      "READABILITY-002": {
+        "finding_id": "READABILITY-002",
+        "class": "inferential",
+        "proof": "fetch-data-quality-policy.md:7-11 and tasks.md:69-70 require lease renewal and expiry behavior but leave concrete duration and renewal cadence to inference."
+      },
+      "RELIABILITY-001": {
+        "finding_id": "RELIABILITY-001",
+        "class": "inferential",
+        "proof": "reconciliation-checkpoint-policy.md:3 requires fenced release, but tasks.md:68-72 does not explicitly accept release behavior for generation/token mismatch, expiry, ownership loss, and restore transitions."
+      },
+      "RELIABILITY-002": {
+        "finding_id": "RELIABILITY-002",
+        "class": "inferential",
+        "proof": "operations-restore-alert-policy.md:5 requires sanitized payloads and expired-claim recovery, but tasks.md:72 does not explicitly test hostile payloads or expired dispatcher-claim races."
+      },
+      "RESILIENCE-001": {
+        "finding_id": "RESILIENCE-001",
+        "class": "deterministic",
+        "proof": "fetch-data-quality-policy.md:7-11 and operations-restore-alert-policy.md:5,23 define expiry and renewal behavior without any TTL, renewal cadence, or bounded recovery interval."
+      },
+      "RESILIENCE-002": {
+        "finding_id": "RESILIENCE-002",
+        "class": "deterministic",
+        "proof": "reconciliation-checkpoint-policy.md:5-7 explicitly sequences rollback first and a separate operational transaction afterward, with no durable bridge across a process crash."
+      },
+      "RESILIENCE-003": {
+        "finding_id": "RESILIENCE-003",
+        "class": "deterministic",
+        "proof": "operations-restore-alert-policy.md:12 specifies two ordered renames, while lines 9-15 contain no durable phase journal or startup recovery procedure."
+      },
+      "RESILIENCE-004": {
+        "finding_id": "RESILIENCE-004",
+        "class": "deterministic",
+        "proof": "operations-restore-alert-policy.md:5 defines retries, dead-letter, and degraded readiness but no bounded visibility objective or independent paging fallback."
+      },
+      "RISK-001": {
+        "finding_id": "RISK-001",
+        "class": "deterministic",
+        "proof": "migration-plan.md:10-13 and migration-framework/spec.md:7-12 explicitly order 1007, 1008, and 1009 before fence migration 1010."
+      },
+      "RISK-002": {
+        "finding_id": "RISK-002",
+        "class": "deterministic",
+        "proof": "operations-restore-alert-policy.md:12 reopens the restored database, while line 13 restores the retained candidate without requiring closure of that handle or WAL/SHM removal."
+      },
+      "RISK-003": {
+        "finding_id": "RISK-003",
+        "class": "deterministic",
+        "proof": "operations-restore-alert-policy.md:11-15 lists staging and manifest validation but no immutable tenant/economic database identity equality check before swap."
+      },
+      "RISK-004": {
+        "finding_id": "RISK-004",
+        "class": "inferential",
+        "proof": "reconciliation-checkpoint-policy.md:3 binds ordinary admission to generation/token, but line 7 only says the separate operational transaction validates fence state and omits the admission generation/token."
+      }
+    },
+    "outcomes": {
+      "READABILITY-001": "corroborated",
+      "READABILITY-002": "corroborated",
+      "RELIABILITY-001": "corroborated",
+      "RELIABILITY-002": "corroborated",
+      "RESILIENCE-001": "corroborated",
+      "RESILIENCE-002": "corroborated",
+      "RESILIENCE-003": "corroborated",
+      "RESILIENCE-004": "corroborated",
+      "RISK-001": "corroborated",
+      "RISK-002": "corroborated",
+      "RISK-003": "corroborated",
+      "RISK-004": "corroborated"
+    },
+    "fix_finding_ids": [
+      "READABILITY-001",
+      "READABILITY-002",
+      "RELIABILITY-001",
+      "RELIABILITY-002",
+      "RESILIENCE-001",
+      "RESILIENCE-002",
+      "RESILIENCE-003",
+      "RESILIENCE-004",
+      "RISK-001",
+      "RISK-002",
+      "RISK-003",
+      "RISK-004"
+    ],
+    "pending_refuter_ids": [],
+    "fix_caused_findings": [],
+    "follow_ups": [
+      {
+        "observation": "R1-R8 implementation remains pending and is non-blocking for this scoped documentary fix validation.",
+        "proof_refs": [
+          "Scoped validator receipt records runtime N/A and limits approval to the documentary fix delta."
+        ]
+      }
+    ],
+    "original_criteria": {
+      "evidence_hash": "sha256:ffea40d28fbdd96f1bd19a1afa10e53cb6d4b6df79aeb31d01c7e11914dfae5b",
+      "fix_delta_hash": "sha256:63f0beea5192ea592469312b56044154ab8158ccd9c6e3b812598adbd615e80e",
+      "passed": true
+    },
+    "correction_regression": {
+      "evidence_hash": "sha256:ffea40d28fbdd96f1bd19a1afa10e53cb6d4b6df79aeb31d01c7e11914dfae5b",
+      "fix_delta_hash": "sha256:63f0beea5192ea592469312b56044154ab8158ccd9c6e3b812598adbd615e80e",
+      "passed": true
+    }
+  },
+  "store_authority": "repository-git-common-dir",
+  "store_revision": "sha256:cffbcca19d4e0af7e6eaf1c08bde6ece952d0ec732969b1c31c68bb2d6071c9f",
+  "genesis_revision": "sha256:7586a4d012314a0fe4c117cfe556fdfccc699ce8d7d4db670cd1f100b3866745",
+  "chain_identity": "sha256:a7392e0297b104cc7c340998f1c06a35bc55884df5f53f3a7f58d323fad9585a"
+}

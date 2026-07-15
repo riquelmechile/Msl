@@ -27,8 +27,8 @@ describe("economic database fence and write admission receipts", () => {
       createEconomicMigrationPlan().apply(db);
       db.prepare("DELETE FROM schema_version WHERE version = 1011").run();
       db.exec("DROP TABLE economic_database_write_admission_receipts");
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 1, skipped: 10 });
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 1, skipped: 11 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
       expect(
         db
           .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")

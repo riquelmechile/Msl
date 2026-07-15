@@ -8,6 +8,8 @@ export type MigrationStep = {
   version: number;
   /** Human-readable label for diagnostics. */
   name: string;
+  /** Additional ownership proof required when the shared version row exists. */
+  isApplied?: (db: Database.Database) => boolean;
   /** The migration function. Executed inside a transaction by the registry. */
   up: (db: Database.Database) => void;
 };
@@ -468,7 +470,9 @@ export function createMigrationRegistry(): MigrationRegistry {
         (row) => row.version,
       ),
     );
-    const pending = steps.filter((step) => !recorded.has(step.version));
+    const pending = steps.filter(
+      (step) => !recorded.has(step.version) || (step.isApplied && !step.isApplied(db)),
+    );
 
     if (pending.length === 0) {
       return { applied: 0, skipped: steps.length };
@@ -484,7 +488,7 @@ export function createMigrationRegistry(): MigrationRegistry {
         .prepare("SELECT version FROM schema_version WHERE version = ?")
         .get(step.version) as { version: number } | undefined;
 
-      if (already) {
+      if (already && (!step.isApplied || step.isApplied(db))) {
         skipped++;
         continue;
       }
@@ -492,6 +496,9 @@ export function createMigrationRegistry(): MigrationRegistry {
       // Run the migration step inside a transaction.
       const runStep = db.transaction(() => {
         step.up(db);
+        if (step.isApplied && !step.isApplied(db)) {
+          throw new Error("migration ownership proof failed after apply");
+        }
         db.prepare("INSERT OR IGNORE INTO schema_version (version) VALUES (?)").run(step.version);
       });
 
@@ -531,6 +538,63 @@ function addColumnIfMissing(
   if (!columnExists(db, table, column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+function economicRestoreJournalIsApplied(db: Database.Database): boolean {
+  const rows = db
+    .prepare(
+      `SELECT name, sql FROM sqlite_master WHERE name IN (
+         'economic_restore_journal', 'idx_economic_restore_journal_phase',
+         'idx_economic_restore_journal_database', 'trg_economic_restore_journal_immutable_identity'
+       )`,
+    )
+    .all() as Array<{ name: string; sql: string }>;
+  const definitions = new Map(
+    rows.map((row) => [row.name, row.sql.toLowerCase().replace(/\s+/g, " ")]),
+  );
+  const table = definitions.get("economic_restore_journal");
+  const columns = (
+    db.pragma("table_info(economic_restore_journal)") as Array<{ name: string }>
+  ).map((column) => column.name);
+  const requiredColumns =
+    "restore_id database_id database_generation backup_identity backup_sha256 backup_page_count owner_run_id " +
+    "fence_generation fence_token_digest write_epoch phase outcome failure_detail created_at updated_at";
+  const requiredChecks = [
+    "restore_id text primary key not null",
+    "database_id text not null check(database_id <> '')",
+    "database_generation integer not null check(database_generation >= 1)",
+    "backup_identity text not null check(backup_identity <> '')",
+    "backup_sha256 text not null check(length(backup_sha256) = 64)",
+    "backup_page_count integer not null check(backup_page_count >= 1)",
+    "owner_run_id text not null check(owner_run_id <> '')",
+    "fence_generation integer not null check(fence_generation >= 1)",
+    "fence_token_digest text not null check(fence_token_digest <> '')",
+    "write_epoch integer not null check(write_epoch >= 0)",
+    "phase text not null check(phase in ( 'fence-acquired', 'draining', 'quiesced', 'prior-preserved', 'staged', 'promotion-intent', 'promoted', 'verifying', 'completed', 'rolled-back', 'failed' ))",
+    "outcome text check(outcome in ('completed', 'rolled-back', 'failed'))",
+    "created_at integer not null default (unixepoch())",
+    "updated_at integer not null default (unixepoch())",
+    "and outcome is null and failure_detail is null)",
+    "or (phase = 'completed' and outcome = 'completed' and failure_detail is null)",
+    "or (phase = 'rolled-back' and outcome = 'rolled-back')",
+    "or (phase = 'failed' and outcome = 'failed' and failure_detail is not null)",
+  ];
+  const phaseIndex = definitions.get("idx_economic_restore_journal_phase");
+  const databaseIndex = definitions.get("idx_economic_restore_journal_database");
+  const trigger = definitions.get("trg_economic_restore_journal_immutable_identity");
+
+  return (
+    columns.join(" ") === requiredColumns &&
+    table !== undefined &&
+    requiredChecks.every((fragment) => table.includes(fragment)) &&
+    phaseIndex?.includes("on economic_restore_journal(phase, outcome, updated_at)") === true &&
+    databaseIndex?.includes(
+      "on economic_restore_journal(database_id, database_generation, created_at)",
+    ) === true &&
+    trigger !== undefined &&
+    trigger.includes(`before update of ${requiredColumns.split(" ").slice(0, 10).join(", ")}`) &&
+    trigger.includes("raise(abort, 'economic restore journal identity is immutable')")
+  );
 }
 
 /**
@@ -977,6 +1041,76 @@ export function createEconomicMigrationPlan(): MigrationRegistry {
           (seller_id, writer_kind, owner_run_id, database_generation, fence_generation, lease_generation, status, expires_at);
         CREATE INDEX IF NOT EXISTS idx_economic_write_admission_receipts_expiry
           ON economic_database_write_admission_receipts(status, expires_at);
+      `);
+    },
+  });
+
+  registry.register({
+    version: 1_013,
+    name: "economic_restore_journal",
+    isApplied: economicRestoreJournalIsApplied,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS economic_restore_journal (
+          restore_id TEXT PRIMARY KEY NOT NULL,
+          database_id TEXT NOT NULL CHECK(database_id <> ''),
+          database_generation INTEGER NOT NULL CHECK(database_generation >= 1),
+          backup_identity TEXT NOT NULL CHECK(backup_identity <> ''),
+          backup_sha256 TEXT NOT NULL CHECK(length(backup_sha256) = 64),
+          backup_page_count INTEGER NOT NULL CHECK(backup_page_count >= 1),
+          owner_run_id TEXT NOT NULL CHECK(owner_run_id <> ''),
+          fence_generation INTEGER NOT NULL CHECK(fence_generation >= 1),
+          fence_token_digest TEXT NOT NULL CHECK(fence_token_digest <> ''),
+          write_epoch INTEGER NOT NULL CHECK(write_epoch >= 0),
+          phase TEXT NOT NULL CHECK(phase IN (
+            'fence-acquired', 'draining', 'quiesced', 'prior-preserved', 'staged',
+            'promotion-intent', 'promoted', 'verifying', 'completed', 'rolled-back', 'failed'
+          )),
+          outcome TEXT CHECK(outcome IN ('completed', 'rolled-back', 'failed')),
+          failure_detail TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          CHECK(
+            (phase IN (
+              'fence-acquired', 'draining', 'quiesced', 'prior-preserved', 'staged',
+              'promotion-intent', 'promoted', 'verifying'
+            ) AND outcome IS NULL AND failure_detail IS NULL)
+            OR (phase = 'completed' AND outcome = 'completed' AND failure_detail IS NULL)
+            OR (phase = 'rolled-back' AND outcome = 'rolled-back')
+            OR (phase = 'failed' AND outcome = 'failed' AND failure_detail IS NOT NULL)
+          )
+        );
+        CREATE INDEX IF NOT EXISTS idx_economic_restore_journal_phase
+          ON economic_restore_journal(phase, outcome, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_economic_restore_journal_database
+          ON economic_restore_journal(database_id, database_generation, created_at);
+        CREATE TRIGGER IF NOT EXISTS trg_economic_restore_journal_immutable_identity
+        BEFORE UPDATE OF
+          restore_id,
+          database_id,
+          database_generation,
+          backup_identity,
+          backup_sha256,
+          backup_page_count,
+          owner_run_id,
+          fence_generation,
+          fence_token_digest,
+          write_epoch
+        ON economic_restore_journal
+        FOR EACH ROW
+        WHEN NEW.restore_id IS NOT OLD.restore_id
+          OR NEW.database_id IS NOT OLD.database_id
+          OR NEW.database_generation IS NOT OLD.database_generation
+          OR NEW.backup_identity IS NOT OLD.backup_identity
+          OR NEW.backup_sha256 IS NOT OLD.backup_sha256
+          OR NEW.backup_page_count IS NOT OLD.backup_page_count
+          OR NEW.owner_run_id IS NOT OLD.owner_run_id
+          OR NEW.fence_generation IS NOT OLD.fence_generation
+          OR NEW.fence_token_digest IS NOT OLD.fence_token_digest
+          OR NEW.write_epoch IS NOT OLD.write_epoch
+        BEGIN
+          SELECT RAISE(ABORT, 'economic restore journal identity is immutable');
+        END;
       `);
     },
   });

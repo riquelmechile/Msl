@@ -43,7 +43,7 @@ describe("R4b durable Claims retry backlog", () => {
   it("migrates 1009 once and preserves restart-safe seller-scoped identities including null cursors", async () => {
     const time = 1_000;
     const { db, store } = openStore("restart", () => time);
-    expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+    expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
     const first = await store.upsertClaimsBacklog!(backlogInput());
     const repeated = await store.upsertClaimsBacklog!(backlogInput());
     const otherSeller = await store.upsertClaimsBacklog!(backlogInput("maustian"));

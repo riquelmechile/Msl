@@ -394,8 +394,8 @@ describe("Economic Durability Migration", () => {
       const first = createEconomicMigrationPlan().apply(db);
       const second = createEconomicMigrationPlan().apply(db);
 
-      expect(first.applied).toBe(11);
-      expect(second).toEqual({ applied: 0, skipped: 11 });
+      expect(first.applied).toBe(12);
+      expect(second).toEqual({ applied: 0, skipped: 12 });
       expect(
         db
           .prepare(
@@ -410,6 +410,132 @@ describe("Economic Durability Migration", () => {
           )
           .get(),
       ).toBeDefined();
+    });
+
+    it("applies 1013 after 1011 once and preserves earlier migration records on rerun", () => {
+      db = new Database(":memory:");
+
+      const first = createEconomicMigrationPlan().apply(db);
+      const second = createEconomicMigrationPlan().apply(db);
+      const versions = db
+        .prepare(
+          "SELECT version FROM schema_version WHERE version BETWEEN 1007 AND 1013 ORDER BY version",
+        )
+        .all();
+
+      expect(first).toEqual({ applied: 12, skipped: 0 });
+      expect(second).toEqual({ applied: 0, skipped: 12 });
+      expect(versions).toEqual([
+        { version: 1007 },
+        { version: 1008 },
+        { version: 1009 },
+        { version: 1010 },
+        { version: 1011 },
+        { version: 1013 },
+      ]);
+      expect(
+        db.prepare("SELECT version FROM schema_version WHERE version = 1012").get(),
+      ).toBeUndefined();
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'economic_restore_journal'",
+          )
+          .get(),
+      ).toBeDefined();
+    });
+
+    it("rolls back 1013 journal objects and its version record when its schema cannot apply", () => {
+      db = new Database(":memory:");
+      createEconomicMigrationPlan().apply(db);
+      db.exec(`
+        DROP TRIGGER trg_economic_restore_journal_immutable_identity;
+        DROP INDEX idx_economic_restore_journal_phase;
+        DROP TABLE economic_restore_journal;
+      `);
+      db.prepare("DELETE FROM schema_version WHERE version = 1013").run();
+      db.exec("CREATE TABLE economic_restore_journal (restore_id TEXT PRIMARY KEY)");
+
+      expect(() => createEconomicMigrationPlan().apply(db)).toThrow(/Migration v1013/);
+      expect(
+        db.prepare("SELECT version FROM schema_version WHERE version = 1013").get(),
+      ).toBeUndefined();
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_economic_restore_journal_phase'",
+          )
+          .get(),
+      ).toBeUndefined();
+
+      db.exec("DROP TABLE economic_restore_journal");
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 1, skipped: 11 });
+    });
+
+    it("enforces journal identity, lifecycle integrity, and immutable bindings", () => {
+      db = new Database(":memory:");
+      createEconomicMigrationPlan().apply(db);
+      const insertJournal = db.prepare(`
+        INSERT INTO economic_restore_journal (
+          restore_id, database_id, database_generation, backup_identity, backup_sha256,
+          backup_page_count, owner_run_id, fence_generation, fence_token_digest, write_epoch, phase
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      insertJournal.run(
+        "restore-1",
+        "economic-local",
+        1,
+        "backup-1",
+        "a".repeat(64),
+        10,
+        "restore-run-1",
+        2,
+        "token-digest",
+        3,
+        "fence-acquired",
+      );
+
+      expect(() => {
+        insertJournal.run(
+          "restore-invalid-phase",
+          "economic-local",
+          1,
+          "backup-2",
+          "b".repeat(64),
+          1,
+          "restore-run-2",
+          2,
+          "token-digest",
+          3,
+          "unknown",
+        );
+      }).toThrow();
+      expect(() => {
+        db.prepare(
+          "UPDATE economic_restore_journal SET database_id = 'other' WHERE restore_id = 'restore-1'",
+        ).run();
+      }).toThrow(/immutable/);
+      expect(() => {
+        db.prepare(
+          "UPDATE economic_restore_journal SET restore_id = 'restore-2' WHERE restore_id = 'restore-1'",
+        ).run();
+      }).toThrow(/immutable/);
+      expect(() => {
+        db.prepare(
+          "UPDATE economic_restore_journal SET phase = 'failed', outcome = 'failed' WHERE restore_id = 'restore-1'",
+        ).run();
+      }).toThrow();
+
+      db.prepare(
+        "UPDATE economic_restore_journal SET phase = 'completed', outcome = 'completed' WHERE restore_id = 'restore-1'",
+      ).run();
+      expect(
+        db
+          .prepare(
+            "SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = 'restore-1'",
+          )
+          .get(),
+      ).toEqual({ phase: "completed", outcome: "completed" });
     });
 
     it("delegates legacy run-store migration to the canonical 1001–1010 plan", () => {
@@ -487,7 +613,7 @@ describe("Economic Durability Migration", () => {
         ).run();
       }).toThrow();
 
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
       expect(
         db.prepare("SELECT COUNT(*) AS count FROM economic_migration_conflicts").get(),
       ).toEqual({ count: 1 });
@@ -509,7 +635,7 @@ describe("Economic Durability Migration", () => {
       insertLegacy.run("legacy-snapshot-a");
       insertLegacy.run("legacy-snapshot-b");
 
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 1, skipped: 10 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 1, skipped: 11 });
       expect(
         db
           .prepare(
@@ -551,7 +677,7 @@ describe("Economic Durability Migration", () => {
         `,
         ).run();
       }).toThrow();
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 11 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
       expect(
         db
           .prepare(
@@ -569,7 +695,7 @@ describe("Economic Durability Migration", () => {
         "now",
       );
 
-      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 11, skipped: 0 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 12, skipped: 0 });
       expect(
         db
           .prepare(
@@ -577,6 +703,63 @@ describe("Economic Durability Migration", () => {
           )
           .get(),
       ).toEqual({ count: 5 });
+    });
+
+    it("does not let an unrelated exact 1013 record suppress the restore journal", () => {
+      db = new Database(":memory:");
+      db.exec("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT)");
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)").run(
+        1_013,
+        "unrelated-owner",
+      );
+
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'economic_restore_journal'",
+          )
+          .get(),
+      ).toBeUndefined();
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 12, skipped: 0 });
+      expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'economic_restore_journal'",
+          )
+          .get(),
+      ).toBeDefined();
+      expect(
+        db.prepare("SELECT applied_at FROM schema_version WHERE version = 1013").get(),
+      ).toEqual({
+        applied_at: "unrelated-owner",
+      });
+      expect(
+        db.prepare("SELECT version FROM schema_version WHERE version = 1012").get(),
+      ).toBeUndefined();
+    });
+
+    it("rejects an exact 1013 record paired with a malformed same-name journal", () => {
+      db = new Database(":memory:");
+      db.exec(`
+        CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT);
+        INSERT INTO schema_version (version, applied_at) VALUES (1013, 'unrelated-owner');
+        CREATE TABLE economic_restore_journal (restore_id TEXT PRIMARY KEY);
+      `);
+
+      expect(() => createEconomicMigrationPlan().apply(db)).toThrow(
+        /Migration v1013 \("economic_restore_journal"\) failed/,
+      );
+      expect(
+        db.prepare("SELECT applied_at FROM schema_version WHERE version = 1013").get(),
+      ).toEqual({ applied_at: "unrelated-owner" });
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE name = 'idx_economic_restore_journal_phase'",
+          )
+          .get(),
+      ).toBeUndefined();
     });
 
     it("keeps migration-mode store constructors preparation-only", () => {
@@ -664,7 +847,8 @@ describe("Economic Durability Migration", () => {
 
       try {
         db = new Database(databasePath);
-        createEconomicMigrationPlan().apply(db);
+        expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 12, skipped: 0 });
+        expect(createEconomicMigrationPlan().apply(db)).toEqual({ applied: 0, skipped: 12 });
         db.close();
 
         const reopened = new Database(databasePath, { readonly: true });
@@ -673,8 +857,14 @@ describe("Economic Durability Migration", () => {
             "SELECT COUNT(*) AS count FROM schema_version WHERE version BETWEEN 1001 AND 1005",
           )
           .get() as { count: number };
+        const journal = reopened
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'economic_restore_journal'",
+          )
+          .get();
         reopened.close();
         expect(result.count).toBe(5);
+        expect(journal).toBeDefined();
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
