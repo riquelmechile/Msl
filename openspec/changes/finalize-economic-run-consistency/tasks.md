@@ -34,8 +34,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Fenced Restore Protocol
 
-- [ ] 2.1 RED: Create `packages/memory/src/economicDatabaseLifecycle.test.ts` for epochs, stale permits, mismatched fences, draining, and renewal cancellation without mutation.
-- [ ] 2.2 GREEN: Create `packages/memory/src/economicDatabaseLifecycle.ts`; register epoch-bound participants, drain writes, validate fence identity before destructive boundaries, and block admission on failure.
+- [x] 2.1 RED: Create `packages/memory/src/economicDatabaseLifecycle.test.ts` for epochs, stale permits, mismatched fences, draining, renewal cancellation, authority-compatible path sharing, and release/eviction without mutation.
+- [x] 2.2 GREEN: Create `packages/memory/src/economicDatabaseLifecycle.ts`; register epoch-bound participants, drain writes, validate fence identity before destructive boundaries, own/release path leases safely, and block admission on failure.
 - [ ] 2.3 RED: Add `packages/memory/src/databaseManager.test.ts` cases for checkpoint zero frames, absent sidecars accepted, busy/nonzero WAL rejected, independent staging verification, atomic promotion, and retained verified prior.
 - [ ] 2.4 GREEN: Add `restoreEconomicFrom` in `packages/memory/src/databaseManager.ts` with same-filesystem stage/prior/manifest, durable transitions, quiescence, atomic rename, and post-1011 verification.
 

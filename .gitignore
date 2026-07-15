@@ -1,4 +1,5 @@
 .atl/
+.codegraph/
 node_modules/
 
 # Local environment files. Keep real API keys and passwords out of Git.
