@@ -1,9 +1,11 @@
+import crypto from "node:crypto";
 import type { GraphEngine } from "@msl/memory";
 import { riskLevelForAction } from "@msl/domain";
 import type { AgentProposal } from "../types.js";
 import { getLaneContract, type LaneId } from "../lanes.js";
 import type { ToolDefinition, MetadataNode } from "./types.js";
 import { metadataString } from "./_shared.js";
+import type { AgentMessageBusStore } from "../agentMessageBusStore.js";
 
 // ── Internal helpers ───────────────────────────────────────────────────
 
@@ -426,12 +428,17 @@ export function createPrepareActionTool(): ToolDefinition {
   };
 }
 
-export function createDelegateToSubagentTool(): ToolDefinition {
+export function createDelegateToSubagentTool(deps?: {
+  bus?: AgentMessageBusStore;
+  sourceAgentId?: string;
+  sellerId?: string;
+}): ToolDefinition {
   return {
     name: "delegate_to_subagent",
     description:
       "Prepara una delegación proposal-only a una lane especialista. No ejecuta acciones, " +
-      "no muta MercadoLibre y devuelve advertencias de límite con evidence IDs.",
+      "no muta MercadoLibre y devuelve advertencias de límite con evidence IDs. " +
+      "Cuando se provee contexto durable (bus + sourceAgentId + sellerId), encola una WorkOrder durable.",
     parameters: {
       type: "object",
       properties: {
@@ -458,6 +465,7 @@ export function createDelegateToSubagentTool(): ToolDefinition {
         ? args.evidenceIds.filter((id): id is string => typeof id === "string")
         : [];
       const requestedAction = typeof args.requestedAction === "string" ? args.requestedAction : "";
+      const scope = typeof args.scope === "string" ? args.scope : "bounded investigation";
       const boundaryWarnings = [...lane.boundaries];
 
       if (
@@ -470,14 +478,43 @@ export function createDelegateToSubagentTool(): ToolDefinition {
         );
       }
 
-      return {
+      const result: Record<string, unknown> = {
         laneId: lane.laneId,
         status: "proposal-only",
-        scope: typeof args.scope === "string" ? args.scope : "bounded investigation",
+        scope,
         evidenceIds,
         boundaryWarnings,
         noMutationExecuted: true,
       };
+
+      if (deps?.bus && deps.sourceAgentId && deps.sellerId) {
+        const correlationId = crypto.randomUUID();
+        deps.bus.enqueue({
+          senderAgentId: deps.sourceAgentId,
+          receiverAgentId: laneId,
+          messageType: "work_order",
+          payloadJson: JSON.stringify({
+            sourceAgentId: deps.sourceAgentId,
+            targetAgentId: laneId,
+            laneId,
+            sellerId: deps.sellerId,
+            scope,
+            requestedAction,
+            evidenceIds,
+            parameters: { scope, requestedAction, evidenceIds },
+            status: "pending",
+            createdAt: new Date().toISOString(),
+          }),
+          correlationId,
+          dedupeKey: `work-order:${deps.sourceAgentId}:${laneId}:${Date.now()}`,
+          sellerId: deps.sellerId,
+        });
+        result.durable = true;
+        result.workOrderEnqueued = true;
+        result.correlationId = correlationId;
+      }
+
+      return result;
     },
   };
 }

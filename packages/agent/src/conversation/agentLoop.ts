@@ -325,7 +325,12 @@ export function createAgentLoop(config: AgentLoopConfig) {
     );
   }
   if (!toolMap.has("delegate_to_subagent")) {
-    toolMap.set("delegate_to_subagent", createDelegateToSubagentTool());
+    toolMap.set(
+      "delegate_to_subagent",
+      createDelegateToSubagentTool({
+        ...(config.sellerId ? { sellerId: config.sellerId } : {}),
+      }),
+    );
   }
   if (!toolMap.has("request_agent_evidence")) {
     toolMap.set(

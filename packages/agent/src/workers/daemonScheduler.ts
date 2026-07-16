@@ -9,7 +9,8 @@ import type {
 } from "@msl/memory";
 import type { LaneId } from "../conversation/lanes.js";
 import type { CeoInboxStore } from "../conversation/ceoInboxStore.js";
-import { listCompanyAgents } from "../conversation/companyAgents.js";
+import { listCompanyAgents, type CompanyAgent } from "../conversation/companyAgents.js";
+import type { CompanyAgentStore } from "../conversation/companyAgentStore.js";
 import type { CeoHandlerContext, DaemonHandler } from "./daemonTypes.js";
 import type { AgentAccountContext } from "../conversation/types.js";
 import type { SupplierMirrorDeepSeekAdvisor } from "../conversation/supplierMirrorDeepSeekAdvisor.js";
@@ -96,6 +97,8 @@ export type DaemonSchedulerConfig = {
   /** Optional economic-ingestion daemon handler (pre-built). Registered
    *  only when MSL_ECONOMIC_INGESTION_ENABLED is "true". */
   economicIngestionDaemon?: DaemonHandler;
+  /** Optional durable registry for CEO-created agents. It is global, never seller-scoped. */
+  companyAgentStore?: CompanyAgentStore;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -151,6 +154,37 @@ function buildHandlerMap(config: DaemonSchedulerConfig): Partial<Record<LaneId, 
     map["economic-ingestion"] = config.economicIngestionDaemon;
   }
   return map;
+}
+
+export function resolveDaemonAgentLane(
+  agent: CompanyAgent,
+  handlerMap: Partial<Record<LaneId, DaemonHandler>>,
+): LaneId | undefined {
+  const laneId = agent.profile.laneId;
+  return agent.status === "active" && laneId && handlerMap[laneId] ? laneId : undefined;
+}
+
+function resolveActiveAgents(
+  config: DaemonSchedulerConfig,
+  handlerMap: Partial<Record<LaneId, DaemonHandler>>,
+): Array<{ agent: CompanyAgent; laneId: LaneId }> {
+  const agents = new Map<string, CompanyAgent>();
+  for (const agent of listCompanyAgents()) agents.set(agent.id, agent);
+  for (const agent of config.companyAgentStore?.listCompanyAgents() ?? [])
+    agents.set(agent.id, agent);
+
+  return [...agents.values()].flatMap((agent) => {
+    const laneId = resolveDaemonAgentLane(agent, handlerMap);
+    if (!laneId) {
+      if (agent.source === "ceo-created") {
+        console.warn(
+          `[daemon-scheduler] Skipping agent ${agent.id}: no dispatchable lane declared in its profile`,
+        );
+      }
+      return [];
+    }
+    return [{ agent, laneId }];
+  });
 }
 
 /**
@@ -246,11 +280,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
     // ── Enqueue autonomous ticks before claim loop ──
     enqueueDaemonTick(config.bus, config.sellerIds, extraLaneIds);
 
-    const agents = listCompanyAgents();
-    const activeAgents = agents.filter(
-      (agent) =>
-        agent.profile.laneId && handlerMap[agent.profile.laneId] && agent.status === "active",
-    );
+    const activeAgents = resolveActiveAgents(config, handlerMap);
 
     // ── Wrap reader with per-cycle cache to avoid redundant data reads ──
     const cachedReader = createCachingReader(config.reader);
@@ -268,8 +298,7 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
     });
 
     await Promise.all(
-      activeAgents.map(async (agent) => {
-        const laneId = agent.profile.laneId!;
+      activeAgents.map(async ({ laneId }) => {
         const handler = handlerMap[laneId]!;
 
         const claimed = config.bus.claimNext(laneId);
@@ -294,7 +323,6 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
                   : undefined;
 
               if (sessionSellerId) {
-                // Check for recent session to skip duplicate dispatches
                 const recentSessions = config.sessionStore.listRecentSessionsByAgent(
                   sessionSellerId,
                   laneId,
@@ -310,7 +338,6 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
                     if (endedAt) {
                       const elapsed = Date.now() - new Date(endedAt).getTime();
                       if (elapsed < SESSION_COOLDOWN_MS) {
-                        // Skip — recent session already processed this lane+seller
                         config.bus.resolve(claim.messageId, {
                           findings: [],
                           proposalEnqueued: false,
@@ -322,6 +349,102 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
                       }
                     }
                   }
+                }
+              }
+
+              // ── Route through WorkSessionRunner instead of handler ──
+              if (
+                config.workSessionRunner &&
+                sessionSellerId &&
+                claim.messageType !== "work_order"
+              ) {
+                try {
+                  const session = await config.workSessionRunner.runWorkSession({
+                    sellerId: sessionSellerId,
+                    agentId: claim.senderAgentId || laneId,
+                    laneId,
+                    signals: [],
+                    accountContext: "",
+                    evidence: claim.payloadJson,
+                    openQuestions: "",
+                    outputSchema: "{}",
+                  });
+                  config.bus.resolve(claim.messageId, {
+                    findings: [
+                      {
+                        kind: "info",
+                        severity: "info",
+                        summary: `Work session ${session.sessionId} completed`,
+                        evidenceIds: [],
+                      },
+                    ],
+                    proposalEnqueued: session.status === "completed",
+                    messageIds: [session.sessionId],
+                    sessionId: session.sessionId,
+                  });
+                  continue;
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  console.error(
+                    `[daemon-scheduler] WorkSession ${laneId}/${sessionSellerId} failed: ${msg}`,
+                  );
+                  config.bus.fail(claim.messageId, msg);
+                  continue;
+                }
+              }
+            }
+
+            // ── Handle work_order messages ──
+            if (claim.messageType === "work_order") {
+              let payload: Record<string, unknown> = {};
+              try {
+                payload = JSON.parse(claim.payloadJson) as Record<string, unknown>;
+              } catch {
+                // invalid payload — skip
+              }
+              const targetAgentId =
+                typeof payload.targetAgentId === "string" ? payload.targetAgentId : undefined;
+              if (targetAgentId && targetAgentId !== laneId) {
+                config.bus.resolve(claim.messageId, {
+                  findings: [],
+                  proposalEnqueued: false,
+                  messageIds: [],
+                  workOrderRejected: true,
+                  reason: "target_agent_mismatch",
+                });
+                continue;
+              }
+              // Route work orders through the session runner when available,
+              // fall back to the daemon handler
+              if (config.workSessionRunner && config.sessionStore) {
+                const workSellerId =
+                  typeof payload.sellerId === "string" ? payload.sellerId : undefined;
+                if (workSellerId) {
+                  const session = await config.workSessionRunner.runWorkSession({
+                    sellerId: workSellerId,
+                    agentId: targetAgentId ?? laneId,
+                    laneId,
+                    signals: [],
+                    accountContext: typeof payload.scope === "string" ? payload.scope : "",
+                    evidence: claim.payloadJson,
+                    openQuestions:
+                      typeof payload.requestedAction === "string" ? payload.requestedAction : "",
+                    outputSchema: "{}",
+                  });
+                  config.bus.resolve(claim.messageId, {
+                    findings: [
+                      {
+                        kind: "info",
+                        severity: "info",
+                        summary: `Work order processed: session ${session.sessionId}`,
+                        evidenceIds: [],
+                      },
+                    ],
+                    proposalEnqueued: session.status === "completed",
+                    messageIds: [session.sessionId],
+                    workOrderProcessed: true,
+                  });
+                  continue;
                 }
               }
             }

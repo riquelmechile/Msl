@@ -752,12 +752,26 @@ export type ExecutePreparedActionResult = {
   audit: AuditRecord;
 };
 
+export type ExecutePreparedActionOutcomeConfig = {
+  /** Session that produced the proposal (may not always be available) */
+  sessionId?: string;
+  /** Agent that originated the work */
+  originatingAgentId?: string;
+  /** Correlation ID linking session → proposal → action chain */
+  correlationId?: string;
+  /** Proposal ID that led to this action */
+  proposalId?: string;
+  /** Callback to persist the created EconomicOutcome */
+  onOutcomeCreated?: (outcome: Record<string, unknown>) => void;
+};
+
 export async function executePreparedAction(input: {
   repository: ApprovalQueueRepository;
   executor: DirectWriteExecutor;
   clock: Clock;
   idGenerator: IdGenerator;
   actionId: PreparedActionId;
+  outcomeConfig?: ExecutePreparedActionOutcomeConfig;
 }): Promise<BusinessToolResponse<ExecutePreparedActionResult>> {
   const entry = await input.repository.findAction(input.actionId);
 
@@ -819,6 +833,24 @@ export async function executePreparedAction(input: {
   }
 
   await input.repository.saveAudit(audit);
+
+  if (input.outcomeConfig?.onOutcomeCreated && audit.status === "executed") {
+    const outcomeId = `outcome-${input.actionId}-${audit.id.slice(0, 8)}`;
+    input.outcomeConfig.onOutcomeCreated({
+      outcomeId,
+      sellerId: entry.action.sellerId,
+      preparedActionId: input.actionId,
+      correlationId: input.outcomeConfig.correlationId ?? `${input.actionId}-${audit.id}`,
+      ...(input.outcomeConfig.sessionId ? { sessionId: input.outcomeConfig.sessionId } : {}),
+      ...(input.outcomeConfig.originatingAgentId
+        ? { originatingAgentId: input.outcomeConfig.originatingAgentId }
+        : {}),
+      ...(input.outcomeConfig.proposalId ? { proposalId: input.outcomeConfig.proposalId } : {}),
+      executionId: audit.id,
+      auditStatus: audit.status,
+      recordedAt: audit.recordedAt.toISOString(),
+    });
+  }
 
   return {
     data: { action: { ...entry.action, auditId: audit.id }, audit },

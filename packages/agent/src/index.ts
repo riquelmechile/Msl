@@ -97,6 +97,24 @@ export { createStrategyStore } from "./conversation/strategyStore.js";
 export { createSessionStore } from "./conversation/sessionStore.js";
 export type { SessionStore } from "./conversation/sessionStore.js";
 
+export { createAgentWorkSessionStore } from "./sessions/AgentWorkSessionStore.js";
+export type { AgentWorkSessionStore } from "./sessions/AgentWorkSessionStore.js";
+export { createAgentWorkSessionRunner } from "./sessions/AgentWorkSessionRunner.js";
+export type {
+  AgentWorkSessionRunner,
+  AgentWorkSessionRunnerConfig,
+  AgentWorkSessionRunnerInput,
+} from "./sessions/AgentWorkSessionRunner.js";
+export {
+  recordWorkSessionToCortex,
+  recordObservationsToCortex,
+  recordLessonsToCortex,
+  recordObservationToCortex,
+  recordLessonToCortex,
+  connectSessionToProposal,
+  connectSessionToOutcome,
+} from "./sessions/agentWorkCortexBridge.js";
+
 export { createAutonomyEngine } from "./conversation/autonomyEngine.js";
 export type { AutonomyEngine } from "./conversation/autonomyEngine.js";
 

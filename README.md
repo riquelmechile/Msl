@@ -27,36 +27,41 @@ MSL combina razonamiento (DeepSeek), memoria (Cortex, grafo neuronal en SQLite) 
 
 ## Qué funciona actualmente
 
-Verificado contra el baseline `6fd769f` (P0 PR 4/4 Real Ingestion & Economic Adapters, hardened):
+Verificado contra el baseline `52af286` (feat/memory: add prepared economic restore protocol) — Work Units 2+3+4 integrated.
 
-| Componente                     | Estado                                                                        |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| Agent Message Bus              | Cola asíncrona SQLite, claim/resolve/fail, deduplicación                      |
-| 16 daemon handlers             | Ciclos de 15 min, solo lectura, proponen al CEO (gated)                       |
-| 16 lane contracts              | Contratos tipados con prefijos estables para caché                            |
-| Evidence Response Router       | 5 responders que responden solicitudes de evidencia                           |
-| Work Sessions                  | Sesiones persistentes con cooldown para 7 lanes                               |
-| Account Assets + Account Brain | Tracking estratégico por cuenta, scoring, comparación                         |
-| Cortex                         | Grafo neuronal con aprendizaje hebbiano y poda darwiniana                     |
-| DeepSeek                       | Cliente real, bloques de caché, requiere `DEEPSEEK_API_KEY`                   |
-| Operational Read Model         | Snapshots SQLite de 8 tipos de entidad                                        |
-| SQLite Durability              | Backups, verificación, restauración, WAL, integrity check                     |
-| Migration Framework            | Migraciones versionadas, transaccionales e idempotentes                       |
-| Observability Pipeline         | Logger JSON + correlation IDs + sanitización de secretos                      |
-| Operational Health             | Checks de integridad, WAL, migraciones, backup freshness                      |
-| Degraded Capability Policy     | Capacidades degradadas → WARN, no bloquean producción                         |
-| Finance Director Validation    | Detección de figuras inventadas con evidencia cruzada                         |
-| Supplier Mirror                | Evidencia de proveedores local-first, dry-run Jinpeng                         |
-| Owned Ecommerce                | Write boundary Medusa (fail-closed), env-gated                                |
-| Creative Studio                | MiniMax imagen/video, env-gated                                               |
-| Telegram Bot                   | Runtime grammY, CEO-only, multi-seller                                        |
-| MCP Server                     | ~40 herramientas para clientes MCP                                            |
-| Aprobación "dale"              | Pipeline prepare → approve → execute → audit                                  |
-| Background Ingestion           | 5 procesadores con paginación por checkpoint                                  |
-| Economic Ingestion Pipeline    | Pipeline real con DataFetcher ML (read-only), 93+ snapshots                   |
-| Economic CLI                   | `npm run economic:ingest/status/coverage/reconcile/missing/inspect-evidence`  |
-| Economic Store                 | SQLite: cost components, snapshots, evidence refs, runs                       |
-| Economic Ingestion Durability  | RunIdFactory UUID, fail-closed, atomic tx, Evidence Store, run-scoped metrics |
+| Componente                     | Estado                                                                                                |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Agent Message Bus              | Cola asíncrona SQLite, claim/resolve/fail, deduplicación                                              |
+| 18 daemon handlers             | Ciclos de 15 min, solo lectura, proponen al CEO (gated)                                               |
+| 18 lane contracts              | Contratos tipados con prefijos estables para caché                                                    |
+| Evidence Response Router       | 5 responders que responden solicitudes de evidencia                                                   |
+| Work Sessions                  | Sesiones persistentes con cooldown para 7 lanes, registran observaciones y lecciones reales en Cortex |
+| Account Assets + Account Brain | Tracking estratégico por cuenta, scoring, comparación                                                 |
+| Cortex                         | Grafo neuronal con aprendizaje hebbiano y poda darwiniana                                             |
+| DeepSeek                       | Cliente real, bloques de caché, requiere `DEEPSEEK_API_KEY`                                           |
+| Operational Read Model         | Snapshots SQLite de 8 tipos de entidad                                                                |
+| SQLite Durability              | Backups, verificación, restauración, WAL, integrity check                                             |
+| Migration Framework            | Migraciones versionadas, transaccionales e idempotentes                                               |
+| Observability Pipeline         | Logger JSON + correlation IDs + sanitización de secretos                                              |
+| Operational Health             | Checks de integridad, WAL, migraciones, backup freshness                                              |
+| Degraded Capability Policy     | Capacidades degradadas → WARN, no bloquean producción                                                 |
+| Finance Director Validation    | Detección de figuras inventadas con evidencia cruzada                                                 |
+| Finance Department             | Agentes durables con departmentId "finance", lecciones seller-scoped                                  |
+| Economic Outcome Spine         | Sesión → propuesta → acción aprobada → outcome económico verificado                                   |
+| delegate_to_subagent Durable   | WorkOrders durables encoladas via AgentMessageBus con source/target/seller                            |
+| Economic Learning Reinforce    | Bridge con store durable real, applyActivationDelta muta el GraphEngine                               |
+| Supplier Mirror                | Evidencia de proveedores local-first, dry-run Jinpeng                                                 |
+| Owned Ecommerce                | Write boundary Medusa (fail-closed), env-gated                                                        |
+| Creative Studio                | MiniMax imagen/video, env-gated                                                                       |
+| Telegram Bot                   | Runtime grammY, CEO-only, multi-seller                                                                |
+| MCP Server                     | ~40 herramientas para clientes MCP                                                                    |
+| Aprobación "dale"              | Pipeline prepare → approve → execute → audit                                                          |
+| Background Ingestion           | 5 procesadores con paginación por checkpoint                                                          |
+| Economic Ingestion Pipeline    | Pipeline real con DataFetcher ML (read-only), 93+ snapshots                                           |
+| Economic CLI                   | `npm run economic:ingest/status/coverage/reconcile/missing/inspect-evidence`                          |
+| Economic Store                 | SQLite: cost components, snapshots, evidence refs, runs                                               |
+| Economic Ingestion Durability  | RunIdFactory UUID, fail-closed, atomic tx, Evidence Store, run-scoped metrics                         |
+| E2E Dual-Seller                | Test E2E completo: Finance agents Plasticov+Maustian, Work Sessions, isolación                        |
 
 ---
 

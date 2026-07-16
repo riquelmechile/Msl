@@ -160,6 +160,8 @@ export class EconomicLearningPipeline {
           // Best effort
         }
       },
+      listEventsByOutcome: (oid, sid) => learningStore.listByOutcome(oid, sid),
+      listReversedEvents: (oid, sid) => learningStore.getReversedEvents(oid, sid),
     });
 
     const finalStatus: "processed" | "failed" = bridgeResult.errorCode ? "failed" : "processed";
@@ -182,7 +184,12 @@ export class EconomicLearningPipeline {
   handleDisputedOutcome(input: PipelineInput): PipelineResult {
     const { outcome, learningStore } = input;
 
-    const bridgeResult = this.bridge.reverseLearning(outcome.outcomeId, outcome.sellerId);
+    const bridgeResult = this.bridge.reverseLearning(
+      outcome.outcomeId,
+      outcome.sellerId,
+      (oid, sid) => learningStore.listByOutcome(oid, sid),
+      (oid, sid) => learningStore.getReversedEvents(oid, sid),
+    );
 
     // Persist the reversal event
     try {
