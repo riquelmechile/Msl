@@ -51,7 +51,7 @@ export function createLaunchProductTool(options: ProductLaunchToolsOptions = {})
           description: "Telegram chat ID for progress updates.",
         },
       },
-      required: ["sellerId"],
+      required: ["imageUrl", "sellerId"],
     },
     execute: (args: Record<string, unknown>): Record<string, unknown> => {
       const sellerId = typeof args.sellerId === "string" ? args.sellerId : "";
@@ -90,6 +90,7 @@ export function createLaunchProductTool(options: ProductLaunchToolsOptions = {})
           launchId,
           productId,
           sellerId,
+          chatId: chatId != null ? String(chatId) : undefined,
           status: "photo_received",
           createdAt: new Date().toISOString(),
         });

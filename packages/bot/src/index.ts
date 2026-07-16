@@ -427,10 +427,15 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     };
   }
   if (sessionStore) botConfig.sessionStore = sessionStore;
-  if (productLaunchEnabled) {
+  if (productLaunchEnabled && productCatalogStore && messageBus) {
     botConfig.productLaunchEnabled = true;
-    if (productCatalogStore) botConfig.productCatalogStore = productCatalogStore;
-    if (messageBus) botConfig.messageBus = messageBus;
+    botConfig.productCatalogStore = productCatalogStore;
+    botConfig.messageBus = messageBus;
+  } else if (productLaunchEnabled) {
+    console.warn(
+      "[bot] MSL_PRODUCT_LAUNCH_ENABLED=true but productCatalogStore or messageBus unavailable " +
+        "(missing sqlite db). Photo launches disabled.",
+    );
   }
   if (db)
     botConfig.cleanup = () => {
@@ -506,6 +511,15 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
     if (!config.productLaunchEnabled) return;
 
     const chatId = Number(ctx.chat.id);
+    const userId = ctx.from?.id !== undefined ? String(ctx.from.id) : undefined;
+
+    // Admin authorization — same check as text commands
+    if (
+      config.adminAuthorization?.enabled &&
+      !isTelegramAdminAuthorized(config.adminAuthorization, String(chatId), userId)
+    ) {
+      return;
+    }
 
     try {
       const caption = ctx.message.caption?.trim() || undefined;
@@ -532,6 +546,29 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
       const localPath = path.join(dir, `${timestamp}.jpg`);
       await fs.writeFile(localPath, buffer);
 
+      // Check for an existing pending launch for this chatId
+      const existingLaunch = config.productCatalogStore?.getPendingLaunchByChatId(String(chatId));
+      if (existingLaunch) {
+        // Attach this photo to the existing pending launch
+        const launchId = existingLaunch.launchId;
+        if (config.messageBus) {
+          config.messageBus.enqueue({
+            senderAgentId: "telegram-bot",
+            receiverAgentId: "product-launch",
+            messageType: "additional_photo",
+            payloadJson: JSON.stringify({
+              launchId,
+              imageUrl: localPath,
+              caption,
+              chatId,
+            }),
+            correlationId: launchId,
+          });
+        }
+        await ctx.reply("📸 Foto adicional recibida. Agregada al análisis en curso…");
+        return;
+      }
+
       // Create catalog entry and launch
       const productId = crypto.randomUUID();
       const launchId = crypto.randomUUID();
@@ -543,6 +580,7 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
           launchId,
           productId,
           sellerId,
+          chatId: String(chatId),
           status: "photo_received",
           createdAt: new Date().toISOString(),
           ...(caption ? { title: caption } : {}),

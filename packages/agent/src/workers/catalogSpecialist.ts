@@ -20,8 +20,15 @@ export type CatalogSpecialistOutput = {
 
 /**
  * Search ML catalog for a product matching brand, model, and title.
- * Uses listing search + getItem calls to extract catalog_product_id from
- * matching items. In production, this would use the ML catalog API directly.
+ *
+ * NOTE: Currently uses getListings + getItem to extract catalog_product_id
+ * from the seller's own active listings. A product never listed before will
+ * never be found this way. The proper approach is MercadoLibre's catalog
+ * product search (e.g. GET /products/search?q=... or
+ * GET /sites/MLC/domainDiscovery). The MlcApiClient does not yet expose a
+ * catalog-search method — when available, replace this implementation with
+ * a direct catalog query to find products by their title/GTIN in the ML
+ * global product catalog.
  */
 async function searchMlCatalog(
   input: CatalogSpecialistInput,

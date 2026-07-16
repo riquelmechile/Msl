@@ -483,7 +483,7 @@ describe("daemonScheduler", () => {
             "SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
           )
           .all() as Array<{ receiver_agent_id: string }>;
-        expect(tickRows.length).toBe(20);
+        expect(tickRows.length).toBe(15);
       });
 
       it("enqueueDaemonTick includes extra lanes when provided", () => {
@@ -498,8 +498,8 @@ describe("daemonScheduler", () => {
             "SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
           )
           .all() as Array<{ receiver_agent_id: string }>;
-        // 20 base + 1 extra = 21
-        expect(tickRows.length).toBe(21);
+        // 15 base + 1 extra = 16
+        expect(tickRows.length).toBe(16);
         const laneIds = tickRows.map((r) => r.receiver_agent_id);
         expect(laneIds).toContain("economic-learning");
       });

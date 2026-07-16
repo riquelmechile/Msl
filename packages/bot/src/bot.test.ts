@@ -845,6 +845,7 @@ describe("message:photo handler (product launch)", () => {
     getLaunch: vi.fn(),
     updateLaunchStatus: vi.fn(),
     getLaunchesByProduct: vi.fn(),
+    getPendingLaunchByChatId: vi.fn().mockReturnValue(undefined),
   };
 
   const messageBus = {

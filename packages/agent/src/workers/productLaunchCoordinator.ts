@@ -62,6 +62,7 @@ type CoordinatorPayload = {
   qualityScore?: number;
   images?: string[];
   costTotalUsd?: number;
+  competitorPrices?: Array<{ source: string; price: number }>;
 };
 
 // ── In-memory cost tracker (per-process, survives across daemon ticks) ─
@@ -398,6 +399,7 @@ async function handleGeneratingCreative(
       category: payload.category,
       suggestedPrice: payload.suggestedPrice,
       sellerId: payload.sellerId,
+      competitorPrices: payload.competitorPrices ?? [],
       stage: "composing",
     },
     dedupePrefix: "coord-compose",

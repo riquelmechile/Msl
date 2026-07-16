@@ -31,9 +31,17 @@ const ML_DESCRIPTION_MAX_CHARS = 6000;
 type AccountTone = "mid-market/value" | "premium/professional";
 
 function getAccountTone(sellerId: string): AccountTone {
+  const sourceId = (
+    typeof process !== "undefined" ? process.env.MERCADOLIBRE_SOURCE_SELLER_ID : undefined
+  )?.trim();
+  const targetId = (
+    typeof process !== "undefined" ? process.env.MERCADOLIBRE_TARGET_SELLER_ID : undefined
+  )?.trim();
+  if (targetId && sellerId === targetId) return "premium/professional";
+  if (sourceId && sellerId === sourceId) return "mid-market/value";
   const normalized = sellerId.toLowerCase();
   if (normalized === "maustian") return "premium/professional";
-  return "mid-market/value"; // Plasticov and any other default to mid-market/value
+  return "mid-market/value";
 }
 
 function getAccountToneLabel(tone: AccountTone): string {

@@ -29,6 +29,7 @@ export type ProductLaunchEntry = {
   launchId: string;
   productId: string;
   sellerId: string;
+  chatId?: string;
   mlItemId?: string;
   listingType?: string;
   priceAmount?: number;
@@ -47,6 +48,7 @@ export type ProductLaunchStoreInput = {
   launchId?: string;
   productId: string;
   sellerId: string;
+  chatId?: string;
   mlItemId?: string;
   listingType?: string;
   priceAmount?: number;
@@ -72,4 +74,6 @@ export type ProductCatalogStore = {
   getLaunch(launchId: string): ProductLaunchEntry | undefined;
   updateLaunchStatus(launchId: string, status: ProductLaunchStatus): ProductLaunchEntry;
   getLaunchesByProduct(productId: string): ProductLaunchEntry[];
+  /** Get the first non-terminal launch for a given chatId, if any. */
+  getPendingLaunchByChatId(chatId: string): ProductLaunchEntry | undefined;
 };

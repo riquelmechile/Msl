@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import Database from "better-sqlite3";
+import { isValidTransition } from "@msl/domain";
 import type {
   ProductCatalogEntry,
   ProductCatalogStore,
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS product_launches (
   launch_id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES product_catalog(product_id),
   seller_id TEXT NOT NULL,
+  chat_id TEXT,
   ml_item_id TEXT,
   listing_type TEXT,
   price_amount INTEGER,
@@ -57,6 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_pi_product_id ON product_images(product_id);
 CREATE INDEX IF NOT EXISTS idx_pl_product_id ON product_launches(product_id);
 CREATE INDEX IF NOT EXISTS idx_pl_status ON product_launches(status);
 CREATE INDEX IF NOT EXISTS idx_pl_seller_id ON product_launches(seller_id);
+CREATE INDEX IF NOT EXISTS idx_pl_chat_id ON product_launches(chat_id);
 `;
 
 // ── Row types (internal — match SQLite columns) ──────────────────────
@@ -88,6 +91,7 @@ type ProductLaunchRow = {
   launch_id: string;
   product_id: string;
   seller_id: string;
+  chat_id: string | null;
   ml_item_id: string | null;
   listing_type: string | null;
   price_amount: number | null;
@@ -141,6 +145,7 @@ function rowToLaunchEntry(row: ProductLaunchRow): ProductLaunchEntry {
     status: row.status,
     createdAt: row.created_at,
   };
+  if (row.chat_id != null) entry.chatId = row.chat_id;
   if (row.ml_item_id != null) entry.mlItemId = row.ml_item_id;
   if (row.listing_type != null) entry.listingType = row.listing_type;
   if (row.price_amount != null) entry.priceAmount = row.price_amount;
@@ -189,10 +194,10 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
   `);
 
   const insertLaunchStmt = db.prepare(`
-    INSERT INTO product_launches (launch_id, product_id, seller_id, ml_item_id, listing_type,
+    INSERT INTO product_launches (launch_id, product_id, seller_id, chat_id, ml_item_id, listing_type,
       price_amount, price_currency, title, description, quality_score_predicted,
       quality_score_actual, cost_total_usd, status)
-    VALUES (@launchId, @productId, @sellerId, @mlItemId, @listingType,
+    VALUES (@launchId, @productId, @sellerId, @chatId, @mlItemId, @listingType,
       @priceAmount, @priceCurrency, @title, @description, @qualityScorePredicted,
       @qualityScoreActual, @costTotalUsd, @status)
   `);
@@ -208,6 +213,12 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
 
   const selectLaunchesByProductStmt = db.prepare(`
     SELECT * FROM product_launches WHERE product_id = ? ORDER BY created_at DESC
+  `);
+
+  const selectPendingByChatIdStmt = db.prepare(`
+    SELECT * FROM product_launches
+    WHERE chat_id = ? AND status NOT IN ('ready_to_publish', 'rejected')
+    ORDER BY created_at DESC LIMIT 1
   `);
 
   // ── Helpers ────────────────────────────────────────────────
@@ -272,6 +283,7 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
       launchId,
       productId: input.productId,
       sellerId: input.sellerId,
+      chatId: input.chatId ?? null,
       mlItemId: input.mlItemId ?? null,
       listingType: input.listingType ?? null,
       priceAmount: input.priceAmount ?? null,
@@ -295,7 +307,10 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     launchId: string,
     status: ProductLaunchStatus,
   ): ProductLaunchEntry => {
-    assertLaunchExists(launchId);
+    const existing = assertLaunchExists(launchId);
+    if (!isValidTransition(existing.status, status)) {
+      throw new Error(`Invalid launch state transition: "${existing.status}" → "${status}"`);
+    }
     const isTerminal = status === "ready_to_publish" || status === "rejected";
     updateStatusStmt.run({
       launchId,
@@ -309,6 +324,11 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     return (selectLaunchesByProductStmt.all(productId) as ProductLaunchRow[]).map(rowToLaunchEntry);
   };
 
+  const getPendingLaunchByChatId = (chatId: string): ProductLaunchEntry | undefined => {
+    const row = selectPendingByChatIdStmt.get(chatId) as ProductLaunchRow | undefined;
+    return row ? rowToLaunchEntry(row) : undefined;
+  };
+
   return {
     upsertProduct,
     getProduct,
@@ -318,5 +338,6 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     getLaunch,
     updateLaunchStatus,
     getLaunchesByProduct,
+    getPendingLaunchByChatId,
   };
 }

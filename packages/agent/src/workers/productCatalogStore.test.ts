@@ -238,6 +238,11 @@ describe("ProductCatalogStore — launches", () => {
 
   it("sets completedAt on terminal states", () => {
     store.createLaunch(testLaunch);
+    store.updateLaunchStatus("launch-test-001", "recognizing");
+    store.updateLaunchStatus("launch-test-001", "researching");
+    store.updateLaunchStatus("launch-test-001", "generating_creative");
+    store.updateLaunchStatus("launch-test-001", "composing");
+    store.updateLaunchStatus("launch-test-001", "awaiting_approval");
     const rejected = store.updateLaunchStatus("launch-test-001", "rejected");
 
     expect(rejected.status).toBe("rejected");
@@ -245,6 +250,12 @@ describe("ProductCatalogStore — launches", () => {
 
     // Also for ready_to_publish
     store.createLaunch({ ...testLaunch, launchId: "launch-test-002" });
+    store.updateLaunchStatus("launch-test-002", "recognizing");
+    store.updateLaunchStatus("launch-test-002", "researching");
+    store.updateLaunchStatus("launch-test-002", "generating_creative");
+    store.updateLaunchStatus("launch-test-002", "composing");
+    store.updateLaunchStatus("launch-test-002", "awaiting_approval");
+    store.updateLaunchStatus("launch-test-002", "approved");
     const published = store.updateLaunchStatus("launch-test-002", "ready_to_publish");
 
     expect(published.status).toBe("ready_to_publish");
