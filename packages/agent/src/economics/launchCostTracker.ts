@@ -214,7 +214,7 @@ export class LaunchCostTracker {
         estimatedCostMicros: Math.round(event.estimatedCostUsd * 1_000_000),
         currency: "USD",
         cacheStatus: "unknown",
-        metadata: (event.metadata ?? {}),
+        metadata: event.metadata ?? {},
         measuredAt: event.measuredAt ?? new Date().toISOString(),
       });
     } catch (err) {

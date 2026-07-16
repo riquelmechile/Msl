@@ -69,20 +69,20 @@ function parseSerpApiResponse(
   const sourceUrls: string[] = [];
 
   // Knowledge graph extraction
-  if (typeof knowledgeGraph.title === 'string') {
+  if (typeof knowledgeGraph.title === "string") {
     productTitle = knowledgeGraph.title;
   }
-  if (typeof knowledgeGraph.brand === 'string') {
+  if (typeof knowledgeGraph.brand === "string") {
     brand = knowledgeGraph.brand;
   }
 
   // Visual matches extraction
   for (const match of visualMatches as Array<Record<string, unknown>>) {
-    if (typeof match.title === 'string' && !productTitle) {
+    if (typeof match.title === "string" && !productTitle) {
       productTitle = match.title;
     }
-    if (typeof match.link === 'string') sourceUrls.push(match.link);
-    if (typeof match.source === 'string') sourceUrls.push(match.source);
+    if (typeof match.link === "string") sourceUrls.push(match.link);
+    if (typeof match.source === "string") sourceUrls.push(match.source);
   }
 
   // Derive search terms from title
@@ -106,7 +106,7 @@ function parseSerpApiResponse(
   // Color extraction
   const kgColor =
     knowledgeGraph.color ?? knowledgeGraph.main_color ?? knowledgeGraph.dominant_color;
-  if (typeof kgColor === 'string') color = kgColor;
+  if (typeof kgColor === "string") color = kgColor;
 
   // Confidence based on result quality
   const resultCount = visualMatches.length;

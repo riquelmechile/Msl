@@ -1,9 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CeoHandlerContext } from "./daemonTypes.js";
-import {
-  LaunchCostTracker,
-  LAUNCH_COST_ESTIMATES,
-} from "../economics/launchCostTracker.js";
+import { LaunchCostTracker, LAUNCH_COST_ESTIMATES } from "../economics/launchCostTracker.js";
 
 // ── Pipeline Stage Definitions ────────────────────────────────────────
 

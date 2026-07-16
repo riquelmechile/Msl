@@ -155,9 +155,9 @@ export const marketResearcher: DaemonHandler = async ({ claim, bus }) => {
           specs: typeof parsed.specs === "string" ? parsed.specs : "No specs available",
           competitorPrices: Array.isArray(parsed.competitorPrices)
             ? parsed.competitorPrices.map((p: Record<string, unknown>) => ({
-                source: typeof p.source === 'string' ? p.source : 'Unknown',
+                source: typeof p.source === "string" ? p.source : "Unknown",
                 price: Number(p.price) || 0,
-                currency: typeof p.currency === 'string' ? p.currency : 'CLP',
+                currency: typeof p.currency === "string" ? p.currency : "CLP",
               }))
             : [],
           suggestedPrice: Number(parsed.suggestedPrice) || 0,

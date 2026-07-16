@@ -72,4 +72,4 @@ export type ProductCatalogStore = {
   getLaunch(launchId: string): ProductLaunchEntry | undefined;
   updateLaunchStatus(launchId: string, status: ProductLaunchStatus): ProductLaunchEntry;
   getLaunchesByProduct(productId: string): ProductLaunchEntry[];
-}
+};
