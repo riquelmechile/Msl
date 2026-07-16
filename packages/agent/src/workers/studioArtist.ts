@@ -65,7 +65,7 @@ const MINIMAX_IMAGE_COST_USD = 0.05;
  * 3. Track costs via CostLedger
  * 4. Stub mode: when MiniMax unavailable → return input image URLs as-is
  */
-export const studioArtist: DaemonHandler = ({ claim, bus }) => {
+export const studioArtist: DaemonHandler = ({ claim, bus }) => Promise.resolve((() => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -313,7 +313,7 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) => {
   messageIds.push(resultMsg.messageId);
 
   return { findings, proposalEnqueued: true, messageIds };
-};
+})());
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

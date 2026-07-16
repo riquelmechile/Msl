@@ -175,7 +175,7 @@ function scoreQuality(input: QualityInspectorInput): QualityInspectorOutput {
  *
  * This handler is always available — no external API dependency.
  */
-export const qualityInspector: DaemonHandler = ({ claim, bus }) => {
+export const qualityInspector: DaemonHandler = ({ claim, bus }) => Promise.resolve((() => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -253,4 +253,4 @@ export const qualityInspector: DaemonHandler = ({ claim, bus }) => {
   });
 
   return { findings, proposalEnqueued: true, messageIds };
-};
+})());
