@@ -20,15 +20,13 @@ function makeStore(overrides?: Partial<ProductCatalogStore>): ProductCatalogStor
   return {
     upsertProduct: vi.fn().mockReturnValue({ productId: "prod-1" }),
     getProduct: vi.fn().mockReturnValue(undefined),
-    upsertImage: vi
-      .fn()
-      .mockReturnValue({
-        imageId: "img-1",
-        productId: "prod-1",
-        url: "",
-        source: "ceo_telegram",
-        createdAt: "",
-      }),
+    upsertImage: vi.fn().mockReturnValue({
+      imageId: "img-1",
+      productId: "prod-1",
+      url: "",
+      source: "ceo_telegram",
+      createdAt: "",
+    }),
     getImages: vi.fn().mockReturnValue([]),
     createLaunch: vi.fn().mockReturnValue({
       launchId: "launch-1",
