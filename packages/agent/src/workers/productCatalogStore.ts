@@ -1,0 +1,315 @@
+import crypto from "node:crypto";
+import Database from "better-sqlite3";
+import type {
+  ProductCatalogEntry,
+  ProductCatalogStore,
+  ProductImageEntry,
+  ProductLaunchEntry,
+  ProductLaunchStatus,
+} from "@msl/domain";
+
+// ── Schema ───────────────────────────────────────────────────────────
+
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS product_catalog (
+  product_id TEXT PRIMARY KEY,
+  gtin TEXT,
+  brand TEXT,
+  model TEXT,
+  category_ml TEXT,
+  attributes_json TEXT,
+  first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_launched_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS product_images (
+  image_id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES product_catalog(product_id),
+  url TEXT NOT NULL,
+  source TEXT NOT NULL CHECK(source IN ('lens','minimax','web','ceo_telegram')),
+  quality_score INTEGER,
+  width INTEGER,
+  height INTEGER,
+  ml_diagnostic_json TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS product_launches (
+  launch_id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES product_catalog(product_id),
+  seller_id TEXT NOT NULL,
+  ml_item_id TEXT,
+  listing_type TEXT,
+  price_amount INTEGER,
+  price_currency TEXT,
+  title TEXT,
+  description TEXT,
+  quality_score_predicted INTEGER,
+  quality_score_actual INTEGER,
+  cost_total_usd REAL,
+  status TEXT NOT NULL DEFAULT 'photo_received' CHECK(status IN ('photo_received','recognizing','researching','generating_creative','composing','awaiting_approval','approved','ready_to_publish','rejected')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pi_product_id ON product_images(product_id);
+CREATE INDEX IF NOT EXISTS idx_pl_product_id ON product_launches(product_id);
+CREATE INDEX IF NOT EXISTS idx_pl_status ON product_launches(status);
+CREATE INDEX IF NOT EXISTS idx_pl_seller_id ON product_launches(seller_id);
+`;
+
+// ── Row types (internal — match SQLite columns) ──────────────────────
+
+type ProductCatalogRow = {
+  product_id: string;
+  gtin: string | null;
+  brand: string | null;
+  model: string | null;
+  category_ml: string | null;
+  attributes_json: string | null;
+  first_seen_at: string;
+  last_launched_at: string | null;
+};
+
+type ProductImageRow = {
+  image_id: string;
+  product_id: string;
+  url: string;
+  source: "lens" | "minimax" | "web" | "ceo_telegram";
+  quality_score: number | null;
+  width: number | null;
+  height: number | null;
+  ml_diagnostic_json: string | null;
+  created_at: string;
+};
+
+type ProductLaunchRow = {
+  launch_id: string;
+  product_id: string;
+  seller_id: string;
+  ml_item_id: string | null;
+  listing_type: string | null;
+  price_amount: number | null;
+  price_currency: string | null;
+  title: string | null;
+  description: string | null;
+  quality_score_predicted: number | null;
+  quality_score_actual: number | null;
+  cost_total_usd: number | null;
+  status: ProductLaunchStatus;
+  created_at: string;
+  completed_at: string | null;
+};
+
+// ── Row mappers ──────────────────────────────────────────────────────
+
+function rowToCatalogEntry(row: ProductCatalogRow): ProductCatalogEntry {
+  return {
+    productId: row.product_id,
+    gtin: row.gtin ?? undefined,
+    brand: row.brand ?? undefined,
+    model: row.model ?? undefined,
+    categoryMl: row.category_ml ?? undefined,
+    attributesJson: row.attributes_json ?? undefined,
+    firstSeenAt: row.first_seen_at,
+    lastLaunchedAt: row.last_launched_at ?? undefined,
+  };
+}
+
+function rowToImageEntry(row: ProductImageRow): ProductImageEntry {
+  return {
+    imageId: row.image_id,
+    productId: row.product_id,
+    url: row.url,
+    source: row.source,
+    qualityScore: row.quality_score ?? undefined,
+    width: row.width ?? undefined,
+    height: row.height ?? undefined,
+    mlDiagnosticJson: row.ml_diagnostic_json ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+function rowToLaunchEntry(row: ProductLaunchRow): ProductLaunchEntry {
+  return {
+    launchId: row.launch_id,
+    productId: row.product_id,
+    sellerId: row.seller_id,
+    mlItemId: row.ml_item_id ?? undefined,
+    listingType: row.listing_type ?? undefined,
+    priceAmount: row.price_amount ?? undefined,
+    priceCurrency: row.price_currency ?? undefined,
+    title: row.title ?? undefined,
+    description: row.description ?? undefined,
+    qualityScorePredicted: row.quality_score_predicted ?? undefined,
+    qualityScoreActual: row.quality_score_actual ?? undefined,
+    costTotalUsd: row.cost_total_usd ?? undefined,
+    status: row.status,
+    createdAt: row.created_at,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
+// ── Factory ──────────────────────────────────────────────────────────
+
+export function createProductCatalogStore(db: Database.Database): ProductCatalogStore {
+  db.exec(SCHEMA_SQL);
+
+  // ── Prepared statements ────────────────────────────────────
+
+  const upsertProductStmt = db.prepare(`
+    INSERT INTO product_catalog (product_id, gtin, brand, model, category_ml, attributes_json, last_launched_at)
+    VALUES (@productId, @gtin, @brand, @model, @categoryMl, @attributesJson, @lastLaunchedAt)
+    ON CONFLICT(product_id) DO UPDATE SET
+      gtin = excluded.gtin, brand = excluded.brand, model = excluded.model,
+      category_ml = excluded.category_ml, attributes_json = excluded.attributes_json,
+      last_launched_at = excluded.last_launched_at
+  `);
+
+  const selectProductStmt = db.prepare(`
+    SELECT * FROM product_catalog WHERE product_id = ?
+  `);
+
+  const upsertImageStmt = db.prepare(`
+    INSERT INTO product_images (image_id, product_id, url, source, quality_score, width, height, ml_diagnostic_json)
+    VALUES (@imageId, @productId, @url, @source, @qualityScore, @width, @height, @mlDiagnosticJson)
+    ON CONFLICT(image_id) DO UPDATE SET
+      product_id = excluded.product_id, url = excluded.url, source = excluded.source,
+      quality_score = excluded.quality_score, width = excluded.width, height = excluded.height,
+      ml_diagnostic_json = excluded.ml_diagnostic_json
+  `);
+
+  const selectImagesStmt = db.prepare(`
+    SELECT * FROM product_images WHERE product_id = ? ORDER BY created_at DESC
+  `);
+
+  const insertLaunchStmt = db.prepare(`
+    INSERT INTO product_launches (launch_id, product_id, seller_id, ml_item_id, listing_type,
+      price_amount, price_currency, title, description, quality_score_predicted,
+      quality_score_actual, cost_total_usd, status)
+    VALUES (@launchId, @productId, @sellerId, @mlItemId, @listingType,
+      @priceAmount, @priceCurrency, @title, @description, @qualityScorePredicted,
+      @qualityScoreActual, @costTotalUsd, @status)
+  `);
+
+  const selectLaunchStmt = db.prepare(`
+    SELECT * FROM product_launches WHERE launch_id = ?
+  `);
+
+  const updateStatusStmt = db.prepare(`
+    UPDATE product_launches SET status = @status, completed_at = @completedAt
+    WHERE launch_id = @launchId
+  `);
+
+  const selectLaunchesByProductStmt = db.prepare(`
+    SELECT * FROM product_launches WHERE product_id = ? ORDER BY created_at DESC
+  `);
+
+  // ── Helpers ────────────────────────────────────────────────
+
+  function getExistingLaunch(launchId: string): ProductLaunchRow | undefined {
+    return selectLaunchStmt.get(launchId) as ProductLaunchRow | undefined;
+  }
+
+  function assertLaunchExists(launchId: string): ProductLaunchRow {
+    const row = getExistingLaunch(launchId);
+    if (!row) throw new Error(`ProductLaunch "${launchId}" not found`);
+    return row;
+  }
+
+  // ── API methods ────────────────────────────────────────────
+
+  const upsertProduct = (product: ProductCatalogEntry): ProductCatalogEntry => {
+    upsertProductStmt.run({
+      productId: product.productId,
+      gtin: product.gtin ?? null,
+      brand: product.brand ?? null,
+      model: product.model ?? null,
+      categoryMl: product.categoryMl ?? null,
+      attributesJson: product.attributesJson ?? null,
+      lastLaunchedAt: product.lastLaunchedAt ?? null,
+    });
+    return rowToCatalogEntry(selectProductStmt.get(product.productId) as ProductCatalogRow);
+  };
+
+  const getProduct = (productId: string): ProductCatalogEntry | undefined => {
+    const row = selectProductStmt.get(productId) as ProductCatalogRow | undefined;
+    return row ? rowToCatalogEntry(row) : undefined;
+  };
+
+  const upsertImage = (image: ProductImageEntry): ProductImageEntry => {
+    upsertImageStmt.run({
+      imageId: image.imageId,
+      productId: image.productId,
+      url: image.url,
+      source: image.source,
+      qualityScore: image.qualityScore ?? null,
+      width: image.width ?? null,
+      height: image.height ?? null,
+      mlDiagnosticJson: image.mlDiagnosticJson ?? null,
+    });
+    const row = db.prepare("SELECT * FROM product_images WHERE image_id = ?").get(image.imageId) as ProductImageRow;
+    return rowToImageEntry(row);
+  };
+
+  const getImages = (productId: string): ProductImageEntry[] => {
+    return (selectImagesStmt.all(productId) as ProductImageRow[]).map(rowToImageEntry);
+  };
+
+  const createLaunch = (launch: ProductLaunchEntry): ProductLaunchEntry => {
+    const launchId = launch.launchId || crypto.randomUUID();
+    const existing = getExistingLaunch(launchId);
+    if (existing) return rowToLaunchEntry(existing);
+
+    insertLaunchStmt.run({
+      launchId,
+      productId: launch.productId,
+      sellerId: launch.sellerId,
+      mlItemId: launch.mlItemId ?? null,
+      listingType: launch.listingType ?? null,
+      priceAmount: launch.priceAmount ?? null,
+      priceCurrency: launch.priceCurrency ?? null,
+      title: launch.title ?? null,
+      description: launch.description ?? null,
+      qualityScorePredicted: launch.qualityScorePredicted ?? null,
+      qualityScoreActual: launch.qualityScoreActual ?? null,
+      costTotalUsd: launch.costTotalUsd ?? null,
+      status: launch.status,
+    });
+    return rowToLaunchEntry(assertLaunchExists(launchId));
+  };
+
+  const getLaunch = (launchId: string): ProductLaunchEntry | undefined => {
+    const row = getExistingLaunch(launchId);
+    return row ? rowToLaunchEntry(row) : undefined;
+  };
+
+  const updateLaunchStatus = (
+    launchId: string,
+    status: ProductLaunchStatus,
+  ): ProductLaunchEntry => {
+    assertLaunchExists(launchId);
+    const isTerminal = status === "ready_to_publish" || status === "rejected";
+    updateStatusStmt.run({
+      launchId,
+      status,
+      completedAt: isTerminal ? new Date().toISOString() : null,
+    });
+    return rowToLaunchEntry(assertLaunchExists(launchId));
+  };
+
+  const getLaunchesByProduct = (productId: string): ProductLaunchEntry[] => {
+    return (selectLaunchesByProductStmt.all(productId) as ProductLaunchRow[]).map(rowToLaunchEntry);
+  };
+
+  return {
+    upsertProduct,
+    getProduct,
+    upsertImage,
+    getImages,
+    createLaunch,
+    getLaunch,
+    updateLaunchStatus,
+    getLaunchesByProduct,
+  };
+}
