@@ -4,8 +4,8 @@ import { createProductCatalogStore } from "./productCatalogStore.js";
 import type {
   ProductCatalogEntry,
   ProductImageEntry,
-  ProductLaunchEntry,
   ProductLaunchStatus,
+  ProductLaunchStoreInput,
 } from "@msl/domain";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ const testImage: ProductImageEntry = {
   height: 1200,
 };
 
-const testLaunch: ProductLaunchEntry = {
+const testLaunch: ProductLaunchStoreInput = {
   launchId: "launch-test-001",
   productId: "prod-test-001",
   sellerId: "seller-test",
@@ -143,8 +143,8 @@ describe("ProductCatalogStore — images", () => {
 
     const images = store.getImages("prod-test-001");
     expect(images).toHaveLength(1);
-    expect(images[0].url).toBe("https://example.com/photo.jpg");
-    expect(images[0].source).toBe("lens");
+    expect(images[0]!.url).toBe("https://example.com/photo.jpg");
+    expect(images[0]!.source).toBe("lens");
   });
 
   it("returns empty array for product with no images", () => {
@@ -159,7 +159,7 @@ describe("ProductCatalogStore — images", () => {
 
     const images = store.getImages("prod-test-001");
     expect(images).toHaveLength(1);
-    expect(images[0].qualityScore).toBe(42);
+    expect(images[0]!.qualityScore).toBe(42);
   });
 
   it("returns multiple images for a product", () => {

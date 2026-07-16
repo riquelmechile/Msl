@@ -939,6 +939,38 @@ export const PRODUCTION_CONFIG_INVENTORY: EnvVarDescriptor[] = [
     placeholderPatterns: [],
     remediation: "Set MSL_ECONOMIC_INGESTION_ENABLED=true to activate economic ingestion.",
   },
+  // ── Product Launch ──────────────────────────────────────────────────
+  {
+    name: "SERPAPI_API_KEY",
+    sensitivity: "secret",
+    capability: "product-recognition",
+    isRequiredFor: "",
+    alwaysOptional: true,
+    validate: (v) => validateEnvValue("SERPAPI_API_KEY", v, false),
+    placeholderPatterns: [],
+    remediation:
+      "Set SERPAPI_API_KEY with your SerpApi key from https://serpapi.com for Google Lens product recognition and image search. VisionAnalyst and ImageScout operate in stub mode without it.",
+  },
+  {
+    name: "MSL_PRODUCT_LAUNCH_ENABLED",
+    sensitivity: "public",
+    capability: "product-launch",
+    isRequiredFor: "",
+    alwaysOptional: true,
+    validate: (v) => {
+      if (!v || v.trim() === "") {
+        return {
+          valid: true,
+          status: "missing",
+          reason: "MSL_PRODUCT_LAUNCH_ENABLED not set, defaulting to enabled",
+        };
+      }
+      return { valid: true, status: "filled", reason: `Product launch: ${v.trim()}` };
+    },
+    placeholderPatterns: [],
+    remediation:
+      "Set MSL_PRODUCT_LAUNCH_ENABLED=false to disable the product launch pipeline. Default: true.",
+  },
 ];
 
 // ── Lookup helpers ───────────────────────────────────────────────────

@@ -43,6 +43,24 @@ export type ProductLaunchEntry = {
   completedAt?: string;
 };
 
+export type ProductLaunchStoreInput = {
+  launchId?: string;
+  productId: string;
+  sellerId: string;
+  mlItemId?: string;
+  listingType?: string;
+  priceAmount?: number;
+  priceCurrency?: string;
+  title?: string;
+  description?: string;
+  qualityScorePredicted?: number;
+  qualityScoreActual?: number;
+  costTotalUsd?: number;
+  status: ProductLaunchStatus;
+  createdAt: string;
+  completedAt?: string;
+};
+
 // ── Store Interface ──────────────────────────────────────────────────
 
 export interface ProductCatalogStore {
@@ -50,7 +68,7 @@ export interface ProductCatalogStore {
   getProduct(productId: string): ProductCatalogEntry | undefined;
   upsertImage(image: ProductImageEntry): ProductImageEntry;
   getImages(productId: string): ProductImageEntry[];
-  createLaunch(launch: ProductLaunchEntry): ProductLaunchEntry;
+  createLaunch(input: ProductLaunchStoreInput): ProductLaunchEntry;
   getLaunch(launchId: string): ProductLaunchEntry | undefined;
   updateLaunchStatus(
     launchId: string,

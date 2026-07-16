@@ -103,6 +103,11 @@ const laneDepartments: Record<LaneId, CompanyDepartmentId> = {
   "finance-director": "finance",
   "economic-learning": "finance",
   "economic-ingestion": "finance",
+  "product-launch": "commercial",
+  "product-recognition": "commercial",
+  "product-research": "commercial",
+  "creative-production": "commercial",
+  "listing-composition": "commercial",
 };
 
 function toCompanyAgent(contract: LaneContract): CompanyAgent {

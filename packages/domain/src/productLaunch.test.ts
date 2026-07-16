@@ -9,19 +9,18 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeLaunch(overrides?: Partial<ProductLaunch>): ProductLaunch {
-  return {
-    ...createProductLaunch({ sellerId: "seller-test", launchId: "launch-001" }),
-    ...overrides,
-  };
+function makeLaunch(overrides?: Partial<Pick<ProductLaunch, "status" | "launchId" | "sellerId">>): ProductLaunch {
+  const base = createProductLaunch({ sellerId: "seller-test", launchId: "launch-001" });
+  if (!overrides) return base;
+  return { ...base, ...overrides } as ProductLaunch;
 }
 
 function statuses(
-  ...states: ProductLaunchStatus[]
+  ...states: [ProductLaunchStatus, ...ProductLaunchStatus[]]
 ): ProductLaunch {
   let launch = makeLaunch({ status: states[0] });
   for (let i = 1; i < states.length; i++) {
-    launch = transitionLaunch(launch, states[i]);
+    launch = transitionLaunch(launch, states[i]!);
   }
   return launch;
 }

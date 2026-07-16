@@ -33,6 +33,7 @@ function resolveFeatures(env: Record<string, string | undefined>): ReadinessCont
     companyAgentAdminEnabled: isTruthy(env.MSL_COMPANY_AGENT_ADMIN_ENABLED),
     databaseIntegrityEnabled: isTruthy(env.MSL_DURABILITY_ENABLED),
     walHealthEnabled: isTruthy(env.MSL_DURABILITY_ENABLED),
+    productLaunchEnabled: env.MSL_PRODUCT_LAUNCH_ENABLED === undefined ? true : isTruthy(env.MSL_PRODUCT_LAUNCH_ENABLED),
   };
 }
 
@@ -56,6 +57,8 @@ const ALL_CAPABILITIES: ProductionCapability[] = [
   "background-workers",
   "daemon-scheduler",
   "real-economic-ingestion",
+  "product-launch",
+  "product-recognition",
 ];
 
 // ── Service ─────────────────────────────────────────────────────────

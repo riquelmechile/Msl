@@ -6,6 +6,7 @@ import type {
   ProductImageEntry,
   ProductLaunchEntry,
   ProductLaunchStatus,
+  ProductLaunchStoreInput,
 } from "@msl/domain";
 
 // ── Schema ───────────────────────────────────────────────────────────
@@ -104,50 +105,53 @@ type ProductLaunchRow = {
 // ── Row mappers ──────────────────────────────────────────────────────
 
 function rowToCatalogEntry(row: ProductCatalogRow): ProductCatalogEntry {
-  return {
+  const entry: ProductCatalogEntry = {
     productId: row.product_id,
-    gtin: row.gtin ?? undefined,
-    brand: row.brand ?? undefined,
-    model: row.model ?? undefined,
-    categoryMl: row.category_ml ?? undefined,
-    attributesJson: row.attributes_json ?? undefined,
     firstSeenAt: row.first_seen_at,
-    lastLaunchedAt: row.last_launched_at ?? undefined,
   };
+  if (row.gtin != null) entry.gtin = row.gtin;
+  if (row.brand != null) entry.brand = row.brand;
+  if (row.model != null) entry.model = row.model;
+  if (row.category_ml != null) entry.categoryMl = row.category_ml;
+  if (row.attributes_json != null) entry.attributesJson = row.attributes_json;
+  if (row.last_launched_at != null) entry.lastLaunchedAt = row.last_launched_at;
+  return entry;
 }
 
 function rowToImageEntry(row: ProductImageRow): ProductImageEntry {
-  return {
+  const entry: ProductImageEntry = {
     imageId: row.image_id,
     productId: row.product_id,
     url: row.url,
     source: row.source,
-    qualityScore: row.quality_score ?? undefined,
-    width: row.width ?? undefined,
-    height: row.height ?? undefined,
-    mlDiagnosticJson: row.ml_diagnostic_json ?? undefined,
     createdAt: row.created_at,
   };
+  if (row.quality_score != null) entry.qualityScore = row.quality_score;
+  if (row.width != null) entry.width = row.width;
+  if (row.height != null) entry.height = row.height;
+  if (row.ml_diagnostic_json != null) entry.mlDiagnosticJson = row.ml_diagnostic_json;
+  return entry;
 }
 
 function rowToLaunchEntry(row: ProductLaunchRow): ProductLaunchEntry {
-  return {
+  const entry: ProductLaunchEntry = {
     launchId: row.launch_id,
     productId: row.product_id,
     sellerId: row.seller_id,
-    mlItemId: row.ml_item_id ?? undefined,
-    listingType: row.listing_type ?? undefined,
-    priceAmount: row.price_amount ?? undefined,
-    priceCurrency: row.price_currency ?? undefined,
-    title: row.title ?? undefined,
-    description: row.description ?? undefined,
-    qualityScorePredicted: row.quality_score_predicted ?? undefined,
-    qualityScoreActual: row.quality_score_actual ?? undefined,
-    costTotalUsd: row.cost_total_usd ?? undefined,
     status: row.status,
     createdAt: row.created_at,
-    completedAt: row.completed_at ?? undefined,
   };
+  if (row.ml_item_id != null) entry.mlItemId = row.ml_item_id;
+  if (row.listing_type != null) entry.listingType = row.listing_type;
+  if (row.price_amount != null) entry.priceAmount = row.price_amount;
+  if (row.price_currency != null) entry.priceCurrency = row.price_currency;
+  if (row.title != null) entry.title = row.title;
+  if (row.description != null) entry.description = row.description;
+  if (row.quality_score_predicted != null) entry.qualityScorePredicted = row.quality_score_predicted;
+  if (row.quality_score_actual != null) entry.qualityScoreActual = row.quality_score_actual;
+  if (row.cost_total_usd != null) entry.costTotalUsd = row.cost_total_usd;
+  if (row.completed_at != null) entry.completedAt = row.completed_at;
+  return entry;
 }
 
 // ── Factory ──────────────────────────────────────────────────────────
@@ -256,25 +260,25 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     return (selectImagesStmt.all(productId) as ProductImageRow[]).map(rowToImageEntry);
   };
 
-  const createLaunch = (launch: ProductLaunchEntry): ProductLaunchEntry => {
-    const launchId = launch.launchId || crypto.randomUUID();
+  const createLaunch = (input: ProductLaunchStoreInput): ProductLaunchEntry => {
+    const launchId = input.launchId || crypto.randomUUID();
     const existing = getExistingLaunch(launchId);
     if (existing) return rowToLaunchEntry(existing);
 
     insertLaunchStmt.run({
       launchId,
-      productId: launch.productId,
-      sellerId: launch.sellerId,
-      mlItemId: launch.mlItemId ?? null,
-      listingType: launch.listingType ?? null,
-      priceAmount: launch.priceAmount ?? null,
-      priceCurrency: launch.priceCurrency ?? null,
-      title: launch.title ?? null,
-      description: launch.description ?? null,
-      qualityScorePredicted: launch.qualityScorePredicted ?? null,
-      qualityScoreActual: launch.qualityScoreActual ?? null,
-      costTotalUsd: launch.costTotalUsd ?? null,
-      status: launch.status,
+      productId: input.productId,
+      sellerId: input.sellerId,
+      mlItemId: input.mlItemId ?? null,
+      listingType: input.listingType ?? null,
+      priceAmount: input.priceAmount ?? null,
+      priceCurrency: input.priceCurrency ?? null,
+      title: input.title ?? null,
+      description: input.description ?? null,
+      qualityScorePredicted: input.qualityScorePredicted ?? null,
+      qualityScoreActual: input.qualityScoreActual ?? null,
+      costTotalUsd: input.costTotalUsd ?? null,
+      status: input.status,
     });
     return rowToLaunchEntry(assertLaunchExists(launchId));
   };

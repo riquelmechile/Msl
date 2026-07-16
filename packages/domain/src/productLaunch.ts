@@ -126,16 +126,17 @@ export type CreateProductLaunchInput = {
 
 export function createProductLaunch(input: CreateProductLaunchInput): ProductLaunch {
   const now = new Date().toISOString();
-  return {
+  const launch: ProductLaunch = {
     launchId: input.launchId ?? crypto.randomUUID(),
     sellerId: input.sellerId,
-    productId: input.productId,
     status: "photo_received",
     context: input.context ?? {},
     imageUrls: [],
-    photoPath: input.photoPath,
-    caption: input.caption,
     createdAt: now,
     updatedAt: now,
   };
+  if (input.productId) launch.productId = input.productId;
+  if (input.photoPath) launch.photoPath = input.photoPath;
+  if (input.caption) launch.caption = input.caption;
+  return launch;
 }

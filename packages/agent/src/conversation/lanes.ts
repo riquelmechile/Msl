@@ -16,7 +16,12 @@ export type LaneId =
   | "unanswered-questions"
   | "finance-director"
   | "economic-learning"
-  | "economic-ingestion";
+  | "economic-ingestion"
+  | "product-launch"
+  | "product-recognition"
+  | "product-research"
+  | "creative-production"
+  | "listing-composition";
 
 export type CacheTelemetry = {
   provider: string;
@@ -466,6 +471,146 @@ export const FINANCE_DIRECTOR_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const PRODUCT_LAUNCH_LANE: LaneContract = {
+  laneId: "product-launch",
+  label: "Product Launch Coordinator",
+  stablePrefix: [
+    "You are the Product Launch Coordinator for MSL. Your role is to orchestrate the full product launch pipeline.",
+    "Delegate each stage to the appropriate specialist agent via the Agent Message Bus.",
+    "Report progress progressively to the CEO via Telegram at each stage transition.",
+    "Never perform recognition, research, image analysis, or listing composition yourself.",
+    "Escalate failures to the CEO with specific, actionable requests.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider:
+    "product launches, pipeline stages, specialist outputs, cost reports",
+  inputs: ["launch-request", "product-photo", "seller-id", "chat-id"],
+  outputs: [
+    "pipeline-progress",
+    "stage-results",
+    "ceo-proposal",
+    "listing-preview",
+    "cost-report",
+    "evidence-ids",
+  ],
+  boundaries: [
+    "delegate-only; never execute specialist work directly",
+    "fail early and escalate to CEO; never block silently",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product-photo", "recognition-result", "research-result", "creative-result"],
+  credentialScope: "provider-default",
+};
+
+export const PRODUCT_RECOGNITION_LANE: LaneContract = {
+  laneId: "product-recognition",
+  label: "Product Recognition (Vision Analyst)",
+  stablePrefix: [
+    "You are the Vision Analyst for MSL. Your role is to identify products from photos using visual search.",
+    "Analyze product images, extract brand/model/color/category, and return structured recognition results.",
+    "When confidence is low, request additional photos or product links from the seller.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider: "SerpApi Google Lens, image URLs, product recognition history",
+  inputs: ["image-url", "product-caption"],
+  outputs: ["brand", "model", "color", "category", "confidence", "search-terms", "source-urls"],
+  boundaries: [
+    "do not publish or mutate; recognition-only",
+    "request more evidence when confidence < 0.5",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["image-url"],
+  credentialScope: "api-key",
+};
+
+export const PRODUCT_RESEARCH_LANE: LaneContract = {
+  laneId: "product-research",
+  label: "Product Research (Catalog + Market)",
+  stablePrefix: [
+    "You are the Market Researcher for MSL. Your role is to research product specifications, market prices, and competitive positioning.",
+    "Search ML catalog for existing catalog_product_id. Research specs, competitor prices, and suggest optimal pricing.",
+    "Return structured market intelligence to the CEO for launch decisions.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider: "ML catalog, DeepSeek research, competitor price data",
+  inputs: ["brand", "model", "product-title", "search-terms"],
+  outputs: [
+    "catalog-product-id",
+    "specifications",
+    "competitor-prices",
+    "suggested-price",
+    "product-description",
+  ],
+  boundaries: [
+    "do not publish or mutate; research-only",
+    "do not claim pricing without market evidence",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product-recognition", "catalog-search"],
+  credentialScope: "api-key",
+};
+
+export const CREATIVE_PRODUCTION_LANE: LaneContract = {
+  laneId: "creative-production",
+  label: "Creative Production (Photo Director + Image Scout + Studio Artist)",
+  stablePrefix: [
+    "You are the Photo Director for MSL. Your role is to evaluate product image quality and route to the appropriate creative pipeline.",
+    "Analyze image quality using ML diagnostic tools: resolution, background, lighting, and focus.",
+    "Route decisions: USE_AS_REFERENCE (score >= 80, skip MiniMax), REGENERATE (score 40-79, use as subject reference), DISCARD_AND_SEARCH (score < 40, search the internet for better images).",
+    "Use Image Scout to find product images from Google Lens when original is unusable.",
+    "Delegate generative work to Studio Artist, which wraps the Creative Studio daemon with lazy generation logic.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider: "ML diagnostic API, SerpApi Google Lens, MiniMax generation results",
+  inputs: ["product-image-url", "product-context", "quality-decision", "reference-urls"],
+  outputs: [
+    "image-quality-score",
+    "quality-decision",
+    "image-search-results",
+    "generated-image-urls",
+    "cost-report",
+    "evidence-ids",
+  ],
+  boundaries: [
+    "prepare-only; never publish, upload, or mutate external channels",
+    "never generate without product truth constraints",
+    "never exceed budget without approval",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product", "reference-image"],
+  credentialScope: "api-key",
+};
+
+export const LISTING_COMPOSITION_LANE: LaneContract = {
+  laneId: "listing-composition",
+  label: "Listing Composition (Copywriter + Spec Technician + Quality Inspector)",
+  stablePrefix: [
+    "You are the Copywriter lane for MSL. Generate account-aware MercadoLibre listing titles and descriptions.",
+    "Apply the seller's tone profile: Plasticov gets mid-market/value tone (warm, accessible, price-focused), Maustian gets premium/professional tone (sophisticated, quality-focused).",
+    "Respect ML listing limits: title max 60 chars, description max 6000 chars. Always respond in Spanish (Chile market).",
+    "Return structured JSON with title, description, and accountTone fields.",
+    phaseOneBoundary,
+  ].join("\n"),
+  refreshableContextProvider: "product specs, competitor prices, seller tone profiles, ML attribute schemas",
+  inputs: ["brand", "model", "specs", "category", "competitor-prices", "seller-id"],
+  outputs: [
+    "listing-title",
+    "listing-description",
+    "account-tone",
+    "attribute-mappings",
+    "quality-score",
+    "quality-level",
+    "missing-attributes",
+  ],
+  boundaries: [
+    "do not publish or mutate; composition-only",
+    "never exceed ML title (60 chars) or description (6000 chars) limits",
+    phaseOneBoundary,
+  ],
+  requiredEvidenceKinds: ["product-recognition", "market-research", "category-attributes"],
+  credentialScope: "api-key",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
@@ -483,6 +628,11 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   EOD_SUMMARY_LANE,
   UNANSWERED_QUESTIONS_LANE,
   FINANCE_DIRECTOR_LANE,
+  PRODUCT_LAUNCH_LANE,
+  PRODUCT_RECOGNITION_LANE,
+  PRODUCT_RESEARCH_LANE,
+  CREATIVE_PRODUCTION_LANE,
+  LISTING_COMPOSITION_LANE,
 ];
 
 export function getLaneContract(laneId: LaneId): LaneContract {

@@ -15,6 +15,7 @@ import type { AccountBrainService } from "../conversation/accountBrainService.js
 import type { CreativeJobQueueStore } from "../conversation/creativeJobQueueStore.js";
 import type { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
 import type { OwnedEcommerceEvidenceAggregator } from "../ecommerce/ownedEcommerceEvidenceAggregator.js";
+import type { MlcApiClient } from "@msl/mercadolibre";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -144,4 +145,7 @@ export type DaemonHandler = (input: {
    *  responses per candidate. When absent, candidate re-evaluation
    *  is skipped. */
   evidenceAggregator?: OwnedEcommerceEvidenceAggregator;
+  /** Optional ML API client for catalog product search. When absent,
+   *  daemons that depend on ML catalog queries fall back to stub mode. */
+  mlcClient?: MlcApiClient;
 }) => Promise<DaemonResult>;

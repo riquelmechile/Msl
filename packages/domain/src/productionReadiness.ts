@@ -22,7 +22,9 @@ export type ProductionCapability =
   | "web-chat"
   | "background-workers"
   | "daemon-scheduler"
-  | "real-economic-ingestion";
+  | "real-economic-ingestion"
+  | "product-launch"
+  | "product-recognition";
 
 // ── Config metadata ──────────────────────────────────────────────────
 
