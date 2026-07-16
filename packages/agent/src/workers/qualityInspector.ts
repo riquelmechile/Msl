@@ -175,82 +175,86 @@ function scoreQuality(input: QualityInspectorInput): QualityInspectorOutput {
  *
  * This handler is always available — no external API dependency.
  */
-export const qualityInspector: DaemonHandler = ({ claim, bus }) => Promise.resolve((() => {
-  const findings: DaemonFinding[] = [];
-  const messageIds: string[] = [];
+export const qualityInspector: DaemonHandler = ({ claim, bus }) =>
+  Promise.resolve(
+    (() => {
+      const findings: DaemonFinding[] = [];
+      const messageIds: string[] = [];
 
-  // ── 1. Parse input ────────────────────────────────────────────
-  let input: QualityInspectorInput;
-  try {
-    input = JSON.parse(claim.payloadJson) as QualityInspectorInput;
-  } catch {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: "Quality Inspector: invalid payload — could not parse QualityInspectorInput",
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
-  }
+      // ── 1. Parse input ────────────────────────────────────────────
+      let input: QualityInspectorInput;
+      try {
+        input = JSON.parse(claim.payloadJson) as QualityInspectorInput;
+      } catch {
+        findings.push({
+          kind: "alert",
+          severity: "warning",
+          summary: "Quality Inspector: invalid payload — could not parse QualityInspectorInput",
+          evidenceIds: [claim.messageId],
+        });
+        return { findings, proposalEnqueued: false, messageIds };
+      }
 
-  if (!input.title || !input.images) {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: "Quality Inspector: missing title or images in payload",
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
-  }
+      if (!input.title || !input.images) {
+        findings.push({
+          kind: "alert",
+          severity: "warning",
+          summary: "Quality Inspector: missing title or images in payload",
+          evidenceIds: [claim.messageId],
+        });
+        return { findings, proposalEnqueued: false, messageIds };
+      }
 
-  // ── 2. Score quality ──────────────────────────────────────────
-  const output = scoreQuality(input);
+      // ── 2. Score quality ──────────────────────────────────────────
+      const output = scoreQuality(input);
 
-  // ── 3. Enqueue result ─────────────────────────────────────────
-  const summary = `Quality Inspector: score ${output.predictedScore}/100 (${output.predictedLevel}), ${output.issues.length} issues, ${output.recommendations.length} recommendations`;
-  const severity =
-    output.predictedLevel === "Básica"
-      ? "critical"
-      : output.predictedLevel === "Estándar"
-        ? "warning"
-        : "info";
-  const kind =
-    output.predictedLevel === "Básica"
-      ? "alert"
-      : output.predictedLevel === "Estándar"
-        ? "alert"
-        : "opportunity";
+      // ── 3. Enqueue result ─────────────────────────────────────────
+      const summary = `Quality Inspector: score ${output.predictedScore}/100 (${output.predictedLevel}), ${output.issues.length} issues, ${output.recommendations.length} recommendations`;
+      const severity =
+        output.predictedLevel === "Básica"
+          ? "critical"
+          : output.predictedLevel === "Estándar"
+            ? "warning"
+            : "info";
+      const kind =
+        output.predictedLevel === "Básica"
+          ? "alert"
+          : output.predictedLevel === "Estándar"
+            ? "alert"
+            : "opportunity";
 
-  const payload: Record<string, unknown> = {
-    type: "finding",
-    summary,
-    qualityInspection: output,
-    input: {
-      title: input.title,
-      imageCount: input.images.length,
-      hasGtin: !!input.gtin,
-      hasFreeShipping: input.hasFreeShipping,
-    },
-    nextAction: output.predictedLevel === "Profesional" ? "ready_to_publish" : "improve_quality",
-    noMutationExecuted: true,
-    capturedAt: new Date().toISOString(),
-  };
+      const payload: Record<string, unknown> = {
+        type: "finding",
+        summary,
+        qualityInspection: output,
+        input: {
+          title: input.title,
+          imageCount: input.images.length,
+          hasGtin: !!input.gtin,
+          hasFreeShipping: input.hasFreeShipping,
+        },
+        nextAction:
+          output.predictedLevel === "Profesional" ? "ready_to_publish" : "improve_quality",
+        noMutationExecuted: true,
+        capturedAt: new Date().toISOString(),
+      };
 
-  const message = bus.enqueue({
-    senderAgentId: "listing-composition",
-    receiverAgentId: "listing-composition",
-    messageType: "quality-inspection-result",
-    payloadJson: JSON.stringify(payload),
-    dedupeKey: `quality-inspector-${claim.messageId}`,
-  });
-  messageIds.push(message.messageId);
+      const message = bus.enqueue({
+        senderAgentId: "listing-composition",
+        receiverAgentId: "listing-composition",
+        messageType: "quality-inspection-result",
+        payloadJson: JSON.stringify(payload),
+        dedupeKey: `quality-inspector-${claim.messageId}`,
+      });
+      messageIds.push(message.messageId);
 
-  findings.push({
-    kind,
-    severity,
-    summary,
-    evidenceIds: [claim.messageId, message.messageId],
-  });
+      findings.push({
+        kind,
+        severity,
+        summary,
+        evidenceIds: [claim.messageId, message.messageId],
+      });
 
-  return { findings, proposalEnqueued: true, messageIds };
-})());
+      return { findings, proposalEnqueued: true, messageIds };
+    })(),
+  );

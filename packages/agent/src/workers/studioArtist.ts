@@ -65,255 +65,262 @@ const MINIMAX_IMAGE_COST_USD = 0.05;
  * 3. Track costs via CostLedger
  * 4. Stub mode: when MiniMax unavailable → return input image URLs as-is
  */
-export const studioArtist: DaemonHandler = ({ claim, bus }) => Promise.resolve((() => {
-  const findings: DaemonFinding[] = [];
-  const messageIds: string[] = [];
+export const studioArtist: DaemonHandler = ({ claim, bus }) =>
+  Promise.resolve(
+    (() => {
+      const findings: DaemonFinding[] = [];
+      const messageIds: string[] = [];
 
-  // ── 1. Parse input ────────────────────────────────────────────
-  let input: StudioArtistInput;
-  try {
-    input = JSON.parse(claim.payloadJson) as StudioArtistInput;
-  } catch {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: "Studio Artist: invalid payload — could not parse StudioArtistInput",
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
-  }
-
-  if (!input.imageUrl) {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: "Studio Artist: missing imageUrl in payload",
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
-  }
-
-  if (!input.qualityDecision) {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: "Studio Artist: missing qualityDecision in payload",
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
-  }
-
-  // ── 2. Route based on quality decision ────────────────────────
-  const miniMaxEnabled = env("MSL_CREATIVE_STUDIO_ENABLED") === "true" && !!env("MINIMAX_API_KEY");
-  const maxDailyUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_DAILY_USD", 5.0);
-  const maxJobUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_JOB_USD", 0.5);
-  const costLedger = new CostLedger({ maxDailyUsd, maxJobUsd });
-
-  let output: StudioArtistOutput;
-
-  switch (input.qualityDecision) {
-    case "USE_AS_REFERENCE": {
-      // Image is good enough — skip MiniMax entirely
-      output = {
-        generatedUrls: [input.imageUrl],
-        usedMiniMax: false,
-        costUsd: 0,
-      };
-
-      findings.push({
-        kind: "info",
-        severity: "info",
-        summary: "Studio Artist: USE_AS_REFERENCE — skipping MiniMax, using original image",
-        evidenceIds: [claim.messageId],
-      });
-      break;
-    }
-
-    case "REGENERATE": {
-      // Use original image as subject_reference for MiniMax
-      if (!miniMaxEnabled) {
-        console.warn(
-          "[studio-artist] MiniMax not available — returning original image as-is (stub mode)",
-        );
-        output = {
-          generatedUrls: [input.imageUrl],
-          usedMiniMax: false,
-          costUsd: 0,
-        };
-
-        findings.push({
-          kind: "info",
-          severity: "info",
-          summary: "Studio Artist: REGENERATE stub — MiniMax unavailable, returning original",
-          evidenceIds: [claim.messageId],
-        });
-        break;
-      }
-
-      // Check budget
-      const budgetCheck = costLedger.canAfford(MINIMAX_IMAGE_COST_USD);
-      if (!budgetCheck.allowed) {
+      // ── 1. Parse input ────────────────────────────────────────────
+      let input: StudioArtistInput;
+      try {
+        input = JSON.parse(claim.payloadJson) as StudioArtistInput;
+      } catch {
         findings.push({
           kind: "alert",
           severity: "warning",
-          summary: `Studio Artist: budget check failed — ${budgetCheck.reason}`,
+          summary: "Studio Artist: invalid payload — could not parse StudioArtistInput",
           evidenceIds: [claim.messageId],
         });
-        output = {
-          generatedUrls: [input.imageUrl],
-          usedMiniMax: false,
-          costUsd: 0,
-        };
-        break;
+        return { findings, proposalEnqueued: false, messageIds };
       }
 
-      // Enqueue to creative-studio lane
-      const requestId = `studio-artist-${claim.messageId}`;
-      const creativeRequest = buildCreativeAssetRequest({
-        requestId,
-        imageUrl: input.imageUrl,
-        productContext: input.productContext,
-        referenceUrls: [input.imageUrl],
-      });
-
-      const msg = bus.enqueue({
-        senderAgentId: "creative-production",
-        receiverAgentId: "creative-studio",
-        messageType: "creative-asset-request",
-        payloadJson: JSON.stringify(creativeRequest),
-        dedupeKey: requestId,
-      });
-      messageIds.push(msg.messageId);
-
-      costLedger.recordSpend(MINIMAX_IMAGE_COST_USD);
-
-      output = {
-        generatedUrls: [],
-        usedMiniMax: true,
-        costUsd: MINIMAX_IMAGE_COST_USD,
-      };
-
-      findings.push({
-        kind: "opportunity",
-        severity: "info",
-        summary:
-          "Studio Artist: REGENERATE — enqueued MiniMax request with original as subject_reference",
-        evidenceIds: [claim.messageId, msg.messageId],
-      });
-      break;
-    }
-
-    case "DISCARD_AND_SEARCH": {
-      if (!miniMaxEnabled) {
-        console.warn(
-          "[studio-artist] MiniMax not available — returning reference URLs as-is (stub mode)",
-        );
-        output = {
-          generatedUrls: input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
-          usedMiniMax: false,
-          costUsd: 0,
-        };
-
-        findings.push({
-          kind: "info",
-          severity: "info",
-          summary:
-            "Studio Artist: DISCARD_AND_SEARCH stub — MiniMax unavailable, returning reference URLs",
-          evidenceIds: [claim.messageId],
-        });
-        break;
-      }
-
-      // Check budget
-      const budgetCheck = costLedger.canAfford(MINIMAX_IMAGE_COST_USD);
-      if (!budgetCheck.allowed) {
+      if (!input.imageUrl) {
         findings.push({
           kind: "alert",
           severity: "warning",
-          summary: `Studio Artist: budget check failed — ${budgetCheck.reason}`,
+          summary: "Studio Artist: missing imageUrl in payload",
           evidenceIds: [claim.messageId],
         });
-        output = {
-          generatedUrls: input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
-          usedMiniMax: false,
-          costUsd: 0,
-        };
-        break;
+        return { findings, proposalEnqueued: false, messageIds };
       }
 
-      // Use ImageScout URLs as subject_reference — pick first valid URL
-      const scoutUrl = input.referenceUrls.length > 0 ? input.referenceUrls[0]! : input.imageUrl;
-      const requestId = `studio-artist-${claim.messageId}`;
-      const creativeRequest = buildCreativeAssetRequest({
-        requestId,
-        imageUrl: scoutUrl,
-        productContext: input.productContext,
-        referenceUrls: input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
-      });
+      if (!input.qualityDecision) {
+        findings.push({
+          kind: "alert",
+          severity: "warning",
+          summary: "Studio Artist: missing qualityDecision in payload",
+          evidenceIds: [claim.messageId],
+        });
+        return { findings, proposalEnqueued: false, messageIds };
+      }
 
-      const msg = bus.enqueue({
+      // ── 2. Route based on quality decision ────────────────────────
+      const miniMaxEnabled =
+        env("MSL_CREATIVE_STUDIO_ENABLED") === "true" && !!env("MINIMAX_API_KEY");
+      const maxDailyUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_DAILY_USD", 5.0);
+      const maxJobUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_JOB_USD", 0.5);
+      const costLedger = new CostLedger({ maxDailyUsd, maxJobUsd });
+
+      let output: StudioArtistOutput;
+
+      switch (input.qualityDecision) {
+        case "USE_AS_REFERENCE": {
+          // Image is good enough — skip MiniMax entirely
+          output = {
+            generatedUrls: [input.imageUrl],
+            usedMiniMax: false,
+            costUsd: 0,
+          };
+
+          findings.push({
+            kind: "info",
+            severity: "info",
+            summary: "Studio Artist: USE_AS_REFERENCE — skipping MiniMax, using original image",
+            evidenceIds: [claim.messageId],
+          });
+          break;
+        }
+
+        case "REGENERATE": {
+          // Use original image as subject_reference for MiniMax
+          if (!miniMaxEnabled) {
+            console.warn(
+              "[studio-artist] MiniMax not available — returning original image as-is (stub mode)",
+            );
+            output = {
+              generatedUrls: [input.imageUrl],
+              usedMiniMax: false,
+              costUsd: 0,
+            };
+
+            findings.push({
+              kind: "info",
+              severity: "info",
+              summary: "Studio Artist: REGENERATE stub — MiniMax unavailable, returning original",
+              evidenceIds: [claim.messageId],
+            });
+            break;
+          }
+
+          // Check budget
+          const budgetCheck = costLedger.canAfford(MINIMAX_IMAGE_COST_USD);
+          if (!budgetCheck.allowed) {
+            findings.push({
+              kind: "alert",
+              severity: "warning",
+              summary: `Studio Artist: budget check failed — ${budgetCheck.reason}`,
+              evidenceIds: [claim.messageId],
+            });
+            output = {
+              generatedUrls: [input.imageUrl],
+              usedMiniMax: false,
+              costUsd: 0,
+            };
+            break;
+          }
+
+          // Enqueue to creative-studio lane
+          const requestId = `studio-artist-${claim.messageId}`;
+          const creativeRequest = buildCreativeAssetRequest({
+            requestId,
+            imageUrl: input.imageUrl,
+            productContext: input.productContext,
+            referenceUrls: [input.imageUrl],
+          });
+
+          const msg = bus.enqueue({
+            senderAgentId: "creative-production",
+            receiverAgentId: "creative-studio",
+            messageType: "creative-asset-request",
+            payloadJson: JSON.stringify(creativeRequest),
+            dedupeKey: requestId,
+          });
+          messageIds.push(msg.messageId);
+
+          costLedger.recordSpend(MINIMAX_IMAGE_COST_USD);
+
+          output = {
+            generatedUrls: [],
+            usedMiniMax: true,
+            costUsd: MINIMAX_IMAGE_COST_USD,
+          };
+
+          findings.push({
+            kind: "opportunity",
+            severity: "info",
+            summary:
+              "Studio Artist: REGENERATE — enqueued MiniMax request with original as subject_reference",
+            evidenceIds: [claim.messageId, msg.messageId],
+          });
+          break;
+        }
+
+        case "DISCARD_AND_SEARCH": {
+          if (!miniMaxEnabled) {
+            console.warn(
+              "[studio-artist] MiniMax not available — returning reference URLs as-is (stub mode)",
+            );
+            output = {
+              generatedUrls:
+                input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
+              usedMiniMax: false,
+              costUsd: 0,
+            };
+
+            findings.push({
+              kind: "info",
+              severity: "info",
+              summary:
+                "Studio Artist: DISCARD_AND_SEARCH stub — MiniMax unavailable, returning reference URLs",
+              evidenceIds: [claim.messageId],
+            });
+            break;
+          }
+
+          // Check budget
+          const budgetCheck = costLedger.canAfford(MINIMAX_IMAGE_COST_USD);
+          if (!budgetCheck.allowed) {
+            findings.push({
+              kind: "alert",
+              severity: "warning",
+              summary: `Studio Artist: budget check failed — ${budgetCheck.reason}`,
+              evidenceIds: [claim.messageId],
+            });
+            output = {
+              generatedUrls:
+                input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
+              usedMiniMax: false,
+              costUsd: 0,
+            };
+            break;
+          }
+
+          // Use ImageScout URLs as subject_reference — pick first valid URL
+          const scoutUrl =
+            input.referenceUrls.length > 0 ? input.referenceUrls[0]! : input.imageUrl;
+          const requestId = `studio-artist-${claim.messageId}`;
+          const creativeRequest = buildCreativeAssetRequest({
+            requestId,
+            imageUrl: scoutUrl,
+            productContext: input.productContext,
+            referenceUrls: input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
+          });
+
+          const msg = bus.enqueue({
+            senderAgentId: "creative-production",
+            receiverAgentId: "creative-studio",
+            messageType: "creative-asset-request",
+            payloadJson: JSON.stringify(creativeRequest),
+            dedupeKey: requestId,
+          });
+          messageIds.push(msg.messageId);
+
+          costLedger.recordSpend(MINIMAX_IMAGE_COST_USD);
+
+          output = {
+            generatedUrls: [],
+            usedMiniMax: true,
+            costUsd: MINIMAX_IMAGE_COST_USD,
+          };
+
+          findings.push({
+            kind: "opportunity",
+            severity: "info",
+            summary:
+              "Studio Artist: DISCARD_AND_SEARCH — enqueued MiniMax request with ImageScout URLs as references",
+            evidenceIds: [claim.messageId, msg.messageId],
+          });
+          break;
+        }
+
+        default: {
+          findings.push({
+            kind: "alert",
+            severity: "warning",
+            summary: `Studio Artist: unknown quality decision "${String(input.qualityDecision)}" — falling back to original image`,
+            evidenceIds: [claim.messageId],
+          });
+          output = {
+            generatedUrls: [input.imageUrl],
+            usedMiniMax: false,
+            costUsd: 0,
+          };
+        }
+      }
+
+      // ── 3. Enqueue result ─────────────────────────────────────────
+      const resultPayload: Record<string, unknown> = {
+        type: "finding",
+        summary: `Studio Artist: ${output.usedMiniMax ? "MiniMax requested" : "no MiniMax needed"} — ${output.generatedUrls.length} URL(s)`,
+        studioArtistResult: output,
+        qualityDecision: input.qualityDecision,
+        noMutationExecuted: true,
+        capturedAt: new Date().toISOString(),
+      };
+
+      const resultMsg = bus.enqueue({
         senderAgentId: "creative-production",
-        receiverAgentId: "creative-studio",
-        messageType: "creative-asset-request",
-        payloadJson: JSON.stringify(creativeRequest),
-        dedupeKey: requestId,
+        receiverAgentId: "creative-production",
+        messageType: "finding",
+        payloadJson: JSON.stringify(resultPayload),
+        dedupeKey: `studio-artist-result-${claim.messageId}`,
       });
-      messageIds.push(msg.messageId);
+      messageIds.push(resultMsg.messageId);
 
-      costLedger.recordSpend(MINIMAX_IMAGE_COST_USD);
-
-      output = {
-        generatedUrls: [],
-        usedMiniMax: true,
-        costUsd: MINIMAX_IMAGE_COST_USD,
-      };
-
-      findings.push({
-        kind: "opportunity",
-        severity: "info",
-        summary:
-          "Studio Artist: DISCARD_AND_SEARCH — enqueued MiniMax request with ImageScout URLs as references",
-        evidenceIds: [claim.messageId, msg.messageId],
-      });
-      break;
-    }
-
-    default: {
-      findings.push({
-        kind: "alert",
-        severity: "warning",
-        summary: `Studio Artist: unknown quality decision "${String(input.qualityDecision)}" — falling back to original image`,
-        evidenceIds: [claim.messageId],
-      });
-      output = {
-        generatedUrls: [input.imageUrl],
-        usedMiniMax: false,
-        costUsd: 0,
-      };
-    }
-  }
-
-  // ── 3. Enqueue result ─────────────────────────────────────────
-  const resultPayload: Record<string, unknown> = {
-    type: "finding",
-    summary: `Studio Artist: ${output.usedMiniMax ? "MiniMax requested" : "no MiniMax needed"} — ${output.generatedUrls.length} URL(s)`,
-    studioArtistResult: output,
-    qualityDecision: input.qualityDecision,
-    noMutationExecuted: true,
-    capturedAt: new Date().toISOString(),
-  };
-
-  const resultMsg = bus.enqueue({
-    senderAgentId: "creative-production",
-    receiverAgentId: "creative-production",
-    messageType: "finding",
-    payloadJson: JSON.stringify(resultPayload),
-    dedupeKey: `studio-artist-result-${claim.messageId}`,
-  });
-  messageIds.push(resultMsg.messageId);
-
-  return { findings, proposalEnqueued: true, messageIds };
-})());
+      return { findings, proposalEnqueued: true, messageIds };
+    })(),
+  );
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
