@@ -1,4 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
+import { LAUNCH_COST_ESTIMATES } from "../economics/launchCostTracker.js";
 import { DeepSeekRealTransport } from "../conversation/transports/deepseekTransport.js";
 import { resolveDeepSeekRuntimeConfig } from "../conversation/deepseekRuntime.js";
 import { DeepSeekReasoningGateway } from "../reasoning/DeepSeekReasoningGateway.js";
@@ -138,7 +140,7 @@ function truncateDescription(description: string): string {
  * Cache-optimized: uses a stable lane prefix with seller-specific system prompt
  * for DeepSeek prompt caching via DeepSeekReasoningGateway.
  */
-export const copywriter: DaemonHandler = async ({ claim, bus }) => {
+export const copywriter: DaemonHandler = async ({ claim, bus, launchCostTracker }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -165,6 +167,7 @@ export const copywriter: DaemonHandler = async ({ claim, bus }) => {
     });
     return { findings, proposalEnqueued: false, messageIds };
   }
+  const launchEnvelope = parseProductLaunchEnvelope(claim);
 
   const accountTone = getAccountTone(input.sellerId);
 
@@ -173,6 +176,22 @@ export const copywriter: DaemonHandler = async ({ claim, bus }) => {
   if (!resolved.apiKey) {
     const stubOutput = stubCopywrite(input);
     return buildSuccessResult(stubOutput, input, claim, bus, findings, messageIds, true);
+  }
+  if (launchEnvelope && launchCostTracker) {
+    const budget = launchCostTracker.canAfford(
+      launchEnvelope.launchId,
+      launchEnvelope.sellerId,
+      LAUNCH_COST_ESTIMATES.deepseekCall,
+    );
+    if (!budget.allowed) {
+      findings.push({
+        kind: "alert",
+        severity: "warning",
+        summary: `Copywriter: ${budget.reason}`,
+        evidenceIds: [claim.messageId],
+      });
+      return { findings, proposalEnqueued: false, messageIds };
+    }
   }
 
   // ── 3. Generate copy via DeepSeek ────────────────────────────
@@ -194,6 +213,16 @@ export const copywriter: DaemonHandler = async ({ claim, bus }) => {
     const result = await gateway.reason(reasonCall);
 
     if (result.status === "success" && result.rawResponse) {
+      if (launchEnvelope && launchCostTracker) {
+        launchCostTracker.record({
+          eventKey: `launch-cost:${launchEnvelope.launchId}:copywriter`,
+          launchId: launchEnvelope.launchId,
+          sellerId: launchEnvelope.sellerId,
+          source: "deepseek",
+          operation: "listing-copy",
+          estimatedCostUsd: LAUNCH_COST_ESTIMATES.deepseekCall,
+        });
+      }
       try {
         const parsed = JSON.parse(result.rawResponse) as Record<string, unknown>;
         const rawTitle = typeof parsed.title === "string" ? parsed.title : "";
@@ -240,6 +269,22 @@ function buildSuccessResult(
   const summary = isStub
     ? `Copywriter (stub): ${input.brand} ${input.model} — ${toneLabel} tone`
     : `Copywriter: ${input.brand} ${input.model} — ${toneLabel} tone, title: "${output.title.slice(0, 40)}..."`;
+
+  const launchEnvelope = parseProductLaunchEnvelope(claim);
+  if (launchEnvelope) {
+    const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      listingTitle: output.title,
+      listingDescription: output.description,
+    });
+    messageIds.push(message.messageId);
+    findings.push({
+      kind: "opportunity",
+      severity: "info",
+      summary,
+      evidenceIds: [claim.messageId, message.messageId],
+    });
+    return { findings, proposalEnqueued: true, messageIds };
+  }
 
   const payload: Record<string, unknown> = {
     type: "finding",

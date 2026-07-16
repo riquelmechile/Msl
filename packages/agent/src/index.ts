@@ -280,6 +280,7 @@ export type {
 } from "./conversation/creativeJobQueueStore.js";
 
 export { createProductCatalogStore } from "./workers/productCatalogStore.js";
+export { resolveProductLaunchRuntimePath } from "./runtime/agentDaemonPersistence.js";
 export type { ProductCatalogStore } from "@msl/domain";
 
 export { MinimaxRetryPolicy } from "./workers/minimaxRetryPolicy.js";

@@ -39,7 +39,7 @@ const testLaunch: ProductLaunchStoreInput = {
 // ── Schema ────────────────────────────────────────────────────────────
 
 describe("ProductCatalogStore — schema", () => {
-  it("creates 3 tables on empty database", () => {
+  it("creates catalog, image, launch, and launch-cost tables on an empty database", () => {
     const db = new Database(":memory:");
     createProductCatalogStore(db);
 
@@ -52,6 +52,7 @@ describe("ProductCatalogStore — schema", () => {
     expect(tables.map((t) => t.name)).toEqual([
       "product_catalog",
       "product_images",
+      "product_launch_cost_events",
       "product_launches",
     ]);
     db.close();
@@ -73,6 +74,47 @@ describe("ProductCatalogStore — schema", () => {
     const found = store2.getProduct("prod-test-001");
     expect(found).not.toBeUndefined();
     expect(found!.brand).toBe("Samsung");
+    db.close();
+  });
+
+  it("migrates a legacy product_launches table before creating the chat index", () => {
+    const db = new Database(":memory:");
+    db.exec(`
+      CREATE TABLE product_catalog (
+        product_id TEXT PRIMARY KEY,
+        gtin TEXT UNIQUE,
+        brand TEXT,
+        model TEXT,
+        category_ml TEXT,
+        attributes_json TEXT,
+        first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_launched_at TEXT
+      );
+      CREATE TABLE product_launches (
+        launch_id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL REFERENCES product_catalog(product_id),
+        seller_id TEXT NOT NULL,
+        ml_item_id TEXT,
+        listing_type TEXT,
+        price_amount INTEGER,
+        price_currency TEXT,
+        title TEXT,
+        description TEXT,
+        quality_score_predicted REAL,
+        quality_score_actual REAL,
+        cost_total_usd REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        completed_at TEXT
+      );
+    `);
+
+    expect(() => createProductCatalogStore(db)).not.toThrow();
+    const columns = db.pragma("table_info(product_launches)") as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toContain("chat_id");
+    expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE name = 'idx_pl_chat_id'").get(),
+    ).toBeDefined();
     db.close();
   });
 });
@@ -234,6 +276,67 @@ describe("ProductCatalogStore — launches", () => {
     const updated = store.updateLaunchStatus("launch-test-001", "recognizing");
 
     expect(updated.status).toBe("recognizing");
+  });
+
+  it("atomically rejects duplicate, out-of-order, and cross-seller transitions", () => {
+    store.createLaunch(testLaunch);
+
+    expect(
+      store.transitionLaunchStatus(
+        "launch-test-001",
+        "seller-test",
+        "photo_received",
+        "recognizing",
+      )?.status,
+    ).toBe("recognizing");
+    expect(
+      store.transitionLaunchStatus(
+        "launch-test-001",
+        "seller-test",
+        "photo_received",
+        "recognizing",
+      ),
+    ).toBeUndefined();
+    expect(
+      store.transitionLaunchStatus("launch-test-001", "other-seller", "recognizing", "researching"),
+    ).toBeUndefined();
+  });
+
+  it("scopes pending chat launches to the seller", () => {
+    store.createLaunch({ ...testLaunch, chatId: "chat-1" });
+    store.createLaunch({
+      ...testLaunch,
+      launchId: "launch-test-002",
+      sellerId: "other-seller",
+      chatId: "chat-1",
+    });
+
+    expect(store.getPendingLaunchByChatId("chat-1", "seller-test")?.launchId).toBe(
+      "launch-test-001",
+    );
+    expect(store.getPendingLaunchByChatId("chat-1", "other-seller")?.launchId).toBe(
+      "launch-test-002",
+    );
+  });
+
+  it("persists cost events idempotently across store recreation", () => {
+    store.createLaunch(testLaunch);
+    const event = {
+      eventKey: "launch-cost:vision",
+      launchId: "launch-test-001",
+      sellerId: "seller-test",
+      source: "google_lens" as const,
+      operation: "vision-recognition",
+      amountUsd: 0.005,
+      measuredAt: "2026-07-16T12:01:00.000Z",
+    };
+
+    expect(store.recordLaunchCost(event)).toEqual({ recorded: true, totalUsd: 0.005 });
+    expect(store.recordLaunchCost(event)).toEqual({ recorded: false, totalUsd: 0.005 });
+
+    const reopened = createProductCatalogStore(db);
+    expect(reopened.getLaunchForSeller("launch-test-001", "seller-test")?.costTotalUsd).toBe(0.005);
+    expect(reopened.recordLaunchCost(event)).toEqual({ recorded: false, totalUsd: 0.005 });
   });
 
   it("sets completedAt on terminal states", () => {

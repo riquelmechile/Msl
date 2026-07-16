@@ -16,6 +16,8 @@ import type { CreativeJobQueueStore } from "../conversation/creativeJobQueueStor
 import type { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
 import type { OwnedEcommerceEvidenceAggregator } from "../ecommerce/ownedEcommerceEvidenceAggregator.js";
 import type { MlcApiClient } from "@msl/mercadolibre";
+import type { ProductCatalogStore } from "@msl/domain";
+import type { LaunchCostTracker } from "../economics/launchCostTracker.js";
 
 // ── Daemon Finding ──────────────────────────────────────────────────
 
@@ -148,4 +150,8 @@ export type DaemonHandler = (input: {
   /** Optional ML API client for catalog product search. When absent,
    *  daemons that depend on ML catalog queries fall back to stub mode. */
   mlcClient?: MlcApiClient;
+  /** Durable product-launch state and cost persistence. */
+  productCatalogStore?: ProductCatalogStore;
+  /** Retry-safe product-launch cost tracker. */
+  launchCostTracker?: LaunchCostTracker;
 }) => Promise<DaemonResult>;

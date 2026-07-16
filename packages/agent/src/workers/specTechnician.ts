@@ -1,5 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { MlcCategoryAttributeSummary } from "@msl/mercadolibre";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
 
 // ── Input / Output types ─────────────────────────────────────────────
 
@@ -206,6 +207,9 @@ export const specTechnician: DaemonHandler = async ({ claim, bus, sellerIds, mlc
     return { findings, proposalEnqueued: false, messageIds };
   }
 
+  const launchEnvelope = parseProductLaunchEnvelope(claim);
+  if (launchEnvelope && !input.categoryId) input.categoryId = launchEnvelope.category ?? "unknown";
+
   if (!input.categoryId) {
     findings.push({
       kind: "alert",
@@ -216,10 +220,24 @@ export const specTechnician: DaemonHandler = async ({ claim, bus, sellerIds, mlc
     return { findings, proposalEnqueued: false, messageIds };
   }
 
-  const sellerId = input.sellerId ?? sellerIds[0] ?? "default";
+  const sellerId = launchEnvelope?.sellerId ?? input.sellerId ?? sellerIds[0] ?? "default";
 
   // ── 2. Validate attributes ────────────────────────────────────
   const output = await validateAttributes(input, mlcClient, sellerId);
+
+  if (launchEnvelope) {
+    const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      attributesJson: JSON.stringify(output.requiredAttributes),
+    });
+    messageIds.push(message.messageId);
+    findings.push({
+      kind: output.missingAttributes.length > 0 ? "alert" : "opportunity",
+      severity: output.missingAttributes.length > 0 ? "warning" : "info",
+      summary: `Spec Technician: ${output.completenessPercent}% complete`,
+      evidenceIds: [claim.messageId, message.messageId],
+    });
+    return { findings, proposalEnqueued: true, messageIds };
+  }
 
   // ── 3. Enqueue result ──────────────────────────────────────────
   const summary =

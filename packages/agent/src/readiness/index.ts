@@ -10,7 +10,12 @@ export { checkRuntimeReadiness } from "./RuntimeReadinessChecker.js";
 export { checkFeatureGateReadiness } from "./FeatureGateReadinessChecker.js";
 export { checkSecurityReadiness } from "./SecurityReadinessChecker.js";
 
-export { assertProductionCapabilityReady, assertSellerCapabilityReady } from "./runtimeGates.js";
+export {
+  assertMercadoLibreWriteDisabled,
+  MercadoLibreWriteBlockedError,
+  assertProductionCapabilityReady,
+  assertSellerCapabilityReady,
+} from "./runtimeGates.js";
 
 export { sanitizeSecret, sanitizeEnv } from "./secretSanitizer.js";
 

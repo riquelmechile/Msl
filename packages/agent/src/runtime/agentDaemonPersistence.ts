@@ -20,6 +20,9 @@ import {
   createAgentConsensusStore,
   type AgentConsensusStore,
 } from "../conversation/agentConsensusStore.js";
+import { createProductCatalogStore } from "../workers/productCatalogStore.js";
+import { LaunchCostTracker } from "../economics/launchCostTracker.js";
+import type { ProductCatalogStore } from "@msl/domain";
 
 export type AgentDaemonPersistenceRuntime = {
   readonly bus: AgentMessageBusStore;
@@ -28,6 +31,8 @@ export type AgentDaemonPersistenceRuntime = {
   readonly economicOutcomeStore: EconomicOutcomeReader;
   readonly economicLearningStore: EconomicLearningStore;
   readonly databaseManager: DatabaseManager;
+  readonly productCatalogStore: ProductCatalogStore;
+  readonly launchCostTracker: LaunchCostTracker;
   close(): void;
 };
 
@@ -35,6 +40,13 @@ type PersistenceResources = Omit<AgentDaemonPersistenceRuntime, "databaseManager
   readonly db: Database.Database;
   readonly economicRuntime: EconomicMemoryRuntime;
 };
+
+export function resolveProductLaunchRuntimePath(
+  env: { MSL_PRODUCT_LAUNCH_SQLITE_PATH?: string | undefined },
+  cortexPath?: string,
+): string | undefined {
+  return env.MSL_PRODUCT_LAUNCH_SQLITE_PATH?.trim() || cortexPath?.trim() || undefined;
+}
 
 function delegate<T extends object>(current: () => T): T {
   return new Proxy({} as T, {
@@ -60,6 +72,11 @@ export function createAgentDaemonPersistenceRuntime(
     db.pragma("foreign_keys = ON");
     db.pragma("synchronous = NORMAL");
     const economicRuntime = createEconomicMemoryRuntime({ databasePath });
+    const productCatalogStore = createProductCatalogStore(db);
+    const launchCostTracker = new LaunchCostTracker({
+      catalogStore: productCatalogStore,
+      maxLaunchUsd: Number(process.env.MSL_PRODUCT_LAUNCH_MAX_USD ?? "0.25"),
+    });
     resources = {
       db,
       economicRuntime,
@@ -68,6 +85,8 @@ export function createAgentDaemonPersistenceRuntime(
       reader: createSqliteOperationalReadModel(db),
       economicOutcomeStore: economicRuntime.readers.outcomes,
       economicLearningStore: createSqliteEconomicLearningStore(db),
+      productCatalogStore,
+      launchCostTracker,
     };
     return resources;
   };
@@ -99,6 +118,8 @@ export function createAgentDaemonPersistenceRuntime(
     reader: delegate(() => current().reader),
     economicOutcomeStore: delegate(() => current().economicOutcomeStore),
     economicLearningStore: delegate(() => current().economicLearningStore),
+    productCatalogStore: delegate(() => current().productCatalogStore),
+    launchCostTracker: delegate(() => current().launchCostTracker),
     databaseManager,
     close,
   };

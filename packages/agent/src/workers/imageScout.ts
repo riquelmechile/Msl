@@ -1,4 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
+import { LAUNCH_COST_ESTIMATES } from "../economics/launchCostTracker.js";
 
 // ── Environment helpers ─────────────────────────────────────────────
 
@@ -146,7 +148,7 @@ function stubSearch(input: ImageScoutInput): ImageScoutOutput {
  * 3. Return image URLs only — no downloading
  * 4. Enqueue result to creative-production lane
  */
-export const imageScout: DaemonHandler = async ({ claim, bus }) => {
+export const imageScout: DaemonHandler = async ({ claim, bus, launchCostTracker }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -172,6 +174,24 @@ export const imageScout: DaemonHandler = async ({ claim, bus }) => {
       evidenceIds: [claim.messageId],
     });
     return { findings, proposalEnqueued: false, messageIds };
+  }
+  const parsedLaunchEnvelope = parseProductLaunchEnvelope(claim);
+  const usesExternalApi = !!env("SERPAPI_API_KEY");
+  if (usesExternalApi && parsedLaunchEnvelope && launchCostTracker) {
+    const budget = launchCostTracker.canAfford(
+      parsedLaunchEnvelope.launchId,
+      parsedLaunchEnvelope.sellerId,
+      LAUNCH_COST_ESTIMATES.googleLensCall,
+    );
+    if (!budget.allowed) {
+      findings.push({
+        kind: "alert",
+        severity: "warning",
+        summary: `Image Scout: ${budget.reason}`,
+        evidenceIds: [claim.messageId],
+      });
+      return { findings, proposalEnqueued: false, messageIds };
+    }
   }
 
   // ── 2. Search ─────────────────────────────────────────────────
@@ -200,7 +220,33 @@ export const imageScout: DaemonHandler = async ({ claim, bus }) => {
     }
   }
 
+  if (usesExternalApi && parsedLaunchEnvelope && launchCostTracker) {
+    launchCostTracker.record({
+      eventKey: `launch-cost:${parsedLaunchEnvelope.launchId}:image-scout`,
+      launchId: parsedLaunchEnvelope.launchId,
+      sellerId: parsedLaunchEnvelope.sellerId,
+      source: "google_lens",
+      operation: "image-search",
+      estimatedCostUsd: LAUNCH_COST_ESTIMATES.googleLensCall,
+    });
+  }
+
   // ── 3. Enqueue result ─────────────────────────────────────────
+  const launchEnvelope = parsedLaunchEnvelope;
+  if (launchEnvelope) {
+    const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      referenceUrls: output.imageUrls.map((image) => image.url),
+    });
+    messageIds.push(message.messageId);
+    findings.push({
+      kind: "opportunity",
+      severity: "info",
+      summary: `Image Scout: ${output.imageUrls.length} image(s) found`,
+      evidenceIds: [claim.messageId, message.messageId],
+    });
+    return { findings, proposalEnqueued: true, messageIds };
+  }
+
   const resultPayload: Record<string, unknown> = {
     type: "finding",
     summary: `Image Scout: found ${output.imageUrls.length} image(s) for ${input.brand} ${input.model}`,

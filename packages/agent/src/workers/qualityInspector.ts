@@ -1,4 +1,5 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
 
 // ── Input / Output types ─────────────────────────────────────────────
 
@@ -195,6 +196,14 @@ export const qualityInspector: DaemonHandler = ({ claim, bus }) =>
         return { findings, proposalEnqueued: false, messageIds };
       }
 
+      const launchEnvelope = parseProductLaunchEnvelope(claim);
+      if (launchEnvelope) {
+        input.title = launchEnvelope.listingTitle ?? input.title;
+        input.images = (launchEnvelope.images ?? launchEnvelope.imageUrls).map((url) => ({ url }));
+        input.attributesJson = launchEnvelope.attributesJson ?? "{}";
+        input.hasFreeShipping = launchEnvelope.hasFreeShipping ?? false;
+      }
+
       if (!input.title || !input.images) {
         findings.push({
           kind: "alert",
@@ -207,6 +216,20 @@ export const qualityInspector: DaemonHandler = ({ claim, bus }) =>
 
       // ── 2. Score quality ──────────────────────────────────────────
       const output = scoreQuality(input);
+
+      if (launchEnvelope) {
+        const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+          qualityScore: output.predictedScore,
+        });
+        messageIds.push(message.messageId);
+        findings.push({
+          kind: output.predictedLevel === "Profesional" ? "opportunity" : "alert",
+          severity: output.predictedLevel === "Básica" ? "critical" : "info",
+          summary: `Quality Inspector: score ${output.predictedScore}/100`,
+          evidenceIds: [claim.messageId, message.messageId],
+        });
+        return { findings, proposalEnqueued: true, messageIds };
+      }
 
       // ── 3. Enqueue result ─────────────────────────────────────────
       const summary = `Quality Inspector: score ${output.predictedScore}/100 (${output.predictedLevel}), ${output.issues.length} issues, ${output.recommendations.length} recommendations`;

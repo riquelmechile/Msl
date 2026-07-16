@@ -1,6 +1,7 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import { MlDiagnosticAdapter, type MlDiagnosticAdapterConfig } from "@msl/creative-studio";
 import type { ImageQualityDecision } from "@msl/domain";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
 
 // ── Environment helpers ─────────────────────────────────────────────
 
@@ -202,6 +203,13 @@ export const photoDirector: DaemonHandler = async ({ claim, bus }) => {
     });
     return { findings, proposalEnqueued: false, messageIds };
   }
+  const parsedLaunchEnvelope = parseProductLaunchEnvelope(claim);
+  if (parsedLaunchEnvelope) {
+    input.imageUrl = parsedLaunchEnvelope.imageUrls[0] ?? "";
+    input.productContext = parsedLaunchEnvelope.listingTitle
+      ? { title: parsedLaunchEnvelope.listingTitle }
+      : {};
+  }
 
   if (!input.imageUrl) {
     findings.push({
@@ -233,6 +241,22 @@ export const photoDirector: DaemonHandler = async ({ claim, bus }) => {
   }
 
   // ── 3. Enqueue result ─────────────────────────────────────────
+  const launchEnvelope = parsedLaunchEnvelope;
+  if (launchEnvelope) {
+    const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      qualityScore: output.qualityScore,
+      qualityDecision: output.decision,
+    });
+    messageIds.push(message.messageId);
+    findings.push({
+      kind: "opportunity",
+      severity: "info",
+      summary: `Photo Director: score ${output.qualityScore}/100 — ${output.decision}`,
+      evidenceIds: [claim.messageId, message.messageId],
+    });
+    return { findings, proposalEnqueued: true, messageIds };
+  }
+
   const resultPayload: Record<string, unknown> = {
     type: "finding",
     summary: `Photo Director: quality score ${output.qualityScore}/100 → ${output.decision}`,

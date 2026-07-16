@@ -856,9 +856,9 @@ describe("assertMercadoLibreWriteDisabled", () => {
       caught = err as Error;
     }
     expect(caught).toBeInstanceOf(MercadoLibreWriteBlockedError);
-    expect(caught!.message).toContain("MercadoLibre write operations are blocked");
-    expect(caught!.message).toContain("syncProduct");
-    expect(caught!.message).toContain("plasticov-id");
+    expect(caught.message).toContain("MercadoLibre write operations are blocked");
+    expect(caught.message).toContain("syncProduct");
+    expect(caught.message).toContain("plasticov-id");
   });
 
   it("error has operation and sellerId properties", () => {
@@ -869,8 +869,8 @@ describe("assertMercadoLibreWriteDisabled", () => {
       caught = err as MercadoLibreWriteBlockedError;
     }
     expect(caught).not.toBeNull();
-    expect(caught!.operation).toBe("adjustPrice");
-    expect(caught!.sellerId).toBe("987654321");
+    expect(caught.operation).toBe("adjustPrice");
+    expect(caught.sellerId).toBe("987654321");
   });
 
   it("error name is MercadoLibreWriteBlockedError", () => {
@@ -880,6 +880,6 @@ describe("assertMercadoLibreWriteDisabled", () => {
     } catch (err) {
       caught = err as Error;
     }
-    expect(caught!.name).toBe("MercadoLibreWriteBlockedError");
+    expect(caught.name).toBe("MercadoLibreWriteBlockedError");
   });
 });

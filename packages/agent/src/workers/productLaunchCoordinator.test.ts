@@ -1,24 +1,22 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import Database from "better-sqlite3";
+import { createProductCatalogStore } from "./productCatalogStore.js";
 import { productLaunchCoordinator } from "./productLaunchCoordinator.js";
-import type { AgentMessage } from "../conversation/agentMessageBusStore.js";
+import type {
+  AgentMessage,
+  AgentMessageBusStore,
+  EnqueueAgentMessageInput,
+} from "../conversation/agentMessageBusStore.js";
+import type { ProductLaunchEnvelope } from "./productLaunchEnvelope.js";
 
-// ── Helpers ────────────────────────────────────────────────────────
-
-function makeClaim(overrides?: Partial<AgentMessage>): AgentMessage {
+function claim(messageType: string, payload: unknown, sellerId = "seller-a"): AgentMessage {
   return {
     id: 1,
-    messageId: "msg-coord-1",
-    senderAgentId: "system",
+    messageId: `message-${messageType}`,
+    senderAgentId: "test",
     receiverAgentId: "product-launch",
-    messageType: "launch_request",
-    payloadJson: JSON.stringify({
-      launchId: "launch-test-1",
-      productId: "prod-test-1",
-      sellerId: "test-seller",
-      imageUrls: ["https://example.com/product.jpg"],
-      caption: "smartwatch",
-      chatId: 123456,
-    }),
+    messageType,
+    payloadJson: JSON.stringify(payload),
     status: "pending",
     priority: 0,
     attempts: 0,
@@ -30,60 +28,23 @@ function makeClaim(overrides?: Partial<AgentMessage>): AgentMessage {
     resultJson: null,
     errorJson: null,
     cancelReason: null,
-    correlationId: null,
+    correlationId: "launch-1",
     parentMessageId: null,
-    sellerId: "test-seller",
+    sellerId,
     learnedAt: null,
     outcomeScore: null,
     actionId: null,
-    ...overrides,
   };
 }
 
-function makeClaimFromStage(
-  stage: string,
-  payloadOverrides?: Record<string, unknown>,
-): AgentMessage {
-  const basePayload = {
-    launchId: "launch-test-1",
-    sellerId: "test-seller",
-    chatId: 123456,
-    imageUrls: ["https://example.com/product.jpg"],
-    ...payloadOverrides,
-  };
-  return makeClaim({
-    messageId: `msg-coord-${stage}`,
-    messageType: "finding",
-    payloadJson: JSON.stringify({ ...basePayload, completedStage: stage }),
-  });
-}
-
-function makeBus() {
-  const enqueued: Array<{
-    senderAgentId: string;
-    receiverAgentId: string;
-    messageType: string;
-    payloadJson: string;
-    dedupeKey?: string;
-    correlationId?: string;
-    sellerId?: string;
-  }> = [];
-  const b = {
-    enqueue: vi.fn(
-      (input: {
-        senderAgentId: string;
-        receiverAgentId: string;
-        messageType: string;
-        payloadJson: string;
-        dedupeKey?: string;
-        correlationId?: string;
-        sellerId?: string;
-      }) => {
-        enqueued.push(input);
-        return { messageId: `bus-msg-${enqueued.length}` };
-      },
-    ),
+function busFixture(): AgentMessageBusStore & { enqueued: Array<Record<string, unknown>> } {
+  const enqueued: Array<Record<string, unknown>> = [];
+  return {
     enqueued,
+    enqueue: vi.fn((input: EnqueueAgentMessageInput) => {
+      enqueued.push(input);
+      return { messageId: `enqueued-${enqueued.length}` };
+    }),
     claimNext: vi.fn().mockReturnValue([]),
     resolve: vi.fn(),
     fail: vi.fn(),
@@ -97,272 +58,157 @@ function makeBus() {
     getLearningHistory: vi.fn().mockReturnValue([]),
     recordOutcome: vi.fn(),
     getUnscoredMessages: vi.fn().mockReturnValue([]),
-  };
-  return b;
+  } as unknown as AgentMessageBusStore & { enqueued: Array<Record<string, unknown>> };
 }
 
-// ── Tests ──────────────────────────────────────────────────────────
-
 describe("productLaunchCoordinator", () => {
-  describe("message parsing", () => {
-    it("returns alert finding for invalid payload", async () => {
-      const bus = makeBus();
-      const result = await productLaunchCoordinator({
-        claim: makeClaim({ payloadJson: "not-json" }),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
-      expect(result.findings).toHaveLength(1);
-      expect(result.findings[0]!.kind).toBe("alert");
-      expect(result.findings[0]!.severity).toBe("warning");
-    });
+  let db: Database.Database;
+  let store: ReturnType<typeof createProductCatalogStore>;
+  let bus: ReturnType<typeof busFixture>;
 
-    it("returns alert finding for missing launchId", async () => {
-      const bus = makeBus();
-      const result = await productLaunchCoordinator({
-        claim: makeClaim({ payloadJson: JSON.stringify({ chatId: 123 }) }),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
-      expect(result.findings).toHaveLength(1);
-      expect(result.findings[0]!.kind).toBe("alert");
+  beforeEach(() => {
+    db = new Database(":memory:");
+    store = createProductCatalogStore(db);
+    store.upsertProduct({ productId: "product-1" });
+    store.createLaunch({
+      launchId: "launch-1",
+      productId: "product-1",
+      sellerId: "seller-a",
+      chatId: "123",
+      status: "photo_received",
+      createdAt: new Date().toISOString(),
+    });
+    bus = busFixture();
+  });
+
+  function run(input: AgentMessage) {
+    return productLaunchCoordinator({
+      claim: input,
+      bus,
+      productCatalogStore: store,
+      reader: {} as never,
+      cortex: {} as never,
+      sellerIds: ["seller-a", "seller-b"],
+    });
+  }
+
+  it("persists photo_received to recognizing and preserves seller identity", async () => {
+    await run(
+      claim("launch_request", {
+        launchId: "launch-1",
+        productId: "product-1",
+        sellerId: "seller-a",
+        imageUrls: ["file:///product.jpg"],
+        chatId: 123,
+      }),
+    );
+
+    expect(store.getLaunch("launch-1")?.status).toBe("recognizing");
+    const work = bus.enqueued.find((message) => message.messageType === "launch_stage_work")!;
+    expect(work).toMatchObject({
+      receiverAgentId: "product-recognition",
+      sellerId: "seller-a",
+      correlationId: "launch-1",
+    });
+    expect(JSON.parse(work.payloadJson as string)).toMatchObject({
+      launchId: "launch-1",
+      sellerId: "seller-a",
+      stage: "recognizing",
+      task: "vision-analyst",
     });
   });
 
-  describe("pipeline routing — photo_received → recognizing", () => {
-    it("delegates to product-recognition lane on launch_request", async () => {
-      const bus = makeBus();
-      const result = await productLaunchCoordinator({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
-
-      const recognitionMsg = bus.enqueued.find(
-        (m: { receiverAgentId: string }) => m.receiverAgentId === "product-recognition",
-      );
-      expect(recognitionMsg).toBeDefined();
-      expect(recognitionMsg!.senderAgentId).toBe("product-launch");
-
-      const progressMsg = bus.enqueued.find(
-        (m: { receiverAgentId: string; messageType: string }) =>
-          m.receiverAgentId === "ceo" && m.messageType === "progress",
-      );
-      expect(progressMsg).toBeDefined();
-
-      expect(result.proposalEnqueued).toBe(true);
-      expect(result.messageIds.length).toBeGreaterThan(0);
+  it("makes the transition visible before enqueue and retries a missing work item", async () => {
+    const observedStatuses: string[] = [];
+    let interrupt = true;
+    bus.enqueue = vi.fn((input: EnqueueAgentMessageInput) => {
+      if (input.messageType === "launch_stage_work") {
+        observedStatuses.push(store.getLaunch("launch-1")!.status);
+        if (interrupt) {
+          interrupt = false;
+          throw new Error("interrupted after transition");
+        }
+      }
+      return { messageId: `enqueued-${observedStatuses.length}` } as never;
+    });
+    const request = claim("launch_request", {
+      launchId: "launch-1",
+      sellerId: "seller-a",
+      imageUrls: ["file:///product.jpg"],
     });
 
-    it("includes launch context in delegated payload", async () => {
-      const bus = makeBus();
-      await productLaunchCoordinator({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
+    await expect(run(request)).rejects.toThrow("interrupted after transition");
+    expect(store.getLaunch("launch-1")?.status).toBe("recognizing");
+    await expect(run(request)).resolves.toMatchObject({ proposalEnqueued: true });
+    expect(observedStatuses).toEqual(["recognizing", "recognizing"]);
+  });
 
-      const recognitionMsg = bus.enqueued.find(
-        (m: { receiverAgentId: string }) => m.receiverAgentId === "product-recognition",
-      );
-      expect(recognitionMsg).toBeDefined();
-      const payload = JSON.parse(recognitionMsg!.payloadJson) as Record<string, unknown>;
-      expect(payload.launchId).toBe("launch-test-1");
-      expect(payload.imageUrl).toBe("https://example.com/product.jpg");
+  it("rejects duplicate, out-of-order, and cross-seller results", async () => {
+    await run(
+      claim("launch_request", {
+        launchId: "launch-1",
+        sellerId: "seller-a",
+        imageUrls: ["file:///product.jpg"],
+      }),
+    );
+    const envelope: ProductLaunchEnvelope = {
+      launchId: "launch-1",
+      sellerId: "seller-a",
+      stage: "researching",
+      task: "market-researcher",
+      imageUrls: ["file:///product.jpg"],
+    };
+
+    const outOfOrder = await run(claim("launch_stage_complete", envelope));
+    expect(outOfOrder.proposalEnqueued).toBe(false);
+    expect(store.getLaunch("launch-1")?.status).toBe("recognizing");
+
+    const crossSeller = await run(
+      claim("launch_stage_complete", { ...envelope, sellerId: "seller-b" }, "seller-b"),
+    );
+    expect(crossSeller.proposalEnqueued).toBe(false);
+  });
+
+  it("handles a seller-scoped additional photo without losing its path", async () => {
+    await run(
+      claim("additional_photo", {
+        launchId: "launch-1",
+        sellerId: "seller-a",
+        imageUrls: ["file:///additional.jpg"],
+        chatId: 123,
+      }),
+    );
+
+    expect(store.getLaunch("launch-1")?.status).toBe("recognizing");
+    const work = bus.enqueued.find((message) => message.messageType === "launch_stage_work")!;
+    expect(JSON.parse(work.payloadJson as string)).toMatchObject({
+      sellerId: "seller-a",
+      imageUrls: ["file:///additional.jpg"],
+      task: "vision-analyst",
     });
   });
 
-  describe("pipeline routing — recognizing → researching", () => {
-    it("delegates to product-research lane with recognition results", async () => {
-      const bus = makeBus();
-      const claim = makeClaimFromStage("recognizing", {
-        brand: "Nike",
-        model: "Air Max",
-        searchTerms: ["Nike", "Air Max"],
-        completedStage: "recognizing",
-      });
+  it("moves an approved launch to ready_to_publish without publishing", async () => {
+    for (const status of [
+      "recognizing",
+      "researching",
+      "generating_creative",
+      "composing",
+      "awaiting_approval",
+      "approved",
+    ] as const) {
+      store.updateLaunchStatus("launch-1", status);
+    }
 
-      await productLaunchCoordinator({
-        claim,
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
+    await run(
+      claim("launch_approved", {
+        launchId: "launch-1",
+        sellerId: "seller-a",
+        chatId: 123,
+      }),
+    );
 
-      const researchMsg = bus.enqueued.find(
-        (m: { receiverAgentId: string }) => m.receiverAgentId === "product-research",
-      );
-      expect(researchMsg).toBeDefined();
-      const payload = JSON.parse(researchMsg!.payloadJson) as Record<string, unknown>;
-      expect(payload.brand).toBe("Nike");
-      expect(payload.model).toBe("Air Max");
-    });
-  });
-
-  describe("pipeline routing — composing → awaiting_approval", () => {
-    it("enqueues CEO proposal when composition completes", async () => {
-      const bus = makeBus();
-      const claim = makeClaimFromStage("composing", {
-        brand: "Nike",
-        model: "Air Max",
-        listingTitle: "Zapatillas Nike Air Max 270",
-        listingDescription: "Descripción del producto...",
-        suggestedPrice: 89000,
-        completedStage: "composing",
-      });
-
-      const result = await productLaunchCoordinator({
-        claim,
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
-
-      const ceoProposal = bus.enqueued.find(
-        (m: { receiverAgentId: string; messageType: string }) =>
-          m.receiverAgentId === "ceo" && m.messageType === "proposal",
-      );
-      expect(ceoProposal).toBeDefined();
-      const payload = JSON.parse(ceoProposal!.payloadJson) as Record<string, unknown>;
-      expect(payload.launchId).toBe("launch-test-1");
-      expect(payload.title).toContain("Nike Air Max");
-      expect(payload.stage).toBe("awaiting_approval");
-      expect(payload.noMutationExecuted).toBe(true);
-
-      expect(result.proposalEnqueued).toBe(true);
-    });
-  });
-
-  describe("pipeline routing — approved → ready_to_publish", () => {
-    it("processes approval and sends completion message", async () => {
-      const bus = makeBus();
-      const claim = makeClaim({
-        messageType: "launch_approved",
-        payloadJson: JSON.stringify({
-          launchId: "launch-test-1",
-          sellerId: "test-seller",
-          chatId: 123456,
-          brand: "Nike",
-          model: "Air Max",
-          listingTitle: "Zapatillas Nike Air Max 270",
-          notes: "Approved by CEO",
-        }),
-      });
-
-      const result = await productLaunchCoordinator({
-        claim,
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
-
-      const progressMsg = bus.enqueued.find(
-        (m: { receiverAgentId: string; messageType: string }) =>
-          m.receiverAgentId === "ceo" && m.messageType === "progress",
-      );
-      expect(progressMsg).toBeDefined();
-      const payload = JSON.parse(progressMsg!.payloadJson) as Record<string, unknown>;
-      expect(payload.text).toContain("aprobada");
-      expect(result.proposalEnqueued).toBe(true);
-    });
-  });
-
-  describe("Telegram progress messages", () => {
-    it("sends progress via Telegram when ceoContext is provided", async () => {
-      const bus = makeBus();
-      const sendProactiveMessage = vi.fn().mockResolvedValue(undefined);
-      const ceoContext = { sendProactiveMessage };
-
-      await productLaunchCoordinator({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-        ceoContext,
-      });
-
-      expect(sendProactiveMessage).toHaveBeenCalledWith(
-        123456,
-        expect.stringContaining("Iniciando identificación"),
-      );
-    });
-
-    it("handles Telegram failure gracefully", async () => {
-      const bus = makeBus();
-      const sendProactiveMessage = vi.fn().mockRejectedValue(new Error("Telegram down"));
-      const ceoContext = { sendProactiveMessage };
-
-      const result = await productLaunchCoordinator({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-        ceoContext,
-      });
-
-      expect(result.proposalEnqueued).toBe(true);
-    });
-  });
-
-  describe("deduplication", () => {
-    it("uses consistent dedupe keys for same stage+launch", async () => {
-      const bus = makeBus();
-      await productLaunchCoordinator({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
-
-      const recognitionMsg = bus.enqueued.find(
-        (m: { receiverAgentId: string; dedupeKey?: string }) =>
-          m.receiverAgentId === "product-recognition",
-      );
-      expect(recognitionMsg?.dedupeKey).toContain("coord-recognize");
-      expect(recognitionMsg?.dedupeKey).toContain("launch-test-1");
-    });
-  });
-
-  describe("cost tracking", () => {
-    it("records Google Lens cost on photo_received stage", async () => {
-      const bus = makeBus();
-      // First call starts tracking
-      await productLaunchCoordinator({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus as never,
-        sellerIds: ["test-seller"],
-      });
-
-      // Second call accumulates
-      const bus2 = makeBus();
-      const result = await productLaunchCoordinator({
-        claim: makeClaim(),
-        reader: {} as never,
-        cortex: {} as never,
-        bus: bus2 as never,
-        sellerIds: ["test-seller"],
-      });
-
-      const anyMention = result.findings.some(
-        (f) => f.summary.includes("cost") || f.summary.includes("USD"),
-      );
-      expect(anyMention).toBe(true);
-    });
+    expect(store.getLaunch("launch-1")?.status).toBe("ready_to_publish");
+    expect(bus.enqueued.some((message) => message.messageType === "progress")).toBe(true);
   });
 });

@@ -9,6 +9,9 @@ import type {
 } from "./types.js";
 
 import { mockResponse } from "./mockData.js";
+import { assertMercadoLibreWriteDisabled } from "./writeGate.js";
+
+export { assertMercadoLibreWriteDisabled, MercadoLibreWriteBlockedError } from "./writeGate.js";
 
 import {
   // Helper utilities
@@ -2400,16 +2403,19 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
     },
 
     publishItem: async (sellerId, item) => {
+      assertMercadoLibreWriteDisabled("publishItem", sellerId);
       const payload = await apiRequestJson(sellerId, "POST", "/items", undefined, item);
       return normalizeWriteResponse({ sellerId, payload, now });
     },
 
     updateItem: async (sellerId, itemId, updates) => {
+      assertMercadoLibreWriteDisabled("updateItem", sellerId);
       const payload = await apiRequestJson(sellerId, "PUT", `/items/${itemId}`, undefined, updates);
       return normalizeWriteResponse({ sellerId, payload, now });
     },
 
     relistItem: async (sellerId, itemId, input) => {
+      assertMercadoLibreWriteDisabled("relistItem", sellerId);
       const payload = await apiRequestJson(
         sellerId,
         "POST",
@@ -2421,6 +2427,7 @@ export function createMlClient(input: { oauthManager: OAuthManager; now: Date })
     },
 
     createCatalogListing: async (sellerId, input) => {
+      assertMercadoLibreWriteDisabled("createCatalogListing", sellerId);
       const payload = await apiRequestJson(
         sellerId,
         "POST",

@@ -20,6 +20,17 @@ describe("agent daemon startup contract", () => {
     expect(memory).not.toHaveProperty("createSqliteEconomicOutcomeStore");
   });
 
+  it("passes the shared launch persistence into the production scheduler", () => {
+    const source = readFileSync(scriptPath, "utf8");
+    const start = source.indexOf("const handle = startDaemonScheduler({");
+    const schedulerConfig = source.slice(start, source.indexOf("});", start));
+
+    expect(schedulerConfig).toContain(
+      "productCatalogStore: persistenceRuntime.productCatalogStore",
+    );
+    expect(schedulerConfig).toContain("launchCostTracker: persistenceRuntime.launchCostTracker");
+  });
+
   it("fails closed for generic economic restore while delegated capabilities remain usable", async () => {
     const directory = mkdtempSync(join(tmpdir(), "msl-agent-daemons-"));
     const durabilityEnabled = process.env.MSL_DURABILITY_ENABLED;

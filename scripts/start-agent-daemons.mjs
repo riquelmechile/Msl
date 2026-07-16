@@ -41,6 +41,7 @@ const {
   createEconomicLearningDaemon,
   createEconomicIngestionDaemon,
   createDaemonLogger,
+  resolveProductLaunchRuntimePath,
 } = await import("@msl/agent");
 const { createGraphEngine, BackupScheduler } = await import("@msl/memory");
 const { getMlAccountRoleConfig } = await import("@msl/mercadolibre");
@@ -48,7 +49,8 @@ const { createSqliteApprovalQueueRepository, createInMemoryApprovalQueueReposito
   await import("@msl/tools");
 
 // ── Admitted persistence + Cortex ──────────────────────────────
-const persistenceRuntime = createAgentDaemonPersistenceRuntime(cortexPath);
+const launchRuntimePath = resolveProductLaunchRuntimePath(env, cortexPath);
+const persistenceRuntime = createAgentDaemonPersistenceRuntime(launchRuntimePath);
 const { bus, consensusStore, reader } = persistenceRuntime;
 const engine = createGraphEngine(cortexPath);
 
@@ -86,7 +88,7 @@ let backupScheduler = undefined;
 if (durabilityEnabled) {
   backupScheduler = new BackupScheduler({
     entries: [
-      { manager: persistenceRuntime.databaseManager, dbPath: cortexPath, dbType: "cortex" },
+      { manager: persistenceRuntime.databaseManager, dbPath: launchRuntimePath, dbType: "cortex" },
     ],
     backupDir,
     backupIntervalMs: 24 * 60 * 60 * 1000, // 24h
@@ -217,6 +219,8 @@ if (botToken && adminChatIds.length > 0) {
 const { createDaemonAdvisorsFromEnv } = await import("@msl/agent");
 const advisors = createDaemonAdvisorsFromEnv(env, {
   supplierMirrorStore,
+  productCatalogStore: persistenceRuntime.productCatalogStore,
+  launchCostTracker: persistenceRuntime.launchCostTracker,
 });
 
 // ── Webhook ingestor (optional) ──────────────────────────────
@@ -239,6 +243,8 @@ const handle = startDaemonScheduler({
   consensusStore,
   ceoContext,
   supplierMirrorStore,
+  productCatalogStore: persistenceRuntime.productCatalogStore,
+  launchCostTracker: persistenceRuntime.launchCostTracker,
   ...advisors,
   intervalMs: 15 * 60 * 1000, // 15 minutes
   ...(economicLearningDaemon ? { economicLearningDaemon } : {}),

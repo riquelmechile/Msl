@@ -5,6 +5,8 @@ import type {
   ProductCatalogEntry,
   ProductCatalogStore,
   ProductImageEntry,
+  ProductLaunchCostInput,
+  ProductLaunchDetailsUpdate,
   ProductLaunchEntry,
   ProductLaunchStatus,
   ProductLaunchStoreInput,
@@ -59,7 +61,16 @@ CREATE INDEX IF NOT EXISTS idx_pi_product_id ON product_images(product_id);
 CREATE INDEX IF NOT EXISTS idx_pl_product_id ON product_launches(product_id);
 CREATE INDEX IF NOT EXISTS idx_pl_status ON product_launches(status);
 CREATE INDEX IF NOT EXISTS idx_pl_seller_id ON product_launches(seller_id);
-CREATE INDEX IF NOT EXISTS idx_pl_chat_id ON product_launches(chat_id);
+
+CREATE TABLE IF NOT EXISTS product_launch_cost_events (
+  event_key TEXT PRIMARY KEY,
+  launch_id TEXT NOT NULL REFERENCES product_launches(launch_id),
+  seller_id TEXT NOT NULL,
+  source TEXT NOT NULL CHECK(source IN ('google_lens', 'deepseek', 'minimax')),
+  operation TEXT NOT NULL,
+  amount_usd REAL NOT NULL CHECK(amount_usd >= 0),
+  measured_at TEXT NOT NULL
+);
 `;
 
 // ── Row types (internal — match SQLite columns) ──────────────────────
@@ -164,6 +175,11 @@ function rowToLaunchEntry(row: ProductLaunchRow): ProductLaunchEntry {
 
 export function createProductCatalogStore(db: Database.Database): ProductCatalogStore {
   db.exec(SCHEMA_SQL);
+  const launchColumns = db.pragma("table_info(product_launches)") as Array<{ name: string }>;
+  if (!launchColumns.some((column) => column.name === "chat_id")) {
+    db.exec("ALTER TABLE product_launches ADD COLUMN chat_id TEXT");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_pl_chat_id ON product_launches(chat_id)");
 
   // ── Prepared statements ────────────────────────────────────
 
@@ -206,9 +222,46 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     SELECT * FROM product_launches WHERE launch_id = ?
   `);
 
+  const selectLaunchForSellerStmt = db.prepare(`
+    SELECT * FROM product_launches WHERE launch_id = ? AND seller_id = ?
+  `);
+
   const updateStatusStmt = db.prepare(`
     UPDATE product_launches SET status = @status, completed_at = @completedAt
     WHERE launch_id = @launchId
+  `);
+
+  const transitionStatusStmt = db.prepare(`
+    UPDATE product_launches SET status = @status, completed_at = @completedAt
+    WHERE launch_id = @launchId AND seller_id = @sellerId AND status = @expectedStatus
+  `);
+
+  const updateDetailsStmt = db.prepare(`
+    UPDATE product_launches SET
+      ml_item_id = COALESCE(@mlItemId, ml_item_id),
+      listing_type = COALESCE(@listingType, listing_type),
+      price_amount = COALESCE(@priceAmount, price_amount),
+      price_currency = COALESCE(@priceCurrency, price_currency),
+      title = COALESCE(@title, title),
+      description = COALESCE(@description, description),
+      quality_score_predicted = COALESCE(@qualityScorePredicted, quality_score_predicted),
+      quality_score_actual = COALESCE(@qualityScoreActual, quality_score_actual)
+    WHERE launch_id = @launchId AND seller_id = @sellerId
+  `);
+
+  const insertCostEventStmt = db.prepare(`
+    INSERT OR IGNORE INTO product_launch_cost_events
+      (event_key, launch_id, seller_id, source, operation, amount_usd, measured_at)
+    VALUES (@eventKey, @launchId, @sellerId, @source, @operation, @amountUsd, @measuredAt)
+  `);
+
+  const selectCostTotalStmt = db.prepare(`
+    SELECT COALESCE(SUM(amount_usd), 0) AS total
+    FROM product_launch_cost_events WHERE launch_id = ? AND seller_id = ?
+  `);
+
+  const updateCostTotalStmt = db.prepare(`
+    UPDATE product_launches SET cost_total_usd = ? WHERE launch_id = ? AND seller_id = ?
   `);
 
   const selectLaunchesByProductStmt = db.prepare(`
@@ -217,7 +270,7 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
 
   const selectPendingByChatIdStmt = db.prepare(`
     SELECT * FROM product_launches
-    WHERE chat_id = ? AND status NOT IN ('ready_to_publish', 'rejected')
+    WHERE chat_id = ? AND seller_id = ? AND status NOT IN ('ready_to_publish', 'rejected')
     ORDER BY created_at DESC LIMIT 1
   `);
 
@@ -303,6 +356,14 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     return row ? rowToLaunchEntry(row) : undefined;
   };
 
+  const getLaunchForSeller = (
+    launchId: string,
+    sellerId: string,
+  ): ProductLaunchEntry | undefined => {
+    const row = selectLaunchForSellerStmt.get(launchId, sellerId) as ProductLaunchRow | undefined;
+    return row ? rowToLaunchEntry(row) : undefined;
+  };
+
   const updateLaunchStatus = (
     launchId: string,
     status: ProductLaunchStatus,
@@ -320,12 +381,75 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     return rowToLaunchEntry(assertLaunchExists(launchId));
   };
 
+  const transitionLaunchStatus = (
+    launchId: string,
+    sellerId: string,
+    expectedStatus: ProductLaunchStatus,
+    status: ProductLaunchStatus,
+  ): ProductLaunchEntry | undefined => {
+    const isCreativeFailure = expectedStatus === "generating_creative" && status === "rejected";
+    if (!isCreativeFailure && !isValidTransition(expectedStatus, status)) {
+      throw new Error(`Invalid launch state transition: "${expectedStatus}" → "${status}"`);
+    }
+    const isTerminal = status === "ready_to_publish" || status === "rejected";
+    const result = transitionStatusStmt.run({
+      launchId,
+      sellerId,
+      expectedStatus,
+      status,
+      completedAt: isTerminal ? new Date().toISOString() : null,
+    });
+    return result.changes === 1 ? getLaunchForSeller(launchId, sellerId) : undefined;
+  };
+
+  const updateLaunchDetails = (
+    launchId: string,
+    sellerId: string,
+    updates: ProductLaunchDetailsUpdate,
+  ): ProductLaunchEntry => {
+    const existing = getLaunchForSeller(launchId, sellerId);
+    if (!existing)
+      throw new Error(`ProductLaunch "${launchId}" not found for seller "${sellerId}"`);
+    updateDetailsStmt.run({
+      launchId,
+      sellerId,
+      mlItemId: updates.mlItemId ?? null,
+      listingType: updates.listingType ?? null,
+      priceAmount: updates.priceAmount ?? null,
+      priceCurrency: updates.priceCurrency ?? null,
+      title: updates.title ?? null,
+      description: updates.description ?? null,
+      qualityScorePredicted: updates.qualityScorePredicted ?? null,
+      qualityScoreActual: updates.qualityScoreActual ?? null,
+    });
+    return getLaunchForSeller(launchId, sellerId)!;
+  };
+
+  const recordLaunchCostTransaction = db.transaction(
+    (input: ProductLaunchCostInput): { recorded: boolean; totalUsd: number } => {
+      if (!getLaunchForSeller(input.launchId, input.sellerId)) {
+        throw new Error(
+          `ProductLaunch "${input.launchId}" not found for seller "${input.sellerId}"`,
+        );
+      }
+      const result = insertCostEventStmt.run(input);
+      const total = (selectCostTotalStmt.get(input.launchId, input.sellerId) as { total: number })
+        .total;
+      updateCostTotalStmt.run(total, input.launchId, input.sellerId);
+      return { recorded: result.changes === 1, totalUsd: total };
+    },
+  );
+  const recordLaunchCost = (input: ProductLaunchCostInput) => recordLaunchCostTransaction(input);
+
   const getLaunchesByProduct = (productId: string): ProductLaunchEntry[] => {
     return (selectLaunchesByProductStmt.all(productId) as ProductLaunchRow[]).map(rowToLaunchEntry);
   };
 
-  const getPendingLaunchByChatId = (chatId: string): ProductLaunchEntry | undefined => {
-    const row = selectPendingByChatIdStmt.get(chatId) as ProductLaunchRow | undefined;
+  const getPendingLaunchByChatId = (
+    chatId: string,
+    sellerId: string,
+  ): ProductLaunchEntry | undefined => {
+    const row = selectPendingByChatIdStmt.get(chatId, sellerId) as ProductLaunchRow | undefined;
     return row ? rowToLaunchEntry(row) : undefined;
   };
 
@@ -336,7 +460,11 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
     getImages,
     createLaunch,
     getLaunch,
+    getLaunchForSeller,
     updateLaunchStatus,
+    transitionLaunchStatus,
+    updateLaunchDetails,
+    recordLaunchCost,
     getLaunchesByProduct,
     getPendingLaunchByChatId,
   };

@@ -6,7 +6,10 @@ import type { ProductCatalogStore } from "@msl/domain";
 export type CostSource = "google_lens" | "deepseek" | "minimax";
 
 export type LaunchCostEvent = {
+  /** Stable retry key. Defaults to launch/source/operation when omitted. */
+  eventKey?: string;
   launchId: string;
+  sellerId?: string;
   source: CostSource;
   estimatedCostUsd: number;
   /** What was done (e.g. "vision-recognition", "market-research", "image-generation") */
@@ -40,6 +43,8 @@ export class LaunchCostTracker {
       ledgerStore?: WorkforceCostCacheLedgerStore;
       /** Optional ProductCatalogStore for persisting cost_total_usd to the launch */
       catalogStore?: ProductCatalogStore;
+      /** Maximum accumulated external API cost for one launch. */
+      maxLaunchUsd?: number;
     } = {},
   ) {}
 
@@ -51,29 +56,62 @@ export class LaunchCostTracker {
    * Updates in-memory aggregation and optionally persists to the ledger
    * and catalog store.
    */
-  record(event: LaunchCostEvent): void {
+  canAfford(
+    launchId: string,
+    sellerId: string,
+    estimatedCostUsd: number,
+  ): { allowed: boolean; reason?: string } {
+    const total = this.persistedTotal(launchId, sellerId);
+    const max = this.options.maxLaunchUsd ?? 0.25;
+    return total + estimatedCostUsd <= max
+      ? { allowed: true }
+      : {
+          allowed: false,
+          reason: `Launch cost budget exceeded ($${max.toFixed(2)} USD limit)`,
+        };
+  }
+
+  record(event: LaunchCostEvent): { recorded: boolean; totalUsd: number } {
+    const eventKey = event.eventKey ?? `${event.launchId}:${event.source}:${event.operation}`;
+    const existingEntry = this.costsByLaunch.get(event.launchId);
+    if (existingEntry?.events.some((item) => item.eventKey === eventKey)) {
+      return { recorded: false, totalUsd: existingEntry.totalUsd };
+    }
+
+    if (this.options.catalogStore && event.sellerId) {
+      const persisted = this.options.catalogStore.recordLaunchCost({
+        eventKey,
+        launchId: event.launchId,
+        sellerId: event.sellerId,
+        source: event.source,
+        operation: event.operation,
+        amountUsd: event.estimatedCostUsd,
+        measuredAt: event.measuredAt ?? new Date().toISOString(),
+      });
+      if (!persisted.recorded) return persisted;
+    }
+
     // ── In-memory aggregation ──
     let entry = this.costsByLaunch.get(event.launchId);
     if (!entry) {
       entry = { totalUsd: 0, events: [] };
       this.costsByLaunch.set(event.launchId, entry);
     }
-    entry.totalUsd += event.estimatedCostUsd;
-    entry.events.push(event);
+    entry.totalUsd =
+      this.options.catalogStore && event.sellerId
+        ? this.persistedTotal(event.launchId, event.sellerId)
+        : entry.totalUsd + event.estimatedCostUsd;
+    entry.events.push({ ...event, eventKey });
 
     // ── Source counts ──
     const currentCount = this.countsBySource.get(event.source) ?? 0;
     this.countsBySource.set(event.source, currentCount + 1);
 
-    // ── Persist to catalog store ──
-    if (this.options.catalogStore) {
-      this.persistCostToStore(event.launchId, entry.totalUsd);
-    }
-
     // ── Persist to workforce ledger ──
     if (this.options.ledgerStore) {
       this.persistCostToLedger(event);
     }
+    return { recorded: true, totalUsd: entry.totalUsd };
   }
 
   /**
@@ -89,7 +127,11 @@ export class LaunchCostTracker {
    * Get the total accumulated cost for a specific launch.
    */
   getTotalCost(launchId: string): number {
-    return this.costsByLaunch.get(launchId)?.totalUsd ?? 0;
+    return (
+      this.options.catalogStore?.getLaunch(launchId)?.costTotalUsd ??
+      this.costsByLaunch.get(launchId)?.totalUsd ??
+      0
+    );
   }
 
   /**
@@ -147,45 +189,12 @@ export class LaunchCostTracker {
    * Update the cost_total_usd column in the product_launches table.
    * Uses a silent best-effort approach — failures are logged but not thrown.
    */
-  private persistCostToStore(launchId: string, totalUsd: number): void {
-    try {
-      // getLaunch + updateLaunchStatus doesn't support cost updates directly,
-      // so we query and re-create with updated cost. This is a soft-upsert.
-      const store = this.options.catalogStore!;
-      const existing = store.getLaunch(launchId);
-      if (!existing) {
-        console.warn(
-          `[launchCostTracker] Launch "${launchId}" not found in store — skipping cost persist`,
-        );
-        return;
-      }
-      // Re-create the launch entry with the updated cost
-      const input: Record<string, unknown> = {
-        launchId: existing.launchId,
-        productId: existing.productId,
-        sellerId: existing.sellerId,
-        status: existing.status,
-        costTotalUsd: totalUsd,
-        createdAt: existing.createdAt,
-      };
-      if (existing.mlItemId !== undefined) input.mlItemId = existing.mlItemId;
-      if (existing.listingType !== undefined) input.listingType = existing.listingType;
-      if (existing.priceAmount !== undefined) input.priceAmount = existing.priceAmount;
-      if (existing.priceCurrency !== undefined) input.priceCurrency = existing.priceCurrency;
-      if (existing.title !== undefined) input.title = existing.title;
-      if (existing.description !== undefined) input.description = existing.description;
-      if (existing.qualityScorePredicted !== undefined)
-        input.qualityScorePredicted = existing.qualityScorePredicted;
-      if (existing.qualityScoreActual !== undefined)
-        input.qualityScoreActual = existing.qualityScoreActual;
-      if (existing.completedAt !== undefined) input.completedAt = existing.completedAt;
-      store.createLaunch(input as Parameters<ProductCatalogStore["createLaunch"]>[0]);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[launchCostTracker] Failed to persist cost for launch "${launchId}": ${errorMessage}`,
-      );
-    }
+  private persistedTotal(launchId: string, sellerId: string): number {
+    return (
+      this.options.catalogStore?.getLaunchForSeller(launchId, sellerId)?.costTotalUsd ??
+      this.costsByLaunch.get(launchId)?.totalUsd ??
+      0
+    );
   }
 
   /**
@@ -200,7 +209,8 @@ export class LaunchCostTracker {
         minimax: "minimax",
       };
       ledger.insertEntry({
-        entryId: `launch-cost-${event.launchId}-${event.source}-${Date.now()}`,
+        entryId:
+          event.eventKey ?? `launch-cost-${event.launchId}-${event.source}-${event.operation}`,
         agentId: "product-launch",
         laneId: "product-launch",
         provider: providerMap[event.source],

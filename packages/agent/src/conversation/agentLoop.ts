@@ -112,6 +112,9 @@ import type { AccountBrainService } from "./accountBrainService.js";
 import { createGetAccountBrainStatusTool, createCompareAccountAssetsTool } from "./tools.js";
 import { createFinanceDirectorTools } from "./tools/financeDirectorTools.js";
 import { createEconomicLearningTools } from "./tools/economicLearningTools.js";
+import { createProductLaunchTools } from "./tools/productLaunchTools.js";
+import type { AgentMessageBusStore } from "./agentMessageBusStore.js";
+import type { ProductCatalogStore } from "@msl/domain";
 import {
   createInspectUnitEconomicsTool,
   createInspectEconomicOutcomeTool,
@@ -195,6 +198,8 @@ export type AgentLoopConfig = {
   autonomyEngine?: AutonomyEngine;
   syncEngine?: ProductSyncEngine;
   mlClient?: MlClient;
+  productCatalogStore?: ProductCatalogStore;
+  productLaunchBus?: AgentMessageBusStore;
   mlcClient?: MlcApiClient;
   escribano?: import("./escribano.js").EscribanoObserver;
   metrics?: MetricsCollector;
@@ -302,6 +307,20 @@ export function createAgentLoop(config: AgentLoopConfig) {
   );
   const tools = config.tools ?? [];
   const toolMap = new Map(tools.map((t) => [t.name, t]));
+
+  if (
+    config.productCatalogStore &&
+    config.productLaunchBus &&
+    config.companyAgentAdminAuthorized === true
+  ) {
+    for (const tool of createProductLaunchTools({
+      catalogStore: config.productCatalogStore,
+      bus: config.productLaunchBus,
+      ...(config.sellerId ? { authorizedSellerId: config.sellerId } : {}),
+    })) {
+      if (!toolMap.has(tool.name)) toolMap.set(tool.name, tool);
+    }
+  }
 
   let pendingDecoyProposal: DecoyProposal | null = null;
 

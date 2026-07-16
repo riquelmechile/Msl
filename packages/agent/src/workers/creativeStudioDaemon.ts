@@ -9,9 +9,74 @@ import {
   MlDiagnosticAdapter,
   CortexBridge,
   createMinimaxProviderFromEnv,
+  MinimaxRequestError,
 } from "@msl/creative-studio";
 import type { CortexSink } from "@msl/creative-studio";
 import type { GraphEngine } from "@msl/memory";
+import {
+  enqueueProductLaunchResult,
+  parseProductLaunchEnvelope,
+  type ProductLaunchEnvelope,
+} from "./productLaunchEnvelope.js";
+
+type ProductLaunchCreativeRequest = CreativeAssetRequest & {
+  productLaunch?: ProductLaunchEnvelope;
+};
+
+const LAST_RETRY_ATTEMPT = 2;
+const NON_RETRYABLE_MINIMAX_FAILURES = new Set([
+  "auth_error",
+  "insufficient_balance",
+  "content_blocked",
+]);
+
+function finishFailedLaunch(
+  claim: Parameters<DaemonHandler>[0]["claim"],
+  bus: Parameters<DaemonHandler>[0]["bus"],
+  store: Parameters<DaemonHandler>[0]["productCatalogStore"],
+  envelope: ProductLaunchEnvelope,
+  reason: string,
+) {
+  if (!store) throw new Error("Product launch catalog store is unavailable");
+  const transitioned = store.transitionLaunchStatus(
+    envelope.launchId,
+    envelope.sellerId,
+    "generating_creative",
+    "rejected",
+  );
+  const launch = transitioned ?? store.getLaunchForSeller(envelope.launchId, envelope.sellerId);
+  if (launch?.status !== "rejected") {
+    throw new Error(`Failed to reject product launch ${envelope.launchId}`);
+  }
+  const notification = bus.enqueue({
+    senderAgentId: "creative-studio",
+    receiverAgentId: "ceo",
+    messageType: "progress",
+    payloadJson: JSON.stringify({
+      launchId: envelope.launchId,
+      sellerId: envelope.sellerId,
+      stage: "rejected",
+      reason,
+      noMutationExecuted: true,
+    }),
+    dedupeKey: `launch-failed:${envelope.launchId}:creative-studio`,
+    correlationId: envelope.launchId,
+    parentMessageId: claim.messageId,
+    sellerId: envelope.sellerId,
+  });
+  return {
+    findings: [
+      {
+        kind: "alert" as const,
+        severity: "warning" as const,
+        summary: reason,
+        evidenceIds: [claim.messageId],
+      },
+    ],
+    proposalEnqueued: false,
+    messageIds: [notification.messageId],
+  };
+}
 
 // ── Environment helpers ─────────────────────────────────────────────
 
@@ -118,6 +183,7 @@ export const creativeStudioDaemon: DaemonHandler = async ({
   cortex,
   bus,
   sellerIds: _sellerIds,
+  productCatalogStore,
 }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
@@ -150,9 +216,9 @@ export const creativeStudioDaemon: DaemonHandler = async ({
   });
 
   // ── 2. Parse request ─────────────────────────────────────────
-  let request: CreativeAssetRequest;
+  let request: ProductLaunchCreativeRequest;
   try {
-    request = JSON.parse(claim.payloadJson) as CreativeAssetRequest;
+    request = JSON.parse(claim.payloadJson) as ProductLaunchCreativeRequest;
   } catch {
     console.error(`[creative-studio] Failed to parse payload for message ${claim.messageId}`);
     findings.push({
@@ -162,6 +228,28 @@ export const creativeStudioDaemon: DaemonHandler = async ({
       evidenceIds: [claim.messageId],
     });
     return { findings, proposalEnqueued: false, messageIds };
+  }
+  let launchEnvelope: ProductLaunchEnvelope | undefined;
+  if (request.productLaunch) {
+    launchEnvelope = parseProductLaunchEnvelope({
+      ...claim,
+      payloadJson: JSON.stringify(request.productLaunch),
+    });
+    if (
+      !launchEnvelope ||
+      launchEnvelope.sellerId !== request.sellerId ||
+      launchEnvelope.stage !== "generating_creative" ||
+      launchEnvelope.task !== "studio-artist" ||
+      claim.correlationId !== launchEnvelope.launchId
+    ) {
+      findings.push({
+        kind: "alert",
+        severity: "warning",
+        summary: "Creative Studio: invalid product launch correlation",
+        evidenceIds: [claim.messageId],
+      });
+      return { findings, proposalEnqueued: false, messageIds };
+    }
   }
 
   // ── 3. Policy check ──────────────────────────────────────────
@@ -238,6 +326,18 @@ export const creativeStudioDaemon: DaemonHandler = async ({
     result = await provider.execute(request);
   } catch (err) {
     releaseConcurrencySlot();
+    if (launchEnvelope) {
+      const nonRetryable =
+        err instanceof MinimaxRequestError && NON_RETRYABLE_MINIMAX_FAILURES.has(err.category);
+      if (!nonRetryable && claim.attempts < LAST_RETRY_ATTEMPT) throw err;
+      return finishFailedLaunch(
+        claim,
+        bus,
+        productCatalogStore,
+        launchEnvelope,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`[creative-studio] Provider execution failed: ${errorMessage}`);
     findings.push({
@@ -249,6 +349,18 @@ export const creativeStudioDaemon: DaemonHandler = async ({
     return { findings, proposalEnqueued: false, messageIds };
   }
   releaseConcurrencySlot();
+  if (launchEnvelope && (result.status === "failed" || result.status === "rejected")) {
+    if (result.status === "failed" && claim.attempts < LAST_RETRY_ATTEMPT) {
+      throw new Error(`Creative Studio launch generation failed for ${launchEnvelope.launchId}`);
+    }
+    return finishFailedLaunch(
+      claim,
+      bus,
+      productCatalogStore,
+      launchEnvelope,
+      `MiniMax returned ${result.status}`,
+    );
+  }
 
   // ── 6. Record spend (successful only) ────────────────────────
   if (result.actualCostUsd !== undefined) {
@@ -359,6 +471,17 @@ export const creativeStudioDaemon: DaemonHandler = async ({
     dedupeKey: `creative-studio-${request.requestId}`,
   });
   messageIds.push(message.messageId);
+
+  const generatedImageUrls = result.outputs
+    .filter((output) => output.kind === "image" && output.storageUri.length > 0)
+    .map((output) => output.storageUri);
+  if (launchEnvelope && generatedImageUrls.length > 0) {
+    const completion = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      imageUrls: generatedImageUrls,
+      images: generatedImageUrls,
+    });
+    messageIds.push(completion.messageId);
+  }
 
   // ── 10. Record outcome in Cortex ─────────────────────────────
   try {
