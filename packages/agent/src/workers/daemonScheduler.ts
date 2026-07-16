@@ -42,6 +42,8 @@ import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.
 import type { AccountBrainService } from "../conversation/accountBrainService.js";
 import type { CreativeJobQueueStore } from "../conversation/creativeJobQueueStore.js";
 import type { OwnedEcommerceStore } from "@msl/memory";
+import type { ProductCatalogStore } from "@msl/domain";
+import type { LaunchCostTracker } from "../economics/launchCostTracker.js";
 import { OwnedEcommerceIntelligenceService } from "../ecommerce/ownedEcommerceIntelligenceService.js";
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -101,6 +103,10 @@ export type DaemonSchedulerConfig = {
   /** Optional economic-ingestion daemon handler (pre-built). Registered
    *  only when MSL_ECONOMIC_INGESTION_ENABLED is "true". */
   economicIngestionDaemon?: DaemonHandler;
+  /** Durable product launch state shared with Telegram and CEO tools. */
+  productCatalogStore?: ProductCatalogStore;
+  /** Durable, budget-aware launch cost tracker. */
+  launchCostTracker?: LaunchCostTracker;
 };
 
 // ── Handler Map ─────────────────────────────────────────────────────
@@ -368,6 +374,8 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
               accountBrainService: config.accountBrainService,
               creativeJobQueueStore: config.creativeJobQueueStore,
               ownedEcommerceStore: config.ownedEcommerceStore,
+              productCatalogStore: config.productCatalogStore,
+              launchCostTracker: config.launchCostTracker,
             } as Parameters<DaemonHandler>[0]);
             config.bus.resolve(claim.messageId, result);
           } catch (err) {
@@ -380,6 +388,50 @@ export function startDaemonScheduler(config: DaemonSchedulerConfig): {
         }
       }),
     );
+
+    // Event-only pipelines can enqueue their next lane while this cycle is running.
+    // Drain a bounded number of hops so a launch does not wait 15 minutes per stage.
+    for (let round = 0; round < 16; round += 1) {
+      let processed = 0;
+      for (const laneId of EVENT_ONLY_LANES) {
+        const handler = handlerMap[laneId];
+        if (!handler) continue;
+        for (const claim of config.bus.claimNext(laneId)) {
+          processed += 1;
+          try {
+            const result = await handler({
+              claim,
+              reader: cachedReader,
+              cortex: config.cortex,
+              bus: config.bus,
+              sellerIds: config.sellerIds,
+              accountContexts,
+              supplierMirrorStore: config.supplierMirrorStore,
+              ceoContext: config.ceoContext,
+              advisor: config.advisor,
+              operationsAdvisor: config.operationsAdvisor,
+              catalogAdvisor: config.catalogAdvisor,
+              costSupplierAdvisor: config.costSupplierAdvisor,
+              creativeAdvisor: config.creativeAdvisor,
+              intelligenceService,
+              accountBrainService: config.accountBrainService,
+              creativeJobQueueStore: config.creativeJobQueueStore,
+              ownedEcommerceStore: config.ownedEcommerceStore,
+              productCatalogStore: config.productCatalogStore,
+              launchCostTracker: config.launchCostTracker,
+            } as Parameters<DaemonHandler>[0]);
+            config.bus.resolve(claim.messageId, result);
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            console.error(
+              `[daemon-scheduler] Event daemon ${laneId} failed for message ${claim.messageId}: ${errorMessage}`,
+            );
+            config.bus.fail(claim.messageId, errorMessage);
+          }
+        }
+      }
+      if (processed === 0) break;
+    }
 
     // ── CEO message consumption ────────────────────────────────────
     // Daemons enqueue proposals addressed to "ceo" — consume them so

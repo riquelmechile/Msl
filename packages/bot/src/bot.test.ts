@@ -132,6 +132,10 @@ vi.mock("@msl/agent", () => ({
   createAutonomyEngine: mocks.mockCreateAutonomyEngine,
   createProductCatalogStore: vi.fn(() => ({})),
   createAgentMessageBusStore: vi.fn(() => ({})),
+  resolveProductLaunchRuntimePath: (
+    env: { MSL_PRODUCT_LAUNCH_SQLITE_PATH?: string },
+    fallback?: string,
+  ) => env.MSL_PRODUCT_LAUNCH_SQLITE_PATH?.trim() || fallback?.trim() || undefined,
   EscribanoObserver: mocks.mockEscribanoObserver,
   OperationalEvidenceProvider: vi.fn(),
   startBackgroundIngestion: vi.fn(() => ({ stop: vi.fn() })),
@@ -845,6 +849,10 @@ describe("message:photo handler (product launch)", () => {
     getLaunch: vi.fn(),
     updateLaunchStatus: vi.fn(),
     getLaunchesByProduct: vi.fn(),
+    getLaunchForSeller: vi.fn(),
+    transitionLaunchStatus: vi.fn(),
+    updateLaunchDetails: vi.fn(),
+    recordLaunchCost: vi.fn().mockReturnValue({ recorded: true, totalUsd: 0 }),
     getPendingLaunchByChatId: vi.fn().mockReturnValue(undefined),
   };
 
@@ -872,6 +880,8 @@ describe("message:photo handler (product launch)", () => {
       mockClient: true,
     },
     productLaunchEnabled: true,
+    sellerId: "seller-target",
+    adminAuthorization: { enabled: true, allowedChatIds: ["123456"] },
     productCatalogStore,
     messageBus,
   };
@@ -919,6 +929,7 @@ describe("message:photo handler (product launch)", () => {
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
     mockBusEnqueue.mockReturnValue({ messageId: "bus-msg-1" });
+    productCatalogStore.getPendingLaunchByChatId.mockReturnValue(undefined);
   });
 
   it("registers a message:photo handler when product launch is enabled", () => {
@@ -926,6 +937,34 @@ describe("message:photo handler (product launch)", () => {
     const handler = getPhotoHandler();
     expect(handler).toBeDefined();
     expect(typeof handler).toBe("function");
+  });
+
+  it("rejects a photo from a requester outside the admin allowlist", async () => {
+    createTelegramBot({
+      ...photoConfig,
+      adminAuthorization: { enabled: true, allowedChatIds: ["999999"] },
+    });
+
+    await getPhotoHandler()!(makePhotoCtx());
+
+    expect(mockGetFile).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(mockUpsertProduct).not.toHaveBeenCalled();
+    expect(mockCreateLaunch).not.toHaveBeenCalled();
+    expect(mockBusEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects a photo when admin authorization is not configured", async () => {
+    const { adminAuthorization: _authorization, ...unconfigured } = photoConfig;
+    createTelegramBot(unconfigured);
+
+    await getPhotoHandler()!(makePhotoCtx());
+
+    expect(mockGetFile).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(mockUpsertProduct).not.toHaveBeenCalled();
+    expect(mockCreateLaunch).not.toHaveBeenCalled();
+    expect(mockBusEnqueue).not.toHaveBeenCalled();
   });
 
   it("downloads photo, saves, creates launch, and enqueues on the bus", async () => {
@@ -980,6 +1019,37 @@ describe("message:photo handler (product launch)", () => {
     expect(mockCreateLaunch).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Zapatillas Nike Air Max" }),
     );
+  });
+
+  it("attaches a follow-up photo to the pending launch for the same seller", async () => {
+    productCatalogStore.getPendingLaunchByChatId.mockReturnValue({
+      launchId: "pending-launch",
+      productId: "pending-product",
+      sellerId: "seller-target",
+      status: "recognizing",
+      createdAt: new Date().toISOString(),
+    });
+    createTelegramBot(photoConfig);
+    const handler = getPhotoHandler();
+
+    await handler!(makePhotoCtx());
+
+    expect(productCatalogStore.getPendingLaunchByChatId).toHaveBeenCalledWith(
+      "123456",
+      "seller-target",
+    );
+    expect(productCatalogStore.upsertImage).toHaveBeenCalledWith(
+      expect.objectContaining({ productId: "pending-product", source: "ceo_telegram" }),
+    );
+    expect(mockBusEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageType: "additional_photo",
+        sellerId: "seller-target",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        payloadJson: expect.stringContaining('"imageUrls"'),
+      }),
+    );
+    expect(mockCreateLaunch).not.toHaveBeenCalled();
   });
 
   it("works without caption (omits title field)", async () => {

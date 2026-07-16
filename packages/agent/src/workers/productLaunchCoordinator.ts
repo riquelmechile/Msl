@@ -1,643 +1,388 @@
-import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
-import type { CeoHandlerContext } from "./daemonTypes.js";
-import { LaunchCostTracker, LAUNCH_COST_ESTIMATES } from "../economics/launchCostTracker.js";
+import type { ProductLaunchStatus } from "@msl/domain";
+import type { AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
+import type { CeoHandlerContext, DaemonFinding, DaemonHandler } from "./daemonTypes.js";
+import {
+  parseProductLaunchEnvelope,
+  type ProductLaunchEnvelope,
+  type ProductLaunchTask,
+} from "./productLaunchEnvelope.js";
 
-// ── Pipeline Stage Definitions ────────────────────────────────────────
+type CoordinatorContext = Parameters<DaemonHandler>[0];
 
-type PipelineStage =
-  | "photo_received"
-  | "recognizing"
-  | "researching"
-  | "generating_creative"
-  | "composing"
-  | "awaiting_approval"
-  | "approved"
-  | "ready_to_publish"
-  | "rejected";
+function alert(summary: string, messageId: string): DaemonFinding {
+  return { kind: "alert", severity: "warning", summary, evidenceIds: [messageId] };
+}
 
-const _STAGE_LABELS: Record<PipelineStage, string> = {
-  photo_received: "📸 Foto recibida",
-  recognizing: "🔍 Identificando producto…",
-  researching: "📊 Investigando specs y precios…",
-  generating_creative: "🎨 Generando imágenes profesionales…",
-  composing: "📦 Componiendo publicación…",
-  awaiting_approval: "✅ Esperando aprobación",
-  approved: "👍 Aprobada — preparando publicación",
-  ready_to_publish: "🚀 Lista para publicar",
-  rejected: "❌ Rechazada",
-};
-
-const STAGE_EMOJI: Record<PipelineStage, string> = {
-  photo_received: "📸",
-  recognizing: "🔍",
-  researching: "📊",
-  generating_creative: "🎨",
-  composing: "📝",
-  awaiting_approval: "👀",
-  approved: "✅",
-  ready_to_publish: "🚀",
-  rejected: "❌",
-};
-
-// ── Coordinator State ─────────────────────────────────────────────────
-
-type CoordinatorPayload = {
-  launchId: string;
-  productId?: string;
-  sellerId?: string;
-  imageUrls?: string[];
-  caption?: string;
-  chatId?: number;
-  // Pipeline context accumulator
-  brand?: string;
-  model?: string;
-  color?: string;
-  category?: string;
-  searchTerms?: string[];
-  specs?: string;
-  suggestedPrice?: number;
-  priceCurrency?: string;
-  listingTitle?: string;
-  listingDescription?: string;
-  qualityScore?: number;
-  images?: string[];
-  costTotalUsd?: number;
-  competitorPrices?: Array<{ source: string; price: number }>;
-};
-
-// ── In-memory cost tracker (per-process, survives across daemon ticks) ─
-
-const costTracker = new LaunchCostTracker();
-
-// ── Daemon Handler ───────────────────────────────────────────────────
-
-/**
- * Product Launch Coordinator daemon handler.
- *
- * Claims messages with `receiverAgentId: "product-launch"` and orchestrates
- * the full product launch pipeline via Agent Message Bus delegation.
- *
- * State machine:
- *   photo_received → recognizing → researching → generating_creative
- *   → composing → awaiting_approval → approved → ready_to_publish
- *                                               ↘ rejected
- *
- * Each stage delegates to specialist workers. The coordinator polls for the
- * next stage message via the daemon scheduler's claim cycle.
- *
- * Stub mode: when no specialist workers are available, simulates pipeline
- * progression with delayed state transitions (suitable for testing).
- */
-export const productLaunchCoordinator: DaemonHandler = async ({ claim, bus, ceoContext }) => {
-  const findings: DaemonFinding[] = [];
-  const messageIds: string[] = [];
-
-  // ── 1. Parse payload ──────────────────────────────────────────
-  let payload: CoordinatorPayload;
+function parseLaunchRequest(ctx: CoordinatorContext): ProductLaunchEnvelope | undefined {
+  let payload: Record<string, unknown>;
   try {
-    payload = JSON.parse(claim.payloadJson) as CoordinatorPayload;
+    payload = JSON.parse(ctx.claim.payloadJson) as Record<string, unknown>;
   } catch {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: "ProductLaunchCoordinator: invalid payload — could not parse CoordinatorPayload",
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
+    return undefined;
   }
-
-  if (!payload.launchId) {
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: "ProductLaunchCoordinator: missing launchId in payload",
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
+  const launchId = typeof payload.launchId === "string" ? payload.launchId : "";
+  const sellerId = typeof payload.sellerId === "string" ? payload.sellerId : "";
+  if (!launchId || !sellerId || (ctx.claim.sellerId && ctx.claim.sellerId !== sellerId)) {
+    return undefined;
   }
-
-  const launchId = payload.launchId;
-  const _chatId = payload.chatId;
-  const _sellerId = payload.sellerId ?? "unknown";
-
-  // ── 2. Determine current stage from payload or message type ──
-  const messageType = claim.messageType;
-
-  // Resolve the current pipeline stage
-  let currentStage: PipelineStage;
-  if (messageType === "launch_request") {
-    currentStage = "photo_received";
-  } else if (messageType === "launch_approved") {
-    currentStage = "approved";
-  } else if (messageType === "stage_complete" || messageType === "finding") {
-    // Child worker completed — extract stage from payload
-    currentStage = (payload as Record<string, unknown>).completedStage as PipelineStage;
-    if (!currentStage) {
-      // Fall back to determining from payload context
-      if (payload.brand && payload.model && payload.searchTerms) {
-        currentStage = "recognizing";
-      } else if (payload.specs && payload.suggestedPrice) {
-        currentStage = "researching";
-      } else if (payload.qualityScore !== undefined) {
-        currentStage = "generating_creative";
-      } else if (payload.listingTitle && payload.listingDescription) {
-        currentStage = "composing";
-      } else {
-        currentStage = "photo_received";
-      }
-    }
-  } else {
-    // Unknown message type — assume it's a continuation
-    currentStage =
-      ((payload as Record<string, unknown>).stage as PipelineStage) ?? "photo_received";
-  }
-
-  // ── 3. Route to next stage ────────────────────────────────────
-  const nextStage = getNextStage(currentStage);
-
-  if (!nextStage) {
-    // Terminal state — nothing more to do
-    findings.push({
-      kind: "info",
-      severity: "info",
-      summary: `ProductLaunchCoordinator: launch "${launchId}" reached terminal stage "${currentStage}"`,
-      evidenceIds: [claim.messageId],
-    });
-    return { findings, proposalEnqueued: false, messageIds };
-  }
-
-  // ── 4. Execute pipeline stage ──────────────────────────────────
-
-  switch (currentStage) {
-    case "photo_received":
-      await handlePhotoReceived(payload, bus, findings, messageIds, ceoContext);
-      break;
-    case "recognizing":
-      await handleRecognizing(payload, bus, findings, messageIds, ceoContext);
-      break;
-    case "researching":
-      await handleResearching(payload, bus, findings, messageIds, ceoContext);
-      break;
-    case "generating_creative":
-      await handleGeneratingCreative(payload, bus, findings, messageIds, ceoContext);
-      break;
-    case "composing":
-      await handleComposing(payload, bus, findings, messageIds, ceoContext);
-      break;
-    case "awaiting_approval":
-      await handleAwaitingApproval(payload, bus, findings, messageIds, ceoContext);
-      break;
-    case "approved":
-      await handleApproved(payload, bus, findings, messageIds, ceoContext);
-      break;
-    default:
-      // Unknown stage — send to CEO
-      await sendProgress(
-        payload,
-        currentStage,
-        "⚠️ Estado desconocido",
-        ceoContext,
-        messageIds,
-        bus,
-      );
-  }
-
-  // ── 5. Track costs ────────────────────────────────────────────
-  const totalCost = costTracker.getTotalCost(launchId);
-  if (totalCost > 0) {
-    findings.push({
-      kind: "info",
-      severity: "info",
-      summary: `ProductLaunchCoordinator: accumulated cost $${totalCost.toFixed(4)} for launch "${launchId}"`,
-      evidenceIds: [claim.messageId],
-    });
-  }
-
   return {
-    findings,
-    proposalEnqueued: messageIds.length > 0,
-    messageIds,
+    launchId,
+    sellerId,
+    stage: "photo_received",
+    task: "vision-analyst",
+    imageUrls: Array.isArray(payload.imageUrls)
+      ? payload.imageUrls.filter((value): value is string => typeof value === "string")
+      : typeof payload.imageUrl === "string"
+        ? [payload.imageUrl]
+        : [],
+    ...(typeof payload.productId === "string" ? { productId: payload.productId } : {}),
+    ...(typeof payload.chatId === "number" ? { chatId: payload.chatId } : {}),
+    ...(typeof payload.caption === "string" ? { caption: payload.caption } : {}),
   };
-};
-
-// ── Stage Handlers ────────────────────────────────────────────────────
-
-async function handlePhotoReceived(
-  payload: CoordinatorPayload,
-  bus: Parameters<DaemonHandler>[0]["bus"],
-  findings: DaemonFinding[],
-  messageIds: string[],
-  ceoContext?: CeoHandlerContext,
-): Promise<void> {
-  const launchId = payload.launchId;
-
-  // Track cost: will incur a Google Lens call
-  costTracker.record({
-    launchId,
-    source: "google_lens",
-    estimatedCostUsd: LAUNCH_COST_ESTIMATES.googleLensCall,
-    operation: "vision-recognition",
-  });
-
-  // Delegate to VisionAnalyst (product-recognition lane)
-  delegateStage({
-    bus,
-    launchId,
-    receiverAgentId: "product-recognition",
-    payload: {
-      launchId,
-      imageUrl: payload.imageUrls?.[0] ?? "",
-      caption: payload.caption,
-      stage: "recognizing",
-    },
-    dedupePrefix: "coord-recognize",
-    findings,
-    messageIds,
-  });
-
-  await sendProgress(
-    payload,
-    "photo_received",
-    "📸 Foto recibida. Iniciando identificación…",
-    ceoContext,
-    messageIds,
-    bus,
-  );
 }
 
-async function handleRecognizing(
-  payload: CoordinatorPayload,
-  bus: Parameters<DaemonHandler>[0]["bus"],
-  findings: DaemonFinding[],
-  messageIds: string[],
-  ceoContext?: CeoHandlerContext,
-): Promise<void> {
-  const launchId = payload.launchId;
-
-  // The payload coming back should have recognition results
-  const brand = payload.brand ?? "Desconocido";
-  const model = payload.model ?? "Desconocido";
-
-  // Track cost: will incur 2 DeepSeek calls (research + competition)
-  costTracker.record({
-    launchId,
-    source: "deepseek",
-    estimatedCostUsd: LAUNCH_COST_ESTIMATES.deepseekCall * 2,
-    operation: "product-research",
-  });
-  // Also a potential Google Lens call for catalog lookup
-  costTracker.record({
-    launchId,
-    source: "google_lens",
-    estimatedCostUsd: LAUNCH_COST_ESTIMATES.googleLensCall,
-    operation: "catalog-lookup",
-  });
-
-  // Delegate to MarketResearcher AND CatalogSpecialist in parallel (product-research lane)
-  delegateStage({
-    bus,
-    launchId,
-    receiverAgentId: "product-research",
-    payload: {
-      launchId,
-      brand,
-      model,
-      title: `${brand} ${model}`,
-      searchTerms: payload.searchTerms ?? [brand, model],
-      stage: "researching",
-    },
-    dedupePrefix: "coord-research",
-    findings,
-    messageIds,
-  });
-
-  await sendProgress(
-    payload,
-    "recognizing",
-    `🔍 Producto identificado: ${brand} ${model}. Buscando specs e imágenes…`,
-    ceoContext,
-    messageIds,
-    bus,
-  );
-}
-
-async function handleResearching(
-  payload: CoordinatorPayload,
-  bus: Parameters<DaemonHandler>[0]["bus"],
-  findings: DaemonFinding[],
-  messageIds: string[],
-  ceoContext?: CeoHandlerContext,
-): Promise<void> {
-  const launchId = payload.launchId;
-
-  // Track cost: MiniMax image generation
-  costTracker.record({
-    launchId,
-    source: "minimax",
-    estimatedCostUsd: LAUNCH_COST_ESTIMATES.minimaxImage * 2,
-    operation: "creative-generation",
-  });
-
-  // Delegate to PhotoDirector (creative-production lane)
-  delegateStage({
-    bus,
-    launchId,
-    receiverAgentId: "creative-production",
-    payload: {
-      launchId,
-      imageUrl: payload.imageUrls?.[0] ?? "",
-      productContext: {
-        brand: payload.brand,
-        model: payload.model,
-        color: payload.color,
-        category: payload.category,
-      },
-      stage: "generating_creative",
-    },
-    dedupePrefix: "coord-creative",
-    findings,
-    messageIds,
-  });
-
-  await sendProgress(
-    payload,
-    "researching",
-    `📊 Investigación completada: ${payload.brand ?? ""} ${payload.model ?? ""}. Generando imágenes…`,
-    ceoContext,
-    messageIds,
-    bus,
-  );
-}
-
-async function handleGeneratingCreative(
-  payload: CoordinatorPayload,
-  bus: Parameters<DaemonHandler>[0]["bus"],
-  findings: DaemonFinding[],
-  messageIds: string[],
-  ceoContext?: CeoHandlerContext,
-): Promise<void> {
-  const launchId = payload.launchId;
-
-  // Track cost: one more DeepSeek call for composition
-  costTracker.record({
-    launchId,
-    source: "deepseek",
-    estimatedCostUsd: LAUNCH_COST_ESTIMATES.deepseekCall,
-    operation: "listing-composition",
-  });
-
-  // Delegate to Copywriter + SpecTechnician + QualityInspector (listing-composition lane)
-  delegateStage({
-    bus,
-    launchId,
-    receiverAgentId: "listing-composition",
-    payload: {
-      launchId,
-      brand: payload.brand,
-      model: payload.model,
-      specs: payload.specs,
-      category: payload.category,
-      suggestedPrice: payload.suggestedPrice,
-      sellerId: payload.sellerId,
-      competitorPrices: payload.competitorPrices ?? [],
-      stage: "composing",
-    },
-    dedupePrefix: "coord-compose",
-    findings,
-    messageIds,
-  });
-
-  await sendProgress(
-    payload,
-    "generating_creative",
-    "🎨 Imágenes generadas. Componiendo publicación…",
-    ceoContext,
-    messageIds,
-    bus,
-  );
-}
-
-async function handleComposing(
-  payload: CoordinatorPayload,
-  bus: Parameters<DaemonHandler>[0]["bus"],
-  findings: DaemonFinding[],
-  messageIds: string[],
-  ceoContext?: CeoHandlerContext,
-): Promise<void> {
-  const launchId = payload.launchId;
-  const title = payload.listingTitle ?? "Título pendiente";
-  const price = payload.suggestedPrice ? `$${payload.suggestedPrice}` : "pendiente";
-
-  // Enqueue CEO proposal for approval
-  const proposalPayload = {
-    type: "proposal",
-    summary: `ProductLaunch "${launchId}" ready for review`,
-    launchId,
-    title,
-    description: payload.listingDescription ?? "",
-    suggestedPrice: payload.suggestedPrice,
-    priceCurrency: payload.priceCurrency ?? "CLP",
-    qualityScore: payload.qualityScore,
-    costTotalUsd: costTracker.getTotalCost(launchId),
-    images: payload.images ?? payload.imageUrls ?? [],
-    stage: "awaiting_approval",
-    action: {
-      kind: "approve_launch",
-      id: launchId,
-      label: `Aprobar publicación: ${title}`,
-    },
-    noMutationExecuted: true,
-    capturedAt: new Date().toISOString(),
-  };
-
-  const enqueueOpts: Parameters<typeof bus.enqueue>[0] = {
+function delegate(
+  bus: AgentMessageBusStore,
+  envelope: ProductLaunchEnvelope,
+  receiverAgentId: string,
+  stage: ProductLaunchStatus,
+  task: ProductLaunchTask,
+): string {
+  const next = { ...envelope, stage, task };
+  const message = bus.enqueue({
     senderAgentId: "product-launch",
-    receiverAgentId: "ceo",
-    messageType: "proposal",
-    payloadJson: JSON.stringify(proposalPayload),
-    dedupeKey: `coord-approval-${launchId}`,
-  };
-  if (payload.sellerId) enqueueOpts.sellerId = payload.sellerId;
-  const message = bus.enqueue(enqueueOpts);
-  messageIds.push(message.messageId);
-
-  findings.push({
-    kind: "opportunity",
-    severity: "info",
-    summary: `ProductLaunchCoordinator: launch "${launchId}" ready for CEO approval — "${title}" (${price})`,
-    evidenceIds: [message.messageId],
+    receiverAgentId,
+    messageType: "launch_stage_work",
+    payloadJson: JSON.stringify(next),
+    dedupeKey: `launch-work:${next.launchId}:${stage}:${task}`,
+    correlationId: next.launchId,
+    sellerId: next.sellerId,
   });
-
-  await sendProgress(
-    payload,
-    "composing",
-    `📦 Publicación lista para revisar:\n📝 Título: ${title}\n💰 Precio: ${price}\n🔗 Usa \`approve_launch("${launchId}")\` para aprobar`,
-    ceoContext,
-    messageIds,
-    bus,
-  );
+  return message.messageId;
 }
 
-async function handleAwaitingApproval(
-  payload: CoordinatorPayload,
-  _bus: Parameters<DaemonHandler>[0]["bus"],
-  findings: DaemonFinding[],
-  _messageIds: string[],
-  ceoContext?: CeoHandlerContext,
-): Promise<void> {
-  // Just wait — CEO must approve via the approve_launch tool
-  // The approval will be detected on the next daemon cycle when
-  // the store shows approved status
-  findings.push({
-    kind: "info",
-    severity: "info",
-    summary: `ProductLaunchCoordinator: launch "${payload.launchId}" awaiting CEO approval`,
-    evidenceIds: [],
-  });
-
-  // Send reminder via Telegram
-  if (ceoContext?.sendProactiveMessage && payload.chatId) {
-    try {
-      await ceoContext.sendProactiveMessage(
-        payload.chatId,
-        `👀 Tu publicación "${payload.listingTitle ?? "Producto"}" está lista para revisar.\nUsa \`approve_launch("${payload.launchId}")\` para aprobarla.`,
-      );
-    } catch {
-      // Non-blocking — Telegram delivery failure is not a pipeline error
-    }
-  }
-}
-
-async function handleApproved(
-  payload: CoordinatorPayload,
-  _bus: Parameters<DaemonHandler>[0]["bus"],
-  findings: DaemonFinding[],
-  messageIds: string[],
-  ceoContext?: CeoHandlerContext,
-): Promise<void> {
-  // Move to ready_to_publish (write gate remains blocked)
-  findings.push({
-    kind: "opportunity",
-    severity: "info",
-    summary: `ProductLaunchCoordinator: launch "${payload.launchId}" approved → ready_to_publish (write gate blocked)`,
-    evidenceIds: [],
-  });
-
-  await sendProgress(
-    payload,
-    "approved",
-    "🚀 Publicación aprobada y lista para publicar. La publicación real está bloqueada (write gate).",
-    ceoContext,
-    messageIds,
-    _bus,
-  );
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────
-
-/**
- * Get the next stage based on the current one.
- * Returns undefined for terminal states.
- */
-function getNextStage(current: PipelineStage): PipelineStage | undefined {
-  const order: PipelineStage[] = [
-    "photo_received",
-    "recognizing",
-    "researching",
-    "generating_creative",
-    "composing",
-    "awaiting_approval",
-    "approved",
-    "ready_to_publish",
-  ];
-  const idx = order.indexOf(current);
-  if (idx < 0 || idx >= order.length - 1) return undefined;
-  return order[idx + 1];
-}
-
-/**
- * Delegate a pipeline stage to a specialist worker via the Agent Message Bus.
- */
-function delegateStage(params: {
-  bus: Parameters<DaemonHandler>[0]["bus"];
-  launchId: string;
-  receiverAgentId: string;
-  payload: Record<string, unknown>;
-  dedupePrefix: string;
-  findings: DaemonFinding[];
-  messageIds: string[];
-}): void {
-  const { bus, launchId, receiverAgentId, payload, dedupePrefix, findings, messageIds } = params;
-
-  try {
-    const message = bus.enqueue({
-      senderAgentId: "product-launch",
-      receiverAgentId,
-      messageType: "delegate",
-      payloadJson: JSON.stringify(payload),
-      dedupeKey: `${dedupePrefix}-${launchId}`,
-      correlationId: launchId,
-    });
-    messageIds.push(message.messageId);
-
-    findings.push({
-      kind: "info",
-      severity: "info",
-      summary: `ProductLaunchCoordinator: delegated to "${receiverAgentId}" for launch "${launchId}" (${(payload.stage as string) ?? "unknown"})`,
-      evidenceIds: [message.messageId],
-    });
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    findings.push({
-      kind: "alert",
-      severity: "warning",
-      summary: `ProductLaunchCoordinator: failed to delegate to "${receiverAgentId}" — ${errorMessage}`,
-      evidenceIds: [launchId],
-    });
-  }
-}
-
-/**
- * Send a progress update to the CEO via Telegram.
- * Uses the ceoContext's sendProactiveMessage callback when available.
- * Also enqueues a CEO bus message as a fallback.
- */
-async function sendProgress(
-  payload: CoordinatorPayload,
-  stage: PipelineStage,
+async function notify(
+  envelope: ProductLaunchEnvelope,
   text: string,
+  bus: AgentMessageBusStore,
   ceoContext: CeoHandlerContext | undefined,
-  messageIds: string[],
-  bus: Parameters<DaemonHandler>[0]["bus"],
-): Promise<void> {
-  const emoji = STAGE_EMOJI[stage];
-  const message = `${emoji} ${text}`;
-
-  // Try to send via Telegram
-  if (ceoContext?.sendProactiveMessage && payload.chatId) {
-    try {
-      await ceoContext.sendProactiveMessage(payload.chatId, message);
-    } catch {
-      // Telegram failure is non-blocking — fall through to bus
-    }
-  }
-
-  // Enqueue to CEO bus lane as fallback
-  const busEnqueueOpts: Parameters<typeof bus.enqueue>[0] = {
+): Promise<string> {
+  const message = bus.enqueue({
     senderAgentId: "product-launch",
     receiverAgentId: "ceo",
     messageType: "progress",
     payloadJson: JSON.stringify({
-      type: "progress",
-      launchId: payload.launchId,
-      stage,
-      text: message,
+      launchId: envelope.launchId,
+      sellerId: envelope.sellerId,
+      stage: envelope.stage,
+      text,
       noMutationExecuted: true,
-      capturedAt: new Date().toISOString(),
     }),
-    dedupeKey: `progress-${payload.launchId}-${stage}`,
-  };
-  if (payload.sellerId) busEnqueueOpts.sellerId = payload.sellerId;
-  const busMsg = bus.enqueue(busEnqueueOpts);
-  messageIds.push(busMsg.messageId);
+    dedupeKey: `launch-progress:${envelope.launchId}:${envelope.stage}:${envelope.task}`,
+    correlationId: envelope.launchId,
+    sellerId: envelope.sellerId,
+  });
+  if (ceoContext?.sendProactiveMessage && envelope.chatId !== undefined) {
+    try {
+      await ceoContext.sendProactiveMessage(envelope.chatId, text);
+    } catch {
+      // Telegram delivery is non-blocking; the durable bus message remains available.
+    }
+  }
+  return message.messageId;
 }
+
+function transitionAndDelegate(
+  ctx: CoordinatorContext,
+  envelope: ProductLaunchEnvelope,
+  nextStatus: ProductLaunchStatus,
+  receiverAgentId: string,
+  task: ProductLaunchTask,
+): string | undefined {
+  const transitioned = ctx.productCatalogStore!.transitionLaunchStatus(
+    envelope.launchId,
+    envelope.sellerId,
+    envelope.stage,
+    nextStatus,
+  );
+  if (
+    !transitioned &&
+    ctx.productCatalogStore!.getLaunchForSeller(envelope.launchId, envelope.sellerId)?.status !==
+      nextStatus
+  ) {
+    return undefined;
+  }
+  return delegate(ctx.bus, envelope, receiverAgentId, nextStatus, task);
+}
+
+function delegateSubstep(
+  ctx: CoordinatorContext,
+  envelope: ProductLaunchEnvelope,
+  receiverAgentId: string,
+  task: ProductLaunchTask,
+): string {
+  return delegate(ctx.bus, envelope, receiverAgentId, envelope.stage, task);
+}
+
+export const productLaunchCoordinator: DaemonHandler = async (ctx) => {
+  const findings: DaemonFinding[] = [];
+  const messageIds: string[] = [];
+  const store = ctx.productCatalogStore;
+  if (!store) {
+    return {
+      findings: [
+        alert("Product launch coordinator: catalog store is unavailable", ctx.claim.messageId),
+      ],
+      proposalEnqueued: false,
+      messageIds,
+    };
+  }
+
+  if (ctx.claim.messageType === "launch_request") {
+    const envelope = parseLaunchRequest(ctx);
+    if (!envelope || envelope.imageUrls.length === 0) {
+      return {
+        findings: [
+          alert("Product launch coordinator: invalid launch request", ctx.claim.messageId),
+        ],
+        proposalEnqueued: false,
+        messageIds,
+      };
+    }
+    const launch = store.getLaunchForSeller(envelope.launchId, envelope.sellerId);
+    if (!launch || (launch.status !== "photo_received" && launch.status !== "recognizing")) {
+      return {
+        findings: [
+          alert(
+            "Product launch coordinator: launch request is missing or out of order",
+            ctx.claim.messageId,
+          ),
+        ],
+        proposalEnqueued: false,
+        messageIds,
+      };
+    }
+    const delegated = transitionAndDelegate(
+      ctx,
+      envelope,
+      "recognizing",
+      "product-recognition",
+      "vision-analyst",
+    );
+    if (delegated) messageIds.push(delegated);
+    messageIds.push(
+      await notify(
+        envelope,
+        "Product photo received. Starting recognition.",
+        ctx.bus,
+        ctx.ceoContext,
+      ),
+    );
+    return { findings, proposalEnqueued: messageIds.length > 0, messageIds };
+  }
+
+  if (ctx.claim.messageType === "additional_photo") {
+    const request = parseLaunchRequest(ctx);
+    if (!request) {
+      return {
+        findings: [
+          alert("Product launch coordinator: invalid additional photo", ctx.claim.messageId),
+        ],
+        proposalEnqueued: false,
+        messageIds,
+      };
+    }
+    const launch = store.getLaunchForSeller(request.launchId, request.sellerId);
+    if (!launch || (launch.status !== "photo_received" && launch.status !== "recognizing")) {
+      return {
+        findings: [
+          alert(
+            "Product launch coordinator: additional photo is out of order",
+            ctx.claim.messageId,
+          ),
+        ],
+        proposalEnqueued: false,
+        messageIds,
+      };
+    }
+    const envelope = { ...request, stage: "recognizing" as const };
+    if (launch.status === "photo_received") {
+      store.transitionLaunchStatus(
+        request.launchId,
+        request.sellerId,
+        "photo_received",
+        "recognizing",
+      );
+    }
+    messageIds.push(
+      delegate(ctx.bus, envelope, "product-recognition", "recognizing", "vision-analyst"),
+    );
+    return { findings, proposalEnqueued: true, messageIds };
+  }
+
+  if (ctx.claim.messageType === "launch_approved") {
+    let payload: { launchId?: string; sellerId?: string; chatId?: number };
+    try {
+      payload = JSON.parse(ctx.claim.payloadJson) as typeof payload;
+    } catch {
+      payload = {};
+    }
+    const sellerId = payload.sellerId ?? ctx.claim.sellerId ?? "";
+    const launchId = payload.launchId ?? "";
+    const launch = store.getLaunchForSeller(launchId, sellerId);
+    if (!launch || launch.status !== "approved") {
+      return {
+        findings: [
+          alert(
+            "Product launch coordinator: approval is missing or out of order",
+            ctx.claim.messageId,
+          ),
+        ],
+        proposalEnqueued: false,
+        messageIds,
+      };
+    }
+    store.transitionLaunchStatus(launchId, sellerId, "approved", "ready_to_publish");
+    const envelope: ProductLaunchEnvelope = {
+      launchId,
+      sellerId,
+      stage: "ready_to_publish",
+      task: "quality-inspector",
+      imageUrls: [],
+      ...(payload.chatId !== undefined ? { chatId: payload.chatId } : {}),
+    };
+    messageIds.push(
+      await notify(
+        envelope,
+        "Listing approved and ready to publish. MercadoLibre publishing remains blocked.",
+        ctx.bus,
+        ctx.ceoContext,
+      ),
+    );
+    return { findings, proposalEnqueued: true, messageIds };
+  }
+
+  if (ctx.claim.messageType !== "launch_stage_complete") {
+    return {
+      findings: [
+        alert("Product launch coordinator: unsupported message type", ctx.claim.messageId),
+      ],
+      proposalEnqueued: false,
+      messageIds,
+    };
+  }
+
+  const envelope = parseProductLaunchEnvelope(ctx.claim);
+  if (!envelope) {
+    return {
+      findings: [alert("Product launch coordinator: invalid stage envelope", ctx.claim.messageId)],
+      proposalEnqueued: false,
+      messageIds,
+    };
+  }
+  const launch = store.getLaunchForSeller(envelope.launchId, envelope.sellerId);
+  const replayStatus =
+    envelope.stage === "recognizing" && envelope.task === "vision-analyst"
+      ? "researching"
+      : envelope.stage === "researching" && envelope.task === "catalog-specialist"
+        ? "generating_creative"
+        : envelope.stage === "generating_creative" && envelope.task === "studio-artist"
+          ? "composing"
+          : undefined;
+  if (!launch || (launch.status !== envelope.stage && launch.status !== replayStatus)) {
+    return {
+      findings: [
+        alert(
+          "Product launch coordinator: duplicate or out-of-order stage result",
+          ctx.claim.messageId,
+        ),
+      ],
+      proposalEnqueued: false,
+      messageIds,
+    };
+  }
+
+  if (envelope.stage === "recognizing" && envelope.task === "vision-analyst") {
+    const id = transitionAndDelegate(
+      ctx,
+      envelope,
+      "researching",
+      "product-research",
+      "market-researcher",
+    );
+    if (id) messageIds.push(id);
+  } else if (envelope.stage === "researching" && envelope.task === "market-researcher") {
+    messageIds.push(delegateSubstep(ctx, envelope, "product-research", "catalog-specialist"));
+  } else if (envelope.stage === "researching" && envelope.task === "catalog-specialist") {
+    const id = transitionAndDelegate(
+      ctx,
+      envelope,
+      "generating_creative",
+      "creative-production",
+      "photo-director",
+    );
+    if (id) messageIds.push(id);
+  } else if (envelope.stage === "generating_creative" && envelope.task === "photo-director") {
+    const task: ProductLaunchTask =
+      envelope.qualityDecision === "DISCARD_AND_SEARCH" ? "image-scout" : "studio-artist";
+    messageIds.push(delegateSubstep(ctx, envelope, "creative-production", task));
+  } else if (envelope.stage === "generating_creative" && envelope.task === "image-scout") {
+    messageIds.push(delegateSubstep(ctx, envelope, "creative-production", "studio-artist"));
+  } else if (envelope.stage === "generating_creative" && envelope.task === "studio-artist") {
+    const id = transitionAndDelegate(
+      ctx,
+      envelope,
+      "composing",
+      "listing-composition",
+      "copywriter",
+    );
+    if (id) messageIds.push(id);
+  } else if (envelope.stage === "composing" && envelope.task === "copywriter") {
+    messageIds.push(delegateSubstep(ctx, envelope, "listing-composition", "spec-technician"));
+  } else if (envelope.stage === "composing" && envelope.task === "spec-technician") {
+    messageIds.push(delegateSubstep(ctx, envelope, "listing-composition", "quality-inspector"));
+  } else if (envelope.stage === "composing" && envelope.task === "quality-inspector") {
+    store.updateLaunchDetails(envelope.launchId, envelope.sellerId, {
+      ...(envelope.listingTitle ? { title: envelope.listingTitle } : {}),
+      ...(envelope.listingDescription ? { description: envelope.listingDescription } : {}),
+      ...(envelope.suggestedPrice !== undefined ? { priceAmount: envelope.suggestedPrice } : {}),
+      ...(envelope.priceCurrency ? { priceCurrency: envelope.priceCurrency } : {}),
+      ...(envelope.qualityScore !== undefined
+        ? { qualityScorePredicted: envelope.qualityScore }
+        : {}),
+    });
+    const proposal = ctx.bus.enqueue({
+      senderAgentId: "product-launch",
+      receiverAgentId: "ceo",
+      messageType: "proposal",
+      payloadJson: JSON.stringify({
+        type: "proposal",
+        launchId: envelope.launchId,
+        sellerId: envelope.sellerId,
+        title: envelope.listingTitle,
+        description: envelope.listingDescription,
+        suggestedPrice: envelope.suggestedPrice,
+        images: envelope.images ?? envelope.imageUrls,
+        stage: "awaiting_approval",
+        action: { kind: "approve_launch", id: envelope.launchId },
+        noMutationExecuted: true,
+      }),
+      dedupeKey: `launch-approval:${envelope.launchId}`,
+      correlationId: envelope.launchId,
+      sellerId: envelope.sellerId,
+    });
+    const transitioned = store.transitionLaunchStatus(
+      envelope.launchId,
+      envelope.sellerId,
+      "composing",
+      "awaiting_approval",
+    );
+    if (transitioned) messageIds.push(proposal.messageId);
+  } else {
+    findings.push(
+      alert("Product launch coordinator: invalid task for current stage", ctx.claim.messageId),
+    );
+  }
+
+  return { findings, proposalEnqueued: messageIds.length > 0, messageIds };
+};

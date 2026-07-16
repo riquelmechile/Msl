@@ -44,6 +44,10 @@ function makeStore(overrides?: Partial<ProductCatalogStore>): ProductCatalogStor
       createdAt: new Date().toISOString(),
     }),
     getLaunchesByProduct: vi.fn().mockReturnValue([]),
+    getLaunchForSeller: vi.fn(),
+    transitionLaunchStatus: vi.fn(),
+    updateLaunchDetails: vi.fn(),
+    recordLaunchCost: vi.fn().mockReturnValue({ recorded: true, totalUsd: 0 }),
     getPendingLaunchByChatId: vi.fn().mockReturnValue(undefined),
     ...overrides,
   };
@@ -122,6 +126,22 @@ describe("productLaunchTools", () => {
       expect(result.status).toBe("failed");
       expect(result.error).toContain("DB error");
     });
+
+    it("rejects a launch for a seller outside the runtime scope", () => {
+      const store = makeStore();
+      const tool = createLaunchProductTool({
+        catalogStore: store,
+        authorizedSellerId: "seller-a",
+      });
+
+      const result = r(
+        tool.execute({ sellerId: "seller-b", imageUrl: "https://example.com/photo.jpg" }),
+      );
+
+      expect(result.status).toBe("forbidden");
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(store.createLaunch).not.toHaveBeenCalled();
+    });
   });
 
   describe("createQueryLaunchStatusTool", () => {
@@ -177,6 +197,24 @@ describe("productLaunchTools", () => {
       expect(result.status).toBe("error");
       expect(result.error).toContain("Query failed");
     });
+
+    it("does not disclose another seller's launch", () => {
+      const store = makeStore({
+        getLaunch: vi.fn().mockReturnValue({
+          launchId: "launch-b",
+          productId: "prod-b",
+          sellerId: "seller-b",
+          status: "researching",
+          createdAt: new Date().toISOString(),
+        }),
+      });
+      const tool = createQueryLaunchStatusTool({
+        catalogStore: store,
+        authorizedSellerId: "seller-a",
+      });
+
+      expect(r(tool.execute({ launchId: "launch-b" })).status).toBe("forbidden");
+    });
   });
 
   describe("createApproveLaunchTool", () => {
@@ -213,6 +251,13 @@ describe("productLaunchTools", () => {
           status: "awaiting_approval",
           createdAt: new Date().toISOString(),
         }),
+        transitionLaunchStatus: vi.fn().mockReturnValue({
+          launchId: "launch-1",
+          productId: "prod-1",
+          sellerId: "test-seller",
+          status: "approved",
+          createdAt: new Date().toISOString(),
+        }),
       });
       const bus = makeBus();
       const tool = createApproveLaunchTool({ catalogStore: store, bus });
@@ -221,7 +266,12 @@ describe("productLaunchTools", () => {
       expect(result.approved).toBe(true);
       expect(result.newStatus).toBe("approved");
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(store.updateLaunchStatus).toHaveBeenCalledWith("launch-1", "approved");
+      expect(store.transitionLaunchStatus).toHaveBeenCalledWith(
+        "launch-1",
+        "test-seller",
+        "awaiting_approval",
+        "approved",
+      );
       expect(bus.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
           receiverAgentId: "product-launch",
@@ -252,6 +302,26 @@ describe("productLaunchTools", () => {
 
       expect(result.approved).toBe(false);
       expect(result.error).toContain("Store error");
+    });
+
+    it("does not approve another seller's launch", () => {
+      const store = makeStore({
+        getLaunch: vi.fn().mockReturnValue({
+          launchId: "launch-b",
+          productId: "prod-b",
+          sellerId: "seller-b",
+          status: "awaiting_approval",
+          createdAt: new Date().toISOString(),
+        }),
+      });
+      const tool = createApproveLaunchTool({
+        catalogStore: store,
+        authorizedSellerId: "seller-a",
+      });
+
+      expect(r(tool.execute({ launchId: "launch-b" })).approved).toBe(false);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(store.transitionLaunchStatus).not.toHaveBeenCalled();
     });
   });
 

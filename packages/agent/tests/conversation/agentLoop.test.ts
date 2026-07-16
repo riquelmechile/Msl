@@ -367,6 +367,25 @@ describe("createAgentLoop — mock client", () => {
     );
   });
 
+  it("exposes product launch tools only to request-authorized callers", () => {
+    const config = {
+      systemPrompt,
+      mockClient: true,
+      sellerId: "seller-a",
+      productCatalogStore: {} as never,
+      productLaunchBus: {} as never,
+    };
+    const unauthorized = createAgentLoop(config);
+    const authorized = createAgentLoop({ ...config, companyAgentAdminAuthorized: true });
+
+    expect(unauthorized.getToolNames()).not.toEqual(
+      expect.arrayContaining(["launch_product", "query_launch_status", "approve_launch"]),
+    );
+    expect(authorized.getToolNames()).toEqual(
+      expect.arrayContaining(["launch_product", "query_launch_status", "approve_launch"]),
+    );
+  });
+
   it("includes internal CEO workforce guidance in the system prompt", async () => {
     const { capturedMessages, llmClient } = makePromptCaptureClient();
     const agent = createAgentLoop({ systemPrompt, llmClient });

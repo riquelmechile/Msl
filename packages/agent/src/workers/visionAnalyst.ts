@@ -1,4 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
+import { LAUNCH_COST_ESTIMATES } from "../economics/launchCostTracker.js";
 
 // ── Environment helpers ─────────────────────────────────────────────
 
@@ -164,7 +166,7 @@ function stubRecognition(input: VisionAnalystInput): VisionAnalystOutput {
  * 3. If confidence < 0.5, enqueue a CEO proposal requesting more photos
  * 4. Return findings with recognition result
  */
-export const visionAnalyst: DaemonHandler = async ({ claim, bus }) => {
+export const visionAnalyst: DaemonHandler = async ({ claim, bus, launchCostTracker }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -180,6 +182,29 @@ export const visionAnalyst: DaemonHandler = async ({ claim, bus }) => {
       evidenceIds: [claim.messageId],
     });
     return { findings, proposalEnqueued: false, messageIds };
+  }
+  const parsedLaunchEnvelope = parseProductLaunchEnvelope(claim);
+  if (parsedLaunchEnvelope) {
+    input.imageUrl = parsedLaunchEnvelope.imageUrls[0] ?? "";
+    if (parsedLaunchEnvelope.caption) input.caption = parsedLaunchEnvelope.caption;
+  }
+
+  const usesExternalApi = !!env("SERPAPI_API_KEY");
+  if (usesExternalApi && parsedLaunchEnvelope && launchCostTracker) {
+    const budget = launchCostTracker.canAfford(
+      parsedLaunchEnvelope.launchId,
+      parsedLaunchEnvelope.sellerId,
+      LAUNCH_COST_ESTIMATES.googleLensCall,
+    );
+    if (!budget.allowed) {
+      findings.push({
+        kind: "alert",
+        severity: "warning",
+        summary: `Vision Analyst: ${budget.reason}`,
+        evidenceIds: [claim.messageId],
+      });
+      return { findings, proposalEnqueued: false, messageIds };
+    }
   }
 
   if (!input.imageUrl) {
@@ -211,6 +236,17 @@ export const visionAnalyst: DaemonHandler = async ({ claim, bus }) => {
       });
       return { findings, proposalEnqueued: false, messageIds };
     }
+  }
+
+  if (usesExternalApi && parsedLaunchEnvelope && launchCostTracker) {
+    launchCostTracker.record({
+      eventKey: `launch-cost:${parsedLaunchEnvelope.launchId}:vision-analyst`,
+      launchId: parsedLaunchEnvelope.launchId,
+      sellerId: parsedLaunchEnvelope.sellerId,
+      source: "google_lens",
+      operation: "vision-recognition",
+      estimatedCostUsd: LAUNCH_COST_ESTIMATES.googleLensCall,
+    });
   }
 
   // ── 3. Low confidence → ask for more photos ────────────────────
@@ -246,6 +282,25 @@ export const visionAnalyst: DaemonHandler = async ({ claim, bus }) => {
   }
 
   // ── 4. Success — enqueue findings to CEO ───────────────────────
+  const launchEnvelope = parsedLaunchEnvelope;
+  if (launchEnvelope) {
+    const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      brand: output.brand,
+      model: output.model,
+      ...(output.color ? { color: output.color } : {}),
+      ...(output.category ? { category: output.category } : {}),
+      searchTerms: output.searchTerms,
+    });
+    messageIds.push(message.messageId);
+    findings.push({
+      kind: "opportunity",
+      severity: "info",
+      summary: `Vision Analyst: recognized ${output.brand} ${output.model}`,
+      evidenceIds: [claim.messageId, message.messageId],
+    });
+    return { findings, proposalEnqueued: true, messageIds };
+  }
+
   const successPayload: Record<string, unknown> = {
     type: "finding",
     summary: `Vision Analyst: recognized ${output.brand} ${output.model} (confidence: ${(output.confidence * 100).toFixed(0)}%)`,

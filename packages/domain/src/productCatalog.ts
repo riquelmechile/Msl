@@ -63,6 +63,30 @@ export type ProductLaunchStoreInput = {
   completedAt?: string;
 };
 
+export type ProductLaunchDetailsUpdate = Partial<
+  Pick<
+    ProductLaunchEntry,
+    | "mlItemId"
+    | "listingType"
+    | "priceAmount"
+    | "priceCurrency"
+    | "title"
+    | "description"
+    | "qualityScorePredicted"
+    | "qualityScoreActual"
+  >
+>;
+
+export type ProductLaunchCostInput = {
+  eventKey: string;
+  launchId: string;
+  sellerId: string;
+  source: "google_lens" | "deepseek" | "minimax";
+  operation: string;
+  amountUsd: number;
+  measuredAt: string;
+};
+
 // ── Store Interface ──────────────────────────────────────────────────
 
 export type ProductCatalogStore = {
@@ -72,8 +96,21 @@ export type ProductCatalogStore = {
   getImages(productId: string): ProductImageEntry[];
   createLaunch(input: ProductLaunchStoreInput): ProductLaunchEntry;
   getLaunch(launchId: string): ProductLaunchEntry | undefined;
+  getLaunchForSeller(launchId: string, sellerId: string): ProductLaunchEntry | undefined;
   updateLaunchStatus(launchId: string, status: ProductLaunchStatus): ProductLaunchEntry;
+  transitionLaunchStatus(
+    launchId: string,
+    sellerId: string,
+    expectedStatus: ProductLaunchStatus,
+    status: ProductLaunchStatus,
+  ): ProductLaunchEntry | undefined;
+  updateLaunchDetails(
+    launchId: string,
+    sellerId: string,
+    updates: ProductLaunchDetailsUpdate,
+  ): ProductLaunchEntry;
+  recordLaunchCost(input: ProductLaunchCostInput): { recorded: boolean; totalUsd: number };
   getLaunchesByProduct(productId: string): ProductLaunchEntry[];
-  /** Get the first non-terminal launch for a given chatId, if any. */
-  getPendingLaunchByChatId(chatId: string): ProductLaunchEntry | undefined;
+  /** Get the first non-terminal launch for a seller and Telegram chat. */
+  getPendingLaunchByChatId(chatId: string, sellerId: string): ProductLaunchEntry | undefined;
 };

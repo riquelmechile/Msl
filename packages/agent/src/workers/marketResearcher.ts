@@ -3,6 +3,8 @@ import { DeepSeekRealTransport } from "../conversation/transports/deepseekTransp
 import { resolveDeepSeekRuntimeConfig } from "../conversation/deepseekRuntime.js";
 import { DeepSeekReasoningGateway } from "../reasoning/DeepSeekReasoningGateway.js";
 import { ReasoningLevel } from "../reasoning/reasoningTypes.js";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
+import { LAUNCH_COST_ESTIMATES } from "../economics/launchCostTracker.js";
 
 // ── Environment helpers ─────────────────────────────────────────────
 
@@ -92,7 +94,7 @@ function stubMarketResearch(input: MarketResearcherInput): MarketResearcherOutpu
  * Cache-optimized: uses the stable prefix from LANE_CONTRACTS for
  * prompt caching via DeepSeekReasoningGateway.
  */
-export const marketResearcher: DaemonHandler = async ({ claim, bus }) => {
+export const marketResearcher: DaemonHandler = async ({ claim, bus, launchCostTracker }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -119,6 +121,7 @@ export const marketResearcher: DaemonHandler = async ({ claim, bus }) => {
     });
     return { findings, proposalEnqueued: false, messageIds };
   }
+  const launchEnvelope = parseProductLaunchEnvelope(claim);
 
   // ── 2. Check DeepSeek availability ───────────────────────────
   const resolved = resolveDeepSeekRuntimeConfig();
@@ -126,6 +129,22 @@ export const marketResearcher: DaemonHandler = async ({ claim, bus }) => {
     // Stub mode
     const stubOutput = stubMarketResearch(input);
     return buildSuccessResult(stubOutput, input, claim, bus, findings, messageIds, true);
+  }
+  if (launchEnvelope && launchCostTracker) {
+    const budget = launchCostTracker.canAfford(
+      launchEnvelope.launchId,
+      launchEnvelope.sellerId,
+      LAUNCH_COST_ESTIMATES.deepseekCall,
+    );
+    if (!budget.allowed) {
+      findings.push({
+        kind: "alert",
+        severity: "warning",
+        summary: `Market Researcher: ${budget.reason}`,
+        evidenceIds: [claim.messageId],
+      });
+      return { findings, proposalEnqueued: false, messageIds };
+    }
   }
 
   // ── 3. Research via DeepSeek ──────────────────────────────────
@@ -149,6 +168,16 @@ export const marketResearcher: DaemonHandler = async ({ claim, bus }) => {
     const result = await gateway.reason(reasonCall);
 
     if (result.status === "success" && result.rawResponse) {
+      if (launchEnvelope && launchCostTracker) {
+        launchCostTracker.record({
+          eventKey: `launch-cost:${launchEnvelope.launchId}:market-researcher`,
+          launchId: launchEnvelope.launchId,
+          sellerId: launchEnvelope.sellerId,
+          source: "deepseek",
+          operation: "product-research",
+          estimatedCostUsd: LAUNCH_COST_ESTIMATES.deepseekCall,
+        });
+      }
       try {
         const parsed = JSON.parse(result.rawResponse) as Record<string, unknown>;
         output = {
@@ -197,6 +226,24 @@ function buildSuccessResult(
   const summary = isStub
     ? `Market Researcher (stub): ${input.brand} ${input.model} — suggested ${output.suggestedPrice} CLP`
     : `Market Researcher: ${input.brand} ${input.model} — suggested ${output.suggestedPrice} CLP, ${output.competitorPrices.length} competitors analyzed`;
+
+  const launchEnvelope = parseProductLaunchEnvelope(claim);
+  if (launchEnvelope) {
+    const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      specs: output.specs,
+      competitorPrices: output.competitorPrices,
+      suggestedPrice: output.suggestedPrice,
+      priceCurrency: output.competitorPrices[0]?.currency ?? "CLP",
+    });
+    messageIds.push(message.messageId);
+    findings.push({
+      kind: "opportunity",
+      severity: "info",
+      summary,
+      evidenceIds: [claim.messageId, message.messageId],
+    });
+    return { findings, proposalEnqueued: true, messageIds };
+  }
 
   const payload: Record<string, unknown> = {
     type: "finding",

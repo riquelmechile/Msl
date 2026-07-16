@@ -22,6 +22,10 @@ export const creativeProductionDaemon: DaemonHandler = async (ctx) => {
     // Unparseable — default to PhotoDirector which handles parse errors
   }
 
+  if (payload.task === "studio-artist") return studioArtist(ctx);
+  if (payload.task === "image-scout") return imageScout(ctx);
+  if (payload.task === "photo-director") return photoDirector(ctx);
+
   // Route to StudioArtist when we have a quality decision
   if (typeof payload.qualityDecision === "string") {
     return studioArtist(ctx);

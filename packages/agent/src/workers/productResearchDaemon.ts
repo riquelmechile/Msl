@@ -21,6 +21,9 @@ export const productResearchDaemon: DaemonHandler = async (ctx) => {
     // Unparseable — let market researcher handle the error
   }
 
+  if (payload.task === "catalog-specialist") return catalogSpecialist(ctx);
+  if (payload.task === "market-researcher") return marketResearcher(ctx);
+
   // Route to CatalogSpecialist when we have title but no searchTerms
   const hasCatalogInput =
     typeof payload.brand === "string" &&

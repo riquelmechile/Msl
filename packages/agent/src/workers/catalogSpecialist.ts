@@ -1,5 +1,6 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { MlcApiClient, MlcListingSummary } from "@msl/mercadolibre";
+import { enqueueProductLaunchResult, parseProductLaunchEnvelope } from "./productLaunchEnvelope.js";
 
 // ── Input / Output types ─────────────────────────────────────────────
 
@@ -143,15 +144,37 @@ export const catalogSpecialist: DaemonHandler = async ({ claim, bus, sellerIds, 
     });
     return { findings, proposalEnqueued: false, messageIds };
   }
+  const parsedLaunchEnvelope = parseProductLaunchEnvelope(claim);
+  if (parsedLaunchEnvelope) {
+    input.title = `${input.brand ?? ""} ${input.model ?? ""}`.trim();
+    input.sellerId = parsedLaunchEnvelope.sellerId;
+  }
 
   // ── 2. Search catalog ─────────────────────────────────────────
   let output: CatalogSpecialistOutput;
-  const sellerId = input.sellerId ?? sellerIds[0] ?? "default";
+  const launchEnvelope = parsedLaunchEnvelope;
+  const sellerId = launchEnvelope?.sellerId ?? input.sellerId ?? sellerIds[0] ?? "default";
 
   if (mlcClient) {
     output = await searchMlCatalog(input, mlcClient, sellerId);
   } else {
     output = stubCatalogSearch(input);
+  }
+
+  if (launchEnvelope) {
+    const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+      ...(output.catalogProductId ? { catalogProductId: output.catalogProductId } : {}),
+    });
+    messageIds.push(message.messageId);
+    findings.push({
+      kind: output.found ? "opportunity" : "info",
+      severity: output.found ? "info" : "warning",
+      summary: output.found
+        ? `Catalog Specialist: found ${output.catalogProductId ?? ""}`
+        : `Catalog Specialist: not found for ${input.brand} ${input.model}`,
+      evidenceIds: [claim.messageId, message.messageId],
+    });
+    return { findings, proposalEnqueued: true, messageIds };
   }
 
   // ── 3. Enqueue result ─────────────────────────────────────────

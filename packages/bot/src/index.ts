@@ -13,6 +13,7 @@ import {
   createCompanyAgentLearningStore,
   createCompanyAgentStore,
   createProductCatalogStore,
+  resolveProductLaunchRuntimePath,
   createSessionStore,
   createStrategyStore,
   createWorkforceCostCacheLedgerStore,
@@ -125,6 +126,7 @@ export type TelegramBotEnv = Partial<
     | "MSL_TELEGRAM_ADMIN_USER_IDS"
     | "MSL_SUPPLIER_MIRROR_DB_PATH"
     | "MSL_PRODUCT_LAUNCH_ENABLED"
+    | "MSL_PRODUCT_LAUNCH_SQLITE_PATH"
   >
 >;
 
@@ -406,12 +408,17 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
 
   // ── Product Launch wiring ───────────────────────────────
   const productLaunchEnabled = env.MSL_PRODUCT_LAUNCH_ENABLED?.trim() === "true";
+  const productLaunchPath = resolveProductLaunchRuntimePath(env, env.MSL_CORTEX_SQLITE_PATH);
+  const productLaunchDb =
+    productLaunchEnabled && productLaunchPath ? new Database(productLaunchPath) : null;
   let productCatalogStore: ProductCatalogStore | undefined;
   let messageBus: AgentMessageBusStore | undefined;
 
-  if (productLaunchEnabled && db) {
-    productCatalogStore = createProductCatalogStore(db);
-    messageBus = createAgentMessageBusStore(db);
+  if (productLaunchDb) {
+    productCatalogStore = createProductCatalogStore(productLaunchDb);
+    messageBus = createAgentMessageBusStore(productLaunchDb);
+    agentConfig.productCatalogStore = productCatalogStore;
+    agentConfig.productLaunchBus = messageBus;
   }
 
   const botConfig: BotConfig = {
@@ -434,12 +441,13 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   } else if (productLaunchEnabled) {
     console.warn(
       "[bot] MSL_PRODUCT_LAUNCH_ENABLED=true but productCatalogStore or messageBus unavailable " +
-        "(missing sqlite db). Photo launches disabled.",
+        "(set MSL_PRODUCT_LAUNCH_SQLITE_PATH or MSL_CORTEX_SQLITE_PATH). Photo launches disabled.",
     );
   }
   if (db)
     botConfig.cleanup = () => {
       db.close();
+      productLaunchDb?.close();
       operationalDb?.close();
       oauthManager?.close();
       supplierMirrorRuntime?.close();
@@ -447,11 +455,17 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
   else if (oauthManager)
     botConfig.cleanup = () => {
       oauthManager.close();
+      productLaunchDb?.close();
       supplierMirrorRuntime?.close();
     };
   else if (supplierMirrorRuntime)
     botConfig.cleanup = () => {
       supplierMirrorRuntime.close();
+      productLaunchDb?.close();
+    };
+  else if (productLaunchDb)
+    botConfig.cleanup = () => {
+      productLaunchDb.close();
     };
 
   const botHandle = createTelegramBot(botConfig);
@@ -513,11 +527,8 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
     const chatId = Number(ctx.chat.id);
     const userId = ctx.from?.id !== undefined ? String(ctx.from.id) : undefined;
 
-    // Admin authorization — same check as text commands
-    if (
-      config.adminAuthorization?.enabled &&
-      !isTelegramAdminAuthorized(config.adminAuthorization, String(chatId), userId)
-    ) {
+    // Photo launches can trigger paid work, so missing or invalid authorization fails closed.
+    if (!isTelegramAdminAuthorized(config.adminAuthorization, String(chatId), userId)) {
       return;
     }
 
@@ -545,12 +556,22 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
       const timestamp = Date.now();
       const localPath = path.join(dir, `${timestamp}.jpg`);
       await fs.writeFile(localPath, buffer);
+      const sellerId = config.sellerId ?? String(chatId);
 
       // Check for an existing pending launch for this chatId
-      const existingLaunch = config.productCatalogStore?.getPendingLaunchByChatId(String(chatId));
+      const existingLaunch = config.productCatalogStore?.getPendingLaunchByChatId(
+        String(chatId),
+        sellerId,
+      );
       if (existingLaunch) {
         // Attach this photo to the existing pending launch
         const launchId = existingLaunch.launchId;
+        config.productCatalogStore?.upsertImage({
+          imageId: crypto.randomUUID(),
+          productId: existingLaunch.productId,
+          url: localPath,
+          source: "ceo_telegram",
+        });
         if (config.messageBus) {
           config.messageBus.enqueue({
             senderAgentId: "telegram-bot",
@@ -558,11 +579,13 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
             messageType: "additional_photo",
             payloadJson: JSON.stringify({
               launchId,
-              imageUrl: localPath,
+              sellerId,
+              imageUrls: [localPath],
               caption,
               chatId,
             }),
             correlationId: launchId,
+            sellerId,
           });
         }
         await ctx.reply("📸 Foto adicional recibida. Agregada al análisis en curso…");
@@ -572,8 +595,6 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
       // Create catalog entry and launch
       const productId = crypto.randomUUID();
       const launchId = crypto.randomUUID();
-      const sellerId = config.sellerId ?? String(chatId);
-
       if (config.productCatalogStore) {
         config.productCatalogStore.upsertProduct({ productId });
         config.productCatalogStore.createLaunch({
@@ -602,6 +623,8 @@ function installPhotoHandler(bot: Bot, config: BotConfig): void {
             chatId,
           }),
           correlationId: launchId,
+          sellerId,
+          dedupeKey: `launch-request:${launchId}`,
         });
       } else {
         console.warn("[bot] Product launch message bus not configured — pipeline will not run");

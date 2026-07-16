@@ -2095,38 +2095,69 @@ describe("MlClient (stub mode)", () => {
     });
   });
 
-  it("publishItem returns write snapshot in stub mode", async () => {
+  it("blocks publishItem before stub or transport dispatch", async () => {
     const { client } = await setupClient("seller-1");
-    const result = await client.publishItem("seller-1", {
-      title: "Nuevo producto",
-      category_id: "MLC1000",
-      price: 9900,
-      currency_id: "CLP",
-      available_quantity: 10,
-      buying_mode: "buy_it_now",
-      listing_type_id: "gold_special",
-      condition: "new",
-      pictures: [{ source: "https://example.com/img.jpg" }],
-      descriptions: [{ plain_text: "Descripción de prueba" }],
-      attributes: [{ id: "BRAND", value_name: "Marca X" }],
-    });
-
-    expect(result.id).toBeDefined();
-    expect(result.permalink).toContain("mercadolibre");
-    expect(result.status).toBe("active");
-    expect(result.capturedAt).toBeDefined();
+    await expect(
+      client.publishItem("seller-1", {
+        title: "Nuevo producto",
+        category_id: "MLC1000",
+        price: 9900,
+        currency_id: "CLP",
+        available_quantity: 10,
+        buying_mode: "buy_it_now",
+        listing_type_id: "gold_special",
+        condition: "new",
+        pictures: [{ source: "https://example.com/img.jpg" }],
+      }),
+    ).rejects.toThrow(/write operations are blocked.*publishItem.*seller-1/);
   });
 
-  it("updateItem returns write snapshot in stub mode", async () => {
+  it("blocks updateItem before stub or transport dispatch", async () => {
     const { client } = await setupClient("seller-1");
-    const result = await client.updateItem("seller-1", "MLC1001", {
-      price: 20000,
-      available_quantity: 5,
-    });
+    await expect(
+      client.updateItem("seller-1", "MLC1001", {
+        price: 20000,
+        available_quantity: 5,
+      }),
+    ).rejects.toThrow(/write operations are blocked.*updateItem.*seller-1/);
+  });
 
-    expect(result.id).toBeDefined();
-    expect(result.permalink).toContain("mercadolibre");
-    expect(result.status).toBe("active");
+  it("dispatches reads but no transport request for any blocked write", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify(completeMlcItemPayload()), { status: 200, statusText: "OK" }),
+      );
+    vi.stubGlobal("fetch", fetch);
+    const ensureValidToken = vi.fn().mockResolvedValue("access-token");
+    const oauthManager = {
+      getStoredToken: vi.fn().mockReturnValue({ access_token: "access-token" }),
+      ensureValidToken,
+      isStubMode: () => false,
+    } as Pick<OAuthManager, "getStoredToken" | "ensureValidToken" | "isStubMode"> as OAuthManager;
+    const client = createMlClient({ oauthManager, now });
+
+    try {
+      await client.getItem("seller-1", "MLC1001");
+      expect(fetch).toHaveBeenCalledTimes(1);
+      fetch.mockClear();
+      ensureValidToken.mockClear();
+
+      await expect(client.publishItem("seller-1", {} as never)).rejects.toThrow();
+      await expect(client.updateItem("seller-1", "MLC1001", {})).rejects.toThrow();
+      await expect(client.relistItem("seller-1", "MLC1001", {})).rejects.toThrow();
+      await expect(
+        client.createCatalogListing("seller-1", {
+          item_id: "MLC1001",
+          catalog_product_id: "MLC-PRODUCT",
+        }),
+      ).rejects.toThrow();
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(ensureValidToken).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("getCategories returns category tree in stub mode", async () => {
@@ -2176,58 +2207,50 @@ describe("MlClient (stub mode)", () => {
     await expect(client.getItems("unknown-seller")).rejects.toThrow("No stored token");
   });
 
-  it("relistItem returns write snapshot in stub mode", async () => {
+  it("blocks relistItem in stub mode", async () => {
     const { client } = await setupClient("seller-1");
-    const result = await client.relistItem("seller-1", "MLC1001", {
-      price: 12000,
-      quantity: 5,
-      listing_type_id: "gold_special",
-    });
-
-    expect(result.id).toBeDefined();
-    expect(result.permalink).toContain("mercadolibre");
-    expect(result.status).toBe("active");
-    expect(result.capturedAt).toBeDefined();
+    await expect(
+      client.relistItem("seller-1", "MLC1001", {
+        price: 12000,
+        quantity: 5,
+        listing_type_id: "gold_special",
+      }),
+    ).rejects.toThrow(/write operations are blocked.*relistItem/);
   });
 
-  it("relistItem sends variations payload in stub mode", async () => {
+  it("blocks relistItem variations in stub mode", async () => {
     const { client } = await setupClient("seller-2");
-    const result = await client.relistItem("seller-2", "MLC2001", {
-      price: 15000,
-      quantity: 3,
-      variations: [
-        { id: 1000, price: 5000, quantity: 1 },
-        { id: 1001, price: 7000, quantity: 2 },
-      ],
-    });
-
-    expect(result.id).toBeDefined();
-    expect(result.status).toBe("active");
+    await expect(
+      client.relistItem("seller-2", "MLC2001", {
+        price: 15000,
+        quantity: 3,
+        variations: [
+          { id: 1000, price: 5000, quantity: 1 },
+          { id: 1001, price: 7000, quantity: 2 },
+        ],
+      }),
+    ).rejects.toThrow(/write operations are blocked.*relistItem/);
   });
 
-  it("createCatalogListing returns write snapshot in stub mode", async () => {
+  it("blocks createCatalogListing in stub mode", async () => {
     const { client } = await setupClient("seller-1");
-    const result = await client.createCatalogListing("seller-1", {
-      item_id: "MLC1001",
-      catalog_product_id: "MLC6005934",
-    });
-
-    expect(result.id).toBeDefined();
-    expect(result.permalink).toContain("mercadolibre");
-    expect(result.status).toBe("active");
-    expect(result.capturedAt).toBeDefined();
+    await expect(
+      client.createCatalogListing("seller-1", {
+        item_id: "MLC1001",
+        catalog_product_id: "MLC6005934",
+      }),
+    ).rejects.toThrow(/write operations are blocked.*createCatalogListing/);
   });
 
-  it("createCatalogListing receives variation_id in stub mode", async () => {
+  it("blocks createCatalogListing with variation_id in stub mode", async () => {
     const { client } = await setupClient("seller-1");
-    const result = await client.createCatalogListing("seller-1", {
-      item_id: "MLC1001",
-      catalog_product_id: "MLC6005934",
-      variation_id: 5000,
-    });
-
-    expect(result.id).toBeDefined();
-    expect(result.status).toBe("active");
+    await expect(
+      client.createCatalogListing("seller-1", {
+        item_id: "MLC1001",
+        catalog_product_id: "MLC6005934",
+        variation_id: 5000,
+      }),
+    ).rejects.toThrow(/write operations are blocked.*createCatalogListing/);
   });
 });
 

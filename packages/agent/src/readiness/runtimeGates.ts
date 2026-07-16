@@ -3,37 +3,7 @@ import type {
   ProductionReadinessReport,
   RuntimeGatePolicy,
 } from "./types.js";
-
-// ── MercadoLibre Write Block Error ──────────────────────────────────
-
-/**
- * Thrown when a MercadoLibre write operation is attempted but write
- * capabilities are universally blocked.
- */
-export class MercadoLibreWriteBlockedError extends Error {
-  readonly operation: string;
-  readonly sellerId: string | undefined;
-
-  constructor(operation: string, sellerId?: string) {
-    const sellerPart = sellerId ? ` for seller ${sellerId}` : "";
-    super(`MercadoLibre write operations are blocked. Attempted: ${operation}${sellerPart}.`);
-    this.name = "MercadoLibreWriteBlockedError";
-    this.operation = operation;
-    this.sellerId = sellerId;
-  }
-}
-
-/**
- * Asserts that MercadoLibre write operations are disabled.
- *
- * In this PR, write is NEVER enabled. Every call to this function
- * unconditionally throws {@link MercadoLibreWriteBlockedError}.
- *
- * @throws {MercadoLibreWriteBlockedError} always — write is blocked
- */
-export function assertMercadoLibreWriteDisabled(operation: string, sellerId?: string): void {
-  throw new MercadoLibreWriteBlockedError(operation, sellerId);
-}
+export { assertMercadoLibreWriteDisabled, MercadoLibreWriteBlockedError } from "@msl/mercadolibre";
 
 // ── Production Capability Gates ────────────────────────────────────
 

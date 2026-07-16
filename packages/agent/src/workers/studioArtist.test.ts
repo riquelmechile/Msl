@@ -49,6 +49,9 @@ function makeBus() {
     messageType: string;
     payloadJson: string;
     dedupeKey?: string;
+    correlationId?: string;
+    parentMessageId?: string;
+    sellerId?: string;
   }> = [];
   return {
     enqueue: vi.fn(
@@ -58,6 +61,9 @@ function makeBus() {
         messageType: string;
         payloadJson: string;
         dedupeKey?: string;
+        correlationId?: string;
+        parentMessageId?: string;
+        sellerId?: string;
       }) => {
         enqueued.push(input);
         return { messageId: `bus-msg-${enqueued.length}` };
@@ -201,7 +207,56 @@ describe("studioArtist", () => {
       const resultPayload = JSON.parse(resultMsg!.payloadJson) as Record<string, unknown>;
       const output = resultPayload.studioArtistResult as Record<string, unknown>;
       expect(output.usedMiniMax).toBe(true);
-      expect(output.costUsd).toBe(0.05);
+      // Enqueueing a request is not a successful external call, so no spend is recorded yet.
+      expect(output.costUsd).toBe(0);
+    });
+
+    it("does not complete a launch before its generated asset exists", async () => {
+      process.env.MSL_CREATIVE_STUDIO_ENABLED = "true";
+      process.env.MINIMAX_API_KEY = "test-minimax-key";
+      const bus = makeBus();
+
+      await studioArtist({
+        claim: makeClaim({
+          messageType: "launch_stage_work",
+          correlationId: "launch-1",
+          payloadJson: JSON.stringify({
+            launchId: "launch-1",
+            sellerId: "test-seller",
+            stage: "generating_creative",
+            task: "studio-artist",
+            imageUrls: ["https://example.com/original.jpg"],
+            qualityDecision: "REGENERATE",
+          }),
+        }),
+        reader: {} as never,
+        cortex: {} as never,
+        bus: bus as never,
+        sellerIds: ["test-seller"],
+      });
+
+      const request = bus.enqueued.find(
+        (message) => message.messageType === "creative-asset-request",
+      );
+      expect(request).toBeDefined();
+      expect(JSON.parse(request!.payloadJson)).toMatchObject({
+        sellerId: "test-seller",
+        productContext: { itemId: "launch-1" },
+        productLaunch: {
+          launchId: "launch-1",
+          sellerId: "test-seller",
+          stage: "generating_creative",
+          task: "studio-artist",
+        },
+      });
+      expect(request).toMatchObject({
+        correlationId: "launch-1",
+        parentMessageId: "msg-artist-1",
+        sellerId: "test-seller",
+      });
+      expect(bus.enqueued.some((message) => message.messageType === "launch_stage_complete")).toBe(
+        false,
+      );
     });
 
     it("falls back to stub when MiniMax is not available", async () => {

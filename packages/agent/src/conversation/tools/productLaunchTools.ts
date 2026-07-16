@@ -9,6 +9,8 @@ export type ProductLaunchToolsOptions = {
   catalogStore?: ProductCatalogStore;
   /** AgentMessageBusStore for enqueuing launch coordinator messages. */
   bus?: AgentMessageBusStore;
+  /** Seller scope enforced by the hosting agent runtime. */
+  authorizedSellerId?: string;
 };
 
 // ── Tool: launch_product ──────────────────────────────────────────────
@@ -58,6 +60,13 @@ export function createLaunchProductTool(options: ProductLaunchToolsOptions = {})
       const imageUrl = typeof args.imageUrl === "string" ? args.imageUrl : undefined;
       const caption = typeof args.caption === "string" ? args.caption : undefined;
       const chatId = typeof args.chatId === "number" ? args.chatId : undefined;
+      if (options.authorizedSellerId && sellerId !== options.authorizedSellerId) {
+        return {
+          status: "forbidden",
+          error: "Product launch seller authorization failed.",
+          noMutationExecuted: true,
+        };
+      }
 
       // ── Stub mode ──
       if (!store) {
@@ -203,6 +212,14 @@ export function createQueryLaunchStatusTool(
             noMutationExecuted: true,
           };
         }
+        if (options.authorizedSellerId && launch.sellerId !== options.authorizedSellerId) {
+          return {
+            launchId,
+            status: "forbidden",
+            message: "Launch does not belong to the authorized seller.",
+            noMutationExecuted: true,
+          };
+        }
 
         // Build pipeline progress based on status
         const pipelineStages = [
@@ -322,6 +339,14 @@ export function createApproveLaunchTool(options: ProductLaunchToolsOptions = {})
             noMutationExecuted: true,
           };
         }
+        if (options.authorizedSellerId && launch.sellerId !== options.authorizedSellerId) {
+          return {
+            launchId,
+            approved: false,
+            message: "Launch does not belong to the authorized seller.",
+            noMutationExecuted: true,
+          };
+        }
 
         if (launch.status !== "awaiting_approval") {
           return {
@@ -333,8 +358,20 @@ export function createApproveLaunchTool(options: ProductLaunchToolsOptions = {})
           };
         }
 
-        // Transition to approved
-        store.updateLaunchStatus(launchId, "approved");
+        const approvedLaunch = store.transitionLaunchStatus(
+          launchId,
+          launch.sellerId,
+          "awaiting_approval",
+          "approved",
+        );
+        if (!approvedLaunch) {
+          return {
+            launchId,
+            approved: false,
+            message: `Launch "${launchId}" changed before approval could be recorded.`,
+            noMutationExecuted: true,
+          };
+        }
 
         // Enqueue to coordinator so it continues to ready_to_publish
         if (bus) {
@@ -344,6 +381,8 @@ export function createApproveLaunchTool(options: ProductLaunchToolsOptions = {})
             messageType: "launch_approved",
             payloadJson: JSON.stringify({
               launchId,
+              sellerId: launch.sellerId,
+              chatId: launch.chatId,
               notes: notes ?? null,
               approvedAt: new Date().toISOString(),
             }),

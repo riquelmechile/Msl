@@ -34,9 +34,15 @@ describe("LaunchCostTracker", () => {
     });
 
     it("accumulates multiple events for the same launch", () => {
-      tracker.record(makeEvent({ estimatedCostUsd: 0.005, source: "google_lens" }));
-      tracker.record(makeEvent({ estimatedCostUsd: 0.01, source: "deepseek" }));
-      tracker.record(makeEvent({ estimatedCostUsd: 0.015, source: "minimax" }));
+      tracker.record(
+        makeEvent({ eventKey: "vision", estimatedCostUsd: 0.005, source: "google_lens" }),
+      );
+      tracker.record(
+        makeEvent({ eventKey: "research", estimatedCostUsd: 0.01, source: "deepseek" }),
+      );
+      tracker.record(
+        makeEvent({ eventKey: "creative", estimatedCostUsd: 0.015, source: "minimax" }),
+      );
       expect(tracker.getTotalCost("launch-test-1")).toBeCloseTo(0.03, 4);
     });
 
@@ -111,8 +117,8 @@ describe("LaunchCostTracker", () => {
 
   describe("clear", () => {
     it("removes costs for a launch and returns the total", () => {
-      tracker.record(makeEvent({ estimatedCostUsd: 0.005 }));
-      tracker.record(makeEvent({ estimatedCostUsd: 0.005 }));
+      tracker.record(makeEvent({ eventKey: "first", estimatedCostUsd: 0.005 }));
+      tracker.record(makeEvent({ eventKey: "second", estimatedCostUsd: 0.005 }));
       const cleared = tracker.clear("launch-test-1");
       expect(cleared).toBeCloseTo(0.01, 4);
       expect(tracker.getTotalCost("launch-test-1")).toBe(0);
@@ -127,14 +133,43 @@ describe("LaunchCostTracker", () => {
     it("matches expected per-launch cost ($0.08-0.10)", () => {
       // 1 Google Lens + 3 DeepSeek + 2 MiniMax = typical launch
       tracker.record(makeEvent({ source: "google_lens", estimatedCostUsd: 0.005 }));
-      tracker.record(makeEvent({ source: "deepseek", estimatedCostUsd: 0.01 }));
-      tracker.record(makeEvent({ source: "deepseek", estimatedCostUsd: 0.01 }));
-      tracker.record(makeEvent({ source: "deepseek", estimatedCostUsd: 0.01 }));
-      tracker.record(makeEvent({ source: "minimax", estimatedCostUsd: 0.015 }));
-      tracker.record(makeEvent({ source: "minimax", estimatedCostUsd: 0.015 }));
+      tracker.record(
+        makeEvent({ eventKey: "research-1", source: "deepseek", estimatedCostUsd: 0.01 }),
+      );
+      tracker.record(
+        makeEvent({ eventKey: "research-2", source: "deepseek", estimatedCostUsd: 0.01 }),
+      );
+      tracker.record(
+        makeEvent({ eventKey: "research-3", source: "deepseek", estimatedCostUsd: 0.01 }),
+      );
+      tracker.record(
+        makeEvent({ eventKey: "creative-1", source: "minimax", estimatedCostUsd: 0.015 }),
+      );
+      tracker.record(
+        makeEvent({ eventKey: "creative-2", source: "minimax", estimatedCostUsd: 0.015 }),
+      );
       const total = tracker.getTotalCost("launch-test-1");
       expect(total).toBeGreaterThanOrEqual(0.06);
       expect(total).toBeLessThanOrEqual(0.11); // $0.065 with the lower bounds
+    });
+  });
+
+  describe("budget and idempotency", () => {
+    it("does not count the same event key twice", () => {
+      const event = makeEvent({ eventKey: "stable-event" });
+      expect(tracker.record(event).recorded).toBe(true);
+      expect(tracker.record(event).recorded).toBe(false);
+      expect(tracker.getTotalCost(event.launchId)).toBe(0.005);
+    });
+
+    it("blocks a call that would exceed the per-launch budget", () => {
+      tracker = new LaunchCostTracker({ maxLaunchUsd: 0.05 });
+      tracker.record(makeEvent({ eventKey: "spent", estimatedCostUsd: 0.04 }));
+
+      expect(tracker.canAfford("launch-test-1", "seller-1", 0.01).allowed).toBe(true);
+      expect(tracker.canAfford("launch-test-1", "seller-1", 0.02)).toMatchObject({
+        allowed: false,
+      });
     });
   });
 });

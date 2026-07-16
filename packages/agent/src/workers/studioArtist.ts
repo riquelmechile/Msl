@@ -1,4 +1,9 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import {
+  enqueueProductLaunchResult,
+  parseProductLaunchEnvelope,
+  type ProductLaunchEnvelope,
+} from "./productLaunchEnvelope.js";
 import type { CreativeAssetRequest, CreativeJobKind, CreativeChannel } from "@msl/creative-studio";
 import { CostLedger } from "@msl/creative-studio";
 import type { ImageQualityDecision } from "@msl/domain";
@@ -65,7 +70,7 @@ const MINIMAX_IMAGE_COST_USD = 0.05;
  * 3. Track costs via CostLedger
  * 4. Stub mode: when MiniMax unavailable → return input image URLs as-is
  */
-export const studioArtist: DaemonHandler = ({ claim, bus }) =>
+export const studioArtist: DaemonHandler = ({ claim, bus, launchCostTracker }) =>
   Promise.resolve(
     (() => {
       const findings: DaemonFinding[] = [];
@@ -83,6 +88,15 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
           evidenceIds: [claim.messageId],
         });
         return { findings, proposalEnqueued: false, messageIds };
+      }
+      const parsedLaunchEnvelope = parseProductLaunchEnvelope(claim);
+      if (parsedLaunchEnvelope) {
+        input.imageUrl = parsedLaunchEnvelope.imageUrls[0] ?? "";
+        input.qualityDecision = parsedLaunchEnvelope.qualityDecision!;
+        input.referenceUrls = parsedLaunchEnvelope.referenceUrls ?? [];
+        input.productContext = {
+          title: [parsedLaunchEnvelope.brand, parsedLaunchEnvelope.model].filter(Boolean).join(" "),
+        };
       }
 
       if (!input.imageUrl) {
@@ -111,6 +125,14 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
       const maxDailyUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_DAILY_USD", 5.0);
       const maxJobUsd = envNumber("MSL_CREATIVE_STUDIO_MAX_JOB_USD", 0.5);
       const costLedger = new CostLedger({ maxDailyUsd, maxJobUsd });
+      const launchBudget =
+        parsedLaunchEnvelope && launchCostTracker
+          ? launchCostTracker.canAfford(
+              parsedLaunchEnvelope.launchId,
+              parsedLaunchEnvelope.sellerId,
+              MINIMAX_IMAGE_COST_USD,
+            )
+          : { allowed: true as const };
 
       let output: StudioArtistOutput;
 
@@ -153,6 +175,17 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
             break;
           }
 
+          if (!launchBudget.allowed) {
+            findings.push({
+              kind: "alert",
+              severity: "warning",
+              summary: `Studio Artist: ${launchBudget.reason}`,
+              evidenceIds: [claim.messageId],
+            });
+            output = { generatedUrls: [input.imageUrl], usedMiniMax: false, costUsd: 0 };
+            break;
+          }
+
           // Check budget
           const budgetCheck = costLedger.canAfford(MINIMAX_IMAGE_COST_USD);
           if (!budgetCheck.allowed) {
@@ -177,6 +210,8 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
             imageUrl: input.imageUrl,
             productContext: input.productContext,
             referenceUrls: [input.imageUrl],
+            sellerId: parsedLaunchEnvelope?.sellerId,
+            launchEnvelope: parsedLaunchEnvelope,
           });
 
           const msg = bus.enqueue({
@@ -185,15 +220,20 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
             messageType: "creative-asset-request",
             payloadJson: JSON.stringify(creativeRequest),
             dedupeKey: requestId,
+            ...(parsedLaunchEnvelope
+              ? {
+                  correlationId: parsedLaunchEnvelope.launchId,
+                  parentMessageId: claim.messageId,
+                  sellerId: parsedLaunchEnvelope.sellerId,
+                }
+              : {}),
           });
           messageIds.push(msg.messageId);
-
-          costLedger.recordSpend(MINIMAX_IMAGE_COST_USD);
 
           output = {
             generatedUrls: [],
             usedMiniMax: true,
-            costUsd: MINIMAX_IMAGE_COST_USD,
+            costUsd: 0,
           };
 
           findings.push({
@@ -228,6 +268,22 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
             break;
           }
 
+          if (!launchBudget.allowed) {
+            findings.push({
+              kind: "alert",
+              severity: "warning",
+              summary: `Studio Artist: ${launchBudget.reason}`,
+              evidenceIds: [claim.messageId],
+            });
+            output = {
+              generatedUrls:
+                input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
+              usedMiniMax: false,
+              costUsd: 0,
+            };
+            break;
+          }
+
           // Check budget
           const budgetCheck = costLedger.canAfford(MINIMAX_IMAGE_COST_USD);
           if (!budgetCheck.allowed) {
@@ -255,6 +311,8 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
             imageUrl: scoutUrl,
             productContext: input.productContext,
             referenceUrls: input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
+            sellerId: parsedLaunchEnvelope?.sellerId,
+            launchEnvelope: parsedLaunchEnvelope,
           });
 
           const msg = bus.enqueue({
@@ -263,15 +321,20 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
             messageType: "creative-asset-request",
             payloadJson: JSON.stringify(creativeRequest),
             dedupeKey: requestId,
+            ...(parsedLaunchEnvelope
+              ? {
+                  correlationId: parsedLaunchEnvelope.launchId,
+                  parentMessageId: claim.messageId,
+                  sellerId: parsedLaunchEnvelope.sellerId,
+                }
+              : {}),
           });
           messageIds.push(msg.messageId);
-
-          costLedger.recordSpend(MINIMAX_IMAGE_COST_USD);
 
           output = {
             generatedUrls: [],
             usedMiniMax: true,
-            costUsd: MINIMAX_IMAGE_COST_USD,
+            costUsd: 0,
           };
 
           findings.push({
@@ -300,6 +363,18 @@ export const studioArtist: DaemonHandler = ({ claim, bus }) =>
       }
 
       // ── 3. Enqueue result ─────────────────────────────────────────
+      const launchEnvelope = parsedLaunchEnvelope;
+      if (launchEnvelope) {
+        if (output.usedMiniMax) {
+          return { findings, proposalEnqueued: true, messageIds };
+        }
+        const message = enqueueProductLaunchResult(bus, claim, launchEnvelope, {
+          images: output.generatedUrls.length > 0 ? output.generatedUrls : [input.imageUrl],
+        });
+        messageIds.push(message.messageId);
+        return { findings, proposalEnqueued: true, messageIds };
+      }
+
       const resultPayload: Record<string, unknown> = {
         type: "finding",
         summary: `Studio Artist: ${output.usedMiniMax ? "MiniMax requested" : "no MiniMax needed"} — ${output.generatedUrls.length} URL(s)`,
@@ -329,7 +404,9 @@ function buildCreativeAssetRequest(params: {
   imageUrl: string;
   productContext: StudioArtistInput["productContext"];
   referenceUrls: string[];
-}): CreativeAssetRequest {
+  sellerId?: string | undefined;
+  launchEnvelope?: ProductLaunchEnvelope | undefined;
+}): CreativeAssetRequest & { productLaunch?: ProductLaunchEnvelope } {
   const channel: CreativeChannel =
     (params.productContext.channel as CreativeChannel) ?? "mercadolibre";
   const kind: CreativeJobKind = "product-cover-i2i";
@@ -337,7 +414,7 @@ function buildCreativeAssetRequest(params: {
   return {
     requestId: params.requestId,
     requestedByAgent: "creative-production",
-    sellerId: "default",
+    sellerId: params.sellerId ?? "default",
     channel,
     kind,
     objective: "conversion",
@@ -348,7 +425,9 @@ function buildCreativeAssetRequest(params: {
     })),
     productContext: {
       title: params.productContext.title,
+      ...(params.launchEnvelope ? { itemId: params.launchEnvelope.launchId } : {}),
     },
+    ...(params.launchEnvelope ? { productLaunch: params.launchEnvelope } : {}),
     constraints: {
       preserveProductTruth: true,
       noBrandInfringement: true,

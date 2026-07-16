@@ -6,6 +6,9 @@ import {
 } from "../../src/workers/creativeStudioDaemon.js";
 import type { AgentMessage } from "../../src/conversation/agentMessageBusStore.js";
 import type { DaemonHandler } from "../../src/workers/daemonTypes.js";
+import Database from "better-sqlite3";
+import { createAgentMessageBusStore } from "../../src/conversation/agentMessageBusStore.js";
+import { createProductCatalogStore } from "../../src/workers/productCatalogStore.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -52,6 +55,48 @@ function claimFixture(overrides: Partial<AgentMessage> = {}): AgentMessage {
     outcomeScore: overrides.outcomeScore ?? null,
     actionId: overrides.actionId ?? null,
   };
+}
+
+function launchClaim(
+  requestSeller = "test-seller",
+  launchSeller = requestSeller,
+  claimSeller = requestSeller,
+  overrides: Partial<AgentMessage> = {},
+): AgentMessage {
+  const claim = claimFixture({
+    senderAgentId: "creative-production",
+    messageType: "creative-asset-request",
+    correlationId: "launch-1",
+    parentMessageId: "launch-work-1",
+    sellerId: claimSeller,
+    ...overrides,
+  });
+  const request = JSON.parse(claim.payloadJson) as Record<string, unknown>;
+  request.sellerId = requestSeller;
+  request.productLaunch = {
+    launchId: "launch-1",
+    sellerId: launchSeller,
+    stage: "generating_creative",
+    task: "studio-artist",
+    imageUrls: ["https://example.com/original.jpg"],
+  };
+  claim.payloadJson = JSON.stringify(request);
+  return claim;
+}
+
+function mockSuccessfulImage(url = "https://cdn.minimax.io/img/generated.jpg"): void {
+  vi.mocked(fetch).mockReset();
+  vi.mocked(fetch).mockResolvedValue({
+    status: 200,
+    ok: true,
+    text: () =>
+      Promise.resolve(
+        JSON.stringify({
+          base_resp: { status_code: 0, status_message: "success" },
+          data: [{ image_url: url }],
+        }),
+      ),
+  } as Response);
 }
 
 const mockBus = () => ({
@@ -109,6 +154,26 @@ function baseContext(claim: AgentMessage): {
   } as unknown as Parameters<DaemonHandler>[0];
 
   return { ctx, enqueue };
+}
+
+function launchFailureContext(attempts = 0) {
+  const db = new Database(":memory:");
+  const bus = createAgentMessageBusStore(db);
+  const store = createProductCatalogStore(db);
+  store.upsertProduct({ productId: "product-1" });
+  store.createLaunch({
+    launchId: "launch-1",
+    productId: "product-1",
+    sellerId: "test-seller",
+    status: "generating_creative",
+    createdAt: new Date().toISOString(),
+  });
+  const { ctx } = baseContext(
+    launchClaim("test-seller", "test-seller", "test-seller", { attempts }),
+  );
+  ctx.bus = bus;
+  ctx.productCatalogStore = store;
+  return { db, bus, store, ctx };
 }
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -245,6 +310,137 @@ describe("creativeStudioDaemon", () => {
 
     expect(result.proposalEnqueued).toBe(true);
     expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes generated launch assets back to the coordinator", async () => {
+    mockSuccessfulImage();
+    const { ctx, enqueue } = baseContext(launchClaim());
+
+    await creativeStudioDaemon(ctx);
+
+    const completion = enqueue.mock.calls
+      .map(([input]) => input as Record<string, unknown>)
+      .find((input) => input.messageType === "launch_stage_complete");
+    expect(completion).toMatchObject({
+      receiverAgentId: "product-launch",
+      correlationId: "launch-1",
+      sellerId: "test-seller",
+      dedupeKey: "launch-result:launch-1:generating_creative:studio-artist",
+    });
+    expect(JSON.parse(String(completion?.payloadJson))).toMatchObject({
+      launchId: "launch-1",
+      sellerId: "test-seller",
+      images: ["https://cdn.minimax.io/img/generated.jpg"],
+    });
+  });
+
+  it("deduplicates launch completion when creative work is retried", async () => {
+    mockSuccessfulImage();
+    const db = new Database(":memory:");
+    const bus = createAgentMessageBusStore(db);
+    const { ctx } = baseContext(launchClaim());
+    ctx.bus = bus;
+
+    await creativeStudioDaemon(ctx);
+    resetConcurrencyGate();
+    await creativeStudioDaemon(ctx);
+
+    const completions = bus
+      .getMessagesByCorrelationId("launch-1")
+      .filter((message) => message.messageType === "launch_stage_complete");
+    expect(completions).toHaveLength(1);
+    db.close();
+  });
+
+  it("keeps launch failure retryable and completes exactly once after recovery", async () => {
+    const db = new Database(":memory:");
+    const bus = createAgentMessageBusStore(db);
+    const { ctx } = baseContext(launchClaim());
+    ctx.bus = bus;
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
+
+    await expect(creativeStudioDaemon(ctx)).rejects.toThrow("launch generation failed");
+    expect(bus.getMessagesByCorrelationId("launch-1")).toHaveLength(0);
+
+    resetConcurrencyGate();
+    mockSuccessfulImage();
+    await creativeStudioDaemon(ctx);
+    resetConcurrencyGate();
+    await creativeStudioDaemon(ctx);
+
+    const completions = bus
+      .getMessagesByCorrelationId("launch-1")
+      .filter((message) => message.messageType === "launch_stage_complete");
+    expect(completions).toHaveLength(1);
+    db.close();
+  });
+
+  it("retries failed launch generation twice, then rejects and notifies once", async () => {
+    const { db, bus, store, ctx } = launchFailureContext();
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
+
+    for (const attempts of [0, 1]) {
+      ctx.claim.attempts = attempts;
+      await expect(creativeStudioDaemon(ctx)).rejects.toThrow("launch generation failed");
+      expect(store.getLaunchForSeller("launch-1", "test-seller")?.status).toBe(
+        "generating_creative",
+      );
+      expect(bus.getMessagesByCorrelationId("launch-1")).toHaveLength(0);
+      resetConcurrencyGate();
+    }
+
+    ctx.claim.attempts = 2;
+    const result = await creativeStudioDaemon(ctx);
+    resetConcurrencyGate();
+    await creativeStudioDaemon(ctx);
+
+    expect(result.proposalEnqueued).toBe(false);
+    expect(store.getLaunchForSeller("launch-1", "test-seller")?.status).toBe("rejected");
+    const messages = bus.getMessagesByCorrelationId("launch-1");
+    const notifications = messages.filter((message) => message.messageType === "progress");
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toMatchObject({
+      receiverAgentId: "ceo",
+      dedupeKey: "launch-failed:launch-1:creative-studio",
+    });
+    expect(messages.some((message) => message.messageType === "launch_stage_complete")).toBe(false);
+    expect(messages.some((message) => message.messageType === "proposal")).toBe(false);
+    db.close();
+  });
+
+  it("rejects a conclusively blocked launch without consuming retries", async () => {
+    const { db, bus, store, ctx } = launchFailureContext();
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValue({
+      status: 200,
+      ok: true,
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            base_resp: { status_code: 1026, status_message: "Content blocked" },
+          }),
+        ),
+    } as Response);
+
+    await creativeStudioDaemon(ctx);
+
+    expect(store.getLaunchForSeller("launch-1", "test-seller")?.status).toBe("rejected");
+    const messages = bus.getMessagesByCorrelationId("launch-1");
+    expect(messages.filter((message) => message.messageType === "progress")).toHaveLength(1);
+    expect(messages.some((message) => message.messageType === "launch_stage_complete")).toBe(false);
+    db.close();
+  });
+
+  it("rejects cross-seller launch correlation before provider execution", async () => {
+    const { ctx, enqueue } = baseContext(launchClaim("seller-a", "seller-b", "seller-a"));
+
+    const result = await creativeStudioDaemon(ctx);
+
+    expect(result.findings[0]?.summary).toContain("invalid product launch correlation");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   // ── ML Diagnosis tests ──────────────────────────────────────

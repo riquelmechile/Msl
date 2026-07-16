@@ -23,6 +23,10 @@ export const listingCompositionDaemon: DaemonHandler = async (ctx) => {
     // Unparseable — default to Copywriter which handles parse errors
   }
 
+  if (payload.task === "quality-inspector") return qualityInspector(ctx);
+  if (payload.task === "spec-technician") return specTechnician(ctx);
+  if (payload.task === "copywriter") return copywriter(ctx);
+
   // Route to Copywriter when we have sellerId + specs
   if (typeof payload.sellerId === "string" && typeof payload.specs === "string") {
     return copywriter(ctx);
