@@ -466,6 +466,31 @@ export const FINANCE_DIRECTOR_LANE: LaneContract = {
   credentialScope: "provider-default",
 };
 
+export const ECONOMIC_INGESTION_LANE: LaneContract = {
+  laneId: "economic-ingestion",
+  label: "Economic Ingestion",
+  stablePrefix: "Read-only economic ingestion for seller-scoped durable snapshots.",
+  refreshableContextProvider: "seller-scoped orders, costs, and unit-economics snapshots",
+  inputs: ["seller-scoped-economic-sources"],
+  outputs: ["unit-economics-snapshots", "reconciliation"],
+  boundaries: ["no MercadoLibre writes", phaseOneBoundary],
+  requiredEvidenceKinds: ["economic-source"],
+  credentialScope: "account",
+};
+
+export const ECONOMIC_LEARNING_LANE: LaneContract = {
+  laneId: "economic-learning",
+  label: "Economic Learning",
+  stablePrefix:
+    "Learn only from an explicitly referenced, verified seller-scoped economic outcome.",
+  refreshableContextProvider: "verified seller-scoped economic outcomes",
+  inputs: ["verified-economic-outcome"],
+  outputs: ["economic-learning-event"],
+  boundaries: ["no outcome mutation", "no MercadoLibre writes", phaseOneBoundary],
+  requiredEvidenceKinds: ["economic-outcome"],
+  credentialScope: "provider-default",
+};
+
 export const LANE_CONTRACTS: readonly LaneContract[] = [
   CEO_LANE,
   COST_SUPPLIER_LANE,
@@ -483,6 +508,8 @@ export const LANE_CONTRACTS: readonly LaneContract[] = [
   EOD_SUMMARY_LANE,
   UNANSWERED_QUESTIONS_LANE,
   FINANCE_DIRECTOR_LANE,
+  ECONOMIC_INGESTION_LANE,
+  ECONOMIC_LEARNING_LANE,
 ];
 
 export function getLaneContract(laneId: LaneId): LaneContract {

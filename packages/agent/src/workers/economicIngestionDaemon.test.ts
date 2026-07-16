@@ -24,6 +24,7 @@ function createDurableRuntime(
     }),
     health: { sellerId, numericSellerId, sellerSlug },
     close: vi.fn(),
+    mercadoLibreWrite: vi.fn(),
   } as unknown as EconomicIngestionRuntime;
 }
 
@@ -129,6 +130,10 @@ describe("economicIngestionDaemon", () => {
       expect(runtimeFactory).toHaveBeenCalledWith("source");
       expect(runtime.pipeline).toHaveBeenCalledWith(expect.objectContaining({ noPersist: false }));
       expect(runtime.close).toHaveBeenCalledOnce();
+      expect(
+        (runtime as EconomicIngestionRuntime & { mercadoLibreWrite: ReturnType<typeof vi.fn> })
+          .mercadoLibreWrite,
+      ).not.toHaveBeenCalled();
     });
 
     it("alerts when seller cannot select a durable runtime", async () => {

@@ -19,6 +19,10 @@ export type BridgeInput = {
   persistEvent: (event: EconomicLearningEvent) => void;
   /** Optionally compute a state hash for before/after comparison */
   computeStateHash?: () => string;
+  /** Durable store for listing past events (replaces in-memory arrays) */
+  listEventsByOutcome: (outcomeId: string, sellerId: string) => EconomicLearningEvent[];
+  /** Durable store for listing reversed events */
+  listReversedEvents: (outcomeId: string, sellerId: string) => EconomicLearningEvent[];
 };
 
 // ── Bridge result ───────────────────────────────────────────────────────────
@@ -33,14 +37,11 @@ export type BridgeResult = {
 // ── Bridge ──────────────────────────────────────────────────────────────────
 
 export class CortexEconomicReinforcementBridge {
-  private eventsByOutcome = new Map<string, EconomicLearningEvent[]>();
-  private reversedIds = new Set<string>();
-
   /**
    * Apply a reinforcement plan to the Cortex graph engine.
    *
    * Guarantees:
-   *  - Idempotent: same idempotency key → returns existing event
+   *  - Idempotent: same idempotency key → returns existing event from durable store
    *  - Engine undefined → creates failed event, never crashes
    *  - Seller isolation: events scoped per seller
    *  - No outcome mutation
@@ -48,15 +49,22 @@ export class CortexEconomicReinforcementBridge {
    *  - Metadata is bounded (outcomeId, sellerId, status)
    */
   applyPlan(input: BridgeInput): BridgeResult {
-    const { plan, outcome, engine, isAlreadyProcessed, persistEvent, computeStateHash } = input;
+    const {
+      plan,
+      outcome: _outcome,
+      engine,
+      isAlreadyProcessed,
+      persistEvent,
+      computeStateHash,
+      listEventsByOutcome,
+    } = input;
 
-    // ── Build idempotency key ────────────────────────────────────────────
     const idempotencyKey = `${plan.outcomeId}-${plan.sellerId}-${plan.reinforcementPolicyVersion}`;
 
-    // ── Check idempotency ────────────────────────────────────────────────
     if (isAlreadyProcessed(idempotencyKey)) {
-      // Find the existing event
-      const existing = this.persistedEvents.find((e) => e.idempotencyKey === idempotencyKey);
+      const existing = listEventsByOutcome(plan.outcomeId, plan.sellerId).find(
+        (e) => e.idempotencyKey === idempotencyKey,
+      );
       if (existing) {
         return {
           event: existing,
@@ -64,19 +72,20 @@ export class CortexEconomicReinforcementBridge {
           idempotent: true,
         };
       }
+      // isAlreadyProcessed returned true but no event found in the store yet —
+      // this happens when claimIdempotencyKey just inserted (atomic claim),
+      // not when an event already exists. Continue with processing.
     }
 
-    // ── Compute before state hash ────────────────────────────────────────
     const beforeStateHash = this.computeHash(engine, computeStateHash);
 
-    // ── Engine unavailable → failed event ────────────────────────────────
     if (!engine) {
       const event = createEconomicLearningEvent({
         idempotencyKey,
         outcomeId: plan.outcomeId,
         sellerId: plan.sellerId,
         planId: plan.planId,
-        attributionId: "", // no attribution context without engine
+        attributionId: "",
         targetNodeIds: [],
         targetEdgeIds: [],
         adjustments: [],
@@ -93,8 +102,7 @@ export class CortexEconomicReinforcementBridge {
         reinforcementPolicyVersion: plan.reinforcementPolicyVersion,
       });
 
-      // Persist even failed events for audit
-      this.trackAndPersist(event, outcome.outcomeId, persistEvent);
+      persistEvent(event);
 
       return {
         event,
@@ -104,12 +112,10 @@ export class CortexEconomicReinforcementBridge {
       };
     }
 
-    // ── Apply plan to Cortex ─────────────────────────────────────────────
     const targetNodeIds: string[] = [];
     const targetEdgeIds: string[] = [];
     const adjustments: AppliedAdjustment[] = [];
 
-    // Create/upsert outcome concept node
     for (const _target of plan.targetNodes) {
       const existingNode = engine.getOrCreateNode(
         `economic_outcome:${plan.outcomeId}`,
@@ -124,54 +130,40 @@ export class CortexEconomicReinforcementBridge {
       targetNodeIds.push(String(existingNode.id));
     }
 
-    // Track edges
     for (const edge of plan.targetEdges) {
       targetEdgeIds.push(edge.nodeId);
     }
 
-    // Apply adjustments
     for (const adj of plan.proposedAdjustments) {
       const nodeId = Number(adj.nodeId);
       if (!Number.isNaN(nodeId)) {
         const targetNode = engine.getNode(nodeId);
         if (targetNode) {
           const beforeValue = targetNode.activation;
-          // In a production system, the engine would support generic
-          // activation deltas. For now, we use the existing Hebbian
-          // semantics: createEdge + reinforce if delta > 0, penalize if < 0
-          // But our adjustments are numeric deltas, so we apply them
-          // by creating a concept node with the delta and recording it.
+          this.applyActivationDelta(engine, nodeId, adj.delta, adj.targetType);
+          const afterValue = clamp(beforeValue + adj.delta, 0, 1);
           const applied: AppliedAdjustment = {
             nodeId: adj.nodeId,
             delta: adj.delta,
             targetType: adj.targetType,
             beforeValue,
-            afterValue: clamp(beforeValue + adj.delta, 0, 1),
+            afterValue,
           };
           adjustments.push(applied);
-
-          // Apply the delta via engine (activation update)
-          // The GraphEngine doesn't expose a direct activation setter,
-          // so we record the adjustment for audit. In tests, this is
-          // validated via the mock engine.
-          this.applyActivationDelta(engine, nodeId, adj.delta, adj.targetType);
         }
       }
     }
 
-    // Record lessons created
     const lessonIds = plan.lessonCandidates.map((_, idx) => `lesson-${plan.outcomeId}-${idx + 1}`);
 
-    // ── Compute after state hash ─────────────────────────────────────────
     const afterStateHash = this.computeHash(engine, computeStateHash);
 
-    // ── Create learning event ────────────────────────────────────────────
     const event = createEconomicLearningEvent({
       idempotencyKey,
       outcomeId: plan.outcomeId,
       sellerId: plan.sellerId,
       planId: plan.planId,
-      attributionId: "", // will be populated when attribution context is available
+      attributionId: "",
       targetNodeIds,
       targetEdgeIds,
       adjustments,
@@ -187,8 +179,7 @@ export class CortexEconomicReinforcementBridge {
       reinforcementPolicyVersion: plan.reinforcementPolicyVersion,
     });
 
-    // Persist
-    this.trackAndPersist(event, outcome.outcomeId, persistEvent);
+    persistEvent(event);
 
     return {
       event,
@@ -200,27 +191,25 @@ export class CortexEconomicReinforcementBridge {
   /**
    * Reverse learning for a specific outcome.
    *
-   * Finds all events for the outcome and applies inverse adjustments
-   * where possible. If safe inverse is not possible, creates a
-   * compensating event.
-   *
-   * Guarantees:
-   *  - Already reversed events are skipped
-   *  - NEVER modifies the outcome itself
-   *  - Cross-seller events are not affected
+   * Reads from the durable EconomicLearningStore to find past events
+   * (no in-memory arrays). Finds the most recent non-reversed event
+   * and creates a reversal event.
    */
-  reverseLearning(outcomeId: string, sellerId: string): BridgeResult {
-    const events = this.persistedEvents.filter(
-      (e) => e.outcomeId === outcomeId && e.sellerId === sellerId,
-    );
+  reverseLearning(
+    outcomeId: string,
+    sellerId: string,
+    listStore: (oid: string, sid: string) => EconomicLearningEvent[],
+    listReversedStore: (oid: string, sid: string) => EconomicLearningEvent[],
+  ): BridgeResult {
+    const events = listStore(outcomeId, sellerId);
+    const reversedEvents = listReversedStore(outcomeId, sellerId);
+    const reversedEventIds = new Set(reversedEvents.map((e) => e.eventId));
 
-    // Find the most recent non-reversed event (using reversedIds set)
     const latestNonReversed = events.find(
-      (e) => e.status !== "reversed" && !this.reversedIds.has(e.eventId),
+      (e) => e.status !== "reversed" && !reversedEventIds.has(e.eventId),
     );
 
     if (!latestNonReversed) {
-      // All events already reversed — create a compensating event
       const compensating = createEconomicLearningEvent({
         idempotencyKey: `reverse-${outcomeId}-${sellerId}-compensating`,
         outcomeId,
@@ -251,7 +240,6 @@ export class CortexEconomicReinforcementBridge {
       };
     }
 
-    // Apply inverse adjustments
     const inversedAdjustments: AppliedAdjustment[] = latestNonReversed.adjustments.map((adj) => ({
       ...adj,
       delta: -adj.delta,
@@ -268,11 +256,6 @@ export class CortexEconomicReinforcementBridge {
       reversedAt: Date.now(),
     });
 
-    // Track original as reversed (without mutating readonly struct)
-    this.reversedIds.add(latestNonReversed.eventId);
-
-    this.trackAndPersist(reversed, outcomeId, this.noop);
-
     return {
       event: reversed,
       applied: true,
@@ -282,52 +265,44 @@ export class CortexEconomicReinforcementBridge {
 
   // ── Private helpers ──────────────────────────────────────────────────────
 
-  private persistedEvents: EconomicLearningEvent[] = [];
-
-  private trackAndPersist(
-    event: EconomicLearningEvent,
-    outcomeId: string,
-    persistFn: (event: EconomicLearningEvent) => void,
-  ): void {
-    const events = this.eventsByOutcome.get(outcomeId) ?? [];
-    events.push(event);
-    this.eventsByOutcome.set(outcomeId, events);
-    this.persistedEvents.push(event);
-    persistFn(event);
-  }
-
-  private noop = (_event: EconomicLearningEvent): void => {
-    // No-op persist for internal tracking
-    void _event;
-  };
-
   /**
-   * Apply an activation delta to a node in the engine.
-   * Since GraphEngine doesn't expose a direct activation setter,
-   * we use the available Hebbian primitives where possible.
+   * Apply an activation delta to a node in the GraphEngine.
+   * Mutates the node's activation value directly in SQLite,
+   * clamped to the [0, 1] range.
    *
-   * For positive deltas: reinforce edges connected to the node
-   * For negative deltas: nothing (since we can't directly decrease activation)
-   *
-   * The actual delta is recorded in the AppliedAdjustment for audit.
+   * Additionally, for positive deltas, reinforces edges connected
+   * to the target node using the engine's Hebbian primitives.
    */
   private applyActivationDelta(
     engine: GraphEngine,
-    _nodeId: number,
+    nodeId: number,
     delta: number,
     _targetType: "node" | "edge",
   ): void {
-    // The GraphEngine's current API doesn't support arbitrary activation
-    // deltas. This is a placeholder that would need engine-level support.
-    // For now, we record the intent in the AppliedAdjustment and the
-    // engine's existing Hebbian primitives handle positive reinforcement.
-    void engine;
-    void delta;
-    //
-    // When engine gains `setActivation(id, value)` or similar, this
-    // method will apply the actual delta.
-    void engine;
-    void delta;
+    if (!Number.isFinite(delta) || delta === 0) return;
+
+    try {
+      const node = engine.getNode(nodeId);
+      if (!node) return;
+
+      const newActivation = clamp(node.activation + delta, 0, 1);
+      engine.db.prepare("UPDATE nodes SET activation = ? WHERE id = ?").run(newActivation, nodeId);
+
+      if (delta > 0) {
+        const edgeRows = engine.db
+          .prepare("SELECT source, target FROM edges WHERE source = ? OR target = ? LIMIT 10")
+          .all(nodeId, nodeId) as { source: number; target: number }[];
+        for (const edge of edgeRows) {
+          try {
+            engine.reinforceEdge(edge.source, edge.target);
+          } catch {
+            // Edge reinforcement best-effort
+          }
+        }
+      }
+    } catch {
+      // Best-effort activation update
+    }
   }
 
   private computeHash(engine: GraphEngine | undefined, hashFn?: () => string): string {
@@ -335,13 +310,11 @@ export class CortexEconomicReinforcementBridge {
       return hashFn();
     }
     if (engine) {
-      // Build a deterministic hash from engine state
       const traversed = engine.traverse();
       const snapshot = JSON.stringify({
         nodes: traversed.activatedNodes,
         edges: traversed.traversedEdges,
       });
-      // Simple hash: string length + char sum for determinism
       let hash = 0;
       for (let i = 0; i < snapshot.length; i++) {
         const char = snapshot.charCodeAt(i);

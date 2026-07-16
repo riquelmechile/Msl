@@ -39,16 +39,29 @@ export function createEconomicLearningDaemon(
       return { findings: [], proposalEnqueued: false, messageIds: [] };
     }
 
-    // Only process for sellers we manage
-    if (!sellerIds.includes(payload.sellerId)) {
+    // A claimed seller must agree with the explicit outcome reference.
+    if (
+      !sellerIds.includes(payload.sellerId) ||
+      (claim.sellerId && claim.sellerId !== payload.sellerId)
+    ) {
       return { findings: [], proposalEnqueued: false, messageIds: [] };
     }
 
     try {
-      const outcomes = economicStore.listOutcomesBySeller(payload.sellerId, { limit: 1 });
-      const outcome = outcomes.find((o) => o.outcomeId === payload.outcomeId);
-      if (!outcome) {
-        return { findings: [], proposalEnqueued: false, messageIds: [] };
+      const outcome = economicStore.getOutcome(payload.outcomeId, payload.sellerId);
+      if (!outcome || outcome.status !== "verified") {
+        return {
+          findings: [
+            {
+              kind: "info",
+              severity: "info",
+              summary: `Economic learning skipped: verified outcome ${payload.outcomeId} is unavailable for ${payload.sellerId}`,
+              evidenceIds: [],
+            },
+          ],
+          proposalEnqueued: false,
+          messageIds: [],
+        };
       }
 
       const input: Record<string, unknown> = {

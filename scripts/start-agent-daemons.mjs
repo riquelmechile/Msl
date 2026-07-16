@@ -41,20 +41,41 @@ const {
   createEconomicLearningDaemon,
   createEconomicIngestionDaemon,
   createDaemonLogger,
+  createAgentWorkSessionStore,
+  createAgentWorkSessionRunner,
+  createDeepSeekProviderFromEnv,
 } = await import("@msl/agent");
 const { createGraphEngine, BackupScheduler } = await import("@msl/memory");
 const { getMlAccountRoleConfig } = await import("@msl/mercadolibre");
 const { createSqliteApprovalQueueRepository, createInMemoryApprovalQueueRepository } =
   await import("@msl/tools");
+import Database from "better-sqlite3";
 
 // ── Admitted persistence + Cortex ──────────────────────────────
 const persistenceRuntime = createAgentDaemonPersistenceRuntime(cortexPath);
-const { bus, consensusStore, reader } = persistenceRuntime;
+const { bus, consensusStore, reader, companyAgentStore } = persistenceRuntime;
 const engine = createGraphEngine(cortexPath);
 
 // ── Seller config ──────────────────────────────────────────────
 const roleConfig = getMlAccountRoleConfig(env);
 const sellerIds = [roleConfig.sourceSellerId, roleConfig.targetSellerId];
+
+// ── Work Session Store + Runner ────────────────────────────────
+const workSessionDb = new Database(cortexPath);
+workSessionDb.pragma("journal_mode = WAL");
+const { createAccountAssetStore, createCeoInboxStore } = await import("@msl/agent");
+const sessionStore = createAgentWorkSessionStore(workSessionDb);
+const accountAssetStore = createAccountAssetStore(workSessionDb);
+const ceoInboxStoreForSessions = createCeoInboxStore(workSessionDb);
+const deepSeekTransport = createDeepSeekProviderFromEnv(env);
+const workSessionRunner = createAgentWorkSessionRunner({
+  workSessionStore: sessionStore,
+  accountAssetStore,
+  cortex: engine,
+  ceoInboxStore: ceoInboxStoreForSessions,
+  messageBus: bus,
+  deepSeekTransport,
+});
 
 // ── Supplier Mirror ──────────────────────────────────────────
 const { getSupplierMirrorRuntimeFromEnv } = await import("@msl/memory");
@@ -241,8 +262,12 @@ const handle = startDaemonScheduler({
   supplierMirrorStore,
   ...advisors,
   intervalMs: 15 * 60 * 1000, // 15 minutes
+  enableWorkSessions: true,
+  sessionStore,
+  workSessionRunner,
   ...(economicLearningDaemon ? { economicLearningDaemon } : {}),
   ...(economicIngestionDaemon ? { economicIngestionDaemon } : {}),
+  companyAgentStore,
 });
 
 // ── Proactive monitors (independent of message-driven scheduler) ──
@@ -293,6 +318,11 @@ const shutdown = () => {
   webhookHandle?.stop();
   supplierMirrorHandle?.stop();
   persistenceRuntime.close();
+  try {
+    workSessionDb.close();
+  } catch {
+    /* best-effort */
+  }
   approvalRepo?.close?.();
   supplierMirrorRuntime?.close();
   process.exit(0);

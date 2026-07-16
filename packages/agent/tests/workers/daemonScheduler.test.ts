@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach, afterAll } from "vitest";
+import { describe, expect, it, beforeEach, afterAll, vi } from "vitest";
 import { createGraphEngine } from "@msl/memory";
 import { createSqliteOperationalReadModel } from "@msl/memory";
 import { createSqliteEconomicLearningStore } from "@msl/memory";
@@ -14,11 +14,14 @@ import {
   startDaemonScheduler,
   enqueueDaemonTick,
   getRegisteredLaneIds,
+  resolveDaemonAgentLane,
 } from "../../src/workers/daemonScheduler.js";
 import { createEconomicLearningDaemon } from "../../src/workers/economicLearningDaemon.js";
 import { createDaemonLogger } from "../../src/workers/observabilityPipeline.js";
 import { createCeoInboxStore, type CeoInboxStore } from "../../src/conversation/ceoInboxStore.js";
 import { listCompanyAgents } from "../../src/conversation/companyAgents.js";
+import { createCompanyAgentStore } from "../../src/conversation/companyAgentStore.js";
+import type { DaemonHandler } from "../../src/workers/daemonTypes.js";
 
 // ── Scheduler Tests ─────────────────────────────────────────────────
 
@@ -73,6 +76,137 @@ describe("daemonScheduler", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       scheduler.stop();
+    });
+  });
+
+  describe("durable agent discovery", () => {
+    it("dispatches a CEO-created agent once and only on its declared lane", async () => {
+      process.env.MSL_ECONOMIC_LEARNING_ENABLED = "true";
+      const durableAgents = createCompanyAgentStore(db);
+      durableAgents.insertCompanyAgent({
+        id: "economic-learning",
+        laneId: "economic-learning",
+        label: "CEO Economic Learner",
+        departmentId: "finance",
+        stablePrefix: "test",
+        refreshableContextProvider: "test",
+        inputs: [],
+        outputs: [],
+        requiredEvidenceKinds: [],
+        boundaries: [],
+      });
+      const learningDaemon = vi.fn<DaemonHandler>().mockResolvedValue({
+        findings: [],
+        proposalEnqueued: false,
+        messageIds: [],
+      });
+      bus.enqueue({
+        senderAgentId: "ceo",
+        receiverAgentId: "economic-learning",
+        messageType: "task",
+        payloadJson: JSON.stringify({ sellerId: "seller-1" }),
+      });
+      bus.enqueue({
+        senderAgentId: "ceo",
+        receiverAgentId: "economic-ingestion",
+        messageType: "task",
+        payloadJson: JSON.stringify({ sellerId: "seller-1" }),
+      });
+
+      const scheduler = startDaemonScheduler({
+        bus,
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        sellerIds: ["seller-1"],
+        intervalMs: 60_000,
+        companyAgentStore: durableAgents,
+        economicLearningDaemon: learningDaemon,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      scheduler.stop();
+      delete process.env.MSL_ECONOMIC_LEARNING_ENABLED;
+
+      expect(learningDaemon).toHaveBeenCalledTimes(1);
+      const [learningInput] = learningDaemon.mock.calls[0] ?? [];
+      expect((learningInput as { claim: { receiverAgentId: string } }).claim.receiverAgentId).toBe(
+        "economic-learning",
+      );
+      const ingestion = db
+        .prepare(
+          "SELECT status FROM agent_message_bus WHERE receiver_agent_id = 'economic-ingestion' AND message_type = 'task'",
+        )
+        .get() as { status: string };
+      expect(ingestion.status).toBe("pending");
+    });
+
+    it("excludes suspended and unresolved durable agents without consuming their lane", () => {
+      const handlerMap = { "economic-learning": vi.fn() };
+      const agent = {
+        ...listCompanyAgents()[0]!,
+        id: "ceo-created",
+        status: "suspended" as const,
+        profile: { ...listCompanyAgents()[0]!.profile, laneId: "economic-learning" as const },
+      };
+      expect(resolveDaemonAgentLane(agent, handlerMap)).toBeUndefined();
+      const { laneId: _laneId, ...unresolvedProfile } = agent.profile;
+      expect(
+        resolveDaemonAgentLane(
+          { ...agent, status: "active", profile: unresolvedProfile },
+          handlerMap,
+        ),
+      ).toBeUndefined();
+    });
+
+    it("enqueues, claims, and dispatches both economic lanes in their seller namespace", async () => {
+      process.env.MSL_ECONOMIC_LEARNING_ENABLED = "true";
+      process.env.MSL_ECONOMIC_INGESTION_ENABLED = "true";
+      const learningDaemon = vi.fn<DaemonHandler>().mockResolvedValue({
+        findings: [],
+        proposalEnqueued: false,
+        messageIds: [],
+      });
+      const ingestionDaemon = vi.fn<DaemonHandler>().mockResolvedValue({
+        findings: [],
+        proposalEnqueued: false,
+        messageIds: [],
+      });
+      for (const receiverAgentId of ["economic-learning", "economic-ingestion"]) {
+        bus.enqueue({
+          senderAgentId: "ceo",
+          receiverAgentId,
+          messageType: "task",
+          payloadJson: JSON.stringify({ sellerId: "seller-2" }),
+        });
+      }
+
+      const scheduler = startDaemonScheduler({
+        bus,
+        reader: createSqliteOperationalReadModel(db),
+        cortex: createGraphEngine(":memory:"),
+        sellerIds: ["seller-2"],
+        intervalMs: 60_000,
+        economicLearningDaemon: learningDaemon,
+        economicIngestionDaemon: ingestionDaemon,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      scheduler.stop();
+      delete process.env.MSL_ECONOMIC_LEARNING_ENABLED;
+      delete process.env.MSL_ECONOMIC_INGESTION_ENABLED;
+
+      const [learningInput] = learningDaemon.mock.calls[0] ?? [];
+      const [ingestionInput] = ingestionDaemon.mock.calls[0] ?? [];
+      expect((learningInput as { claim: { payloadJson: string } }).claim.payloadJson).toContain(
+        "seller-2",
+      );
+      expect((ingestionInput as { claim: { payloadJson: string } }).claim.payloadJson).toContain(
+        "seller-2",
+      );
+      const ticks = db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM agent_message_bus WHERE receiver_agent_id IN ('economic-learning', 'economic-ingestion') AND message_type = 'daemon-tick'",
+        )
+        .get() as { count: number };
+      expect(ticks.count).toBe(2);
     });
   });
 

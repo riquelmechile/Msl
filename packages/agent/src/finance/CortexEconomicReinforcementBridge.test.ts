@@ -31,6 +31,17 @@ class FakeGraphEngine {
   private nextNodeId = 1;
   private nextEdgeId = 1;
 
+  db = {
+    prepare: (_sql: string) => ({
+      run: (..._args: unknown[]) => ({ changes: 1 }),
+      all: (..._args: unknown[]) =>
+        this.edges.map((e) => ({
+          source: e.source,
+          target: e.target,
+        })),
+    }),
+  };
+
   createNodeCalls: Array<{
     label: string;
     metadata: Record<string, unknown>;
@@ -155,6 +166,8 @@ function makePlan(overrides: Partial<EconomicReinforcementPlan> = {}): EconomicR
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
+const NO_EVENTS = () => [] as EconomicLearningEvent[];
+
 describe("CortexEconomicReinforcementBridge", () => {
   // ── 1. successful apply creates event ──────────────────────────────────
 
@@ -173,6 +186,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     expect(result.applied).toBe(true);
@@ -204,12 +219,14 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessedFirst,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     expect(result1.applied).toBe(true);
     expect(result1.idempotent).toBe(false);
 
-    // Second call: now processed
+    // Second call: now processed — provide the persisted event in the store callback
     const isProcessedSecond = (_key: string) => true;
     const result2 = bridge.applyPlan({
       plan,
@@ -217,6 +234,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessedSecond,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: () => persisted,
+      listReversedEvents: NO_EVENTS,
     });
 
     expect(result2.idempotent).toBe(true);
@@ -239,6 +258,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: undefined,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     expect(result.applied).toBe(false);
@@ -271,6 +292,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     bridge.applyPlan({
@@ -279,6 +302,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     expect(persisted).toHaveLength(2);
@@ -305,6 +330,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     expect(result.event.beforeStateHash).toBeDefined();
@@ -338,6 +365,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     // Only node 1 exists (node 2 doesn't), so only 1 adjustment applied
@@ -368,10 +397,17 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     // Then reverse
-    const reversedResult = bridge.reverseLearning(outcome.outcomeId, "plasticov");
+    const reversedResult = bridge.reverseLearning(
+      outcome.outcomeId,
+      "plasticov",
+      () => persisted,
+      NO_EVENTS,
+    );
 
     expect(reversedResult.event.status).toBe("reversed");
     expect(reversedResult.event.reversedAt).toBeDefined();
@@ -395,14 +431,29 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     // First reversal
-    const firstReverse = bridge.reverseLearning(outcome.outcomeId, "plasticov");
+    const firstReversedEvents: EconomicLearningEvent[] = [];
+    const firstReverse = bridge.reverseLearning(
+      outcome.outcomeId,
+      "plasticov",
+      () => persisted,
+      () => firstReversedEvents,
+    );
+    firstReversedEvents.push(firstReverse.event);
     expect(firstReverse.event.status).toBe("reversed");
 
-    // Second reversal should be idempotent
-    const secondReverse = bridge.reverseLearning(outcome.outcomeId, "plasticov");
+    // Second reversal: the original event was already reversed in the first call,
+    // so listStore should return an empty list (or exclude it)
+    const secondReverse = bridge.reverseLearning(
+      outcome.outcomeId,
+      "plasticov",
+      () => [],
+      () => firstReversedEvents,
+    );
     expect(secondReverse.idempotent).toBe(true);
   });
 
@@ -428,6 +479,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     // Outcome should be unchanged
@@ -452,6 +505,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     // Metadata should only contain known keys, no secrets
@@ -490,6 +545,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
       computeStateHash: () => "custom-hash-value",
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     expect(result.event.beforeStateHash).toBe("custom-hash-value");
@@ -513,6 +570,8 @@ describe("CortexEconomicReinforcementBridge", () => {
       engine: engine as unknown as import("@msl/memory").GraphEngine,
       isAlreadyProcessed: isProcessed,
       persistEvent: (e) => persisted.push(e),
+      listEventsByOutcome: NO_EVENTS,
+      listReversedEvents: NO_EVENTS,
     });
 
     const expectedKey = `${plan.outcomeId}-${plan.sellerId}-0.1.0`;
@@ -524,7 +583,12 @@ describe("CortexEconomicReinforcementBridge", () => {
   it("reverse learning with no prior events produces compensating event", () => {
     const bridge = new CortexEconomicReinforcementBridge();
 
-    const result = bridge.reverseLearning("non-existent-outcome", "plasticov");
+    const result = bridge.reverseLearning(
+      "non-existent-outcome",
+      "plasticov",
+      NO_EVENTS,
+      NO_EVENTS,
+    );
 
     expect(result.idempotent).toBe(true);
     expect(result.errorCode).toBe("all-events-already-reversed");

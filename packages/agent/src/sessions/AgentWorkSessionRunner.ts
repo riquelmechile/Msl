@@ -224,6 +224,7 @@ export function createAgentWorkSessionRunner(
 
       // 8. record observations
       const observations = (parsed.observations ?? []).slice(0, 20); // cap at 20
+      const recordedObservations: AgentObservation[] = [];
       for (let i = 0; i < observations.length; i++) {
         const obs = observations[i];
         if (!obs) continue;
@@ -240,6 +241,7 @@ export function createAgentWorkSessionRunner(
           metadataJson: JSON.stringify(obs.metadata ?? {}),
         };
         config.workSessionStore.addObservation(observation);
+        recordedObservations.push(observation);
       }
 
       // 9. record proposals to CEO inbox
@@ -280,6 +282,7 @@ export function createAgentWorkSessionRunner(
 
       // 10. record lessons
       const lessons = (parsed.lessons ?? []).slice(0, 5); // cap at 5
+      const recordedLessons: AgentLesson[] = [];
       for (let i = 0; i < lessons.length; i++) {
         const lesson = lessons[i];
         if (!lesson) continue;
@@ -293,14 +296,20 @@ export function createAgentWorkSessionRunner(
           learnedAt: clock.now().toISOString(),
         };
         config.workSessionStore.addLesson(agentLesson);
+        recordedLessons.push(agentLesson);
       }
 
       // 11. record to Cortex
       const completedSession = config.workSessionStore.getSession(sessionId, input.sellerId);
       if (completedSession) {
         recordWorkSessionToCortex(config.cortex, completedSession, input.sellerId);
-        recordObservationsToCortex(config.cortex, [], completedSession, input.sellerId);
-        recordLessonsToCortex(config.cortex, [], completedSession, input.sellerId);
+        recordObservationsToCortex(
+          config.cortex,
+          recordedObservations,
+          completedSession,
+          input.sellerId,
+        );
+        recordLessonsToCortex(config.cortex, recordedLessons, completedSession, input.sellerId);
       }
 
       // 12. completeSession

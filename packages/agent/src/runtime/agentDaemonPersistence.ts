@@ -20,6 +20,10 @@ import {
   createAgentConsensusStore,
   type AgentConsensusStore,
 } from "../conversation/agentConsensusStore.js";
+import {
+  createCompanyAgentStore,
+  type CompanyAgentStore,
+} from "../conversation/companyAgentStore.js";
 
 export type AgentDaemonPersistenceRuntime = {
   readonly bus: AgentMessageBusStore;
@@ -27,6 +31,7 @@ export type AgentDaemonPersistenceRuntime = {
   readonly reader: OperationalReadModel;
   readonly economicOutcomeStore: EconomicOutcomeReader;
   readonly economicLearningStore: EconomicLearningStore;
+  readonly companyAgentStore: CompanyAgentStore;
   readonly databaseManager: DatabaseManager;
   close(): void;
 };
@@ -68,6 +73,7 @@ export function createAgentDaemonPersistenceRuntime(
       reader: createSqliteOperationalReadModel(db),
       economicOutcomeStore: economicRuntime.readers.outcomes,
       economicLearningStore: createSqliteEconomicLearningStore(db),
+      companyAgentStore: createCompanyAgentStore(db),
     };
     return resources;
   };
@@ -99,6 +105,7 @@ export function createAgentDaemonPersistenceRuntime(
     reader: delegate(() => current().reader),
     economicOutcomeStore: delegate(() => current().economicOutcomeStore),
     economicLearningStore: delegate(() => current().economicLearningStore),
+    companyAgentStore: delegate(() => current().companyAgentStore),
     databaseManager,
     close,
   };

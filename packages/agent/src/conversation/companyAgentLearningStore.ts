@@ -98,7 +98,12 @@ const lessonTypes = new Set<AgentLessonType>([
 ]);
 const scopes = new Set<AgentLessonScope>(["agent", "department"]);
 const statuses = new Set<AgentLessonStatus>(["active", "archived"]);
-const departments = new Set<CompanyDepartmentId>(["executive", "operations", "commercial"]);
+const departments = new Set<CompanyDepartmentId>([
+  "executive",
+  "operations",
+  "commercial",
+  "finance",
+]);
 
 function parseStringArray(value: string): readonly string[] | undefined {
   try {

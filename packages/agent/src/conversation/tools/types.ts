@@ -64,6 +64,7 @@ export const validDepartmentIds = new Set<CompanyDepartmentId>([
   "executive",
   "operations",
   "commercial",
+  "finance",
 ]);
 export const validLessonTypes = new Set<AgentLessonType>([
   "ceo-correction",
