@@ -32,6 +32,11 @@ import { eodSummaryDaemon } from "./eodSummaryDaemon.js";
 import { ownedEcommerceDaemon } from "./ownedEcommerceDaemon.js";
 import { unansweredQuestionsDaemon } from "./unansweredQuestionsDaemon.js";
 import { financeDirectorDaemon } from "./financeDirectorDaemon.js";
+import { visionAnalyst } from "./visionAnalyst.js";
+import { productResearchDaemon } from "./productResearchDaemon.js";
+import { productLaunchCoordinator } from "./productLaunchCoordinator.js";
+import { creativeProductionDaemon } from "./creativeProductionDaemon.js";
+import { listingCompositionDaemon } from "./listingCompositionDaemon.js";
 import type { AgentWorkSessionStore } from "../sessions/AgentWorkSessionStore.js";
 import type { AgentWorkSessionRunner } from "../sessions/AgentWorkSessionRunner.js";
 import type { AccountBrainService } from "../conversation/accountBrainService.js";
@@ -134,6 +139,11 @@ const daemonHandlerMap: Partial<Record<LaneId, DaemonHandler>> = {
   "owned-ecommerce": ownedEcommerceDaemon,
   "unanswered-questions": unansweredQuestionsDaemon,
   "finance-director": financeDirectorDaemon,
+  "product-recognition": visionAnalyst,
+  "product-research": productResearchDaemon,
+  "product-launch": productLaunchCoordinator,
+  "creative-production": creativeProductionDaemon,
+  "listing-composition": listingCompositionDaemon,
 };
 
 // ── Handler-map builder ─────────────────────────────────────────────

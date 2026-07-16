@@ -38,6 +38,8 @@ export type ReadinessContext = {
     databaseIntegrityEnabled: boolean;
     /** Whether WAL health checks run during readiness. */
     walHealthEnabled: boolean;
+    /** Whether the product launch pipeline is enabled. Default: true. */
+    productLaunchEnabled: boolean;
   };
 };
 

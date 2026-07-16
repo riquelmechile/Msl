@@ -261,7 +261,7 @@ describe("daemonScheduler", () => {
         )
         .all() as Array<{ receiver_agent_id: string; message_type: string }>;
 
-      // We have 14 lanes in daemonHandlerMap
+      // We have 20 lanes in daemonHandlerMap
       expect(tickRows.length).toBeGreaterThan(0);
 
       // All ticks should have correct message type
@@ -466,8 +466,9 @@ describe("daemonScheduler", () => {
         // product-ads-monitor, product-ads-ceo-profitability,
         // product-ads-profitability, supplier-manager, morning-report,
         // eod-summary, owned-ecommerce, unanswered-questions,
-        // finance-director = 15
-        expect(lanes.length).toBe(15);
+        // finance-director, product-recognition, product-research,
+        // product-launch, creative-production, listing-composition = 20
+        expect(lanes.length).toBe(20);
       });
 
       it("enqueueDaemonTick enqueues for all base lanes", () => {
@@ -482,7 +483,7 @@ describe("daemonScheduler", () => {
             "SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
           )
           .all() as Array<{ receiver_agent_id: string }>;
-        expect(tickRows.length).toBe(15);
+        expect(tickRows.length).toBe(20);
       });
 
       it("enqueueDaemonTick includes extra lanes when provided", () => {
@@ -497,8 +498,8 @@ describe("daemonScheduler", () => {
             "SELECT DISTINCT receiver_agent_id FROM agent_message_bus WHERE message_type = 'daemon-tick'",
           )
           .all() as Array<{ receiver_agent_id: string }>;
-        // 15 base + 1 extra = 16
-        expect(tickRows.length).toBe(16);
+        // 20 base + 1 extra = 21
+        expect(tickRows.length).toBe(21);
         const laneIds = tickRows.map((r) => r.receiver_agent_id);
         expect(laneIds).toContain("economic-learning");
       });

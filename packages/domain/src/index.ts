@@ -42,3 +42,5 @@ export * from "./economicIngestionRun.js";
 export * from "./runIdFactory.js";
 export * from "./economicDataCoverage.js";
 export * from "./sourceFetch.js";
+export * from "./productLaunch.js";
+export * from "./productCatalog.js";

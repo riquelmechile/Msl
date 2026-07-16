@@ -1,21 +1,27 @@
 import { Bot } from "grammy";
 import type { ApiClientOptions } from "grammy";
 import Database from "better-sqlite3";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 import {
   buildSystemPrompt,
   createAgentConsensusStore,
   createAgentLoop,
+  createAgentMessageBusStore,
   createAutonomyEngine,
   createCompanyAgentLearningStore,
   createCompanyAgentStore,
+  createProductCatalogStore,
   createSessionStore,
   createStrategyStore,
   createWorkforceCostCacheLedgerStore,
   EscribanoObserver,
   OperationalEvidenceProvider,
   type AgentLoopConfig,
+  type AgentMessageBusStore,
   type ConversationState,
+  type ProductCatalogStore,
   type SessionStore,
 } from "@msl/agent";
 import {
@@ -52,6 +58,12 @@ export type BotConfig = {
   client?: ApiClientOptions;
   /** Request-scoped Telegram admin allowlist for CEO/admin-only tools. */
   adminAuthorization?: TelegramAdminAuthorization;
+  /** Optional ProductCatalogStore for product launch workflow. */
+  productCatalogStore?: ProductCatalogStore;
+  /** Optional AgentMessageBus for enqueueing product launch pipeline messages. */
+  messageBus?: AgentMessageBusStore;
+  /** Feature flag to enable product launch photo handling. Default: false. */
+  productLaunchEnabled?: boolean;
 };
 
 export type TelegramAdminAuthorization = {
@@ -112,6 +124,7 @@ export type TelegramBotEnv = Partial<
     | "MSL_TELEGRAM_ADMIN_CHAT_IDS"
     | "MSL_TELEGRAM_ADMIN_USER_IDS"
     | "MSL_SUPPLIER_MIRROR_DB_PATH"
+    | "MSL_PRODUCT_LAUNCH_ENABLED"
   >
 >;
 
@@ -391,6 +404,16 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     agentConfig.supplierMirrorStore = supplierMirrorRuntime.store;
   }
 
+  // ── Product Launch wiring ───────────────────────────────
+  const productLaunchEnabled = env.MSL_PRODUCT_LAUNCH_ENABLED?.trim() === "true";
+  let productCatalogStore: ProductCatalogStore | undefined;
+  let messageBus: AgentMessageBusStore | undefined;
+
+  if (productLaunchEnabled && db) {
+    productCatalogStore = createProductCatalogStore(db);
+    messageBus = createAgentMessageBusStore(db);
+  }
+
   const botConfig: BotConfig = {
     token,
     sellerId,
@@ -404,6 +427,11 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
     };
   }
   if (sessionStore) botConfig.sessionStore = sessionStore;
+  if (productLaunchEnabled) {
+    botConfig.productLaunchEnabled = true;
+    if (productCatalogStore) botConfig.productCatalogStore = productCatalogStore;
+    if (messageBus) botConfig.messageBus = messageBus;
+  }
   if (db)
     botConfig.cleanup = () => {
       db.close();
@@ -463,6 +491,97 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
  * Workforce/department routing stays behind the CEO agent loop. Telegram does
  * not expose worker-selection commands such as `/agent`.
  */
+
+/**
+ * Install the product launch photo handler on a grammY Bot instance.
+ *
+ * When a user sends a photo (and `config.productLaunchEnabled` is true),
+ * the bot downloads the highest-resolution variant, saves it locally,
+ * creates a ProductLaunch in the catalog store, and enqueues a message
+ * on the Agent Message Bus for the Product Launch Coordinator to pick up.
+ */
+function installPhotoHandler(bot: Bot, config: BotConfig): void {
+  bot.on("message:photo", async (ctx) => {
+    // Feature flag guard — silently ignore photos when launch is disabled
+    if (!config.productLaunchEnabled) return;
+
+    const chatId = Number(ctx.chat.id);
+
+    try {
+      const caption = ctx.message.caption?.trim() || undefined;
+
+      // Get the highest-resolution photo variant (Telegram sends multiple sizes)
+      const photoSizes = ctx.message.photo;
+      if (!photoSizes || photoSizes.length === 0) return;
+      const largestPhoto = photoSizes[photoSizes.length - 1]!;
+
+      // Get file metadata from Telegram
+      const file = await ctx.api.getFile(largestPhoto.file_id);
+      if (!file.file_path) throw new Error("Telegram returned no file_path for photo");
+
+      // Download the photo via Telegram's file endpoint
+      const fileUrl = `https://api.telegram.org/file/bot${config.token}/${file.file_path}`;
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error(`Photo download failed: HTTP ${response.status}`);
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      // Save locally under .msl/product-photos/{chatId}/{timestamp}.jpg
+      const dir = path.join(process.cwd(), ".msl", "product-photos", String(chatId));
+      await fs.mkdir(dir, { recursive: true });
+      const timestamp = Date.now();
+      const localPath = path.join(dir, `${timestamp}.jpg`);
+      await fs.writeFile(localPath, buffer);
+
+      // Create catalog entry and launch
+      const productId = crypto.randomUUID();
+      const launchId = crypto.randomUUID();
+      const sellerId = config.sellerId ?? String(chatId);
+
+      if (config.productCatalogStore) {
+        config.productCatalogStore.upsertProduct({ productId });
+        config.productCatalogStore.createLaunch({
+          launchId,
+          productId,
+          sellerId,
+          status: "photo_received",
+          createdAt: new Date().toISOString(),
+          ...(caption ? { title: caption } : {}),
+        });
+      }
+
+      // Enqueue pipeline message on the Agent Message Bus
+      if (config.messageBus) {
+        config.messageBus.enqueue({
+          senderAgentId: "telegram-bot",
+          receiverAgentId: "product-launch",
+          messageType: "launch_request",
+          payloadJson: JSON.stringify({
+            launchId,
+            productId,
+            sellerId,
+            imageUrls: [localPath],
+            caption,
+            chatId,
+          }),
+          correlationId: launchId,
+        });
+      } else {
+        console.warn("[bot] Product launch message bus not configured — pipeline will not run");
+      }
+
+      // Confirm receipt to the CEO
+      await ctx.reply("📸 Foto recibida. Iniciando análisis del producto…");
+    } catch (error) {
+      console.error("[bot] Photo handling failed:", error);
+      try {
+        await ctx.reply("❌ No pude procesar la foto. Intentá de nuevo en un momento.");
+      } catch {
+        // ctx.reply may fail if the chat is gone — non-blocking
+      }
+    }
+  });
+}
+
 export function createTelegramBot(config: BotConfig): TelegramBotHandle {
   const bot = new Bot(config.token, config.client ? { client: config.client } : undefined);
 
@@ -576,6 +695,10 @@ export function createTelegramBot(config: BotConfig): TelegramBotHandle {
       await ctx.reply(CONVERSATION_FALLBACK_RESPONSE);
     }
   });
+
+  // ── Product Launch: Photo Handler ─────────────────────────
+
+  installPhotoHandler(bot, config);
 
   // ── Error handler ───────────────────────────────────────
 

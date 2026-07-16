@@ -77,5 +77,28 @@ export function checkRuntimeReadiness(ctx: ReadinessContext): ReadinessCheckResu
     );
   }
 
+  // ── Product Launch feature flag ─────────────────────────────────
+  if (features.productLaunchEnabled) {
+    results.push(
+      createReadinessCheckResult({
+        checkId: `${CHECK_PREFIX}-product-launch-flag`,
+        capability: "product-launch",
+        status: "ready",
+        safeMessage: "Product Launch pipeline is enabled.",
+        remediation: "Product Launch pipeline is active.",
+      }),
+    );
+  } else {
+    results.push(
+      createReadinessCheckResult({
+        checkId: `${CHECK_PREFIX}-product-launch-flag`,
+        capability: "product-launch",
+        status: "not-applicable",
+        safeMessage: "Product Launch pipeline is disabled.",
+        remediation: "Set MSL_PRODUCT_LAUNCH_ENABLED=true to enable the product launch pipeline.",
+      }),
+    );
+  }
+
   return results;
 }

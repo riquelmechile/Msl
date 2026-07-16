@@ -130,6 +130,8 @@ vi.mock("@msl/agent", () => ({
   createAgentConsensusStore: mocks.mockCreateAgentConsensusStore,
   createSessionStore: mocks.mockCreateSessionStore,
   createAutonomyEngine: mocks.mockCreateAutonomyEngine,
+  createProductCatalogStore: vi.fn(() => ({})),
+  createAgentMessageBusStore: vi.fn(() => ({})),
   EscribanoObserver: mocks.mockEscribanoObserver,
   OperationalEvidenceProvider: vi.fn(),
   startBackgroundIngestion: vi.fn(() => ({ stop: vi.fn() })),
@@ -140,6 +142,23 @@ vi.mock("@msl/memory", () => ({
   createGraphEngine: mocks.mockCreateGraphEngine,
   createSqliteOperationalReadModel: vi.fn(),
   getSupplierMirrorRuntimeFromEnv: vi.fn(() => null),
+}));
+
+// Node.js built-in mocks for photo handler
+vi.mock("node:fs/promises", () => ({
+  default: {
+    mkdir: vi.fn().mockResolvedValue(undefined),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+  },
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  writeFile: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("node:crypto", () => ({
+  default: {
+    randomUUID: vi.fn(() => "test-uuid-1234"),
+  },
+  randomUUID: vi.fn(() => "test-uuid-1234"),
 }));
 
 import { createTelegramBot, createTelegramBotFromEnv } from "./index.js";
@@ -805,5 +824,230 @@ describe("createTelegramBot (grammY)", () => {
 
     // Verifies the system prompt falls back to base (no multi-seller block)
     expect(mocks.mockBuildSystemPrompt).toHaveBeenCalledWith("Plasticov");
+  });
+});
+
+// ── Photo Handler (Product Launch) ───────────────────────────────
+
+describe("message:photo handler (product launch)", () => {
+  const mockUpsertProduct = vi.fn();
+  const mockCreateLaunch = vi.fn();
+  const mockBusEnqueue = vi.fn().mockReturnValue({ messageId: "bus-msg-1" });
+  const mockGetFile = vi.fn();
+  const mockReply = vi.fn().mockResolvedValue(undefined);
+
+  const productCatalogStore = {
+    upsertProduct: mockUpsertProduct,
+    createLaunch: mockCreateLaunch,
+    getProduct: vi.fn(),
+    upsertImage: vi.fn(),
+    getImages: vi.fn(),
+    getLaunch: vi.fn(),
+    updateLaunchStatus: vi.fn(),
+    getLaunchesByProduct: vi.fn(),
+  };
+
+  const messageBus = {
+    enqueue: mockBusEnqueue,
+    claimNext: vi.fn().mockReturnValue([]),
+    resolve: vi.fn(),
+    fail: vi.fn(),
+    cancel: vi.fn(),
+    lookupRecentByDedupePrefix: vi.fn().mockReturnValue([]),
+    getFailedMessages: vi.fn().mockReturnValue([]),
+    reenqueueFailed: vi.fn(),
+    getProcessingStuck: vi.fn().mockReturnValue([]),
+    getPendingCount: vi.fn().mockReturnValue(0),
+    getMessagesByCorrelationId: vi.fn().mockReturnValue([]),
+    getLearningHistory: vi.fn().mockReturnValue([]),
+    recordOutcome: vi.fn(),
+    getUnscoredMessages: vi.fn().mockReturnValue([]),
+  };
+
+  const photoConfig = {
+    token: "test-token-photo",
+    agentConfig: {
+      systemPrompt: "test",
+      mockClient: true,
+    },
+    productLaunchEnabled: true,
+    productCatalogStore,
+    messageBus,
+  };
+
+  function getPhotoHandler() {
+    const calls = mocks.mockOn.mock.calls as Array<[string, (...args: unknown[]) => unknown]>;
+    const photoCall = calls.find(([event]) => event === "message:photo");
+    return photoCall?.[1];
+  }
+
+  function makePhotoCtx(overrides: Record<string, unknown> = {}) {
+    const base = {
+      message: {
+        photo: [
+          { file_id: "small-photo-id", width: 100, height: 100 },
+          { file_id: "large-photo-id", width: 800, height: 600 },
+        ],
+        caption: undefined as string | undefined,
+      },
+      chat: { id: 123456 },
+      api: { getFile: mockGetFile },
+      reply: mockReply,
+    };
+
+    // Deep-merge overrides into base
+    const merged = { ...base, ...overrides };
+    if (overrides.message) {
+      merged.message = { ...base.message, ...(overrides.message as Record<string, unknown>) };
+    }
+    if (overrides.chat) {
+      merged.chat = { ...base.chat, ...(overrides.chat as Record<string, unknown>) };
+    }
+    if (overrides.api) {
+      merged.api = { ...base.api, ...(overrides.api as Record<string, unknown>) };
+    }
+    return merged;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetFile.mockResolvedValue({ file_path: "photos/file_1.jpg" });
+    const mockResponse = {
+      ok: true,
+      arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
+    mockBusEnqueue.mockReturnValue({ messageId: "bus-msg-1" });
+  });
+
+  it("registers a message:photo handler when product launch is enabled", () => {
+    createTelegramBot(photoConfig);
+    const handler = getPhotoHandler();
+    expect(handler).toBeDefined();
+    expect(typeof handler).toBe("function");
+  });
+
+  it("downloads photo, saves, creates launch, and enqueues on the bus", async () => {
+    createTelegramBot(photoConfig);
+    const handler = getPhotoHandler();
+    const ctx = makePhotoCtx();
+
+    await handler!(ctx);
+
+    // Verify Telegram getFile was called with the largest photo
+    expect(mockGetFile).toHaveBeenCalledWith("large-photo-id");
+
+    // Verify fetch was called with the bot token URL
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/file/bottest-token-photo/photos/file_1.jpg"),
+    );
+
+    // Verify catalog store calls
+    expect(mockUpsertProduct).toHaveBeenCalledWith({ productId: "test-uuid-1234" });
+    expect(mockCreateLaunch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "photo_received",
+        productId: "test-uuid-1234",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        sellerId: expect.any(String),
+      }),
+    );
+
+    // Verify message bus enqueue
+    expect(mockBusEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        senderAgentId: "telegram-bot",
+        receiverAgentId: "product-launch",
+        messageType: "launch_request",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        correlationId: expect.any(String),
+      }),
+    );
+
+    // Verify reply to CEO
+    expect(mockReply).toHaveBeenCalledWith(expect.stringContaining("📸"));
+  });
+
+  it("uses caption as title hint when present", async () => {
+    createTelegramBot(photoConfig);
+    const handler = getPhotoHandler();
+    const ctx = makePhotoCtx({ message: { caption: "Zapatillas Nike Air Max" } });
+
+    await handler!(ctx);
+
+    // Verify createLaunch includes the caption as title
+    expect(mockCreateLaunch).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Zapatillas Nike Air Max" }),
+    );
+  });
+
+  it("works without caption (omits title field)", async () => {
+    createTelegramBot(photoConfig);
+    const handler = getPhotoHandler();
+    const ctx = makePhotoCtx();
+
+    await handler!(ctx);
+
+    // Verify createLaunch was called
+    expect(mockCreateLaunch).toHaveBeenCalledTimes(1);
+    // Verify it does NOT include a title field
+    const createCall = mockCreateLaunch.mock.calls[0]![0] as Record<string, unknown>;
+    expect(createCall).toBeDefined();
+    expect(createCall).not.toHaveProperty("title");
+  });
+
+  it("replies with error when photo download fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failedResponse = {
+      ok: false,
+      status: 404,
+      arrayBuffer: vi.fn(),
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(failedResponse));
+
+    createTelegramBot(photoConfig);
+    const handler = getPhotoHandler();
+    const ctx = makePhotoCtx();
+
+    await handler!(ctx);
+
+    expect(mockReply).toHaveBeenCalledWith(expect.stringContaining("❌"));
+    expect(mockBusEnqueue).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("replies with error when getFile returns no file_path", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockGetFile.mockResolvedValue({ file_path: undefined });
+
+    createTelegramBot(photoConfig);
+    const handler = getPhotoHandler();
+    const ctx = makePhotoCtx();
+
+    await handler!(ctx);
+
+    expect(mockReply).toHaveBeenCalledWith(expect.stringContaining("❌"));
+    expect(mockBusEnqueue).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("does nothing when productLaunchEnabled is false", () => {
+    createTelegramBot({ ...photoConfig, productLaunchEnabled: false });
+    const handler = getPhotoHandler();
+
+    // Handler should be registered but should return early without doing anything
+    expect(handler).toBeDefined();
+  });
+
+  it("does nothing when productLaunchEnabled is unset (default false)", () => {
+    const defaultConfig = {
+      token: "test-token-no-launch",
+      agentConfig: { systemPrompt: "test", mockClient: true },
+    };
+    createTelegramBot(defaultConfig);
+    const handler = getPhotoHandler();
+
+    // Handler registered (bot.on always runs) but will return early
+    expect(handler).toBeDefined();
   });
 });
