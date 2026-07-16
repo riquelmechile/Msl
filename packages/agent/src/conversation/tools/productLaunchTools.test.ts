@@ -44,6 +44,7 @@ function makeStore(overrides?: Partial<ProductCatalogStore>): ProductCatalogStor
       createdAt: new Date().toISOString(),
     }),
     getLaunchesByProduct: vi.fn().mockReturnValue([]),
+    getPendingLaunchByChatId: vi.fn().mockReturnValue(undefined),
     ...overrides,
   };
 }

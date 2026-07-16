@@ -118,6 +118,16 @@ const SESSION_LANE_IDS = new Set<LaneId>([
   "finance-director",
 ]);
 
+/** Lanes that are event-only (triggered by Telegram photo or coordinator delegation,
+ *  never by scheduled tick cycles). Skipped in enqueueDaemonTick(). */
+const EVENT_ONLY_LANES = new Set<LaneId>([
+  "product-recognition",
+  "product-research",
+  "product-launch",
+  "creative-production",
+  "listing-composition",
+]);
+
 /** Minimum cooldown between sessions for the same lane+seller (1 hour). */
 const SESSION_COOLDOWN_MS = 60 * 60 * 1000;
 
@@ -212,7 +222,9 @@ export function enqueueDaemonTick(
   sellerIds: string[],
   extraLaneIds?: string[],
 ): void {
-  const laneIds = [...Object.keys(daemonHandlerMap), ...(extraLaneIds ?? [])];
+  const laneIds = [...Object.keys(daemonHandlerMap), ...(extraLaneIds ?? [])].filter(
+    (id) => !EVENT_ONLY_LANES.has(id as LaneId),
+  );
   const now = new Date();
   const hourKey = now.toISOString().slice(0, 13); // "2026-07-09T14"
   for (const laneId of laneIds) {

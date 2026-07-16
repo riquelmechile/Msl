@@ -18,6 +18,8 @@ export type ImageScoutInput = {
   model: string;
   /** Additional search terms to refine results. */
   searchTerms: string[];
+  /** URL of the product image for Google Lens visual search. */
+  imageUrl?: string;
 };
 
 export type ImageScoutOutput = {
@@ -38,6 +40,7 @@ async function searchGoogleLensImages(
   brand: string,
   model: string,
   searchTerms: string[],
+  imageUrl?: string,
 ): Promise<ImageScoutOutput> {
   const apiKey = env("SERPAPI_API_KEY");
   if (!apiKey) throw new Error("SERPAPI_API_KEY not set");
@@ -49,6 +52,7 @@ async function searchGoogleLensImages(
     type: "products",
     api_key: apiKey,
   });
+  if (imageUrl) params.set("url", imageUrl);
 
   const response = await fetch(`${SERPAPI_BASE_URL}?${params.toString()}`);
   if (!response.ok) {
@@ -173,7 +177,12 @@ export const imageScout: DaemonHandler = async ({ claim, bus }) => {
   // ── 2. Search ─────────────────────────────────────────────────
   let output: ImageScoutOutput;
   try {
-    output = await searchGoogleLensImages(input.brand, input.model, input.searchTerms ?? []);
+    output = await searchGoogleLensImages(
+      input.brand,
+      input.model,
+      input.searchTerms ?? [],
+      input.imageUrl,
+    );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     if (errorMessage.includes("SERPAPI_API_KEY not set")) {

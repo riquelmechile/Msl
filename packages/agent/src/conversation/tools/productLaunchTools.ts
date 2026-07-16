@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "./types.js";
-import type { ProductCatalogStore } from "@msl/domain";
+import type { ProductCatalogStore, ProductLaunchStoreInput } from "@msl/domain";
 import type { AgentMessageBusStore } from "../agentMessageBusStore.js";
 
 // ── Options ───────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ export function createLaunchProductTool(options: ProductLaunchToolsOptions = {})
           description: "Telegram chat ID for progress updates.",
         },
       },
-      required: ["sellerId"],
+      required: ["imageUrl", "sellerId"],
     },
     execute: (args: Record<string, unknown>): Record<string, unknown> => {
       const sellerId = typeof args.sellerId === "string" ? args.sellerId : "";
@@ -86,13 +86,15 @@ export function createLaunchProductTool(options: ProductLaunchToolsOptions = {})
         });
 
         // Create the launch entry
-        const launch = store.createLaunch({
+        const launchInput: ProductLaunchStoreInput = {
           launchId,
           productId,
           sellerId,
           status: "photo_received",
           createdAt: new Date().toISOString(),
-        });
+        };
+        if (chatId != null) launchInput.chatId = String(chatId);
+        const launch = store.createLaunch(launchInput);
 
         // Enqueue to the product-launch coordinator lane
         if (bus) {
