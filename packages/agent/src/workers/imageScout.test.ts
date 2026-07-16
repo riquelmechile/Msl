@@ -189,7 +189,7 @@ describe("imageScout", () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           visual_matches: [
             {
               thumbnail: "https://example.com/thumb1.jpg",
@@ -242,7 +242,7 @@ describe("imageScout", () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           visual_matches: [
             { original: "https://example.com/same.jpg", source: "site-a.com" },
             { original: "https://example.com/same.jpg", source: "site-b.com" },

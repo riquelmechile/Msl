@@ -63,7 +63,7 @@ export type ProductLaunchStoreInput = {
 
 // ── Store Interface ──────────────────────────────────────────────────
 
-export interface ProductCatalogStore {
+export type ProductCatalogStore = {
   upsertProduct(product: ProductCatalogEntry): ProductCatalogEntry;
   getProduct(productId: string): ProductCatalogEntry | undefined;
   upsertImage(image: ProductImageEntry): ProductImageEntry;

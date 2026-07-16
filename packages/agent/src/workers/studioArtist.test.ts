@@ -207,7 +207,7 @@ describe("studioArtist", () => {
     it("falls back to stub when MiniMax is not available", async () => {
       // No MiniMax API key → stub mode
       const bus = makeBus();
-      const result = await studioArtist({
+      const _result = await studioArtist({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,
@@ -265,7 +265,7 @@ describe("studioArtist", () => {
       const scoutUrls = ["https://http2.mlstatic.com/D_scout-1.jpg"];
 
       const bus = makeBus();
-      const result = await studioArtist({
+      const _result = await studioArtist({
         claim: makeClaim({
           payloadJson: JSON.stringify({
             imageUrl: "https://example.com/low-quality.jpg",

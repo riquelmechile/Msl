@@ -134,7 +134,7 @@ describe("visionAnalyst", () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           visual_matches: [{ title: "Unknown Item", link: "https://example.com/1" }],
           knowledge_graph: {},
           search_information: {},
@@ -205,7 +205,7 @@ describe("visionAnalyst", () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           visual_matches: [
             { title: "Apple Watch Ultra 2", link: "https://example.com/1", source: "example.com" },
             {

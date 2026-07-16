@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from "vitest";
-import type { DaemonHandler } from "./daemonTypes.js";
 import { productLaunchCoordinator } from "./productLaunchCoordinator.js";
 import type { AgentMessage } from "../conversation/agentMessageBusStore.js";
 

@@ -82,7 +82,7 @@ function makeMockMlcClient(overrides?: Partial<MlcApiClient>): MlcApiClient {
     getCategoryAttributes: vi.fn().mockResolvedValue({ data: {} }),
     getCategoryTechnicalSpecs: vi.fn().mockResolvedValue({ data: {} }),
     ...overrides,
-  } as unknown as MlcApiClient;
+  };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ describe("catalogSpecialist", () => {
         }),
       });
 
-      const result = await catalogSpecialist({
+      const _result = await catalogSpecialist({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,

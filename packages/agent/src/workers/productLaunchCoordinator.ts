@@ -1,9 +1,7 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
-import type { ProductCatalogStore } from "@msl/domain";
 import type { CeoHandlerContext } from "./daemonTypes.js";
 import {
   LaunchCostTracker,
-  type LaunchCostEvent,
   LAUNCH_COST_ESTIMATES,
 } from "../economics/launchCostTracker.js";
 
@@ -20,7 +18,7 @@ type PipelineStage =
   | "ready_to_publish"
   | "rejected";
 
-const STAGE_LABELS: Record<PipelineStage, string> = {
+const _STAGE_LABELS: Record<PipelineStage, string> = {
   photo_received: "📸 Foto recibida",
   recognizing: "🔍 Identificando producto…",
   researching: "📊 Investigando specs y precios…",
@@ -121,8 +119,8 @@ export const productLaunchCoordinator: DaemonHandler = async ({ claim, bus, ceoC
   }
 
   const launchId = payload.launchId;
-  const chatId = payload.chatId;
-  const sellerId = payload.sellerId ?? "unknown";
+  const _chatId = payload.chatId;
+  const _sellerId = payload.sellerId ?? "unknown";
 
   // ── 2. Determine current stage from payload or message type ──
   const messageType = claim.messageType;
@@ -244,7 +242,7 @@ async function handlePhotoReceived(
   });
 
   // Delegate to VisionAnalyst (product-recognition lane)
-  await delegateStage({
+  delegateStage({
     bus,
     launchId,
     receiverAgentId: "product-recognition",
@@ -298,7 +296,7 @@ async function handleRecognizing(
   });
 
   // Delegate to MarketResearcher AND CatalogSpecialist in parallel (product-research lane)
-  await delegateStage({
+  delegateStage({
     bus,
     launchId,
     receiverAgentId: "product-research",
@@ -343,7 +341,7 @@ async function handleResearching(
   });
 
   // Delegate to PhotoDirector (creative-production lane)
-  await delegateStage({
+  delegateStage({
     bus,
     launchId,
     receiverAgentId: "creative-production",
@@ -391,7 +389,7 @@ async function handleGeneratingCreative(
   });
 
   // Delegate to Copywriter + SpecTechnician + QualityInspector (listing-composition lane)
-  await delegateStage({
+  delegateStage({
     bus,
     launchId,
     receiverAgentId: "listing-composition",
@@ -561,7 +559,7 @@ function getNextStage(current: PipelineStage): PipelineStage | undefined {
 /**
  * Delegate a pipeline stage to a specialist worker via the Agent Message Bus.
  */
-async function delegateStage(params: {
+function delegateStage(params: {
   bus: Parameters<DaemonHandler>[0]["bus"];
   launchId: string;
   receiverAgentId: string;
@@ -569,7 +567,7 @@ async function delegateStage(params: {
   dedupePrefix: string;
   findings: DaemonFinding[];
   messageIds: string[];
-}): Promise<void> {
+}): void {
   const { bus, launchId, receiverAgentId, payload, dedupePrefix, findings, messageIds } = params;
 
   try {

@@ -93,8 +93,8 @@ describe("LaunchCostTracker", () => {
       tracker.record(makeEvent({ source: "deepseek", estimatedCostUsd: 0.01 }));
       tracker.record(makeEvent({ source: "minimax", estimatedCostUsd: 0.015 }));
       const summary = tracker.getSummary();
-      expect(summary.bySource.google_lens!.count).toBe(1);
-      expect(summary.bySource.google_lens!.totalUsd).toBeCloseTo(0.005, 4);
+      expect(summary.bySource.google_lens.count).toBe(1);
+      expect(summary.bySource.google_lens.totalUsd).toBeCloseTo(0.005, 4);
       expect(summary.bySource.deepseek.count).toBe(1);
       expect(summary.bySource.deepseek.totalUsd).toBeCloseTo(0.01, 4);
       expect(summary.bySource.minimax.count).toBe(1);

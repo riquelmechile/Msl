@@ -132,7 +132,7 @@ describe("photoDirector", () => {
 
     it("returns DISCARD_AND_SEARCH for unrecognized URL", async () => {
       const bus = makeBus();
-      const result = await photoDirector({
+      const _result = await photoDirector({
         claim: makeClaim({
           payloadJson: JSON.stringify({
             imageUrl: "https://random-site.com/file",
@@ -159,7 +159,7 @@ describe("photoDirector", () => {
       // No easy way to get >= 80 in stub mode, test the decision function indirectly
       // via the RECOGNIZED thresholds
       const busML = makeBus();
-      const resultML = await photoDirector({
+      const _resultML = await photoDirector({
         claim: makeClaim({
           payloadJson: JSON.stringify({
             imageUrl: "https://http2.mlstatic.com/D_123-MLA456.jpg",
@@ -180,7 +180,7 @@ describe("photoDirector", () => {
 
     it("score >= 40 returns REGENERATE", async () => {
       const bus = makeBus();
-      const result = await photoDirector({
+      const _result2 = await photoDirector({
         claim: makeClaim({
           payloadJson: JSON.stringify({
             imageUrl: "https://http2.mlstatic.com/D_123-MLA456.jpg",
@@ -244,7 +244,7 @@ describe("photoDirector", () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           action: "empty",
           detections: [],
         }),
@@ -284,7 +284,7 @@ describe("photoDirector", () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           action: "diagnostic",
           detections: [
             {
@@ -299,7 +299,7 @@ describe("photoDirector", () => {
       }) as never;
 
       const bus = makeBus();
-      const result = await photoDirector({
+      const _result3 = await photoDirector({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,
@@ -330,7 +330,7 @@ describe("photoDirector", () => {
       }) as never;
 
       const bus = makeBus();
-      const result = await photoDirector({
+      const _result4 = await photoDirector({
         claim: makeClaim({
           payloadJson: JSON.stringify({
             imageUrl: "https://http2.mlstatic.com/D_123-MLA456.jpg",

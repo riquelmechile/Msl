@@ -57,7 +57,7 @@ function parseSerpApiResponse(
 ): VisionAnalystOutput {
   const visualMatches = Array.isArray(data.visual_matches) ? data.visual_matches : [];
   const knowledgeGraph = (data.knowledge_graph ?? {}) as Record<string, unknown>;
-  const searchInformation = (data.search_information ?? {}) as Record<string, unknown>;
+  const _searchInformation = (data.search_information ?? {}) as Record<string, unknown>;
 
   // Extract brand and model from knowledge graph or visual matches
   let brand = "";
@@ -69,20 +69,20 @@ function parseSerpApiResponse(
   const sourceUrls: string[] = [];
 
   // Knowledge graph extraction
-  if (knowledgeGraph.title) {
-    productTitle = String(knowledgeGraph.title);
+  if (typeof knowledgeGraph.title === 'string') {
+    productTitle = knowledgeGraph.title;
   }
-  if (knowledgeGraph.brand) {
-    brand = String(knowledgeGraph.brand);
+  if (typeof knowledgeGraph.brand === 'string') {
+    brand = knowledgeGraph.brand;
   }
 
   // Visual matches extraction
   for (const match of visualMatches as Array<Record<string, unknown>>) {
-    if (match.title && !productTitle) {
-      productTitle = String(match.title);
+    if (typeof match.title === 'string' && !productTitle) {
+      productTitle = match.title;
     }
-    if (match.link) sourceUrls.push(String(match.link));
-    if (match.source) sourceUrls.push(String(match.source));
+    if (typeof match.link === 'string') sourceUrls.push(match.link);
+    if (typeof match.source === 'string') sourceUrls.push(match.source);
   }
 
   // Derive search terms from title
@@ -106,7 +106,7 @@ function parseSerpApiResponse(
   // Color extraction
   const kgColor =
     knowledgeGraph.color ?? knowledgeGraph.main_color ?? knowledgeGraph.dominant_color;
-  if (kgColor) color = String(kgColor);
+  if (typeof kgColor === 'string') color = kgColor;
 
   // Confidence based on result quality
   const resultCount = visualMatches.length;

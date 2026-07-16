@@ -65,7 +65,7 @@ const MINIMAX_IMAGE_COST_USD = 0.05;
  * 3. Track costs via CostLedger
  * 4. Stub mode: when MiniMax unavailable → return input image URLs as-is
  */
-export const studioArtist: DaemonHandler = async ({ claim, bus }) => {
+export const studioArtist: DaemonHandler = ({ claim, bus }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -282,7 +282,7 @@ export const studioArtist: DaemonHandler = async ({ claim, bus }) => {
       findings.push({
         kind: "alert",
         severity: "warning",
-        summary: `Studio Artist: unknown quality decision "${input.qualityDecision}" — falling back to original image`,
+        summary: `Studio Artist: unknown quality decision "${String(input.qualityDecision)}" — falling back to original image`,
         evidenceIds: [claim.messageId],
       });
       output = {

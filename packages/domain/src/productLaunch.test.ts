@@ -14,7 +14,7 @@ function makeLaunch(
 ): ProductLaunch {
   const base = createProductLaunch({ sellerId: "seller-test", launchId: "launch-001" });
   if (!overrides) return base;
-  return { ...base, ...overrides } as ProductLaunch;
+  return { ...base, ...overrides };
 }
 
 function statuses(...states: [ProductLaunchStatus, ...ProductLaunchStatus[]]): ProductLaunch {
@@ -193,6 +193,6 @@ describe("ImageQualityScore", () => {
 
     expect(score.score).toBe(85);
     expect(score.decision).toBe("USE_AS_REFERENCE");
-    expect(score.dimensions!.resolution).toBe(90);
+    expect(score.dimensions.resolution).toBe(90);
   });
 });

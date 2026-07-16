@@ -6,7 +6,7 @@ import { ReasoningLevel } from "../reasoning/reasoningTypes.js";
 
 // ── Environment helpers ─────────────────────────────────────────────
 
-function env(name: string, fallback = ""): string {
+function _env(name: string, fallback = ""): string {
   return (globalThis as Record<string, unknown>).process
     ? ((globalThis as typeof globalThis & { process: { env: Record<string, string | undefined> } })
         .process.env[name] ?? fallback)
@@ -155,9 +155,9 @@ export const marketResearcher: DaemonHandler = async ({ claim, bus }) => {
           specs: typeof parsed.specs === "string" ? parsed.specs : "No specs available",
           competitorPrices: Array.isArray(parsed.competitorPrices)
             ? parsed.competitorPrices.map((p: Record<string, unknown>) => ({
-                source: String(p.source ?? "Unknown"),
+                source: typeof p.source === 'string' ? p.source : 'Unknown',
                 price: Number(p.price) || 0,
-                currency: String(p.currency ?? "CLP"),
+                currency: typeof p.currency === 'string' ? p.currency : 'CLP',
               }))
             : [],
           suggestedPrice: Number(parsed.suggestedPrice) || 0,

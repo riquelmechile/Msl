@@ -82,7 +82,7 @@ function makeMockMlcClient(attributes?: unknown[]): MlcApiClient {
       data: attributes ?? mockCelularesAttributes(),
     }),
     getCategoryTechnicalSpecs: vi.fn().mockResolvedValue({ data: {} }),
-  } as unknown as MlcApiClient;
+  };
 }
 
 function mockCelularesAttributes() {
@@ -176,7 +176,7 @@ describe("specTechnician", () => {
 
     it("includes color attribute in stub mode when provided", async () => {
       const bus = makeBus();
-      const result = await specTechnician({
+      const _result = await specTechnician({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,
@@ -234,7 +234,7 @@ describe("specTechnician", () => {
       const bus = makeBus();
       const mockMlcClient = makeMockMlcClient();
 
-      const result = await specTechnician({
+      const _result = await specTechnician({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,
@@ -262,7 +262,7 @@ describe("specTechnician", () => {
       const bus = makeBus();
       const mockMlcClient = makeMockMlcClient();
 
-      const result = await specTechnician({
+      const _result = await specTechnician({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,
@@ -285,7 +285,7 @@ describe("specTechnician", () => {
       const bus = makeBus();
       const mockMlcClient = makeMockMlcClient();
 
-      const result = await specTechnician({
+      const _result = await specTechnician({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,
@@ -331,7 +331,7 @@ describe("specTechnician", () => {
       const bus = makeBus();
       const mockMlcClient = makeMockMlcClient();
 
-      const result = await specTechnician({
+      const _result = await specTechnician({
         claim: makeClaim(),
         reader: {} as never,
         cortex: {} as never,

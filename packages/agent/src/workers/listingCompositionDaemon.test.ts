@@ -34,7 +34,7 @@ function makeClaim(payload: Record<string, unknown>): AgentMessage {
 
 function makeBus() {
   return {
-    enqueue: vi.fn((input: Record<string, unknown>) => ({
+    enqueue: vi.fn((_input: Record<string, unknown>) => ({
       messageId: `bus-${Math.random().toString(36).slice(2)}`,
     })),
     claimNext: vi.fn().mockReturnValue([]),

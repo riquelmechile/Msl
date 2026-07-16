@@ -96,7 +96,9 @@ describe("productLaunchTools", () => {
       expect(result.noMutationExecuted).toBe(true);
       expect(result.status).toBe("photo_received");
       expect(result.launchId).toBe("launch-1");
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(store.upsertProduct).toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(store.createLaunch).toHaveBeenCalled();
       expect(bus.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -217,6 +219,7 @@ describe("productLaunchTools", () => {
 
       expect(result.approved).toBe(true);
       expect(result.newStatus).toBe("approved");
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(store.updateLaunchStatus).toHaveBeenCalledWith("launch-1", "approved");
       expect(bus.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -143,7 +143,7 @@ describe("copywriter", () => {
         sellerId: "unknown-seller",
       });
 
-      const result = await copywriter({
+      const _result = await copywriter({
         claim,
         reader: {} as never,
         cortex: {} as never,

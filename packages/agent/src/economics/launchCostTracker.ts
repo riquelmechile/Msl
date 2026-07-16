@@ -125,7 +125,7 @@ export class LaunchCostTracker {
 
     return {
       totalUsd: Math.round(totalUsd * 10_000) / 10_000,
-      bySource: bySource as Record<CostSource, { count: number; totalUsd: number }>,
+      bySource: bySource,
       activeLaunches: this.costsByLaunch.size,
     };
   }
@@ -214,7 +214,7 @@ export class LaunchCostTracker {
         estimatedCostMicros: Math.round(event.estimatedCostUsd * 1_000_000),
         currency: "USD",
         cacheStatus: "unknown",
-        metadata: (event.metadata ?? {}) as Record<string, string>,
+        metadata: (event.metadata ?? {}),
         measuredAt: event.measuredAt ?? new Date().toISOString(),
       });
     } catch (err) {

@@ -6,10 +6,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Database from "better-sqlite3";
-import { createProductCatalogStore, createAgentMessageBusStore } from "@msl/agent";
+import { createProductCatalogStore } from "@msl/agent";
 import type { ProductCatalogStore, AgentMessageBusStore, AgentMessage } from "@msl/agent";
 import { productLaunchCoordinator } from "../../packages/agent/src/workers/productLaunchCoordinator.js";
-import type { DaemonHandler } from "../../packages/agent/src/workers/daemonTypes.js";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -124,7 +123,7 @@ describe("product launch pipeline (integration)", () => {
       claim,
       reader: {} as never,
       cortex: {} as never,
-      bus: bus as never,
+      bus: bus,
       sellerIds: ["seller-int-1"],
     });
   }

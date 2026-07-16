@@ -948,6 +948,7 @@ describe("message:photo handler (product launch)", () => {
       expect.objectContaining({
         status: "photo_received",
         productId: "test-uuid-1234",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         sellerId: expect.any(String),
       }),
     );
@@ -958,6 +959,7 @@ describe("message:photo handler (product launch)", () => {
         senderAgentId: "telegram-bot",
         receiverAgentId: "product-launch",
         messageType: "launch_request",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         correlationId: expect.any(String),
       }),
     );
