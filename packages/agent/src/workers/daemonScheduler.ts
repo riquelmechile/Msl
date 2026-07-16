@@ -223,7 +223,7 @@ export function enqueueDaemonTick(
   extraLaneIds?: string[],
 ): void {
   const laneIds = [...Object.keys(daemonHandlerMap), ...(extraLaneIds ?? [])].filter(
-    (id) => !EVENT_ONLY_LANES.has(id),
+    (id) => !EVENT_ONLY_LANES.has(id as LaneId),
   );
   const now = new Date();
   const hourKey = now.toISOString().slice(0, 13); // "2026-07-09T14"

@@ -86,14 +86,15 @@ export function createLaunchProductTool(options: ProductLaunchToolsOptions = {})
         });
 
         // Create the launch entry
-        const launch = store.createLaunch({
+        const launchInput: ProductLaunchStoreInput = {
           launchId,
           productId,
           sellerId,
-          chatId: chatId != null ? String(chatId) : undefined,
           status: "photo_received",
           createdAt: new Date().toISOString(),
-        });
+        };
+        if (chatId != null) launchInput.chatId = String(chatId);
+        const launch = store.createLaunch(launchInput);
 
         // Enqueue to the product-launch coordinator lane
         if (bus) {
