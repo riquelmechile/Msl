@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "./types.js";
-import type { ProductCatalogStore, ProductLaunchEntry } from "@msl/domain";
+import type { ProductCatalogStore } from "@msl/domain";
 import type { AgentMessageBusStore } from "../agentMessageBusStore.js";
 
 // ── Options ───────────────────────────────────────────────────────────
