@@ -482,8 +482,7 @@ export const PRODUCT_LAUNCH_LANE: LaneContract = {
     "Escalate failures to the CEO with specific, actionable requests.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider:
-    "product launches, pipeline stages, specialist outputs, cost reports",
+  refreshableContextProvider: "product launches, pipeline stages, specialist outputs, cost reports",
   inputs: ["launch-request", "product-photo", "seller-id", "chat-id"],
   outputs: [
     "pipeline-progress",
@@ -498,7 +497,12 @@ export const PRODUCT_LAUNCH_LANE: LaneContract = {
     "fail early and escalate to CEO; never block silently",
     phaseOneBoundary,
   ],
-  requiredEvidenceKinds: ["product-photo", "recognition-result", "research-result", "creative-result"],
+  requiredEvidenceKinds: [
+    "product-photo",
+    "recognition-result",
+    "research-result",
+    "creative-result",
+  ],
   credentialScope: "provider-default",
 };
 
@@ -591,7 +595,8 @@ export const LISTING_COMPOSITION_LANE: LaneContract = {
     "Return structured JSON with title, description, and accountTone fields.",
     phaseOneBoundary,
   ].join("\n"),
-  refreshableContextProvider: "product specs, competitor prices, seller tone profiles, ML attribute schemas",
+  refreshableContextProvider:
+    "product specs, competitor prices, seller tone profiles, ML attribute schemas",
   inputs: ["brand", "model", "specs", "category", "competitor-prices", "seller-id"],
   outputs: [
     "listing-title",

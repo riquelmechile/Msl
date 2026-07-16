@@ -77,8 +77,12 @@ describe("LaunchCostTracker", () => {
 
   describe("getSummary", () => {
     it("computes total across all launches", () => {
-      tracker.record(makeEvent({ launchId: "launch-a", source: "google_lens", estimatedCostUsd: 0.005 }));
-      tracker.record(makeEvent({ launchId: "launch-b", source: "deepseek", estimatedCostUsd: 0.01 }));
+      tracker.record(
+        makeEvent({ launchId: "launch-a", source: "google_lens", estimatedCostUsd: 0.005 }),
+      );
+      tracker.record(
+        makeEvent({ launchId: "launch-b", source: "deepseek", estimatedCostUsd: 0.01 }),
+      );
       const summary = tracker.getSummary();
       expect(summary.totalUsd).toBeCloseTo(0.015, 4);
       expect(summary.activeLaunches).toBe(2);

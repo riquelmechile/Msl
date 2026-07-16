@@ -500,10 +500,7 @@ export function createTelegramBotFromEnv(env: TelegramBotEnv = process.env): Tel
  * creates a ProductLaunch in the catalog store, and enqueues a message
  * on the Agent Message Bus for the Product Launch Coordinator to pick up.
  */
-function installPhotoHandler(
-  bot: Bot,
-  config: BotConfig,
-): void {
+function installPhotoHandler(bot: Bot, config: BotConfig): void {
   bot.on("message:photo", async (ctx) => {
     // Feature flag guard — silently ignore photos when launch is disabled
     if (!config.productLaunchEnabled) return;

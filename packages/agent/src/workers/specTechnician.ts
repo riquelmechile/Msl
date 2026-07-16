@@ -47,26 +47,11 @@ function findMatchingValue(
   return {};
 }
 
-const BRAND_ATTRIBUTE_IDS = new Set([
-  "BRAND",
-  "brand",
-  "marca",
-  "MARCA",
-]);
+const BRAND_ATTRIBUTE_IDS = new Set(["BRAND", "brand", "marca", "MARCA"]);
 
-const MODEL_ATTRIBUTE_IDS = new Set([
-  "MODEL",
-  "model",
-  "modelo",
-  "MODELO",
-]);
+const MODEL_ATTRIBUTE_IDS = new Set(["MODEL", "model", "modelo", "MODELO"]);
 
-const COLOR_ATTRIBUTE_IDS = new Set([
-  "COLOR",
-  "color",
-  "COLOR_PRINCIPAL",
-  "MAIN_COLOR",
-]);
+const COLOR_ATTRIBUTE_IDS = new Set(["COLOR", "color", "COLOR_PRINCIPAL", "MAIN_COLOR"]);
 
 function isBrandAttribute(attr: MlcCategoryAttributeSummary): boolean {
   return (
@@ -108,16 +93,13 @@ async function validateAttributes(
 
     const requiredAttrs = attributes.filter(
       (attr) =>
-        (attr.required || attr.catalogRequired) &&
-        !attr.variationAttribute &&
-        !attr.readOnly,
+        (attr.required || attr.catalogRequired) && !attr.variationAttribute && !attr.readOnly,
     );
 
     const mapped: AttributeMapping[] = [];
     const missing: string[] = [];
 
     for (const attr of requiredAttrs) {
-
       const attrName = attr.name ?? attr.id;
 
       if (isBrandAttribute(attr)) {
@@ -158,9 +140,7 @@ async function validateAttributes(
     }
 
     const completenessPercent =
-      requiredAttrs.length > 0
-        ? Math.round((mapped.length / requiredAttrs.length) * 100)
-        : 100;
+      requiredAttrs.length > 0 ? Math.round((mapped.length / requiredAttrs.length) * 100) : 100;
 
     return {
       requiredAttributes: mapped,
@@ -208,12 +188,7 @@ function stubValidate(input: SpecTechnicianInput): SpecTechnicianOutput {
  * 4. Flag missing required attributes
  * 5. Return findings with attribute validation result
  */
-export const specTechnician: DaemonHandler = async ({
-  claim,
-  bus,
-  sellerIds,
-  mlcClient,
-}) => {
+export const specTechnician: DaemonHandler = async ({ claim, bus, sellerIds, mlcClient }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 

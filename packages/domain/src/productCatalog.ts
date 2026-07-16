@@ -70,9 +70,6 @@ export interface ProductCatalogStore {
   getImages(productId: string): ProductImageEntry[];
   createLaunch(input: ProductLaunchStoreInput): ProductLaunchEntry;
   getLaunch(launchId: string): ProductLaunchEntry | undefined;
-  updateLaunchStatus(
-    launchId: string,
-    status: ProductLaunchStatus,
-  ): ProductLaunchEntry;
+  updateLaunchStatus(launchId: string, status: ProductLaunchStatus): ProductLaunchEntry;
   getLaunchesByProduct(productId: string): ProductLaunchEntry[];
 }

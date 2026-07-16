@@ -1,7 +1,11 @@
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { ProductCatalogStore } from "@msl/domain";
 import type { CeoHandlerContext } from "./daemonTypes.js";
-import { LaunchCostTracker, type LaunchCostEvent, LAUNCH_COST_ESTIMATES } from "../economics/launchCostTracker.js";
+import {
+  LaunchCostTracker,
+  type LaunchCostEvent,
+  LAUNCH_COST_ESTIMATES,
+} from "../economics/launchCostTracker.js";
 
 // ── Pipeline Stage Definitions ────────────────────────────────────────
 
@@ -88,11 +92,7 @@ const costTracker = new LaunchCostTracker();
  * Stub mode: when no specialist workers are available, simulates pipeline
  * progression with delayed state transitions (suitable for testing).
  */
-export const productLaunchCoordinator: DaemonHandler = async ({
-  claim,
-  bus,
-  ceoContext,
-}) => {
+export const productLaunchCoordinator: DaemonHandler = async ({ claim, bus, ceoContext }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -152,7 +152,8 @@ export const productLaunchCoordinator: DaemonHandler = async ({
     }
   } else {
     // Unknown message type — assume it's a continuation
-    currentStage = (payload as Record<string, unknown>).stage as PipelineStage ?? "photo_received";
+    currentStage =
+      ((payload as Record<string, unknown>).stage as PipelineStage) ?? "photo_received";
   }
 
   // ── 3. Route to next stage ────────────────────────────────────
@@ -195,7 +196,14 @@ export const productLaunchCoordinator: DaemonHandler = async ({
       break;
     default:
       // Unknown stage — send to CEO
-      await sendProgress(payload, currentStage, "⚠️ Estado desconocido", ceoContext, messageIds, bus);
+      await sendProgress(
+        payload,
+        currentStage,
+        "⚠️ Estado desconocido",
+        ceoContext,
+        messageIds,
+        bus,
+      );
   }
 
   // ── 5. Track costs ────────────────────────────────────────────
@@ -251,7 +259,14 @@ async function handlePhotoReceived(
     messageIds,
   });
 
-  await sendProgress(payload, "photo_received", "📸 Foto recibida. Iniciando identificación…", ceoContext, messageIds, bus);
+  await sendProgress(
+    payload,
+    "photo_received",
+    "📸 Foto recibida. Iniciando identificación…",
+    ceoContext,
+    messageIds,
+    bus,
+  );
 }
 
 async function handleRecognizing(
@@ -571,7 +586,7 @@ async function delegateStage(params: {
     findings.push({
       kind: "info",
       severity: "info",
-      summary: `ProductLaunchCoordinator: delegated to "${receiverAgentId}" for launch "${launchId}" (${payload.stage as string ?? "unknown"})`,
+      summary: `ProductLaunchCoordinator: delegated to "${receiverAgentId}" for launch "${launchId}" (${(payload.stage as string) ?? "unknown"})`,
       evidenceIds: [message.messageId],
     });
   } catch (err) {

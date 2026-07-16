@@ -10,7 +10,9 @@ import type { ProductCatalogStore } from "@msl/domain";
 // ── Helpers ────────────────────────────────────────────────────────
 
 /** Safely unwrap ToolDefinition.execute() return type (all our tools are synchronous). */
-function r(result: Record<string, unknown> | Promise<Record<string, unknown>>): Record<string, unknown> {
+function r(
+  result: Record<string, unknown> | Promise<Record<string, unknown>>,
+): Record<string, unknown> {
   return result as Record<string, unknown>;
 }
 
@@ -18,7 +20,15 @@ function makeStore(overrides?: Partial<ProductCatalogStore>): ProductCatalogStor
   return {
     upsertProduct: vi.fn().mockReturnValue({ productId: "prod-1" }),
     getProduct: vi.fn().mockReturnValue(undefined),
-    upsertImage: vi.fn().mockReturnValue({ imageId: "img-1", productId: "prod-1", url: "", source: "ceo_telegram", createdAt: "" }),
+    upsertImage: vi
+      .fn()
+      .mockReturnValue({
+        imageId: "img-1",
+        productId: "prod-1",
+        url: "",
+        source: "ceo_telegram",
+        createdAt: "",
+      }),
     getImages: vi.fn().mockReturnValue([]),
     createLaunch: vi.fn().mockReturnValue({
       launchId: "launch-1",
@@ -76,12 +86,14 @@ describe("productLaunchTools", () => {
       const store = makeStore();
       const bus = makeBus();
       const tool = createLaunchProductTool({ catalogStore: store, bus });
-      const result = r(tool.execute({
-        sellerId: "test-seller",
-        imageUrl: "https://example.com/photo.jpg",
-        caption: "Test product",
-        chatId: 123456,
-      }));
+      const result = r(
+        tool.execute({
+          sellerId: "test-seller",
+          imageUrl: "https://example.com/photo.jpg",
+          caption: "Test product",
+          chatId: 123456,
+        }),
+      );
 
       expect(result.noMutationExecuted).toBe(true);
       expect(result.status).toBe("photo_received");

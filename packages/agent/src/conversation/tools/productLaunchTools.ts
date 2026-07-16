@@ -21,9 +21,7 @@ export type ProductLaunchToolsOptions = {
  *
  * PROPOSAL-ONLY — no external mutation executed.
  */
-export function createLaunchProductTool(
-  options: ProductLaunchToolsOptions = {},
-): ToolDefinition {
+export function createLaunchProductTool(options: ProductLaunchToolsOptions = {}): ToolDefinition {
   const store = options.catalogStore;
   const bus = options.bus;
 
@@ -269,9 +267,7 @@ export function createQueryLaunchStatusTool(
  *
  * PROPOSAL-ONLY — no external mutation executed. Write gate remains blocked.
  */
-export function createApproveLaunchTool(
-  options: ProductLaunchToolsOptions = {},
-): ToolDefinition {
+export function createApproveLaunchTool(options: ProductLaunchToolsOptions = {}): ToolDefinition {
   const store = options.catalogStore;
   const bus = options.bus;
 

@@ -57,8 +57,21 @@ function makeBaseCtx(claim: AgentMessage) {
   const bus = makeBus();
   return {
     claim,
-    reader: { searchSnapshots: vi.fn().mockResolvedValue([]), getSnapshot: vi.fn().mockResolvedValue(null), close: vi.fn() } as never,
-    cortex: { createNode: vi.fn(), getNode: vi.fn(), getOrCreateNode: vi.fn(), createEdge: vi.fn(), reinforceEdge: vi.fn(), penalizeEdge: vi.fn(), ensureAccountAssetNode: vi.fn(), getNodesBySeller: vi.fn().mockReturnValue([]) } as never,
+    reader: {
+      searchSnapshots: vi.fn().mockResolvedValue([]),
+      getSnapshot: vi.fn().mockResolvedValue(null),
+      close: vi.fn(),
+    } as never,
+    cortex: {
+      createNode: vi.fn(),
+      getNode: vi.fn(),
+      getOrCreateNode: vi.fn(),
+      createEdge: vi.fn(),
+      reinforceEdge: vi.fn(),
+      penalizeEdge: vi.fn(),
+      ensureAccountAssetNode: vi.fn(),
+      getNodesBySeller: vi.fn().mockReturnValue([]),
+    } as never,
     bus: bus as never,
     sellerIds: ["test-seller"],
   };
@@ -83,7 +96,10 @@ describe("creativeProductionDaemon", () => {
       expect(result.findings.length).toBeGreaterThan(0);
       // Should reference the quality decision in findings
       const hasQuality = result.findings.some(
-        (f) => f.summary.includes("Studio Artist") || f.summary.includes("REGENERATE") || f.summary.includes("USE_AS_REFERENCE"),
+        (f) =>
+          f.summary.includes("Studio Artist") ||
+          f.summary.includes("REGENERATE") ||
+          f.summary.includes("USE_AS_REFERENCE"),
       );
       expect(hasQuality).toBe(true);
     });
@@ -119,9 +135,7 @@ describe("creativeProductionDaemon", () => {
       const result = await creativeProductionDaemon(ctx);
 
       // ImageScout returns findings about image search
-      const imageFindings = result.findings.filter(
-        (f) => f.summary.includes("Image Scout"),
-      );
+      const imageFindings = result.findings.filter((f) => f.summary.includes("Image Scout"));
       expect(imageFindings.length).toBeGreaterThan(0);
     });
   });
@@ -137,9 +151,7 @@ describe("creativeProductionDaemon", () => {
       const result = await creativeProductionDaemon(ctx);
 
       // PhotoDirector always returns findings (stub analysis)
-      const photoFindings = result.findings.filter(
-        (f) => f.summary.includes("Photo Director"),
-      );
+      const photoFindings = result.findings.filter((f) => f.summary.includes("Photo Director"));
       expect(photoFindings.length).toBeGreaterThan(0);
     });
 
@@ -150,9 +162,7 @@ describe("creativeProductionDaemon", () => {
       const result = await creativeProductionDaemon(ctx);
 
       // PhotoDirector will report missing imageUrl
-      const alertFindings = result.findings.filter(
-        (f) => f.kind === "alert",
-      );
+      const alertFindings = result.findings.filter((f) => f.kind === "alert");
       expect(alertFindings.length).toBeGreaterThan(0);
     });
 

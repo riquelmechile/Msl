@@ -51,16 +51,18 @@ function makeBus() {
     dedupeKey?: string;
   }> = [];
   return {
-    enqueue: vi.fn((input: {
-      senderAgentId: string;
-      receiverAgentId: string;
-      messageType: string;
-      payloadJson: string;
-      dedupeKey?: string;
-    }) => {
-      enqueued.push(input);
-      return { messageId: `bus-msg-${enqueued.length}` };
-    }),
+    enqueue: vi.fn(
+      (input: {
+        senderAgentId: string;
+        receiverAgentId: string;
+        messageType: string;
+        payloadJson: string;
+        dedupeKey?: string;
+      }) => {
+        enqueued.push(input);
+        return { messageId: `bus-msg-${enqueued.length}` };
+      },
+    ),
     enqueued,
     claimNext: vi.fn().mockReturnValue([]),
     resolve: vi.fn(),
@@ -158,9 +160,7 @@ describe("studioArtist", () => {
       expect(result.proposalEnqueued).toBe(true);
 
       // Should have 1 finding + 1 result message
-      const resultMsg = bus.enqueued.find(
-        (m) => m.dedupeKey?.startsWith("studio-artist-result-"),
-      );
+      const resultMsg = bus.enqueued.find((m) => m.dedupeKey?.startsWith("studio-artist-result-"));
       expect(resultMsg).toBeDefined();
       const payload = JSON.parse(resultMsg!.payloadJson) as Record<string, unknown>;
       const output = payload.studioArtistResult as Record<string, unknown>;
@@ -188,7 +188,8 @@ describe("studioArtist", () => {
 
       // Should have enqueued to creative-studio lane
       const creativeMsg = bus.enqueued.find(
-        (m) => m.receiverAgentId === "creative-studio" && m.messageType === "creative-asset-request",
+        (m) =>
+          m.receiverAgentId === "creative-studio" && m.messageType === "creative-asset-request",
       );
       expect(creativeMsg).toBeDefined();
       const creativePayload = JSON.parse(creativeMsg!.payloadJson) as Record<string, unknown>;
@@ -196,9 +197,7 @@ describe("studioArtist", () => {
       expect(creativePayload.channel).toBe("mercadolibre");
 
       // Result message should show MiniMax was used
-      const resultMsg = bus.enqueued.find(
-        (m) => m.dedupeKey?.startsWith("studio-artist-result-"),
-      );
+      const resultMsg = bus.enqueued.find((m) => m.dedupeKey?.startsWith("studio-artist-result-"));
       const resultPayload = JSON.parse(resultMsg!.payloadJson) as Record<string, unknown>;
       const output = resultPayload.studioArtistResult as Record<string, unknown>;
       expect(output.usedMiniMax).toBe(true);
@@ -216,9 +215,7 @@ describe("studioArtist", () => {
         sellerIds: ["test-seller"],
       });
 
-      const resultMsg = bus.enqueued.find(
-        (m) => m.dedupeKey?.startsWith("studio-artist-result-"),
-      );
+      const resultMsg = bus.enqueued.find((m) => m.dedupeKey?.startsWith("studio-artist-result-"));
       const payload = JSON.parse(resultMsg!.payloadJson) as Record<string, unknown>;
       const output = payload.studioArtistResult as Record<string, unknown>;
       expect(output.usedMiniMax).toBe(false);
@@ -254,7 +251,8 @@ describe("studioArtist", () => {
       });
 
       const creativeMsg = bus.enqueued.find(
-        (m) => m.receiverAgentId === "creative-studio" && m.messageType === "creative-asset-request",
+        (m) =>
+          m.receiverAgentId === "creative-studio" && m.messageType === "creative-asset-request",
       );
       expect(creativeMsg).toBeDefined();
       const creativePayload = JSON.parse(creativeMsg!.payloadJson) as Record<string, unknown>;
@@ -282,9 +280,7 @@ describe("studioArtist", () => {
         sellerIds: ["test-seller"],
       });
 
-      const resultMsg = bus.enqueued.find(
-        (m) => m.dedupeKey?.startsWith("studio-artist-result-"),
-      );
+      const resultMsg = bus.enqueued.find((m) => m.dedupeKey?.startsWith("studio-artist-result-"));
       const payload = JSON.parse(resultMsg!.payloadJson) as Record<string, unknown>;
       const output = payload.studioArtistResult as Record<string, unknown>;
       expect(output.usedMiniMax).toBe(false);
@@ -311,17 +307,15 @@ describe("studioArtist", () => {
         sellerIds: ["test-seller"],
       });
 
-      const resultMsg = bus.enqueued.find(
-        (m) => m.dedupeKey?.startsWith("studio-artist-result-"),
-      );
+      const resultMsg = bus.enqueued.find((m) => m.dedupeKey?.startsWith("studio-artist-result-"));
       const payload = JSON.parse(resultMsg!.payloadJson) as Record<string, unknown>;
       const output = payload.studioArtistResult as Record<string, unknown>;
       expect(output.usedMiniMax).toBe(false);
       expect(output.costUsd).toBe(0);
 
       // Should have an alert finding
-      const alertFinding = bus.enqueued.find(
-        (m) => m.payloadJson.includes("unknown quality decision"),
+      const alertFinding = bus.enqueued.find((m) =>
+        m.payloadJson.includes("unknown quality decision"),
       );
       expect(alertFinding).toBeFalsy(); // findings don't appear as enqueued messages — check findings in result
     });

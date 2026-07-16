@@ -9,15 +9,15 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeLaunch(overrides?: Partial<Pick<ProductLaunch, "status" | "launchId" | "sellerId">>): ProductLaunch {
+function makeLaunch(
+  overrides?: Partial<Pick<ProductLaunch, "status" | "launchId" | "sellerId">>,
+): ProductLaunch {
   const base = createProductLaunch({ sellerId: "seller-test", launchId: "launch-001" });
   if (!overrides) return base;
   return { ...base, ...overrides } as ProductLaunch;
 }
 
-function statuses(
-  ...states: [ProductLaunchStatus, ...ProductLaunchStatus[]]
-): ProductLaunch {
+function statuses(...states: [ProductLaunchStatus, ...ProductLaunchStatus[]]): ProductLaunch {
   let launch = makeLaunch({ status: states[0] });
   for (let i = 1; i < states.length; i++) {
     launch = transitionLaunch(launch, states[i]!);
@@ -74,8 +74,13 @@ describe("ProductLaunch — state machine", () => {
 
   it("prevents transitions out of terminal states", () => {
     const rejected = statuses(
-      "photo_received", "recognizing", "researching",
-      "generating_creative", "composing", "awaiting_approval", "rejected",
+      "photo_received",
+      "recognizing",
+      "researching",
+      "generating_creative",
+      "composing",
+      "awaiting_approval",
+      "rejected",
     );
 
     expect(() => transitionLaunch(rejected, "approved")).toThrow(
@@ -83,8 +88,14 @@ describe("ProductLaunch — state machine", () => {
     );
 
     const published = statuses(
-      "photo_received", "recognizing", "researching",
-      "generating_creative", "composing", "awaiting_approval", "approved", "ready_to_publish",
+      "photo_received",
+      "recognizing",
+      "researching",
+      "generating_creative",
+      "composing",
+      "awaiting_approval",
+      "approved",
+      "ready_to_publish",
     );
 
     expect(() => transitionLaunch(published, "rejected")).toThrow(
@@ -161,7 +172,10 @@ describe("ProductContext — accumulation", () => {
     expect(withBrand.context.brand).toBe("Apple");
     expect(withBrand.context.model).toBe("iPhone 16");
 
-    const withSearch = { ...withBrand, context: { ...withBrand.context, searchTerms: ["iPhone 16 specs"] } };
+    const withSearch = {
+      ...withBrand,
+      context: { ...withBrand.context, searchTerms: ["iPhone 16 specs"] },
+    };
     expect(withSearch.context.searchTerms).toEqual(["iPhone 16 specs"]);
     expect(withSearch.context.brand).toBe("Apple"); // preserved
   });

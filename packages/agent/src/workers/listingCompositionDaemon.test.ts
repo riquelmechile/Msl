@@ -57,8 +57,21 @@ function makeBaseCtx(claim: AgentMessage) {
   const bus = makeBus();
   return {
     claim,
-    reader: { searchSnapshots: vi.fn().mockResolvedValue([]), getSnapshot: vi.fn().mockResolvedValue(null), close: vi.fn() } as never,
-    cortex: { createNode: vi.fn(), getNode: vi.fn(), getOrCreateNode: vi.fn(), createEdge: vi.fn(), reinforceEdge: vi.fn(), penalizeEdge: vi.fn(), ensureAccountAssetNode: vi.fn(), getNodesBySeller: vi.fn().mockReturnValue([]) } as never,
+    reader: {
+      searchSnapshots: vi.fn().mockResolvedValue([]),
+      getSnapshot: vi.fn().mockResolvedValue(null),
+      close: vi.fn(),
+    } as never,
+    cortex: {
+      createNode: vi.fn(),
+      getNode: vi.fn(),
+      getOrCreateNode: vi.fn(),
+      createEdge: vi.fn(),
+      reinforceEdge: vi.fn(),
+      penalizeEdge: vi.fn(),
+      ensureAccountAssetNode: vi.fn(),
+      getNodesBySeller: vi.fn().mockReturnValue([]),
+    } as never,
     bus: bus as never,
     sellerIds: ["test-seller"],
   };
@@ -82,9 +95,7 @@ describe("listingCompositionDaemon", () => {
       const result = await listingCompositionDaemon(ctx);
 
       // Copywriter returns findings with listing copy
-      const copyFindings = result.findings.filter(
-        (f) => f.summary.includes("Copywriter"),
-      );
+      const copyFindings = result.findings.filter((f) => f.summary.includes("Copywriter"));
       expect(copyFindings.length).toBeGreaterThan(0);
     });
 
@@ -103,9 +114,7 @@ describe("listingCompositionDaemon", () => {
 
       // Should return findings (stub copy)
       expect(result.findings.length).toBeGreaterThan(0);
-      const hasCopy = result.findings.some((f) =>
-        f.summary.includes("Copywriter"),
-      );
+      const hasCopy = result.findings.some((f) => f.summary.includes("Copywriter"));
       expect(hasCopy).toBe(true);
     });
   });
@@ -124,9 +133,7 @@ describe("listingCompositionDaemon", () => {
       const result = await listingCompositionDaemon(ctx);
 
       // SpecTechnician returns findings (stub mode when no mlcClient)
-      const specFindings = result.findings.filter(
-        (f) => f.summary.includes("Spec Technician"),
-      );
+      const specFindings = result.findings.filter((f) => f.summary.includes("Spec Technician"));
       expect(specFindings.length).toBeGreaterThan(0);
     });
   });
@@ -149,8 +156,8 @@ describe("listingCompositionDaemon", () => {
       const result = await listingCompositionDaemon(ctx);
 
       // QualityInspector returns findings
-      const qualityFindings = result.findings.filter(
-        (f) => f.summary.includes("Quality Inspector"),
+      const qualityFindings = result.findings.filter((f) =>
+        f.summary.includes("Quality Inspector"),
       );
       expect(qualityFindings.length).toBeGreaterThan(0);
     });

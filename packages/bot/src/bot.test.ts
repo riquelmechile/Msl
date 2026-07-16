@@ -1009,9 +1009,7 @@ describe("message:photo handler (product launch)", () => {
 
     await handler!(ctx);
 
-    expect(mockReply).toHaveBeenCalledWith(
-      expect.stringContaining("❌"),
-    );
+    expect(mockReply).toHaveBeenCalledWith(expect.stringContaining("❌"));
     expect(mockBusEnqueue).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
@@ -1026,9 +1024,7 @@ describe("message:photo handler (product launch)", () => {
 
     await handler!(ctx);
 
-    expect(mockReply).toHaveBeenCalledWith(
-      expect.stringContaining("❌"),
-    );
+    expect(mockReply).toHaveBeenCalledWith(expect.stringContaining("❌"));
     expect(mockBusEnqueue).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
   });

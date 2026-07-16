@@ -45,16 +45,18 @@ function makeBus() {
     dedupeKey?: string;
   }> = [];
   return {
-    enqueue: vi.fn((input: {
-      senderAgentId: string;
-      receiverAgentId: string;
-      messageType: string;
-      payloadJson: string;
-      dedupeKey?: string;
-    }) => {
-      enqueued.push(input);
-      return { messageId: `bus-msg-${enqueued.length}` };
-    }),
+    enqueue: vi.fn(
+      (input: {
+        senderAgentId: string;
+        receiverAgentId: string;
+        messageType: string;
+        payloadJson: string;
+        dedupeKey?: string;
+      }) => {
+        enqueued.push(input);
+        return { messageId: `bus-msg-${enqueued.length}` };
+      },
+    ),
     enqueued,
     claimNext: vi.fn().mockReturnValue([]),
     resolve: vi.fn(),
@@ -206,7 +208,11 @@ describe("visionAnalyst", () => {
         json: async () => ({
           visual_matches: [
             { title: "Apple Watch Ultra 2", link: "https://example.com/1", source: "example.com" },
-            { title: "Apple Watch Ultra 2 GPS", link: "https://example.com/2", source: "retailer.com" },
+            {
+              title: "Apple Watch Ultra 2 GPS",
+              link: "https://example.com/2",
+              source: "retailer.com",
+            },
             { title: "Smart Watch Sale", link: "https://example.com/3", source: "shop.com" },
           ],
           knowledge_graph: {

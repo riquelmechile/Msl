@@ -41,7 +41,10 @@ function makeClaim(overrides?: Partial<AgentMessage>): AgentMessage {
   };
 }
 
-function makeClaimFromStage(stage: string, payloadOverrides?: Record<string, unknown>): AgentMessage {
+function makeClaimFromStage(
+  stage: string,
+  payloadOverrides?: Record<string, unknown>,
+): AgentMessage {
   const basePayload = {
     launchId: "launch-test-1",
     sellerId: "test-seller",
@@ -67,18 +70,20 @@ function makeBus() {
     sellerId?: string;
   }> = [];
   const b = {
-    enqueue: vi.fn((input: {
-      senderAgentId: string;
-      receiverAgentId: string;
-      messageType: string;
-      payloadJson: string;
-      dedupeKey?: string;
-      correlationId?: string;
-      sellerId?: string;
-    }) => {
-      enqueued.push(input);
-      return { messageId: `bus-msg-${enqueued.length}` };
-    }),
+    enqueue: vi.fn(
+      (input: {
+        senderAgentId: string;
+        receiverAgentId: string;
+        messageType: string;
+        payloadJson: string;
+        dedupeKey?: string;
+        correlationId?: string;
+        sellerId?: string;
+      }) => {
+        enqueued.push(input);
+        return { messageId: `bus-msg-${enqueued.length}` };
+      },
+    ),
     enqueued,
     claimNext: vi.fn().mockReturnValue([]),
     resolve: vi.fn(),

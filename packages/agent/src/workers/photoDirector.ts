@@ -86,7 +86,10 @@ function stubAnalyze(input: PhotoDirectorInput): PhotoDirectorOutput {
 
 // ── Real mode (ML diagnostic) ─────────────────────────────────────────
 
-async function mlAnalyze(input: PhotoDirectorInput, mlApiToken: string): Promise<PhotoDirectorOutput> {
+async function mlAnalyze(
+  input: PhotoDirectorInput,
+  mlApiToken: string,
+): Promise<PhotoDirectorOutput> {
   const mlApiBaseUrl = env("ML_API_BASE_URL", "https://api.mercadolibre.com");
 
   const config: MlDiagnosticAdapterConfig = {
@@ -182,10 +185,7 @@ async function mlAnalyze(input: PhotoDirectorInput, mlApiToken: string): Promise
  * 3. Produce a routing decision: USE_AS_REFERENCE, REGENERATE, or DISCARD_AND_SEARCH
  * 4. Enqueue result to creative-production lane for downstream routing
  */
-export const photoDirector: DaemonHandler = async ({
-  claim,
-  bus,
-}) => {
+export const photoDirector: DaemonHandler = async ({ claim, bus }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 

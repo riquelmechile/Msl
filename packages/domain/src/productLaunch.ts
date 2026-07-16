@@ -36,10 +36,7 @@ export type TransitionError = {
   message: string;
 };
 
-export function isValidTransition(
-  from: ProductLaunchStatus,
-  to: ProductLaunchStatus,
-): boolean {
+export function isValidTransition(from: ProductLaunchStatus, to: ProductLaunchStatus): boolean {
   const allowed = VALID_TRANSITIONS[from];
   return allowed.includes(to);
 }

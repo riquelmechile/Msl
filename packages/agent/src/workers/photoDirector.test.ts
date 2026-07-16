@@ -45,16 +45,18 @@ function makeBus() {
     dedupeKey?: string;
   }> = [];
   return {
-    enqueue: vi.fn((input: {
-      senderAgentId: string;
-      receiverAgentId: string;
-      messageType: string;
-      payloadJson: string;
-      dedupeKey?: string;
-    }) => {
-      enqueued.push(input);
-      return { messageId: `bus-msg-${enqueued.length}` };
-    }),
+    enqueue: vi.fn(
+      (input: {
+        senderAgentId: string;
+        receiverAgentId: string;
+        messageType: string;
+        payloadJson: string;
+        dedupeKey?: string;
+      }) => {
+        enqueued.push(input);
+        return { messageId: `bus-msg-${enqueued.length}` };
+      },
+    ),
     enqueued,
     claimNext: vi.fn().mockReturnValue([]),
     resolve: vi.fn(),
@@ -285,7 +287,10 @@ describe("photoDirector", () => {
         json: async () => ({
           action: "diagnostic",
           detections: [
-            { name: "white_background", wordings: [{ kind: "warning", value: "Background not white" }] },
+            {
+              name: "white_background",
+              wordings: [{ kind: "warning", value: "Background not white" }],
+            },
             { name: "minimum_size", wordings: [{ kind: "error", value: "Image too small" }] },
             { name: "text_logo", wordings: [{ kind: "warning", value: "Text detected" }] },
             { name: "watermark", wordings: [{ kind: "error", value: "Watermark present" }] },

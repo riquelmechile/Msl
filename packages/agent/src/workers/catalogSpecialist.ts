@@ -55,8 +55,7 @@ async function searchMlCatalog(
         const bestMatch = matchingSummaries[0]!;
         const item = await mlcClient.getItem(sellerId, bestMatch.id);
         const catalogProductId = (item as Record<string, unknown>).catalog_product_id as
-          | string
-          | undefined;
+          string | undefined;
         if (catalogProductId) {
           return {
             catalogProductId,
@@ -80,8 +79,7 @@ async function searchMlCatalog(
         try {
           const item = await mlcClient.getItem(sellerId, summary.id);
           const catalogProductId = (item as Record<string, unknown>).catalog_product_id as
-            | string
-            | undefined;
+            string | undefined;
           if (catalogProductId) {
             return {
               catalogProductId,
@@ -121,12 +119,7 @@ function stubCatalogSearch(_input: CatalogSpecialistInput): CatalogSpecialistOut
  * 2. Search ML catalog for matching catalog_product_id
  * 3. Return findings with catalog product details or not-found
  */
-export const catalogSpecialist: DaemonHandler = async ({
-  claim,
-  bus,
-  sellerIds,
-  mlcClient,
-}) => {
+export const catalogSpecialist: DaemonHandler = async ({ claim, bus, sellerIds, mlcClient }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 

@@ -40,9 +40,7 @@ test.describe("Product Launch Pipeline (E2E)", () => {
     // If the pipeline UI is present, it should have a blocked write gate
     if (await statusSection.isVisible().catch(() => false)) {
       // Check for write-gate indicator
-      const blockedIndicator = page.locator(
-        "[data-write-gate='blocked'], .write-gate-blocked",
-      );
+      const blockedIndicator = page.locator("[data-write-gate='blocked'], .write-gate-blocked");
 
       if (await blockedIndicator.isVisible().catch(() => false)) {
         await expect(blockedIndicator).toBeVisible();
@@ -54,7 +52,12 @@ test.describe("Product Launch Pipeline (E2E)", () => {
     // The launch listing preview should be visible in the CEO dashboard
     const listingPreview = page.locator("[data-testid='launch-preview'], .product-launch-preview");
 
-    if (await listingPreview.first().isVisible().catch(() => false)) {
+    if (
+      await listingPreview
+        .first()
+        .isVisible()
+        .catch(() => false)
+    ) {
       // Preview exists — verify it's not published yet
       expect(
         await listingPreview

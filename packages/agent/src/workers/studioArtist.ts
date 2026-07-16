@@ -65,10 +65,7 @@ const MINIMAX_IMAGE_COST_USD = 0.05;
  * 3. Track costs via CostLedger
  * 4. Stub mode: when MiniMax unavailable → return input image URLs as-is
  */
-export const studioArtist: DaemonHandler = async ({
-  claim,
-  bus,
-}) => {
+export const studioArtist: DaemonHandler = async ({ claim, bus }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -135,7 +132,9 @@ export const studioArtist: DaemonHandler = async ({
     case "REGENERATE": {
       // Use original image as subject_reference for MiniMax
       if (!miniMaxEnabled) {
-        console.warn("[studio-artist] MiniMax not available — returning original image as-is (stub mode)");
+        console.warn(
+          "[studio-artist] MiniMax not available — returning original image as-is (stub mode)",
+        );
         output = {
           generatedUrls: [input.imageUrl],
           usedMiniMax: false,
@@ -197,7 +196,8 @@ export const studioArtist: DaemonHandler = async ({
       findings.push({
         kind: "opportunity",
         severity: "info",
-        summary: "Studio Artist: REGENERATE — enqueued MiniMax request with original as subject_reference",
+        summary:
+          "Studio Artist: REGENERATE — enqueued MiniMax request with original as subject_reference",
         evidenceIds: [claim.messageId, msg.messageId],
       });
       break;
@@ -205,7 +205,9 @@ export const studioArtist: DaemonHandler = async ({
 
     case "DISCARD_AND_SEARCH": {
       if (!miniMaxEnabled) {
-        console.warn("[studio-artist] MiniMax not available — returning reference URLs as-is (stub mode)");
+        console.warn(
+          "[studio-artist] MiniMax not available — returning reference URLs as-is (stub mode)",
+        );
         output = {
           generatedUrls: input.referenceUrls.length > 0 ? input.referenceUrls : [input.imageUrl],
           usedMiniMax: false,
@@ -215,7 +217,8 @@ export const studioArtist: DaemonHandler = async ({
         findings.push({
           kind: "info",
           severity: "info",
-          summary: "Studio Artist: DISCARD_AND_SEARCH stub — MiniMax unavailable, returning reference URLs",
+          summary:
+            "Studio Artist: DISCARD_AND_SEARCH stub — MiniMax unavailable, returning reference URLs",
           evidenceIds: [claim.messageId],
         });
         break;
@@ -268,7 +271,8 @@ export const studioArtist: DaemonHandler = async ({
       findings.push({
         kind: "opportunity",
         severity: "info",
-        summary: "Studio Artist: DISCARD_AND_SEARCH — enqueued MiniMax request with ImageScout URLs as references",
+        summary:
+          "Studio Artist: DISCARD_AND_SEARCH — enqueued MiniMax request with ImageScout URLs as references",
         evidenceIds: [claim.messageId, msg.messageId],
       });
       break;

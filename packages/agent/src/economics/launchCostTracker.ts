@@ -174,13 +174,17 @@ export class LaunchCostTracker {
       if (existing.priceCurrency !== undefined) input.priceCurrency = existing.priceCurrency;
       if (existing.title !== undefined) input.title = existing.title;
       if (existing.description !== undefined) input.description = existing.description;
-      if (existing.qualityScorePredicted !== undefined) input.qualityScorePredicted = existing.qualityScorePredicted;
-      if (existing.qualityScoreActual !== undefined) input.qualityScoreActual = existing.qualityScoreActual;
+      if (existing.qualityScorePredicted !== undefined)
+        input.qualityScorePredicted = existing.qualityScorePredicted;
+      if (existing.qualityScoreActual !== undefined)
+        input.qualityScoreActual = existing.qualityScoreActual;
       if (existing.completedAt !== undefined) input.completedAt = existing.completedAt;
       store.createLaunch(input as Parameters<ProductCatalogStore["createLaunch"]>[0]);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error(`[launchCostTracker] Failed to persist cost for launch "${launchId}": ${errorMessage}`);
+      console.error(
+        `[launchCostTracker] Failed to persist cost for launch "${launchId}": ${errorMessage}`,
+      );
     }
   }
 
@@ -200,7 +204,12 @@ export class LaunchCostTracker {
         agentId: "product-launch",
         laneId: "product-launch",
         provider: providerMap[event.source],
-        model: event.source === "minimax" ? "image-01" : event.source === "google_lens" ? "google-lens" : "deepseek-chat",
+        model:
+          event.source === "minimax"
+            ? "image-01"
+            : event.source === "google_lens"
+              ? "google-lens"
+              : "deepseek-chat",
         operation: event.operation,
         estimatedCostMicros: Math.round(event.estimatedCostUsd * 1_000_000),
         currency: "USD",

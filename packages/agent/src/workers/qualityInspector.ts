@@ -38,7 +38,10 @@ function parseAttributesCompleteness(attributesJson: string): number {
 }
 
 function countTitleWords(title: string): number {
-  return title.trim().split(/\s+/).filter((w) => w.length > 0).length;
+  return title
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
 }
 
 function determineLevel(score: number): QualityLevel {
@@ -79,14 +82,20 @@ function scoreQuality(input: QualityInspectorInput): QualityInspectorOutput {
   } else if (imageCount === 2) {
     score += 10;
     issues.push(`Solo ${imageCount} imágenes (mínimo recomendado: 3)`);
-    recommendations.push("Agrega al menos una imagen más. Las publicaciones con 3+ imágenes tienen mejor rendimiento");
+    recommendations.push(
+      "Agrega al menos una imagen más. Las publicaciones con 3+ imágenes tienen mejor rendimiento",
+    );
   } else if (imageCount === 1) {
     score += 5;
     issues.push(`Solo ${imageCount} imagen (mínimo recomendado: 3)`);
-    recommendations.push("Agrega al menos 2 imágenes adicionales mostrando el producto desde diferentes ángulos");
+    recommendations.push(
+      "Agrega al menos 2 imágenes adicionales mostrando el producto desde diferentes ángulos",
+    );
   } else {
     issues.push("Sin imágenes — la publicación no será visible");
-    recommendations.push("Agrega al menos 3 imágenes del producto. Sin imágenes la publicación no compite");
+    recommendations.push(
+      "Agrega al menos 3 imágenes del producto. Sin imágenes la publicación no compite",
+    );
   }
 
   // ── Title ─────────────────────────────────────────────────────
@@ -108,17 +117,25 @@ function scoreQuality(input: QualityInspectorInput): QualityInspectorOutput {
   } else if (attrCompleteness > 50) {
     score += 10;
     issues.push(`atributos incompletos (${Math.round(attrCompleteness)}% de completitud estimada)`);
-    recommendations.push("Completa los atributos requeridos por la categoría para mejorar el posicionamiento");
+    recommendations.push(
+      "Completa los atributos requeridos por la categoría para mejorar el posicionamiento",
+    );
   } else {
-    issues.push(`atributos muy incompletos (${Math.round(attrCompleteness)}% de completitud estimada)`);
-    recommendations.push("Completa todos los atributos obligatorios de la categoría para que la publicación sea visible en filtros");
+    issues.push(
+      `atributos muy incompletos (${Math.round(attrCompleteness)}% de completitud estimada)`,
+    );
+    recommendations.push(
+      "Completa todos los atributos obligatorios de la categoría para que la publicación sea visible en filtros",
+    );
   }
 
   // ── Free shipping ─────────────────────────────────────────────
   if (input.hasFreeShipping) {
     score += 20;
   } else {
-    recommendations.push("Considera ofrecer envío gratis. Las publicaciones con Mercado Envíos Full o envío gratis tienen mejor conversión");
+    recommendations.push(
+      "Considera ofrecer envío gratis. Las publicaciones con Mercado Envíos Full o envío gratis tienen mejor conversión",
+    );
   }
 
   // ── Clamp ────────────────────────────────────────────────────
@@ -127,9 +144,13 @@ function scoreQuality(input: QualityInspectorInput): QualityInspectorOutput {
 
   // ── Level-specific recommendations ─────────────────────────────
   if (level === "Básica") {
-    recommendations.unshift("La calidad de la publicación es baja. Prioriza completar los atributos y agregar imágenes");
+    recommendations.unshift(
+      "La calidad de la publicación es baja. Prioriza completar los atributos y agregar imágenes",
+    );
   } else if (level === "Estándar") {
-    recommendations.unshift("La publicación tiene calidad aceptable. Mejora los atributos faltantes para alcanzar nivel Profesional");
+    recommendations.unshift(
+      "La publicación tiene calidad aceptable. Mejora los atributos faltantes para alcanzar nivel Profesional",
+    );
   }
 
   return {
@@ -210,8 +231,7 @@ export const qualityInspector: DaemonHandler = async ({ claim, bus }) => {
       hasGtin: !!input.gtin,
       hasFreeShipping: input.hasFreeShipping,
     },
-    nextAction:
-      output.predictedLevel === "Profesional" ? "ready_to_publish" : "improve_quality",
+    nextAction: output.predictedLevel === "Profesional" ? "ready_to_publish" : "improve_quality",
     noMutationExecuted: true,
     capturedAt: new Date().toISOString(),
   };

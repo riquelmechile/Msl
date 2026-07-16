@@ -252,9 +252,7 @@ describe("ProductCatalogStore — launches", () => {
   });
 
   it("throws on update of missing launch", () => {
-    expect(() => store.updateLaunchStatus("nonexistent", "recognizing")).toThrow(
-      /not found/,
-    );
+    expect(() => store.updateLaunchStatus("nonexistent", "recognizing")).toThrow(/not found/);
   });
 
   it("getLaunchesByProduct returns all launches for a product", () => {
@@ -263,10 +261,7 @@ describe("ProductCatalogStore — launches", () => {
 
     const launches = store.getLaunchesByProduct("prod-test-001");
     expect(launches).toHaveLength(2);
-    expect(launches.map((l) => l.launchId).sort()).toEqual([
-      "launch-test-001",
-      "launch-test-002",
-    ]);
+    expect(launches.map((l) => l.launchId).sort()).toEqual(["launch-test-001", "launch-test-002"]);
   });
 
   it("getLaunchesByProduct returns empty for product with no launches", () => {

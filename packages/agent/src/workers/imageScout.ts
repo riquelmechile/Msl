@@ -52,7 +52,9 @@ async function searchGoogleLensImages(
 
   const response = await fetch(`${SERPAPI_BASE_URL}?${params.toString()}`);
   if (!response.ok) {
-    throw new Error(`SerpApi Google Lens request failed: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `SerpApi Google Lens request failed: ${response.status} ${response.statusText}`,
+    );
   }
 
   const data = (await response.json()) as Record<string, unknown>;
@@ -140,10 +142,7 @@ function stubSearch(input: ImageScoutInput): ImageScoutOutput {
  * 3. Return image URLs only — no downloading
  * 4. Enqueue result to creative-production lane
  */
-export const imageScout: DaemonHandler = async ({
-  claim,
-  bus,
-}) => {
+export const imageScout: DaemonHandler = async ({ claim, bus }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 

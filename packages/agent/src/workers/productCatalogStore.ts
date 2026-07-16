@@ -147,7 +147,8 @@ function rowToLaunchEntry(row: ProductLaunchRow): ProductLaunchEntry {
   if (row.price_currency != null) entry.priceCurrency = row.price_currency;
   if (row.title != null) entry.title = row.title;
   if (row.description != null) entry.description = row.description;
-  if (row.quality_score_predicted != null) entry.qualityScorePredicted = row.quality_score_predicted;
+  if (row.quality_score_predicted != null)
+    entry.qualityScorePredicted = row.quality_score_predicted;
   if (row.quality_score_actual != null) entry.qualityScoreActual = row.quality_score_actual;
   if (row.cost_total_usd != null) entry.costTotalUsd = row.cost_total_usd;
   if (row.completed_at != null) entry.completedAt = row.completed_at;
@@ -252,7 +253,9 @@ export function createProductCatalogStore(db: Database.Database): ProductCatalog
       height: image.height ?? null,
       mlDiagnosticJson: image.mlDiagnosticJson ?? null,
     });
-    const row = db.prepare("SELECT * FROM product_images WHERE image_id = ?").get(image.imageId) as ProductImageRow;
+    const row = db
+      .prepare("SELECT * FROM product_images WHERE image_id = ?")
+      .get(image.imageId) as ProductImageRow;
     return rowToImageEntry(row);
   };
 

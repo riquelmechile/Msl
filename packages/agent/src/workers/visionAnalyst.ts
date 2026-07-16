@@ -31,10 +31,7 @@ export type VisionAnalystOutput = {
 
 const SERPAPI_BASE_URL = "https://serpapi.com/search";
 
-async function searchGoogleLens(
-  imageUrl: string,
-  caption?: string,
-): Promise<VisionAnalystOutput> {
+async function searchGoogleLens(imageUrl: string, caption?: string): Promise<VisionAnalystOutput> {
   const apiKey = env("SERPAPI_API_KEY");
   if (!apiKey) throw new Error("SERPAPI_API_KEY not set");
 
@@ -80,7 +77,7 @@ function parseSerpApiResponse(
   }
 
   // Visual matches extraction
-  for (const match of (visualMatches as Array<Record<string, unknown>>)) {
+  for (const match of visualMatches as Array<Record<string, unknown>>) {
     if (match.title && !productTitle) {
       productTitle = String(match.title);
     }
@@ -108,9 +105,7 @@ function parseSerpApiResponse(
 
   // Color extraction
   const kgColor =
-    knowledgeGraph.color ??
-    knowledgeGraph.main_color ??
-    knowledgeGraph.dominant_color;
+    knowledgeGraph.color ?? knowledgeGraph.main_color ?? knowledgeGraph.dominant_color;
   if (kgColor) color = String(kgColor);
 
   // Confidence based on result quality
@@ -169,10 +164,7 @@ function stubRecognition(input: VisionAnalystInput): VisionAnalystOutput {
  * 3. If confidence < 0.5, enqueue a CEO proposal requesting more photos
  * 4. Return findings with recognition result
  */
-export const visionAnalyst: DaemonHandler = async ({
-  claim,
-  bus,
-}) => {
+export const visionAnalyst: DaemonHandler = async ({ claim, bus }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 

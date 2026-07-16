@@ -47,16 +47,18 @@ function makeBus() {
     dedupeKey?: string;
   }> = [];
   return {
-    enqueue: vi.fn((input: {
-      senderAgentId: string;
-      receiverAgentId: string;
-      messageType: string;
-      payloadJson: string;
-      dedupeKey?: string;
-    }) => {
-      enqueued.push(input);
-      return { messageId: `bus-msg-${enqueued.length}` };
-    }),
+    enqueue: vi.fn(
+      (input: {
+        senderAgentId: string;
+        receiverAgentId: string;
+        messageType: string;
+        payloadJson: string;
+        dedupeKey?: string;
+      }) => {
+        enqueued.push(input);
+        return { messageId: `bus-msg-${enqueued.length}` };
+      },
+    ),
     enqueued,
     claimNext: vi.fn().mockReturnValue([]),
     resolve: vi.fn(),

@@ -48,9 +48,8 @@ Be realistic with prices for the Chilean market. If you don't know exact specs, 
 Always respond with valid JSON matching this schema.`;
 
 function buildResearchPrompt(input: MarketResearcherInput): string {
-  const searchTerms = input.searchTerms.length > 0
-    ? input.searchTerms.join(", ")
-    : `${input.brand} ${input.model}`;
+  const searchTerms =
+    input.searchTerms.length > 0 ? input.searchTerms.join(", ") : `${input.brand} ${input.model}`;
 
   return `Research this product and provide market intelligence:
 
@@ -93,10 +92,7 @@ function stubMarketResearch(input: MarketResearcherInput): MarketResearcherOutpu
  * Cache-optimized: uses the stable prefix from LANE_CONTRACTS for
  * prompt caching via DeepSeekReasoningGateway.
  */
-export const marketResearcher: DaemonHandler = async ({
-  claim,
-  bus,
-}) => {
+export const marketResearcher: DaemonHandler = async ({ claim, bus }) => {
   const findings: DaemonFinding[] = [];
   const messageIds: string[] = [];
 
@@ -165,18 +161,17 @@ export const marketResearcher: DaemonHandler = async ({
               }))
             : [],
           suggestedPrice: Number(parsed.suggestedPrice) || 0,
-          description: typeof parsed.description === "string"
-            ? parsed.description
-            : `Producto ${input.brand} ${input.model}`,
+          description:
+            typeof parsed.description === "string"
+              ? parsed.description
+              : `Producto ${input.brand} ${input.model}`,
         };
       } catch {
         console.error("[market-researcher] Failed to parse DeepSeek response as JSON");
         output = stubMarketResearch(input);
       }
     } else {
-      console.warn(
-        `[market-researcher] DeepSeek reasoning returned ${result.status} — using stub`,
-      );
+      console.warn(`[market-researcher] DeepSeek reasoning returned ${result.status} — using stub`);
       output = stubMarketResearch(input);
     }
   } catch (err) {

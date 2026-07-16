@@ -7,11 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import { createProductCatalogStore, createAgentMessageBusStore } from "@msl/agent";
-import type {
-  ProductCatalogStore,
-  AgentMessageBusStore,
-  AgentMessage,
-} from "@msl/agent";
+import type { ProductCatalogStore, AgentMessageBusStore, AgentMessage } from "@msl/agent";
 import { productLaunchCoordinator } from "../../packages/agent/src/workers/productLaunchCoordinator.js";
 import type { DaemonHandler } from "../../packages/agent/src/workers/daemonTypes.js";
 
@@ -33,19 +29,21 @@ function makeBus(): AgentMessageBusStore & { enqueued: EnqueuedEntry[] } {
 
   return {
     enqueued,
-    enqueue: vi.fn((input: {
-      senderAgentId: string;
-      receiverAgentId: string;
-      messageType: string;
-      payloadJson: string;
-      dedupeKey?: string;
-      correlationId?: string;
-      sellerId?: string;
-    }) => {
-      nextMsgId++;
-      enqueued.push(input);
-      return { messageId: `bus-msg-${nextMsgId}` };
-    }),
+    enqueue: vi.fn(
+      (input: {
+        senderAgentId: string;
+        receiverAgentId: string;
+        messageType: string;
+        payloadJson: string;
+        dedupeKey?: string;
+        correlationId?: string;
+        sellerId?: string;
+      }) => {
+        nextMsgId++;
+        enqueued.push(input);
+        return { messageId: `bus-msg-${nextMsgId}` };
+      },
+    ),
     claimNext: vi.fn().mockReturnValue([]),
     resolve: vi.fn(),
     fail: vi.fn(),
@@ -98,10 +96,7 @@ function makeClaim(overrides?: Partial<AgentMessage>): AgentMessage {
   };
 }
 
-function makeStageClaim(
-  stage: string,
-  payloadOverrides?: Record<string, unknown>,
-): AgentMessage {
+function makeStageClaim(stage: string, payloadOverrides?: Record<string, unknown>): AgentMessage {
   const basePayload = {
     launchId: "launch-int-1",
     sellerId: "seller-int-1",
@@ -158,9 +153,7 @@ describe("product launch pipeline (integration)", () => {
       expect(result1.proposalEnqueued).toBe(true);
 
       // Should delegate to product-recognition lane
-      const recognitionMsg = bus.enqueued.find(
-        (m) => m.receiverAgentId === "product-recognition",
-      );
+      const recognitionMsg = bus.enqueued.find((m) => m.receiverAgentId === "product-recognition");
       expect(recognitionMsg).toBeDefined();
       expect(recognitionMsg!.senderAgentId).toBe("product-launch");
 
@@ -180,9 +173,7 @@ describe("product launch pipeline (integration)", () => {
       expect(result2.proposalEnqueued).toBe(true);
 
       // Should delegate to product-research lane
-      const researchMsg = bus.enqueued.find(
-        (m) => m.receiverAgentId === "product-research",
-      );
+      const researchMsg = bus.enqueued.find((m) => m.receiverAgentId === "product-research");
       expect(researchMsg).toBeDefined();
       expect(JSON.parse(researchMsg!.payloadJson)).toMatchObject({
         brand: "Nike",
@@ -206,9 +197,7 @@ describe("product launch pipeline (integration)", () => {
       expect(result3.proposalEnqueued).toBe(true);
 
       // Should delegate to creative-production lane
-      const creativeMsg = bus.enqueued.find(
-        (m) => m.receiverAgentId === "creative-production",
-      );
+      const creativeMsg = bus.enqueued.find((m) => m.receiverAgentId === "creative-production");
       expect(creativeMsg).toBeDefined();
       expect(JSON.parse(creativeMsg!.payloadJson)).toMatchObject({
         stage: "generating_creative",
@@ -230,9 +219,7 @@ describe("product launch pipeline (integration)", () => {
       expect(result4.proposalEnqueued).toBe(true);
 
       // Should delegate to listing-composition lane
-      const composeMsg = bus.enqueued.find(
-        (m) => m.receiverAgentId === "listing-composition",
-      );
+      const composeMsg = bus.enqueued.find((m) => m.receiverAgentId === "listing-composition");
       expect(composeMsg).toBeDefined();
       expect(JSON.parse(composeMsg!.payloadJson)).toMatchObject({
         stage: "composing",

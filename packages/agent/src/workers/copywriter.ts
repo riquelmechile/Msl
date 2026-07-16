@@ -164,9 +164,7 @@ export const copywriter: DaemonHandler = async ({ claim, bus }) => {
   const resolved = resolveDeepSeekRuntimeConfig();
   if (!resolved.apiKey) {
     const stubOutput = stubCopywrite(input);
-    return buildSuccessResult(
-      stubOutput, input, claim, bus, findings, messageIds, true,
-    );
+    return buildSuccessResult(stubOutput, input, claim, bus, findings, messageIds, true);
   }
 
   // ── 3. Generate copy via DeepSeek ────────────────────────────
@@ -207,9 +205,7 @@ export const copywriter: DaemonHandler = async ({ claim, bus }) => {
         output = stubCopywrite(input);
       }
     } else {
-      console.warn(
-        `[copywriter] DeepSeek reasoning returned ${result.status} — using stub`,
-      );
+      console.warn(`[copywriter] DeepSeek reasoning returned ${result.status} — using stub`);
       output = stubCopywrite(input);
     }
   } catch (err) {
@@ -232,9 +228,7 @@ function buildSuccessResult(
   messageIds: string[],
   isStub: boolean,
 ) {
-  const toneLabel = getAccountToneLabel(
-    output.accountTone as AccountTone,
-  );
+  const toneLabel = getAccountToneLabel(output.accountTone as AccountTone);
   const summary = isStub
     ? `Copywriter (stub): ${input.brand} ${input.model} — ${toneLabel} tone`
     : `Copywriter: ${input.brand} ${input.model} — ${toneLabel} tone, title: "${output.title.slice(0, 40)}..."`;
