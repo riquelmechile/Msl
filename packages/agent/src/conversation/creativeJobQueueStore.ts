@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS creative_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_cj_status ON creative_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_cj_job_id ON creative_jobs(job_id);
+CREATE INDEX IF NOT EXISTS idx_cj_seller_status ON creative_jobs(seller_id, status);
 `;
 
 // ── Row type ─────────────────────────────────────────────────────────
@@ -164,12 +165,62 @@ export function createCreativeJobQueueStore(db: Database.Database): CreativeJobQ
     return row;
   }
 
+  function assertNonEmpty(value: string, field: string): void {
+    if (value.trim().length === 0) {
+      throw new Error(`${field} must not be empty`);
+    }
+  }
+
+  function assertValidInput(input: CreateCreativeJobInput): void {
+    assertNonEmpty(input.jobId, "jobId");
+    assertNonEmpty(input.requestId, "requestId");
+    assertNonEmpty(input.sellerId, "sellerId");
+
+    if (
+      input.estimatedCostUsd !== undefined &&
+      (!Number.isFinite(input.estimatedCostUsd) || input.estimatedCostUsd < 0)
+    ) {
+      throw new Error("estimatedCostUsd must be a finite non-negative number");
+    }
+
+    if (input.payloadJson !== undefined) {
+      try {
+        JSON.parse(input.payloadJson);
+      } catch {
+        throw new Error("payloadJson must contain valid JSON");
+      }
+    }
+  }
+
+  function assertTransition(
+    jobId: string,
+    currentStatus: CreativeJobStatus,
+    newStatus: CreativeJobStatus,
+  ): void {
+    const allowed = VALID_TRANSITIONS[currentStatus];
+    if (allowed.length === 0) {
+      throw new Error(
+        `Cannot transition job "${jobId}" from terminal status "${currentStatus}" to "${newStatus}"`,
+      );
+    }
+    if (!(allowed as readonly string[]).includes(newStatus)) {
+      throw new Error(
+        `Invalid transition: "${currentStatus}" → "${newStatus}". ` +
+          `Allowed: ${allowed.join(", ")}`,
+      );
+    }
+  }
+
   // ── API methods ────────────────────────────────────────────
 
   const createJob = (input: CreateCreativeJobInput): CreativeJobRow => {
+    assertValidInput(input);
     const existing = getExisting(input.jobId);
     if (existing) {
-      return existing; // idempotent — return existing
+      if (existing.request_id !== input.requestId || existing.seller_id !== input.sellerId) {
+        throw new Error(`CreativeJob "${input.jobId}" already exists for a different request`);
+      }
+      return existing;
     }
 
     insertStmt.run({
@@ -192,20 +243,7 @@ export function createCreativeJobQueueStore(db: Database.Database): CreativeJobQ
 
   const updateStatus = (jobId: string, newStatus: CreativeJobStatus): CreativeJobRow => {
     const row = assertExists(jobId);
-    const currentStatus = row.status;
-
-    const allowed = VALID_TRANSITIONS[currentStatus];
-    if (!allowed || allowed.length === 0) {
-      throw new Error(
-        `Cannot transition job "${jobId}" from terminal status "${currentStatus}" to "${newStatus}"`,
-      );
-    }
-    if (!(allowed as readonly string[]).includes(newStatus)) {
-      throw new Error(
-        `Invalid transition: "${currentStatus}" → "${newStatus}". ` +
-          `Allowed: ${allowed.join(", ")}`,
-      );
-    }
+    assertTransition(jobId, row.status, newStatus);
 
     const info = updateStatusStmt.run({ jobId, status: newStatus });
     if (info.changes === 0) {
@@ -219,9 +257,10 @@ export function createCreativeJobQueueStore(db: Database.Database): CreativeJobQ
     jobId: string,
     result: { actualCostUsd?: number; assetPaths?: string[]; resultJson?: string },
   ): CreativeJobRow => {
-    assertExists(jobId);
+    const row = assertExists(jobId);
 
     const status: CreativeJobStatus = "needs-human-review";
+    assertTransition(jobId, row.status, status);
     const assetPathsJson = JSON.stringify(result.assetPaths ?? []);
     const resultJson = result.resultJson ?? null;
 
@@ -240,7 +279,8 @@ export function createCreativeJobQueueStore(db: Database.Database): CreativeJobQ
   };
 
   const failJob = (jobId: string, errorJson: string): CreativeJobRow => {
-    assertExists(jobId);
+    const row = assertExists(jobId);
+    assertTransition(jobId, row.status, "failed");
 
     const info = failStmt.run({ jobId, errorJson });
     if (info.changes === 0) {

@@ -29,6 +29,56 @@ describe("agent daemon startup contract", () => {
       "productCatalogStore: persistenceRuntime.productCatalogStore",
     );
     expect(schedulerConfig).toContain("launchCostTracker: persistenceRuntime.launchCostTracker");
+    expect(schedulerConfig).toContain(
+      "creativeJobQueueStore: persistenceRuntime.creativeJobQueueStore",
+    );
+  });
+
+  it("dispatches production creative jobs durably without leaving them queued", () => {
+    const directory = mkdtempSync(join(tmpdir(), "msl-agent-daemons-creative-"));
+    const databasePath = join(directory, "studio.sqlite");
+    const input = {
+      jobId: "cj_runtime_001",
+      requestId: "req_runtime_001",
+      sellerId: "seller-runtime",
+      kind: "storefront-hero",
+      channel: "storefront",
+      payloadJson: JSON.stringify({ title: "Durable storefront hero" }),
+    };
+
+    try {
+      const firstRuntime = createAgentDaemonPersistenceRuntime(databasePath);
+      const created = firstRuntime.creativeJobQueueStore.createJob(input);
+      const duplicate = firstRuntime.creativeJobQueueStore.createJob(input);
+      expect(created.status).toBe("provider-routing");
+      expect(duplicate.status).toBe("provider-routing");
+      expect(firstRuntime.bus.getPendingCount()).toBe(1);
+      firstRuntime.close();
+
+      const reopenedRuntime = createAgentDaemonPersistenceRuntime(databasePath);
+      expect(reopenedRuntime.creativeJobQueueStore.getJob(input.jobId)).toMatchObject({
+        seller_id: input.sellerId,
+        status: "provider-routing",
+      });
+      expect(reopenedRuntime.creativeJobQueueStore.listByStatus("queued")).toHaveLength(0);
+      const [message] = reopenedRuntime.bus.claimNext("creative-studio");
+      expect(message).toMatchObject({
+        senderAgentId: "owned-ecommerce",
+        receiverAgentId: "creative-studio",
+        messageType: "creative.asset.requested",
+        status: "processing",
+        sellerId: input.sellerId,
+      });
+      expect(JSON.parse(message.payloadJson)).toMatchObject({
+        requestId: `cj_${input.requestId}`,
+        sellerId: input.sellerId,
+        kind: input.kind,
+        channel: input.channel,
+      });
+      reopenedRuntime.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("fails closed for generic economic restore while delegated capabilities remain usable", async () => {

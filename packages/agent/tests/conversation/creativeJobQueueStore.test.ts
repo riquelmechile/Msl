@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import {
   createCreativeJobQueueStore,
@@ -32,6 +35,10 @@ describe("CreativeJobQueueStore", () => {
   beforeEach(() => {
     db = createTestDb();
     store = createCreativeJobQueueStore(db);
+  });
+
+  afterEach(() => {
+    db.close();
   });
 
   describe("createJob", () => {
@@ -68,6 +75,27 @@ describe("CreativeJobQueueStore", () => {
       expect(job.provider).toBe("");
       expect(job.estimated_cost_usd).toBe(0);
       expect(job.payload_json).toBe("{}");
+    });
+
+    it("rejects malformed input before writing", () => {
+      expect(() => store.createJob({ ...sampleJob, sellerId: "" })).toThrow(
+        "sellerId must not be empty",
+      );
+      expect(() => store.createJob({ ...sampleJob, payloadJson: "{" })).toThrow(
+        "payloadJson must contain valid JSON",
+      );
+      expect(() => store.createJob({ ...sampleJob, estimatedCostUsd: -0.01 })).toThrow(
+        "estimatedCostUsd must be a finite non-negative number",
+      );
+      expect(store.listAll()).toHaveLength(0);
+    });
+
+    it("rejects a duplicate jobId owned by another seller", () => {
+      store.createJob(sampleJob);
+
+      expect(() =>
+        store.createJob({ ...sampleJob, requestId: "req_other", sellerId: "seller-2" }),
+      ).toThrow('CreativeJob "cj_test_001" already exists for a different request');
     });
   });
 
@@ -166,6 +194,7 @@ describe("CreativeJobQueueStore", () => {
   describe("completeJob", () => {
     it("completes a job and transitions to needs-human-review", () => {
       store.createJob(sampleJob);
+      store.updateStatus("cj_test_001", "running");
       const completed = store.completeJob("cj_test_001", {
         actualCostUsd: 0.12,
         assetPaths: ["/assets/img1.jpg", "/assets/img2.jpg"],
@@ -177,6 +206,7 @@ describe("CreativeJobQueueStore", () => {
 
     it("stores result JSON", () => {
       store.createJob(sampleJob);
+      store.updateStatus("cj_test_001", "running");
       const completed = store.completeJob("cj_test_001", {
         resultJson: JSON.stringify({ images: ["img1"] }),
       });
@@ -187,6 +217,12 @@ describe("CreativeJobQueueStore", () => {
     it("throws on non-existent job", () => {
       expect(() => store.completeJob("cj_nonexistent", {})).toThrow("not found");
     });
+
+    it("rejects completion before the job is running", () => {
+      store.createJob(sampleJob);
+
+      expect(() => store.completeJob("cj_test_001", {})).toThrow("Invalid transition");
+    });
   });
 
   describe("failJob", () => {
@@ -195,6 +231,44 @@ describe("CreativeJobQueueStore", () => {
       const failed = store.failJob("cj_test_001", JSON.stringify({ message: "API error" }));
 
       expect(failed.status).toBe("failed");
+    });
+
+    it("does not overwrite a terminal job", () => {
+      store.createJob(sampleJob);
+      store.failJob("cj_test_001", JSON.stringify({ message: "API error" }));
+
+      expect(() => store.failJob("cj_test_001", JSON.stringify({ message: "other" }))).toThrow(
+        "terminal status",
+      );
+    });
+  });
+
+  describe("durability", () => {
+    it("preserves seller-scoped job state after the database is reopened", () => {
+      const directory = mkdtempSync(join(tmpdir(), "msl-creative-queue-"));
+      const databasePath = join(directory, "studio.sqlite");
+
+      try {
+        const firstDb = new Database(databasePath);
+        const firstStore = createCreativeJobQueueStore(firstDb);
+        firstStore.createJob(sampleJob);
+        firstStore.updateStatus(sampleJob.jobId, "running");
+        firstDb.close();
+
+        const reopenedDb = new Database(databasePath);
+        const reopenedStore = createCreativeJobQueueStore(reopenedDb);
+        const persisted = reopenedStore.getJob(sampleJob.jobId);
+
+        expect(persisted).toMatchObject({
+          job_id: sampleJob.jobId,
+          seller_id: sampleJob.sellerId,
+          status: "running",
+          payload_json: sampleJob.payloadJson,
+        });
+        reopenedDb.close();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
     });
   });
 

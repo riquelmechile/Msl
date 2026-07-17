@@ -245,6 +245,7 @@ const handle = startDaemonScheduler({
   supplierMirrorStore,
   productCatalogStore: persistenceRuntime.productCatalogStore,
   launchCostTracker: persistenceRuntime.launchCostTracker,
+  creativeJobQueueStore: persistenceRuntime.creativeJobQueueStore,
   ...advisors,
   intervalMs: 15 * 60 * 1000, // 15 minutes
   ...(economicLearningDaemon ? { economicLearningDaemon } : {}),
