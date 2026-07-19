@@ -1,4 +1,7 @@
 import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
 import {
@@ -888,6 +891,268 @@ nextCursorJson:TEXT/0/0/- createdAt:TEXT/1/0/-`.split(/\s+/);
           .prepare("SELECT status, attempts FROM agent_message_bus WHERE message_id=?")
           .get(failWins.messageId),
       ).toEqual({ status: "pending", attempts: 1 });
+    });
+  });
+
+  describe("settle and getExpiredDeferrals", () => {
+    const sellerScope = { kind: "seller" as const, sellerId: "seller-1" };
+    const systemScope = (operationId: string) => ({
+      kind: "system" as const,
+      operationId,
+      reason: "rollback drain",
+      evidenceRef: "evidence://drain/1",
+    });
+    const processingMessage = (sellerId = "seller-1") => {
+      const message = store.enqueue(enqInput({ receiverAgentId: crypto.randomUUID(), sellerId }));
+      return store.claimNext(message.receiverAgentId)[0]!;
+    };
+    const deferMessage = (until: string | null, sellerId = "seller-1") => {
+      const message = processingMessage(sellerId);
+      return store.defer(message.messageId, {
+        deferralId: `def-${message.messageId}`,
+        deferralGeneration: 1,
+        deferredUntil: until,
+        reason: "wait",
+        scope: { kind: "seller", sellerId },
+      });
+    };
+
+    it("persists only the selected settlement outcome and fails closed on audit conflicts", () => {
+      const cases = [
+        ["resolved", { evidence: null, result: { ok: true } }, '{"ok":true}', null, null],
+        [
+          "failed",
+          { evidence: { source: "test" }, error: { code: "timeout" } },
+          null,
+          '{"code":"timeout"}',
+          null,
+        ],
+        ["cancelled", { evidence: [], reason: "drained" }, null, null, "drained"],
+      ] as const;
+      for (const [outcome, payload, resultJson, errorJson, cancelReason] of cases) {
+        const message = processingMessage();
+        db.prepare(
+          `UPDATE agent_message_bus SET attempts=2, result_json='old',
+          error_json='old', cancel_reason='old' WHERE message_id=?`,
+        ).run(message.messageId);
+        const options = { settlementId: `set-${outcome}`, scope: sellerScope, ...payload };
+        const settled = store.settle(message.messageId, outcome, options);
+        expect(settled).toMatchObject({
+          status: outcome,
+          attempts: 2,
+          lockedAt: null,
+          resultJson,
+          errorJson,
+          cancelReason,
+          settlementId: `set-${outcome}`,
+        });
+        expect(settled.resolvedAt).toBe(settled.updatedAt);
+        expect(settled.settlementDigest).toMatch(/^[0-9a-f]{64}$/);
+        expect(store.settle(message.messageId, outcome, options)).toEqual(settled);
+        expect(() =>
+          store.settle(message.messageId, outcome, { ...options, settlementId: "different" }),
+        ).toThrow(/conflict/);
+      }
+
+      const duplicate = processingMessage("seller-2");
+      store.settle(duplicate.messageId, "failed", {
+        settlementId: "set-audit",
+        scope: systemScope("settle-duplicate"),
+        error: { code: "timeout" },
+      });
+      const rollback = processingMessage("seller-2");
+      expect(() =>
+        store.settle(rollback.messageId, "cancelled", {
+          settlementId: "set-rollback",
+          scope: systemScope("settle-duplicate"),
+          reason: "stop",
+        }),
+      ).toThrow();
+      expect(
+        db
+          .prepare("SELECT status FROM agent_message_bus WHERE message_id=?")
+          .get(rollback.messageId),
+      ).toEqual({ status: "processing" });
+      const audit = db.prepare("SELECT * FROM agent_message_bus_operation_audit").get() as Record<
+        string,
+        unknown
+      >;
+      expect(audit).toMatchObject({
+        operation: "settle",
+        messageId: duplicate.messageId,
+        queryAsOf: null,
+        queryCursorJson: null,
+        queryLimit: null,
+        resultMessageIdsJson: null,
+        nextCursorJson: null,
+      });
+    });
+
+    it("serializes resume versus settle and identical versus divergent settlements", () => {
+      const resumed = deferMessage("2020-01-01 00:00:00");
+      store.resumeDeferred(resumed.messageId, {
+        deferralId: resumed.deferralId!,
+        deferralGeneration: 1,
+        scope: sellerScope,
+      });
+      expect(() =>
+        store.settle(resumed.messageId, "resolved", {
+          settlementId: "late",
+          scope: sellerScope,
+          result: null,
+        }),
+      ).toThrow(/pending/);
+
+      const settledFirst = deferMessage("2020-01-01 00:00:00");
+      const options = { settlementId: "winner", scope: sellerScope, evidence: null, result: null };
+      const settled = store.settle(settledFirst.messageId, "resolved", options);
+      expect(() =>
+        store.resumeDeferred(settled.messageId, {
+          deferralId: settled.deferralId!,
+          deferralGeneration: 1,
+          scope: sellerScope,
+        }),
+      ).toThrow(/resolved/);
+      expect(store.settle(settled.messageId, "resolved", options)).toEqual(settled);
+      expect(() =>
+        store.settle(settled.messageId, "failed", {
+          settlementId: "loser",
+          scope: sellerScope,
+          error: null,
+        }),
+      ).toThrow(/conflict/);
+    });
+
+    it("queries one scoped snapshot with strict keyset ordering and exact query audit JSON", () => {
+      db.function("datetime", { varargs: true }, (value: string) =>
+        value === "now" ? "2026-07-19 12:00:00" : value.replace("T", " ").replace(".000Z", ""),
+      );
+      const expired = [
+        deferMessage("2020-01-01 00:00:00"),
+        deferMessage("2020-01-01 00:00:00"),
+        deferMessage("2026-07-19T10:00:00.000Z"),
+        deferMessage("2026-07-19 11:00:00"),
+      ];
+      deferMessage(null);
+      deferMessage("2020-01-01 00:00:00", "seller-2");
+      db.prepare(
+        "UPDATE agent_message_bus SET created_at='2019-01-01 00:00:00' WHERE status='deferred'",
+      ).run();
+      const expected = [
+        ...expired.slice(0, 2).sort((left, right) => left.messageId.localeCompare(right.messageId)),
+        ...expired.slice(2),
+      ].map((message) => message.messageId);
+      const first = store.getExpiredDeferrals({ scope: sellerScope, limit: 2 });
+      const second = store.getExpiredDeferrals({
+        scope: sellerScope,
+        limit: 2,
+        cursor: first.nextCursor,
+      });
+      const third = store.getExpiredDeferrals({
+        scope: sellerScope,
+        limit: 2,
+        cursor: second.nextCursor,
+      });
+      expect([...first.messages, ...second.messages].map((message) => message.messageId)).toEqual(
+        expected,
+      );
+      expect([first.messages.length, second.messages.length, third.messages.length]).toEqual([
+        2, 2, 0,
+      ]);
+      expect(first.nextCursor).toEqual({
+        deferredUntil: first.messages[1]!.deferredUntil,
+        createdAt: first.messages[1]!.createdAt,
+        messageId: first.messages[1]!.messageId,
+      });
+      const audited = store.getExpiredDeferrals({ scope: systemScope("query-1"), limit: 100 });
+      const retry = store.getExpiredDeferrals({ scope: systemScope("query-2"), limit: 100 });
+      expect([audited.messages.length, retry.messages.length]).toEqual([5, 5]);
+      expect(retry).toEqual({ ...audited, messages: audited.messages });
+      store.getExpiredDeferrals({
+        scope: systemScope("query-cursor"),
+        limit: 2,
+        cursor: first.nextCursor,
+      });
+      const audit = db.prepare("SELECT * FROM agent_message_bus_operation_audit").get() as Record<
+        string,
+        unknown
+      >;
+      expect(audit).toMatchObject({
+        operation: "getExpiredDeferrals",
+        messageId: null,
+        queryAsOf: audited.queryAsOf,
+        queryCursorJson: "null",
+        queryLimit: 100,
+        resultMessageIdsJson: JSON.stringify(audited.messages.map((message) => message.messageId)),
+        nextCursorJson: JSON.stringify(audited.nextCursor),
+      });
+      expect(
+        db
+          .prepare(
+            "SELECT messageId, queryCursorJson FROM agent_message_bus_operation_audit WHERE operationId=?",
+          )
+          .get("query-cursor"),
+      ).toEqual({ messageId: null, queryCursorJson: JSON.stringify(first.nextCursor) });
+      expect(() =>
+        store.getExpiredDeferrals({ scope: systemScope("query-1"), limit: 100 }),
+      ).toThrow();
+      expect(
+        db.prepare("SELECT COUNT(*) count FROM agent_message_bus_operation_audit").get(),
+      ).toEqual({ count: 3 });
+      expect(() => store.getExpiredDeferrals({ scope: sellerScope, limit: 1.5 })).toThrow(/limit/);
+    });
+
+    it("drains before restart without dropping additive schema or changing attempts", () => {
+      const directory = mkdtempSync(join(tmpdir(), "msl-bus-drain-"));
+      const path = join(directory, "bus.sqlite");
+      let durableDb = new Database(path);
+      let durableStore = createAgentMessageBusStore(durableDb);
+      const message = durableStore.enqueue(
+        enqInput({ receiverAgentId: "drain", sellerId: "seller-1" }),
+      );
+      durableStore.claimNext("drain");
+      durableDb
+        .prepare("UPDATE agent_message_bus SET attempts=2 WHERE message_id=?")
+        .run(message.messageId);
+      const deferred = durableStore.defer(message.messageId, {
+        deferralId: "drain-1",
+        deferralGeneration: 1,
+        reason: "rollback",
+        scope: sellerScope,
+      });
+      const assertDrained = () => {
+        const row = durableDb
+          .prepare("SELECT COUNT(*) count FROM agent_message_bus WHERE status='deferred'")
+          .get() as { count: number };
+        if (row.count !== 0) throw new Error("Deferred rows must be drained before restart.");
+      };
+      expect(assertDrained).toThrow(/drained/);
+      expect(
+        durableDb
+          .prepare("SELECT COUNT(*) count FROM agent_message_bus WHERE status='deferred'")
+          .get(),
+      ).toEqual({ count: 1 });
+      durableStore.settle(deferred.messageId, "cancelled", {
+        settlementId: "drain-settle",
+        scope: systemScope("drain-operation-1"),
+        reason: "rollback",
+      });
+      expect(
+        durableDb
+          .prepare("SELECT COUNT(*) count FROM agent_message_bus WHERE status='deferred'")
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(assertDrained).not.toThrow();
+      durableDb.close();
+      durableDb = new Database(path);
+      durableStore = createAgentMessageBusStore(durableDb);
+      const persisted = durableStore
+        .getUnscoredMessages()
+        .find((row) => row.messageId === message.messageId);
+      expect(persisted).toMatchObject({ status: "cancelled", attempts: 2 });
+      expect(durableDb.pragma("table_info(agent_message_bus)")).toHaveLength(33);
+      durableDb.close();
+      rmSync(directory, { recursive: true, force: true });
     });
   });
 

@@ -4,9 +4,9 @@
 
 - Mode: Standard (`strict_tdd=false`)
 - Delivery: auto-chain, stacked-to-main
-- Completed: 8/12 tasks (`1.1`, `1.2`, `1.3`, `1.4`, `2.1`, `2.2`, `3.1`, `3.2`)
-- Current boundary: PR 3 / Work Unit 3, runtime defer/resume CAS, scope, mutation audit, claim exclusion, and assigned defer/fail races only
-- Remaining: `4.1`, `4.2`, `4.3`, `4.4`
+- Completed: 12/12 tasks (`1.1`-`4.4`)
+- Current boundary: PR 4 / Work Unit 4, settle/query CAS, audit, remaining races, and rollback drain/restart evidence
+- Remaining: None; ready for `sdd-verify`
 
 ## Work Unit 1 Evidence
 
@@ -47,6 +47,18 @@
 | Churn | `git diff --numstat` -> 320 additions + 8 deletions = 328 total tracked PR3 churn; below 400. |
 | Work-unit rollback | Before runtime use, revert the defer/resume statements, transaction/classification/audit implementation, Slice 3 tests, and these task/progress updates; PR1 v3 schema/API and PR2 JCS/digests remain. After deferred rows exist, source-only rollback is unsafe; the PR4 drain boundary remains required and out of PR3 scope. |
 
+## Work Unit 4 Evidence
+
+| Evidence | Result |
+|---|---|
+| RED/focused tests | Initial `npx vitest run packages/agent/tests/conversation/agentMessageBusStore.test.ts -t "settle and getExpiredDeferrals"` -> exit 1; 4/4 assigned tests failed at runtime stubs. Final command -> exit 0; 1 file passed; 4/4 passed, 50 skipped; 38 assertion evaluations executed. |
+| Runtime harness | Same focused command exercised three settlement outcomes, triple retry/conflicts, resume/settle and settle/settle races, fixed-clock seller/system snapshots, equal-key keyset paging, indefinite exclusion, exact audit JSON/SQL NULL, duplicate rollback, and file-backed WAL drain/restart. |
+| Regression | `npm test` -> exit 0; 218 files passed, 2 skipped; 3,866 tests passed, 7 skipped. |
+| Quality | `npm run lint` -> exit 0 on the 300s retry (the first 120s tool run timed out); `npm run typecheck` -> exit 0. |
+| Formatting/diff | `npx prettier --check packages/agent/src/conversation/agentMessageBusStore.ts packages/agent/tests/conversation/agentMessageBusStore.test.ts openspec/changes/add-deferred-message-bus-lifecycle/tasks.md openspec/changes/add-deferred-message-bus-lifecycle/apply-progress.md` and `git diff --check` -> exit 0. |
+| Churn | Final `git diff --numstat` -> 359 additions + 15 deletions = 374 total PR4 churn; below 400. |
+| Work-unit rollback | Quiesce producers; settle every deferred row through the public API with unique system operation IDs; preserve attempts; abort restart unless `COUNT(status='deferred')=0`; restart only after zero. Never direct-SQL drain, DROP v3 schema, or treat source revert as DB rollback. Revert only PR4 store/tests/task/progress changes after the drain; PR1-PR3 remain. |
+
 ## Files
 
 - `packages/agent/src/conversation/agentMessageBusStore.ts`
@@ -77,6 +89,7 @@
 
 - Added the `productLaunchTools.test.ts` structural mock discovered by the required agent typecheck; it is the same PR1 public-interface compatibility work as the five forecast fixtures.
 - New deferred fields on the existing exported `AgentMessage` type are optional for source compatibility with existing consumers; rows returned by the SQLite store always map all ten fields to values or `null`.
-- Valid settle/query operations intentionally throw an unavailable error after validation. Their runtime behavior remains assigned to PR4.
+- PR1 intentionally left settle/query unavailable after pre-transaction validation; PR4 replaces those stubs with the specified runtime behavior.
 - PR2 has no design deviations. It adds only canonicalization, digest construction, pinned vectors, tests, and barrel exports; lifecycle runtime methods remain assigned to PR3/PR4.
 - PR3 has no design deviations. It leaves settle/query runtime behavior, PR4 races, and rollback drain untouched.
+- PR4 has no design deviations; no Creative Studio artifacts were modified.

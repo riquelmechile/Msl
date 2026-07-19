@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import Database from "better-sqlite3";
 import { createMigrationRegistry } from "@msl/memory";
-import { computeDeferralDigest } from "./jcsCanonicalize.js";
+import { computeDeferralDigest, computeSettlementDigest } from "./jcsCanonicalize.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -332,10 +332,6 @@ function assertJson(value: unknown, label: string, seen = new WeakSet<object>())
   seen.delete(value);
 }
 
-function unavailable(): never {
-  throw new Error("Deferred lifecycle runtime is not implemented in this work unit.");
-}
-
 // ── Factory ──────────────────────────────────────────────────────────
 
 export function createAgentMessageBusStore(db: Database.Database): AgentMessageBusStore {
@@ -521,6 +517,28 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
       AND (@sellerId IS NULL OR seller_id = @sellerId)
   `);
 
+  const settleStmt = db.prepare(`
+    UPDATE agent_message_bus SET
+      status = @outcome, settlement_id = @settlementId, settlement_digest = @digest,
+      resolved_at = datetime('now'), updated_at = datetime('now'), locked_at = NULL,
+      result_json = @result, error_json = @error, cancel_reason = @reason
+    WHERE message_id = @messageId AND status IN ('processing', 'deferred')
+      AND (@sellerId IS NULL OR seller_id = @sellerId)
+  `);
+
+  const queryAsOfStmt = db.prepare(`SELECT datetime('now') queryAsOf`);
+  const selectExpiredDeferralsStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE status = 'deferred' AND deferred_until IS NOT NULL
+      AND datetime(deferred_until) <= datetime(@queryAsOf)
+      AND (@sellerId IS NULL OR seller_id = @sellerId)
+      AND (@cursorDeferredUntil IS NULL OR
+        (datetime(deferred_until), datetime(created_at), message_id) >
+        (datetime(@cursorDeferredUntil), datetime(@cursorCreatedAt), @cursorMessageId))
+    ORDER BY datetime(deferred_until) ASC, datetime(created_at) ASC, message_id ASC
+    LIMIT @limit
+  `);
+
   const insertMutationAuditStmt = db.prepare(`
     INSERT INTO agent_message_bus_operation_audit (
       operationId, operation, scopeJson, reason, evidenceRef, messageId,
@@ -528,6 +546,17 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     ) VALUES (
       @operationId, @operation, @scopeJson, @reason, @evidenceRef, @messageId,
       NULL, NULL, NULL, NULL, NULL, datetime('now')
+    )
+  `);
+
+  const insertQueryAuditStmt = db.prepare(`
+    INSERT INTO agent_message_bus_operation_audit (
+      operationId, operation, scopeJson, reason, evidenceRef, messageId,
+      queryAsOf, queryCursorJson, queryLimit, resultMessageIdsJson, nextCursorJson, createdAt
+    ) VALUES (
+      @operationId, 'getExpiredDeferrals', @scopeJson, @reason, @evidenceRef, NULL,
+      @queryAsOf, @queryCursorJson, @queryLimit, @resultMessageIdsJson,
+      @nextCursorJson, datetime('now')
     )
   `);
 
@@ -754,7 +783,26 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     if (outcome === "failed") assertJson(values.error, "error");
     if (outcome === "cancelled" && values.reason != null && typeof values.reason !== "string")
       throw new Error("reason must be a string.");
-    return unavailable();
+    const digest = computeSettlementDigest(messageId, outcome, options);
+    return db.transaction(() => {
+      const sellerId = options.scope.kind === "seller" ? options.scope.sellerId : null;
+      const changed = settleStmt.run({ messageId, outcome, settlementId: options.settlementId,
+        digest, sellerId, result: outcome === "resolved" && values.result != null
+          ? JSON.stringify(values.result) : null, error: outcome === "failed" && values.error != null
+          ? JSON.stringify(values.error) : null,
+        reason: outcome === "cancelled" ? (values.reason ?? null) : null }).changes;
+      const row = selectScopedMessageStmt.get({ messageId, sellerId }) as AgentMessageBusRow | undefined;
+      if (!row) throw new Error(`AgentMessage "${messageId}" is missing from the mutation scope.`);
+      const exact = row.status === outcome && row.settlement_id === options.settlementId &&
+        row.settlement_digest === digest;
+      if (changed === 0 && !exact) {
+        if (row.settlement_id != null)
+          throw new Error(`AgentMessage "${messageId}" has a conflicting settlement.`);
+        throw new Error(`AgentMessage "${messageId}" is ${row.status}, not settleable.`);
+      }
+      auditMutation("settle", messageId, options.scope);
+      return rowToAgentMessage(row);
+    })();
   };
 
   // prettier-ignore
@@ -768,7 +816,25 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
       assertNonEmpty(options.cursor.createdAt, "cursor.createdAt");
       assertNonEmpty(options.cursor.messageId, "cursor.messageId");
     }
-    return unavailable();
+    return db.transaction(() => {
+      const queryAsOf = (queryAsOfStmt.get() as { queryAsOf: string }).queryAsOf;
+      const sellerId = options.scope.kind === "seller" ? options.scope.sellerId : null;
+      const cursor = options.cursor ?? null;
+      const rows = selectExpiredDeferralsStmt.all({ queryAsOf, sellerId,
+        cursorDeferredUntil: cursor?.deferredUntil ?? null, cursorCreatedAt: cursor?.createdAt ?? null,
+        cursorMessageId: cursor?.messageId ?? null, limit }) as AgentMessageBusRow[];
+      const last = rows.at(-1);
+      const nextCursor = last ? { deferredUntil: last.deferred_until!, createdAt: last.created_at,
+        messageId: last.message_id } : null;
+      if (options.scope.kind === "system") insertQueryAuditStmt.run({
+        operationId: options.scope.operationId, scopeJson: JSON.stringify(options.scope),
+        reason: options.scope.reason, evidenceRef: options.scope.evidenceRef, queryAsOf,
+        queryCursorJson: JSON.stringify(cursor), queryLimit: limit,
+        resultMessageIdsJson: JSON.stringify(rows.map((row) => row.message_id)),
+        nextCursorJson: JSON.stringify(nextCursor),
+      });
+      return { messages: rows.map(rowToAgentMessage), queryAsOf, nextCursor };
+    })();
   };
 
   return {
