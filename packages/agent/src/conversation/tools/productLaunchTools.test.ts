@@ -69,6 +69,10 @@ function makeBus() {
     getUnscoredMessages: vi.fn().mockReturnValue([]),
     reenqueueFailed: vi.fn(),
     getProcessingStuck: vi.fn().mockReturnValue([]),
+    defer: vi.fn(),
+    resumeDeferred: vi.fn(),
+    settle: vi.fn(),
+    getExpiredDeferrals: vi.fn(),
   };
 }
 

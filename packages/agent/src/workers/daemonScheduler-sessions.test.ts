@@ -84,6 +84,10 @@ function makeFakeBus(): AgentMessageBusStore {
     getLearningHistory: vi.fn().mockReturnValue([]),
     recordOutcome: vi.fn(),
     getUnscoredMessages: vi.fn().mockReturnValue([]),
+    defer: vi.fn(),
+    resumeDeferred: vi.fn(),
+    settle: vi.fn(),
+    getExpiredDeferrals: vi.fn(),
   };
 }
 

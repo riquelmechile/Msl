@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 
 import {
   createAgentMessageBusStore,
@@ -545,7 +545,7 @@ describe("agentMessageBusStore", () => {
         name: string;
         type: string;
       }>;
-      expect(columns.length).toBe(23);
+      expect(columns.length).toBe(33);
 
       const columnNames = columns.map((c) => c.name);
       const expected = [
@@ -573,7 +573,114 @@ describe("agentMessageBusStore", () => {
         "outcome_score",
         "action_id",
       ];
-      expect(columnNames).toEqual(expected);
+      expect(columnNames.slice(0, 23)).toEqual(expected);
+    });
+  });
+
+  describe("v3 schema migration", () => {
+    const busV3 =
+      `id:INTEGER/0/1/- message_id:TEXT/1/0/- sender_agent_id:TEXT/1/0/- receiver_agent_id:TEXT/1/0/- message_type:TEXT/1/0/- payload_json:TEXT/1/0/-
+status:TEXT/1/0/'pending' priority:INTEGER/1/0/5 attempts:INTEGER/1/0/0 dedupe_key:TEXT/0/0/- locked_at:TEXT/0/0/- resolved_at:TEXT/0/0/-
+created_at:TEXT/1/0/datetime('now') updated_at:TEXT/1/0/datetime('now') result_json:TEXT/0/0/- error_json:TEXT/0/0/- cancel_reason:TEXT/0/0/-
+correlation_id:TEXT/0/0/- parent_message_id:TEXT/0/0/- seller_id:TEXT/0/0/- learned_at:TEXT/0/0/- outcome_score:REAL/0/0/- action_id:TEXT/0/0/-
+deferral_id:TEXT/0/0/- deferral_generation:INTEGER/0/0/- deferred_until:TEXT/0/0/- deferred_at:TEXT/0/0/- defer_reason:TEXT/0/0/- defer_reason_detail:TEXT/0/0/-
+defer_evidence_ref:TEXT/0/0/- settlement_id:TEXT/0/0/- settlement_digest:TEXT/0/0/-
+deferral_digest:TEXT/0/0/-`.split(/\s+/);
+    const auditV3 =
+      `operationId:TEXT/1/1/- operation:TEXT/1/0/- scopeJson:TEXT/1/0/- reason:TEXT/1/0/- evidenceRef:TEXT/1/0/- messageId:TEXT/0/0/- queryAsOf:TEXT/0/0/-
+queryCursorJson:TEXT/0/0/- queryLimit:INTEGER/0/0/- resultMessageIdsJson:TEXT/0/0/-
+nextCursorJson:TEXT/0/0/- createdAt:TEXT/1/0/-`.split(/\s+/);
+    const schema = (database: Database.Database, table: string) =>
+      (database.pragma(`table_info(${table})`) as Array<Record<string, unknown>>).map((column) => {
+        const { name, type, notnull, pk, dflt_value: defaultValue } = column;
+        if (
+          typeof name !== "string" ||
+          typeof type !== "string" ||
+          typeof notnull !== "number" ||
+          typeof pk !== "number" ||
+          (defaultValue !== null && typeof defaultValue !== "string")
+        ) {
+          throw new TypeError("Invalid PRAGMA table_info metadata.");
+        }
+        return `${name}:${type}/${notnull}/${pk}/${defaultValue ?? "-"}`;
+      });
+    const makeV2 = (recordV3 = false) => {
+      const database = new Database(":memory:");
+      database.exec(`CREATE TABLE agent_message_bus (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT NOT NULL UNIQUE,
+        sender_agent_id TEXT NOT NULL, receiver_agent_id TEXT NOT NULL, message_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', priority INTEGER NOT NULL DEFAULT 5,
+        attempts INTEGER NOT NULL DEFAULT 0, dedupe_key TEXT, locked_at TEXT, resolved_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      migrateBusSchema(database);
+      database.exec(`CREATE TABLE schema_version (version INTEGER PRIMARY KEY,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      database.exec(`INSERT INTO schema_version(version) VALUES (1),(2)${recordV3 ? ",(3)" : ""}`);
+      return database;
+    };
+    const apply = (database: Database.Database, enabled = true) => {
+      vi.stubEnv("MSL_MIGRATION_ENABLED", String(enabled));
+      try {
+        return createAgentMessageBusStore(database);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    };
+    const expectV3 = (database: Database.Database) => {
+      expect(schema(database, "agent_message_bus")).toEqual(busV3);
+      expect(schema(database, "agent_message_bus_operation_audit")).toEqual(auditV3);
+    };
+
+    // prettier-ignore
+    it.each([true, false])("creates the exact fresh v3 schema with migration flag %s", (enabled) => {
+      const database = new Database(":memory:");
+      apply(database, enabled);
+      expectV3(database);
+      if (enabled) expect(database.prepare("SELECT version FROM schema_version WHERE version=3").get()).toBeDefined();
+    });
+
+    it("upgrades v2 through the registry and preserves legacy rows", () => {
+      const database = makeV2();
+      insertMessageDirect(database, { message_id: "legacy" });
+      apply(database);
+      expectV3(database);
+      expect(database.prepare("SELECT deferral_generation FROM agent_message_bus").get()).toEqual({
+        deferral_generation: null,
+      });
+    });
+
+    it("reruns idempotently with data preserved", () => {
+      const database = new Database(":memory:");
+      const message = apply(database).enqueue(enqInput());
+      expect(apply(database).claimNext("receiver-1")[0]?.messageId).toBe(message.messageId);
+      expectV3(database);
+    });
+
+    it("rolls back v3 schema and version when ownership proof fails", () => {
+      const database = makeV2();
+      database.exec(
+        "CREATE TABLE agent_message_bus_operation_audit (operationId TEXT PRIMARY KEY NOT NULL)",
+      );
+      expect(() => apply(database)).toThrow("migration ownership proof failed");
+      expect(schema(database, "agent_message_bus")).toHaveLength(23);
+      expect(
+        database.prepare("SELECT version FROM schema_version WHERE version=3").get(),
+      ).toBeUndefined();
+    });
+
+    it("applies owned v3 when an unrelated version 3 is already recorded", () => {
+      const database = makeV2(true);
+      apply(database);
+      expectV3(database);
+    });
+
+    // prettier-ignore
+    it("rejects invalid lifecycle inputs before runtime implementation", () => {
+      expect(() => store.defer("m", { deferralId: "d", deferralGeneration: 1, reason: "r", scope: { kind: "seller", sellerId: "" } })).toThrow();
+      expect(() => store.defer("m", { deferralId: "d", deferralGeneration: 1, reason: "r", detail: "x".repeat(1001), scope: { kind: "seller", sellerId: "s" } })).toThrow();
+      expect(() => store.settle("m", "resolved", { settlementId: "s", evidence: 1n, scope: { kind: "system", operationId: "o", reason: "r", evidenceRef: "e" } })).toThrow();
+      expect(() => store.getExpiredDeferrals({ scope: { kind: "system", operationId: "", reason: "r", evidenceRef: "e" } })).toThrow();
+      expect(() => store.getExpiredDeferrals({ scope: { kind: "seller", sellerId: "s" }, limit: 0 })).toThrow();
     });
   });
 
