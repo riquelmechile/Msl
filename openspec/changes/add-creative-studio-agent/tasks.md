@@ -35,7 +35,7 @@ Chain strategy: feature-branch-chain
 
 - [x] 1.1 `PolicyEngine`: validate request, check constraints, pre-flight rules
 - [x] 1.2 `CostLedger`: daily/job spend tracking, `canAfford()`, UTC midnight reset (pure TS, no SQLite yet)
-- [ ] 1.3 `CreativeJobQueue`: local SQLite job state (PR3)
+- [x] 1.3 `CreativeJobQueue`: local SQLite job state (PR3)
 - [x] 1.4 `MlDiagnosticAdapter`: call POST /moderations/pictures/diagnostic (PR3)
 - [x] 1.5 Unit tests: policy rules, cost accounting (17 tests passing)
 
