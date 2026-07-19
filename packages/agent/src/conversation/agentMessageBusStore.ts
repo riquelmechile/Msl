@@ -323,7 +323,7 @@ function assertJson(value: unknown, label: string, seen = new WeakSet<object>())
   seen.add(value);
   if (Array.isArray(value)) value.forEach((item) => assertJson(item, label, seen));
   else {
-    const prototype = Object.getPrototypeOf(value);
+    const prototype = Reflect.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null)
       throw new Error(`${label} must be JSON.`);
     Object.values(value).forEach((item) => assertJson(item, label, seen));

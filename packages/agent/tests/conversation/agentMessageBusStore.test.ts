@@ -591,10 +591,19 @@ deferral_digest:TEXT/0/0/-`.split(/\s+/);
 queryCursorJson:TEXT/0/0/- queryLimit:INTEGER/0/0/- resultMessageIdsJson:TEXT/0/0/-
 nextCursorJson:TEXT/0/0/- createdAt:TEXT/1/0/-`.split(/\s+/);
     const schema = (database: Database.Database, table: string) =>
-      (database.pragma(`table_info(${table})`) as Array<Record<string, unknown>>).map(
-        (column) =>
-          `${column.name}:${column.type}/${column.notnull}/${column.pk}/${column.dflt_value ?? "-"}`,
-      );
+      (database.pragma(`table_info(${table})`) as Array<Record<string, unknown>>).map((column) => {
+        const { name, type, notnull, pk, dflt_value: defaultValue } = column;
+        if (
+          typeof name !== "string" ||
+          typeof type !== "string" ||
+          typeof notnull !== "number" ||
+          typeof pk !== "number" ||
+          (defaultValue !== null && typeof defaultValue !== "string")
+        ) {
+          throw new TypeError("Invalid PRAGMA table_info metadata.");
+        }
+        return `${name}:${type}/${notnull}/${pk}/${defaultValue ?? "-"}`;
+      });
     const makeV2 = (recordV3 = false) => {
       const database = new Database(":memory:");
       database.exec(`CREATE TABLE agent_message_bus (
