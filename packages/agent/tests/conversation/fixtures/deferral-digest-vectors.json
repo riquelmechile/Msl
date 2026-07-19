@@ -1,0 +1,75 @@
+{
+  "canonical": [
+    {
+      "name": "nested arrays, null, numbers, escapes, and UTF-8",
+      "input": { "z": [3, null, { "é": "€", "a": "line\n\"quoted\"" }], "a": 333333333.33333329 },
+      "canonical": "{\"a\":333333333.3333333,\"z\":[3,null,{\"a\":\"line\\n\\\"quoted\\\"\",\"é\":\"€\"}]}"
+    }
+  ],
+  "deferrals": [
+    {
+      "name": "seller scope with explicit nulls",
+      "messageId": "msg-1",
+      "options": {
+        "deferralId": "def-1",
+        "deferralGeneration": 2,
+        "deferredUntil": null,
+        "reason": "awaiting_approval",
+        "detail": null,
+        "evidenceRef": null,
+        "scope": { "kind": "seller", "sellerId": "seller-7" }
+      },
+      "digest": "5c408011e0bb2d86ddcaab39eac97ed99109d6899acc09cd8f2ddbb1def521cb"
+    },
+    {
+      "name": "system projection excludes operation identity",
+      "messageId": "msg-2",
+      "options": {
+        "deferralId": "def-2",
+        "deferralGeneration": 1,
+        "reason": "recovery",
+        "scope": {
+          "kind": "system",
+          "operationId": "op-1",
+          "reason": "sweep",
+          "evidenceRef": "audit-1"
+        }
+      },
+      "digest": "7c0f24907bbc5faabb7046735a87c1b783ac0f4dde72b53e0f40d29f2e32d1e0"
+    }
+  ],
+  "settlements": [
+    {
+      "outcome": "resolved",
+      "messageId": "msg-3",
+      "options": {
+        "settlementId": "set-1",
+        "scope": { "kind": "seller", "sellerId": "seller-7" },
+        "result": { "b": [true, 1e30], "a": null },
+        "evidence": { "ref": "é" }
+      },
+      "digest": "553ed54bb76f038f31e7d8465736879a3b9cc1c4fba9deb9f38d85374aabacdb"
+    },
+    {
+      "outcome": "failed",
+      "messageId": "msg-4",
+      "options": {
+        "settlementId": "set-2",
+        "scope": { "kind": "seller", "sellerId": "seller-7" },
+        "error": null
+      },
+      "digest": "31df68812eb445bd523a317e487a7aed50e801a3bc4bc2f355856633ff8b2d44"
+    },
+    {
+      "outcome": "cancelled",
+      "messageId": "msg-5",
+      "options": {
+        "settlementId": "set-3",
+        "scope": { "kind": "seller", "sellerId": "seller-7" },
+        "reason": "obsolete",
+        "evidence": null
+      },
+      "digest": "1b34b6b3ad32ab05541b7a52c316090017fc5a18164836d5793cbcc5252c2d2a"
+    }
+  ]
+}

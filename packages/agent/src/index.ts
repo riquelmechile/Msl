@@ -350,6 +350,11 @@ export {
   listCompanyAgents,
 } from "./conversation/companyAgents.js";
 export { createAgentMessageBusStore } from "./conversation/agentMessageBusStore.js";
+export {
+  computeDeferralDigest,
+  computeSettlementDigest,
+  jcsCanonicalize,
+} from "./conversation/jcsCanonicalize.js";
 export type {
   AgentMessageBusStore,
   AgentMessage,
