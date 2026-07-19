@@ -5,6 +5,7 @@ import {
   createAgentMessageBusStore,
   migrateBusSchema,
   type AgentMessageBusStore,
+  type MutationScope,
 } from "../../src/conversation/agentMessageBusStore.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -681,6 +682,212 @@ nextCursorJson:TEXT/0/0/- createdAt:TEXT/1/0/-`.split(/\s+/);
       expect(() => store.settle("m", "resolved", { settlementId: "s", evidence: 1n, scope: { kind: "system", operationId: "o", reason: "r", evidenceRef: "e" } })).toThrow();
       expect(() => store.getExpiredDeferrals({ scope: { kind: "system", operationId: "", reason: "r", evidenceRef: "e" } })).toThrow();
       expect(() => store.getExpiredDeferrals({ scope: { kind: "seller", sellerId: "s" }, limit: 0 })).toThrow();
+    });
+  });
+
+  describe("defer and resumeDeferred", () => {
+    const sellerScope = { kind: "seller" as const, sellerId: "seller-1" };
+    const systemScope = (operationId: string) => ({
+      kind: "system" as const,
+      operationId,
+      reason: "operator retry",
+      evidenceRef: "evidence://run/1",
+    });
+    const deferOptions = (scope: MutationScope = sellerScope, generation = 1) => ({
+      deferralId: `deferral-${generation}`,
+      deferralGeneration: generation,
+      deferredUntil: "2026-07-20T12:00:00Z",
+      reason: "awaiting webhook",
+      detail: "payment confirmation",
+      evidenceRef: "evidence://payment/1",
+      scope,
+    });
+    const processingMessage = (sellerId = "seller-1") => {
+      const message = store.enqueue(enqInput({ receiverAgentId: "worker", sellerId }));
+      return store.claimNext("worker")[0] ?? message;
+    };
+
+    it("defers with exact fields, excludes claims, classifies retries, and resumes idempotently", () => {
+      const message = processingMessage();
+      const options = deferOptions();
+      const deferred = store.defer(message.messageId, options);
+
+      expect(deferred).toMatchObject({
+        status: "deferred",
+        deferralId: "deferral-1",
+        deferralGeneration: 1,
+        deferredUntil: options.deferredUntil,
+        deferReason: options.reason,
+        deferReasonDetail: options.detail,
+        deferEvidenceRef: options.evidenceRef,
+      });
+      expect(deferred.deferralDigest).toMatch(/^[0-9a-f]{64}$/);
+      expect(deferred.lockedAt).toBeNull();
+      expect(store.claimNext("worker")).toEqual([]);
+      expect(store.defer(message.messageId, options)).toEqual(deferred);
+      expect(() => store.defer(message.messageId, { ...options, reason: "different" })).toThrow(
+        /conflicting/,
+      );
+      expect(() => store.defer(message.messageId, deferOptions(sellerScope, 0))).toThrow();
+
+      const resumed = store.resumeDeferred(message.messageId, {
+        deferralId: options.deferralId,
+        deferralGeneration: 1,
+        scope: sellerScope,
+      });
+      expect(resumed).toMatchObject({
+        status: "pending",
+        deferralId: "deferral-1",
+        deferralGeneration: 1,
+      });
+      expect(resumed.lockedAt).toBeNull();
+      expect(
+        store.resumeDeferred(message.messageId, {
+          deferralId: options.deferralId,
+          deferralGeneration: 1,
+          scope: sellerScope,
+        }),
+      ).toEqual(resumed);
+      expect(() =>
+        store.resumeDeferred(message.messageId, {
+          deferralId: "other",
+          deferralGeneration: 1,
+          scope: sellerScope,
+        }),
+      ).toThrow(/conflicting/);
+    });
+
+    it("enforces seller scope, rejects retained tokens, and writes zero seller audits", () => {
+      const message = processingMessage();
+      expect(() =>
+        store.defer(message.messageId, deferOptions({ kind: "seller", sellerId: "other" })),
+      ).toThrow(/mutation scope/);
+      store.defer(message.messageId, deferOptions());
+      store.resumeDeferred(message.messageId, {
+        deferralId: "deferral-1",
+        deferralGeneration: 1,
+        scope: sellerScope,
+      });
+      expect(() => store.defer(message.messageId, deferOptions())).toThrow(/pending/);
+      db.prepare("UPDATE agent_message_bus SET status='cancelled' WHERE message_id=?").run(
+        message.messageId,
+      );
+      expect(() =>
+        store.resumeDeferred(message.messageId, {
+          deferralId: "deferral-1",
+          deferralGeneration: 1,
+          scope: sellerScope,
+        }),
+      ).toThrow(/cancelled/);
+      expect(
+        db.prepare("SELECT COUNT(*) count FROM agent_message_bus_operation_audit").get(),
+      ).toEqual({ count: 0 });
+    });
+
+    it("rejects stale defer generations and resume tokens", () => {
+      const message = processingMessage();
+      store.defer(message.messageId, deferOptions(sellerScope, 2));
+      expect(() => store.defer(message.messageId, deferOptions(sellerScope, 1))).toThrow(/stale/);
+      expect(() =>
+        store.resumeDeferred(message.messageId, {
+          deferralId: "deferral-1",
+          deferralGeneration: 1,
+          scope: sellerScope,
+        }),
+      ).toThrow(/stale/);
+    });
+
+    it("writes exact system mutation audits and permits fresh-operation domain retries", () => {
+      const message = processingMessage();
+      const first = store.defer(message.messageId, deferOptions(systemScope("op-defer-1")));
+      const retry = store.defer(message.messageId, deferOptions(systemScope("op-defer-2")));
+      expect(retry.deferralDigest).toBe(first.deferralDigest);
+      store.resumeDeferred(message.messageId, {
+        deferralId: "deferral-1",
+        deferralGeneration: 1,
+        scope: systemScope("op-resume-1"),
+      });
+      store.resumeDeferred(message.messageId, {
+        deferralId: "deferral-1",
+        deferralGeneration: 1,
+        scope: systemScope("op-resume-2"),
+      });
+      const audits = db
+        .prepare("SELECT * FROM agent_message_bus_operation_audit ORDER BY operationId")
+        .all() as Array<Record<string, unknown>>;
+      expect(audits).toHaveLength(4);
+      expect(audits[0]).toEqual({
+        operationId: "op-defer-1",
+        operation: "defer",
+        scopeJson: JSON.stringify(systemScope("op-defer-1")),
+        reason: "operator retry",
+        evidenceRef: "evidence://run/1",
+        messageId: message.messageId,
+        queryAsOf: null,
+        queryCursorJson: null,
+        queryLimit: null,
+        resultMessageIdsJson: null,
+        nextCursorJson: null,
+        createdAt: audits[0]?.createdAt,
+      });
+      expect(typeof audits[0]?.createdAt).toBe("string");
+      expect(audits.map(({ operationId, operation }) => ({ operationId, operation }))).toEqual([
+        { operationId: "op-defer-1", operation: "defer" },
+        { operationId: "op-defer-2", operation: "defer" },
+        { operationId: "op-resume-1", operation: "resumeDeferred" },
+        { operationId: "op-resume-2", operation: "resumeDeferred" },
+      ]);
+      for (const audit of audits) {
+        expect([
+          audit.queryAsOf,
+          audit.queryCursorJson,
+          audit.queryLimit,
+          audit.resultMessageIdsJson,
+          audit.nextCursorJson,
+        ]).toEqual([null, null, null, null, null]);
+      }
+    });
+
+    it("fails closed on duplicate operationId and rolls back the domain transition", () => {
+      const first = processingMessage();
+      store.defer(first.messageId, deferOptions(systemScope("duplicate")));
+      expect(() => store.defer(first.messageId, deferOptions(systemScope("duplicate")))).toThrow();
+      expect(() =>
+        store.resumeDeferred(first.messageId, {
+          deferralId: "deferral-1",
+          deferralGeneration: 1,
+          scope: systemScope("duplicate"),
+        }),
+      ).toThrow();
+      expect(
+        db.prepare("SELECT status FROM agent_message_bus WHERE message_id=?").get(first.messageId),
+      ).toEqual({ status: "deferred" });
+
+      const second = processingMessage("seller-2");
+      expect(() => store.defer(second.messageId, deferOptions(systemScope("duplicate")))).toThrow();
+      expect(
+        db
+          .prepare("SELECT status, deferral_id FROM agent_message_bus WHERE message_id=?")
+          .get(second.messageId),
+      ).toEqual({ status: "processing", deferral_id: null });
+      expect(
+        db.prepare("SELECT COUNT(*) count FROM agent_message_bus_operation_audit").get(),
+      ).toEqual({ count: 1 });
+    });
+
+    it("serializes both defer and fail orderings with one transition winner", () => {
+      const deferWins = processingMessage();
+      store.defer(deferWins.messageId, deferOptions());
+      expect(() => store.fail(deferWins.messageId, "late failure")).toThrow(/processing state/);
+
+      const failWins = processingMessage();
+      store.fail(failWins.messageId, "first failure");
+      expect(() => store.defer(failWins.messageId, deferOptions())).toThrow(/pending/);
+      expect(
+        db
+          .prepare("SELECT status, attempts FROM agent_message_bus WHERE message_id=?")
+          .get(failWins.messageId),
+      ).toEqual({ status: "pending", attempts: 1 });
     });
   });
 

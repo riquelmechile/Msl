@@ -4,9 +4,9 @@
 
 - Mode: Standard (`strict_tdd=false`)
 - Delivery: auto-chain, stacked-to-main
-- Completed: 6/12 tasks (`1.1`, `1.2`, `1.3`, `1.4`, `2.1`, `2.2`)
-- Current boundary: PR 2 / Work Unit 2, RFC 8785 JCS, digest vectors, and public digest exports only
-- Remaining: `3.1`, `3.2`, `4.1`, `4.2`, `4.3`, `4.4`
+- Completed: 8/12 tasks (`1.1`, `1.2`, `1.3`, `1.4`, `2.1`, `2.2`, `3.1`, `3.2`)
+- Current boundary: PR 3 / Work Unit 3, runtime defer/resume CAS, scope, mutation audit, claim exclusion, and assigned defer/fail races only
+- Remaining: `4.1`, `4.2`, `4.3`, `4.4`
 
 ## Work Unit 1 Evidence
 
@@ -33,6 +33,20 @@
 | Churn | 324 additions + 6 deletions = 330 total tracked/untracked PR2 churn; below 400 |
 | Work-unit rollback | Remove `jcsCanonicalize.ts`, its focused test and pinned vector fixture, and revert only the three digest exports in `packages/agent/src/index.ts`; PR1 schema/API behavior remains. |
 
+## Work Unit 3 Evidence
+
+| Evidence | Result |
+|---|---|
+| Focused tests/runtime harness | `npx vitest run packages/agent/tests/conversation/agentMessageBusStore.test.ts -t "defer and resumeDeferred"` -> exit 0; 1 file passed; 6/6 Slice 3 tests passed (44 unrelated tests skipped). In-memory SQLite exercised CAS transitions/classifications, exact row mapping, claim exclusion, seller/system scopes, audit atomicity, duplicate rollback, fresh-operation retries, and both defer/fail orderings. |
+| Assertion evidence | `rg -o 'expect\(' packages/agent/tests/conversation/agentMessageBusStore.test.ts \| wc -l` -> 164 static expectation sites; focused execution ran six tests with nonzero assertions. |
+| Prior-slice regression | `npx vitest run packages/agent/tests/conversation/agentMessageBusStore.test.ts packages/agent/tests/conversation/jcsCanonicalize.test.ts` -> exit 0; 2 files passed; 63/63 tests passed (50 store + 13 JCS). |
+| Lint | `npm run lint` -> exit 0. |
+| Typecheck | `npm run typecheck` -> exit 0; root project references and `@msl/web` passed. |
+| Formatting | `npx prettier --check packages/agent/src/conversation/agentMessageBusStore.ts packages/agent/tests/conversation/agentMessageBusStore.test.ts openspec/changes/add-deferred-message-bus-lifecycle/tasks.md openspec/changes/add-deferred-message-bus-lifecycle/apply-progress.md` -> exit 0; all matched files use Prettier style. |
+| Diff check | `git diff --check` — exit 0, no output. |
+| Churn | `git diff --numstat` -> 320 additions + 8 deletions = 328 total tracked PR3 churn; below 400. |
+| Work-unit rollback | Before runtime use, revert the defer/resume statements, transaction/classification/audit implementation, Slice 3 tests, and these task/progress updates; PR1 v3 schema/API and PR2 JCS/digests remain. After deferred rows exist, source-only rollback is unsafe; the PR4 drain boundary remains required and out of PR3 scope. |
+
 ## Files
 
 - `packages/agent/src/conversation/agentMessageBusStore.ts`
@@ -52,9 +66,17 @@
 - `packages/agent/tests/conversation/fixtures/deferral-digest-vectors.json`
 - `packages/agent/src/index.ts`
 
+### Work Unit 3 Files
+
+- `packages/agent/src/conversation/agentMessageBusStore.ts`
+- `packages/agent/tests/conversation/agentMessageBusStore.test.ts`
+- `openspec/changes/add-deferred-message-bus-lifecycle/tasks.md`
+- `openspec/changes/add-deferred-message-bus-lifecycle/apply-progress.md`
+
 ## Deviations
 
 - Added the `productLaunchTools.test.ts` structural mock discovered by the required agent typecheck; it is the same PR1 public-interface compatibility work as the five forecast fixtures.
 - New deferred fields on the existing exported `AgentMessage` type are optional for source compatibility with existing consumers; rows returned by the SQLite store always map all ten fields to values or `null`.
-- Valid deferred lifecycle operations intentionally throw an unavailable error after validation. JCS/digests and defer/resume/settle/query runtime behavior remain assigned to PRs 2-4.
+- Valid settle/query operations intentionally throw an unavailable error after validation. Their runtime behavior remains assigned to PR4.
 - PR2 has no design deviations. It adds only canonicalization, digest construction, pinned vectors, tests, and barrel exports; lifecycle runtime methods remain assigned to PR3/PR4.
+- PR3 has no design deviations. It leaves settle/query runtime behavior, PR4 races, and rollback drain untouched.
