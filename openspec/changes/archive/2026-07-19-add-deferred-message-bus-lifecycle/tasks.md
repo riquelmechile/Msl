@@ -52,7 +52,7 @@ getExpiredDeferrals(options:ExpiredDeferralsOptions):ExpiredDeferralsResult;
 - [x] 3.2 Implement CAS/classification/audit/row returns in `agentMessageBusStore.ts` with exact signatures/barrel.
 
 ## Phase 4: Settle, Query, Rollback (PR 4)
-- [ ] 4.1 RED each selected write, non-selected SQL NULLs, JSON-null, timestamps, lock, attempts, terminal ID/digest, persisted-row retry mapping, conflicts, six races, audit rollback.
-- [ ] 4.2 RED snapshot/keyset/equal timestamps/indefinite exclusion, audit JSON/NULLs, fixed-clock retry, duplicate rollback, scope/limits.
-- [ ] 4.3 Implement settle/query/audit. Drain via unique operation IDs; preserve attempts; require zero deferred before restart; abort nonzero; never DROP.
-- [ ] 4.4 Run focused commands, then regression-only `npm test`; record assertion counts and keep slices <400 total lines.
+- [x] 4.1 RED each selected write, non-selected SQL NULLs, JSON-null, timestamps, lock, attempts, terminal ID/digest, persisted-row retry mapping, conflicts, six races, audit rollback.
+- [x] 4.2 RED snapshot/keyset/equal timestamps/indefinite exclusion, audit JSON/NULLs, fixed-clock retry, duplicate rollback, scope/limits.
+- [x] 4.3 Implement settle/query/audit. Drain via unique operation IDs; preserve attempts; require zero deferred before restart; abort nonzero; never DROP.
+- [x] 4.4 Run focused commands, then regression-only `npm test`; record assertion counts and keep slices <400 total lines.
