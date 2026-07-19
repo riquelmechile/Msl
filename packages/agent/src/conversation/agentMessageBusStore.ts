@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import Database from "better-sqlite3";
 import { createMigrationRegistry } from "@msl/memory";
+import { computeDeferralDigest } from "./jcsCanonicalize.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -496,6 +497,40 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     WHERE message_id = @messageId
   `);
 
+  const selectScopedMessageStmt = db.prepare(`
+    SELECT * FROM agent_message_bus
+    WHERE message_id = @messageId AND (@sellerId IS NULL OR seller_id = @sellerId)
+  `);
+
+  const deferStmt = db.prepare(`
+    UPDATE agent_message_bus SET
+      status = 'deferred', deferral_id = @deferralId,
+      deferral_generation = @deferralGeneration, deferred_until = @deferredUntil,
+      deferred_at = datetime('now'), defer_reason = @reason,
+      defer_reason_detail = @detail, defer_evidence_ref = @evidenceRef,
+      deferral_digest = @digest, locked_at = NULL, updated_at = datetime('now')
+    WHERE message_id = @messageId AND status = 'processing'
+      AND @deferralGeneration > COALESCE(deferral_generation, 0)
+      AND (@sellerId IS NULL OR seller_id = @sellerId)
+  `);
+
+  const resumeDeferredStmt = db.prepare(`
+    UPDATE agent_message_bus SET status = 'pending', locked_at = NULL, updated_at = datetime('now')
+    WHERE message_id = @messageId AND status = 'deferred'
+      AND deferral_id = @deferralId AND deferral_generation = @deferralGeneration
+      AND (@sellerId IS NULL OR seller_id = @sellerId)
+  `);
+
+  const insertMutationAuditStmt = db.prepare(`
+    INSERT INTO agent_message_bus_operation_audit (
+      operationId, operation, scopeJson, reason, evidenceRef, messageId,
+      queryAsOf, queryCursorJson, queryLimit, resultMessageIdsJson, nextCursorJson, createdAt
+    ) VALUES (
+      @operationId, @operation, @scopeJson, @reason, @evidenceRef, @messageId,
+      NULL, NULL, NULL, NULL, NULL, datetime('now')
+    )
+  `);
+
   // ── API methods ────────────────────────────────────────────
 
   const enqueue = (input: EnqueueAgentMessageInput): AgentMessage => {
@@ -633,6 +668,18 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     return rows.map(rowToAgentMessage);
   };
 
+  const auditMutation = (operation: string, messageId: string, scope: MutationScope): void => {
+    if (scope.kind === "seller") return;
+    insertMutationAuditStmt.run({
+      operationId: scope.operationId,
+      operation,
+      scopeJson: JSON.stringify(scope),
+      reason: scope.reason,
+      evidenceRef: scope.evidenceRef,
+      messageId,
+    });
+  };
+
   // prettier-ignore
   const defer = (messageId: string, options: DeferOptions): AgentMessage => {
     assertNonEmpty(messageId, "messageId");
@@ -645,7 +692,25 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
       throw new Error("detail must be a string of at most 1000 characters.");
     if (options.evidenceRef != null && typeof options.evidenceRef !== "string")
       throw new Error("evidenceRef must be a string.");
-    return unavailable();
+    const digest = computeDeferralDigest(messageId, options);
+    return db.transaction(() => {
+      const sellerId = options.scope.kind === "seller" ? options.scope.sellerId : null;
+      const input = { messageId, ...options, deferredUntil: options.deferredUntil ?? null,
+        detail: options.detail ?? null, evidenceRef: options.evidenceRef ?? null, digest, sellerId };
+      const changed = deferStmt.run(input).changes;
+      const row = selectScopedMessageStmt.get({ messageId, sellerId }) as AgentMessageBusRow | undefined;
+      if (!row) throw new Error(`AgentMessage "${messageId}" is missing from the mutation scope.`);
+      const exact = row.status === "deferred" && row.deferral_id === options.deferralId &&
+        row.deferral_generation === options.deferralGeneration && row.deferral_digest === digest;
+      if (changed === 0 && !exact) {
+        if (options.deferralGeneration < (row.deferral_generation ?? 0))
+          throw new Error(`AgentMessage "${messageId}" has a stale deferral generation.`);
+        if (row.status === "deferred") throw new Error(`AgentMessage "${messageId}" has a conflicting deferral.`);
+        throw new Error(`AgentMessage "${messageId}" is ${row.status}, not processing.`);
+      }
+      auditMutation("defer", messageId, options.scope);
+      return rowToAgentMessage(row);
+    })();
   };
 
   // prettier-ignore
@@ -655,7 +720,25 @@ export function createAgentMessageBusStore(db: Database.Database): AgentMessageB
     assertNonEmpty(options.deferralId, "deferralId");
     if (!Number.isInteger(options.deferralGeneration) || options.deferralGeneration < 1)
       throw new Error("deferralGeneration must be a positive integer.");
-    return unavailable();
+    return db.transaction(() => {
+      const sellerId = options.scope.kind === "seller" ? options.scope.sellerId : null;
+      const input = { messageId, deferralId: options.deferralId,
+        deferralGeneration: options.deferralGeneration, sellerId };
+      const changed = resumeDeferredStmt.run(input).changes;
+      const row = selectScopedMessageStmt.get({ messageId, sellerId }) as AgentMessageBusRow | undefined;
+      if (!row) throw new Error(`AgentMessage "${messageId}" is missing from the mutation scope.`);
+      const exact = row.status === "pending" && row.deferral_id === options.deferralId &&
+        row.deferral_generation === options.deferralGeneration;
+      if (changed === 0 && !exact) {
+        if (options.deferralGeneration < (row.deferral_generation ?? 0))
+          throw new Error(`AgentMessage "${messageId}" has a stale deferral token.`);
+        if (row.status === "deferred" || row.status === "pending")
+          throw new Error(`AgentMessage "${messageId}" has a conflicting deferral token.`);
+        throw new Error(`AgentMessage "${messageId}" is ${row.status}, not deferred.`);
+      }
+      auditMutation("resumeDeferred", messageId, options.scope);
+      return rowToAgentMessage(row);
+    })();
   };
 
   // prettier-ignore

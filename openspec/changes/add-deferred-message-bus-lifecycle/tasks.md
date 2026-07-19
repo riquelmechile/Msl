@@ -48,8 +48,8 @@ getExpiredDeferrals(options:ExpiredDeferralsOptions):ExpiredDeferralsResult;
 - [x] 2.2 Create `packages/agent/src/conversation/jcsCanonicalize.ts`; implement approved JCS/domain-tagged digests without changing envelopes, nulls, projection, or exclusions.
 
 ## Phase 3: Defer and Resume (PR 3)
-- [ ] 3.1 RED classifications, retained rejection, two races, claim exclusion, audit failure/fields, seller zero.
-- [ ] 3.2 Implement CAS/classification/audit/row returns in `agentMessageBusStore.ts` with exact signatures/barrel.
+- [x] 3.1 RED classifications, retained rejection, two races, claim exclusion, audit failure/fields, seller zero.
+- [x] 3.2 Implement CAS/classification/audit/row returns in `agentMessageBusStore.ts` with exact signatures/barrel.
 
 ## Phase 4: Settle, Query, Rollback (PR 4)
 - [ ] 4.1 RED each selected write, non-selected SQL NULLs, JSON-null, timestamps, lock, attempts, terminal ID/digest, persisted-row retry mapping, conflicts, six races, audit rollback.
