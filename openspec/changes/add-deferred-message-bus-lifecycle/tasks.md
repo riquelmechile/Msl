@@ -44,8 +44,8 @@ getExpiredDeferrals(options:ExpiredDeferralsOptions):ExpiredDeferralsResult;
 - [x] 1.4 Extend row/mapping and structural fixtures: `packages/agent/src/ecommerce/ecommerceEvidenceRequestPlanner.test.ts`, `packages/agent/src/sessions/AgentWorkSessionRunner.test.ts`, `packages/agent/src/workers/daemonScheduler-sessions.test.ts`, `packages/agent/src/workers/productLaunchCoordinator.test.ts`, `tests/integration/product-launch-pipeline.test.ts`. RED scope/detail/evidence/limit/pre-TX validation.
 
 ## Phase 2: JCS and Digests (PR 2)
-- [ ] 2.1 Create `packages/agent/tests/conversation/fixtures/deferral-digest-vectors.json` and `packages/agent/tests/conversation/jcsCanonicalize.test.ts`; cover three outcomes, nested/null/absent/numbers/escapes/UTF-8, lone-surrogate no-digest errors.
-- [ ] 2.2 Create `packages/agent/src/conversation/jcsCanonicalize.ts`; implement approved JCS/domain-tagged digests without changing envelopes, nulls, projection, or exclusions.
+- [x] 2.1 Create `packages/agent/tests/conversation/fixtures/deferral-digest-vectors.json` and `packages/agent/tests/conversation/jcsCanonicalize.test.ts`; cover three outcomes, nested/null/absent/numbers/escapes/UTF-8, lone-surrogate no-digest errors.
+- [x] 2.2 Create `packages/agent/src/conversation/jcsCanonicalize.ts`; implement approved JCS/domain-tagged digests without changing envelopes, nulls, projection, or exclusions.
 
 ## Phase 3: Defer and Resume (PR 3)
 - [ ] 3.1 RED classifications, retained rejection, two races, claim exclusion, audit failure/fields, seller zero.
