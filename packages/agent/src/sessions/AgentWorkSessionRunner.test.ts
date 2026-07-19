@@ -135,6 +135,10 @@ function makeFakeMessageBus(): AgentMessageBusStore {
     getLearningHistory: () => [],
     recordOutcome: () => {},
     getUnscoredMessages: () => [],
+    defer: () => ({}) as never,
+    resumeDeferred: () => ({}) as never,
+    settle: () => ({}) as never,
+    getExpiredDeferrals: () => ({}) as never,
   };
 }
 

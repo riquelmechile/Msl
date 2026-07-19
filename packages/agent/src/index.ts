@@ -354,6 +354,19 @@ export type {
   AgentMessageBusStore,
   AgentMessage,
   EnqueueAgentMessageInput,
+  SellerScope,
+  SystemScope,
+  MutationScope,
+  DeferOptions,
+  ResumeDeferredOptions,
+  SettlementOutcome,
+  ResolvedSettlementOptions,
+  FailedSettlementOptions,
+  CancelledSettlementOptions,
+  SettlementOptions,
+  ExpiredDeferralsOptions,
+  DeferralCursor,
+  ExpiredDeferralsResult,
 } from "./conversation/agentMessageBusStore.js";
 
 export { createCompanyAgentStore } from "./conversation/companyAgentStore.js";

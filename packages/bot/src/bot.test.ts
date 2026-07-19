@@ -871,6 +871,10 @@ describe("message:photo handler (product launch)", () => {
     getLearningHistory: vi.fn().mockReturnValue([]),
     recordOutcome: vi.fn(),
     getUnscoredMessages: vi.fn().mockReturnValue([]),
+    defer: vi.fn().mockReturnValue({}),
+    resumeDeferred: vi.fn().mockReturnValue({}),
+    settle: vi.fn().mockReturnValue({}),
+    getExpiredDeferrals: vi.fn().mockReturnValue({ messages: [], queryAsOf: "", nextCursor: null }),
   };
 
   const photoConfig = {

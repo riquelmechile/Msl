@@ -68,6 +68,10 @@ function makeCapturingBus(): { bus: AgentMessageBusStore; messages: AgentMessage
     getLearningHistory: vi.fn().mockReturnValue([]),
     recordOutcome: vi.fn(),
     getUnscoredMessages: vi.fn().mockReturnValue([]),
+    defer: vi.fn(),
+    resumeDeferred: vi.fn(),
+    settle: vi.fn(),
+    getExpiredDeferrals: vi.fn(),
   };
 
   return { bus, messages };
@@ -260,6 +264,10 @@ describe("EcommerceEvidenceRequestPlanner", () => {
         getLearningHistory: vi.fn().mockReturnValue([]),
         recordOutcome: vi.fn(),
         getUnscoredMessages: vi.fn().mockReturnValue([]),
+        defer: vi.fn(),
+        resumeDeferred: vi.fn(),
+        settle: vi.fn(),
+        getExpiredDeferrals: vi.fn(),
       };
 
       const planner = new EcommerceEvidenceRequestPlanner({ messageBus: throwingBus });
