@@ -7,6 +7,21 @@ export type Money = {
   currency: Currency;
 };
 
+declare const microsBrand: unique symbol;
+export type Micros = number & { readonly [microsBrand]: true };
+
+export function micros(value: number): Micros {
+  if (!Number.isSafeInteger(value)) {
+    throw new MoneyError(`micros must be a safe integer, got ${String(value)}`);
+  }
+  return value as Micros;
+}
+
+export function usdToMicros(usd: number): Micros {
+  if (!Number.isFinite(usd)) throw new MoneyError(`USD must be finite, got ${String(usd)}`);
+  return micros(Math.round(usd * 1_000_000));
+}
+
 // ── Error types ────────────────────────────────────────────────────────────
 
 export class MoneyError extends Error {
