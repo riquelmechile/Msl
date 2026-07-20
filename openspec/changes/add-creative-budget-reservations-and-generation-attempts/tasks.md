@@ -42,9 +42,9 @@ G `npx vitest run packages/agent/tests/workers/daemonScheduler.test.ts packages/
 
 ## D (310) Transport/NoSubmissionProof
 
-- [ ] D.1 Transport — pre-send bodyBytesOffered=0; NoSubmissionProof on failure
-- [ ] D.2 Rejection: providerRequestId,NoSubmissionProof(accepted:false,charged:false); timeout→ambiguous
-- [ ] D.3 Test: body-offered proof,rejection proof,timeout
+- [x] D.1 Transport — pre-send bodyBytesOffered=0; NoSubmissionProof on failure
+- [x] D.2 Rejection: providerRequestId,NoSubmissionProof(accepted:false,charged:false); timeout→ambiguous
+- [x] D.3 Test: body-offered proof,rejection proof,timeout
 
 ## E (310) Providers/Provenance
 

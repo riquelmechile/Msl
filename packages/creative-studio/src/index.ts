@@ -25,6 +25,7 @@ export {
 } from "./infrastructure/providers/minimax/minimax-client.js";
 export type {
   MinimaxClientConfig,
+  MinimaxSendState,
   MinimaxStatusCategory,
 } from "./infrastructure/providers/minimax/minimax-client.js";
 export { MinimaxImageProvider } from "./infrastructure/providers/minimax/minimax-image-provider.js";
@@ -53,6 +54,8 @@ export type {
   MinimaxVideoResponse,
   MinimaxVideoQueryResponse,
   MinimaxFileRetrieveResponse,
+  MinimaxSubmissionInput,
+  MinimaxSubmissionResult,
 } from "./infrastructure/providers/minimax/minimaxTransport.js";
 export { classifyMinimaxError } from "./infrastructure/providers/minimax/minimaxErrors.js";
 export type { MinimaxErrorCategory } from "./infrastructure/providers/minimax/minimaxErrors.js";

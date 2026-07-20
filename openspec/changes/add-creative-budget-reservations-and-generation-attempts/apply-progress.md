@@ -1,6 +1,6 @@
 # Apply Progress: Creative Budget Reservations and Generation Attempts
 
-Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: C / PR3, based on merged Slices A+B.
+Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: D / PR4, based on merged Slices A-C.
 
 ## Completed
 
@@ -16,6 +16,9 @@ Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: C / PR3, b
 - [x] C.3: fenced renewal and prepared, dispatching, submitted, ambiguous, completed, and failed transitions with state-specific evidence validation.
 - [x] C.4: atomic attempt/reservation completion or proof-gated failure, exact terminal replay idempotency, divergent closure rejection, and rollback on injected commit failure.
 - [x] C.5: focused prepared-before-POST, exact prepare retry, two-worker acquisition, ordering, takeover, renewal, stale-fence, happy/error/ambiguous, immutable terminal, no-blind-retry, and crash coverage.
+- [x] D.1: evidence-aware MiniMax paid-submission seam with canonical `Idempotency-Key`, accepted response/request identity, and trusted zero-byte pre-send proof.
+- [x] D.2: explicit provider rejection proof requires request identity plus `accepted:false` and `charged:false`; all unproven rejection, timeout, network loss, and lost-response outcomes remain ambiguous without release proof.
+- [x] D.3: focused mock/failure-injection coverage for acceptance ordering, forged rejection evidence, exact proof semantics, timeout ambiguity, and `loseResponseAfterProviderAccept`.
 
 ## Work Unit Evidence
 
@@ -50,6 +53,20 @@ Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: C / PR3, b
 | Rollback boundary | Revert `packages/creative-studio/src/index.ts` and remove `packages/creative-studio/src/infrastructure/storage/generationAttemptStore.ts` plus `packages/creative-studio/src/__tests__/attempt-store.test.ts`; Slices A+B domain/schema/reservation authority remain intact. |
 | Review workload | Executable churn: 247 additions, 0 deletions across implementation, focused tests, and export. Complete Slice C apply numstat including OpenSpec progress: 271 additions, 7 deletions (278 changed lines). No `size:exception`. |
 
+### Slice D / PR4
+
+| Evidence | Exact result |
+|---|---|
+| Required RED injection | Initial run: 1 file, 6 tests failed because `submit` did not exist. Focused correction run: `npx vitest run packages/creative-studio/src/__tests__/minimax-transport*` -> 9 tests run, 1 failed because malformed provider status incorrectly produced `rejected`. |
+| Focused tests | `npx vitest run packages/creative-studio/src/__tests__/minimax-transport*` -> 1 file, 9 tests passed; proves canonical key propagation, accepted submission evidence, zero-byte pre-send proof, explicit unaccepted/uncharged rejection proof, forged flag/identity/status rejection, timeout ambiguity, and ordered `loseResponseAfterProviderAccept` non-release. |
+| Client/transport regression | `npx vitest run packages/creative-studio/src/__tests__/minimax-client.test.ts packages/creative-studio/src/__tests__/minimaxTransport.test.ts` -> 2 files, 31 tests passed. |
+| Corrected cumulative tests | `npx vitest run packages/domain/src/money.test.ts packages/creative-studio/src/__tests__/` -> 15 files, 176 tests passed. |
+| Runtime harness | N/A: Slice D introduces an HTTP seam, not a live provider runtime boundary; focused tests execute the real client/transport through mocked `fetch`, including response loss after simulated provider acceptance. |
+| Failure-injection evidence | The fake provider records authoritative acceptance of the exact `Idempotency-Key` before rejecting the response, after which the seam returns `ambiguous` without proof. Wrong acceptance/charge flags, missing request identity, and malformed provider status also remain ambiguous; only serialization failure before `fetch` returns `transport-before-send`. |
+| Static gates | `npm run typecheck`, `npm run lint`, `npm run format:check`, and `git diff --check` -> exit 0. |
+| Rollback boundary | Revert `packages/creative-studio/src/index.ts`, `packages/creative-studio/src/infrastructure/providers/minimax/{minimax-client.ts,minimaxTransport.ts}`, and remove `packages/creative-studio/src/__tests__/minimax-transport-send-proof.test.ts`; Slices A-C domain/schema/reservation/attempt authorities remain intact. |
+| Review workload | Complete Slice D apply numstat including OpenSpec progress: 378 additions, 20 deletions (398 changed lines). No `size:exception`. |
+
 ## Remaining
 
-D.1-D.3, E.1-E.5, F.1-F.4, G.1-G.6 remain pending (18/33); 15/33 are complete. No provider seam, daemon/polling, reservation integration beyond the existing attempt FK and atomic terminal contract, bus integration, startup registration/recovery, or later-slice runtime wiring was implemented.
+E.1-E.5, F.1-F.4, and G.1-G.6 remain pending (15/33); 18/33 are complete. No provider adapter wiring, daemon/polling, reservation workflow orchestration, bus integration, startup registration/recovery, or later-slice runtime wiring was implemented.
