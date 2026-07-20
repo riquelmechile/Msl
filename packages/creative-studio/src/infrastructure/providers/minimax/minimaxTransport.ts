@@ -1,4 +1,5 @@
-import type { MinimaxClient } from "./minimax-client.js";
+import type { AttemptEvidence, NoSubmissionProof } from "../../../domain/generationAttempt.js";
+import { MinimaxRequestError, type MinimaxClient } from "./minimax-client.js";
 
 // ── Request / response types ──────────────────────────────────────────
 
@@ -52,6 +53,35 @@ export type MinimaxTransport = {
   retrieveFile(fileId: string): Promise<MinimaxFileRetrieveResponse>;
 };
 
+export type MinimaxSubmissionInput = Readonly<{
+  path: string;
+  body: unknown;
+  idempotencyKey: string;
+  evidenceRef: string;
+  recordedAt: string;
+}>;
+
+export type MinimaxSubmissionResult<T> =
+  | Readonly<{
+      kind: "accepted";
+      response: T;
+      providerRequestId: string | null;
+      evidence: AttemptEvidence;
+    }>
+  | Readonly<{
+      kind: "not-submitted" | "rejected";
+      error: MinimaxRequestError;
+      providerRequestId: string | null;
+      evidence: AttemptEvidence;
+      proof: NoSubmissionProof;
+    }>
+  | Readonly<{
+      kind: "ambiguous";
+      error: MinimaxRequestError;
+      providerRequestId: string | null;
+      evidence: AttemptEvidence;
+    }>;
+
 // ── Real transport (wraps MinimaxClient) ──────────────────────────────
 
 export class MinimaxRealTransport implements MinimaxTransport {
@@ -64,6 +94,78 @@ export class MinimaxRealTransport implements MinimaxTransport {
   validateTextModel(model?: string): Promise<{ valid: boolean; model: string }> {
     const resolved = model ?? "MiniMax-M3";
     return Promise.resolve({ valid: true, model: resolved });
+  }
+
+  async submit<T>(input: MinimaxSubmissionInput): Promise<MinimaxSubmissionResult<T>> {
+    try {
+      const response = await this.client.post<T>(input.path, input.body, input.idempotencyKey);
+      const providerRequestId = readProviderRequestId(response);
+      return {
+        kind: "accepted",
+        response,
+        providerRequestId,
+        evidence: evidence(input, "submission", providerRequestId, "accepted"),
+      };
+    } catch (error) {
+      const requestError =
+        error instanceof MinimaxRequestError
+          ? error
+          : new MinimaxRequestError(
+              "provider_error",
+              error instanceof Error ? error.message : String(error),
+            );
+      const common = {
+        error: requestError,
+        providerRequestId: requestError.providerRequestId,
+      };
+
+      if (requestError.sendState === "definitely-unsent") {
+        const proof: NoSubmissionProof = {
+          kind: "transport-before-send",
+          authority: "minimax-transport",
+          bodyBytesOffered: 0,
+          evidenceRef: input.evidenceRef,
+        };
+        return {
+          kind: "not-submitted",
+          ...common,
+          evidence: evidence(input, "no-submission", null, requestError.sendState),
+          proof,
+        };
+      }
+
+      if (
+        requestError.accepted === false &&
+        requestError.charged === false &&
+        requestError.providerRequestId
+      ) {
+        const proof: NoSubmissionProof = {
+          kind: "provider-rejection",
+          authority: "minimax-adapter",
+          accepted: false,
+          charged: false,
+          providerRequestId: requestError.providerRequestId,
+          evidenceRef: input.evidenceRef,
+        };
+        return {
+          kind: "rejected",
+          ...common,
+          evidence: evidence(
+            input,
+            "no-submission",
+            requestError.providerRequestId,
+            "provider-rejection",
+          ),
+          proof,
+        };
+      }
+
+      return {
+        kind: "ambiguous",
+        ...common,
+        evidence: evidence(input, "error", requestError.providerRequestId, "possibly-sent"),
+      };
+    }
   }
 
   async createImageTask(request: MinimaxImageRequest): Promise<MinimaxImageResponse> {
@@ -85,6 +187,30 @@ export class MinimaxRealTransport implements MinimaxTransport {
       file_id: fileId,
     });
   }
+}
+
+function evidence(
+  input: MinimaxSubmissionInput,
+  kind: AttemptEvidence["kind"],
+  providerRequestId: string | null,
+  sendState: string,
+): AttemptEvidence {
+  return {
+    ref: input.evidenceRef,
+    kind,
+    payload: {
+      idempotencyKey: input.idempotencyKey,
+      providerRequestId,
+      sendState,
+    },
+    recordedAt: input.recordedAt,
+  };
+}
+
+function readProviderRequestId(response: unknown): string | null {
+  if (!response || typeof response !== "object") return null;
+  const value = (response as Record<string, unknown>)["provider_request_id"];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 // ── Fake transport (for unit tests) ───────────────────────────────────
