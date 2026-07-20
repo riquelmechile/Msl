@@ -31,6 +31,7 @@ export { MinimaxImageProvider } from "./infrastructure/providers/minimax/minimax
 export { MinimaxVideoProvider } from "./infrastructure/providers/minimax/minimax-video-provider.js";
 export { CreativeAssetStore } from "./infrastructure/storage/creative-asset-store.js";
 export * from "./infrastructure/storage/creativeDurabilityMigration.js";
+export { createReservationStore } from "./infrastructure/storage/reservationStore.js";
 export { MlDiagnosticAdapter } from "./infrastructure/ml-diagnostic-adapter.js";
 export type { MlDiagnosticAdapterConfig } from "./infrastructure/ml-diagnostic-adapter.js";
 export { CortexBridge } from "./application/cortex-bridge.js";
