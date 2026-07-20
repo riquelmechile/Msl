@@ -4,11 +4,24 @@ import {
   createMoney,
   CurrencyMismatchError,
   isZero,
+  micros,
   MoneyError,
   subtractMoney,
+  usdToMicros,
   type Currency,
   type Money,
 } from "./money.js";
+
+describe("micros", () => {
+  it("rounds USD to integer micros", () => {
+    expect(usdToMicros(0.0000155)).toBe(16);
+  });
+
+  it("rejects fractional and unsafe micros", () => {
+    expect(() => micros(5.3)).toThrow("safe integer");
+    expect(() => micros(Number.MAX_SAFE_INTEGER + 1)).toThrow("safe integer");
+  });
+});
 
 describe("createMoney", () => {
   // ── Valid creations ─────────────────────────────────────────────

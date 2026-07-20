@@ -16,6 +16,8 @@ export { createCreativeJob } from "./domain/creative-job.js";
 export type { CreativeJob } from "./domain/creative-job.js";
 export { createCreativeAsset } from "./domain/creative-asset.js";
 export type { CreativeAsset, CreativeAssetKind } from "./domain/creative-asset.js";
+export type * from "./domain/budgetReservation.js";
+export type * from "./domain/generationAttempt.js";
 
 export {
   MinimaxClient,
@@ -28,6 +30,7 @@ export type {
 export { MinimaxImageProvider } from "./infrastructure/providers/minimax/minimax-image-provider.js";
 export { MinimaxVideoProvider } from "./infrastructure/providers/minimax/minimax-video-provider.js";
 export { CreativeAssetStore } from "./infrastructure/storage/creative-asset-store.js";
+export * from "./infrastructure/storage/creativeDurabilityMigration.js";
 export { MlDiagnosticAdapter } from "./infrastructure/ml-diagnostic-adapter.js";
 export type { MlDiagnosticAdapterConfig } from "./infrastructure/ml-diagnostic-adapter.js";
 export { CortexBridge } from "./application/cortex-bridge.js";

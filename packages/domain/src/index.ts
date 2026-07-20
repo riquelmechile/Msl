@@ -7,10 +7,12 @@ export {
   createMoney,
   CurrencyMismatchError,
   isZero,
+  micros,
   MoneyError,
   subtractMoney,
+  usdToMicros,
 } from "./money.js";
-export type { CreateMoneyResult, Currency } from "./money.js";
+export type { CreateMoneyResult, Currency, Micros } from "./money.js";
 // Note: Money type is already exported from listing.ts — use directly from money.ts if needed
 export * from "./reputation.js";
 export * from "./claim.js";
