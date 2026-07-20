@@ -34,11 +34,11 @@ G `npx vitest run packages/agent/tests/workers/daemonScheduler.test.ts packages/
 
 ## C (350) Attempt-Store/Leases
 
-- [ ] C.1 Attempt store — `createAttemptStore`
-- [ ] C.2 Lease: random 32B token,SHA-256,gen++,90s; acquireDue replaces owner+token+gen after expiry
-- [ ] C.3 prepare/renewLease/transitions(prepared→dispatching→submitted/ambiguous→terminal); ambiguous→completed|failed evidence-gated; renew during acquireDue
-- [ ] C.4 Terminal: BEGIN IMMEDIATE atomic commit/fail+evidence; idempotent repeat,divergent conflict; NoSubmissionProof needed
-- [ ] C.5 Test: prepared-before-POST,fence,takeover/renew/expiry,happy/error/ambiguous,immutable terminal,idempotent/divergent,no blind retry
+- [x] C.1 Attempt store — `createAttemptStore`
+- [x] C.2 Lease: random 32B token,SHA-256,gen++,90s; acquireDue replaces owner+token+gen after expiry
+- [x] C.3 prepare/renewLease/transitions(prepared→dispatching→submitted/ambiguous→terminal); ambiguous→completed|failed evidence-gated; renew during acquireDue
+- [x] C.4 Terminal: BEGIN IMMEDIATE atomic commit/fail+evidence; idempotent repeat,divergent conflict; NoSubmissionProof needed
+- [x] C.5 Test: prepared-before-POST,fence,takeover/renew/expiry,happy/error/ambiguous,immutable terminal,idempotent/divergent,no blind retry
 
 ## D (310) Transport/NoSubmissionProof
 

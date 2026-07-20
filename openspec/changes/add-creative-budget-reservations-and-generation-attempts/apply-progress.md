@@ -1,6 +1,6 @@
 # Apply Progress: Creative Budget Reservations and Generation Attempts
 
-Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: B / PR2, based on merged Slice A.
+Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: C / PR3, based on merged Slices A+B.
 
 ## Completed
 
@@ -11,6 +11,11 @@ Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: B / PR2, b
 - [x] B.2: atomic UTC-day/per-job admission from committed actual plus active held micros, with canonical duplicate rereads.
 - [x] B.3: conditional commit, proof-gated release, exact fenced renewal, and attempt-protected expiry.
 - [x] B.4: focused daily/job cap, UTC reset, same-job committed-plus-held, idempotency/divergence, exact-reserved/overage commit, trusted/untrusted release, expiry, genuine two-worker serialization, and crash coverage.
+- [x] C.1: SQLite attempt authority with `BEGIN IMMEDIATE`, 5-second busy timeout, prepared-before-dispatch persistence, and canonical retrieval.
+- [x] C.2: random 32-byte lease tokens with SHA-256-at-rest, exact 90-second grants, deterministic due ordering, generation increments, and atomic takeover.
+- [x] C.3: fenced renewal and prepared, dispatching, submitted, ambiguous, completed, and failed transitions with state-specific evidence validation.
+- [x] C.4: atomic attempt/reservation completion or proof-gated failure, exact terminal replay idempotency, divergent closure rejection, and rollback on injected commit failure.
+- [x] C.5: focused prepared-before-POST, exact prepare retry, two-worker acquisition, ordering, takeover, renewal, stale-fence, happy/error/ambiguous, immutable terminal, no-blind-retry, and crash coverage.
 
 ## Work Unit Evidence
 
@@ -33,6 +38,18 @@ Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: B / PR2, b
 | Rollback boundary | Revert `packages/creative-studio/src/index.ts` and remove `packages/creative-studio/src/infrastructure/storage/reservationStore.ts` plus `packages/creative-studio/src/__tests__/reservation-store.test.ts`; Slice A domain contracts and v4 schema remain intact. |
 | Review workload | Executable churn: 367 additions, 0 deletions across implementation, focused tests, and export. Progress-only docs are reported separately. No `size:exception`. |
 
+### Slice C / PR3
+
+| Evidence | Exact result |
+|---|---|
+| Focused tests | `npx vitest run packages/creative-studio/src/__tests__/attempt-store*` -> 1 file, 3 tests passed; proves active duplicate prepare preserves generation/digest, expired exact retry takes over canonically, SHA-256 token-at-rest, invalid lease duration, deterministic due ordering, two-worker acquisition, stale fencing, submitted completion/failure, ambiguous completion with no redispatch, exact completed/failed replay after lease expiry, divergent same-outcome evidence conflicts, invalid evidence/proof rejection, and atomic crash rollback. |
+| Corrected cumulative tests | `npx vitest run packages/domain/src/money.test.ts packages/creative-studio/src/__tests__/` -> 14 files, 167 tests passed. |
+| Runtime harness | Focused command above -> two Node Workers open independent SQLite connections, synchronize on a shared barrier, and race `acquireDue`; `BEGIN IMMEDIATE` grants each expired attempt once across the workers with no duplicate claim. |
+| Failure-injection evidence | `crashBeforeAtomicCommit` leaves attempt `dispatching` and reservation `held`. Active duplicate prepare leaves generation/digest unchanged; only expiry replaces the token and increments generation. Exact terminal replay succeeds after lease expiry, divergent same-outcome evidence conflicts, and stale different outcomes remain fenced. Ambiguous work cannot return to dispatch and closes only through same-attempt evidence. |
+| Static gates | `npm run typecheck`, `npm run lint`, targeted `npx prettier --check packages/creative-studio/src/infrastructure/storage/generationAttemptStore.ts packages/creative-studio/src/__tests__/attempt-store.test.ts packages/creative-studio/src/index.ts`, and `git diff --check` -> exit 0. |
+| Rollback boundary | Revert `packages/creative-studio/src/index.ts` and remove `packages/creative-studio/src/infrastructure/storage/generationAttemptStore.ts` plus `packages/creative-studio/src/__tests__/attempt-store.test.ts`; Slices A+B domain/schema/reservation authority remain intact. |
+| Review workload | Executable churn: 247 additions, 0 deletions across implementation, focused tests, and export. Complete Slice C apply numstat including OpenSpec progress: 271 additions, 7 deletions (278 changed lines). No `size:exception`. |
+
 ## Remaining
 
-C.1-C.5, D.1-D.3, E.1-E.5, F.1-F.4, G.1-G.6 remain pending (23/33); 10/33 are complete. No attempt store, provider seam, daemon/polling, bus integration, startup registration/recovery, or later-slice runtime wiring was implemented.
+D.1-D.3, E.1-E.5, F.1-F.4, G.1-G.6 remain pending (18/33); 15/33 are complete. No provider seam, daemon/polling, reservation integration beyond the existing attempt FK and atomic terminal contract, bus integration, startup registration/recovery, or later-slice runtime wiring was implemented.
