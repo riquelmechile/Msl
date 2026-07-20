@@ -27,10 +27,10 @@ G `npx vitest run packages/agent/tests/workers/daemonScheduler.test.ts packages/
 
 ## B (330) Reservation-Store
 
-- [ ] B.1 Reservation store — createReservationStore,BEGIN IMMEDIATE
-- [ ] B.2 reserve: daily+job caps aggregate committed+held+requested; held; idempotent dup; UTC day
-- [ ] B.3 commit(actual≤reserved/releases excess)/release(proof-gated)/renewHold/expireDue(skips leased)
-- [ ] B.4 Test: caps,UTC reset,dup idempotent/divergent,commit overage,mismatch,release,expiry,concurrent,crash
+- [x] B.1 Reservation store — createReservationStore,BEGIN IMMEDIATE
+- [x] B.2 reserve: daily+job caps aggregate committed+held+requested; held; idempotent dup; UTC day
+- [x] B.3 commit(actual≤reserved/releases excess)/release(proof-gated)/renewHold/expireDue(skips leased)
+- [x] B.4 Test: caps,UTC reset,dup idempotent/divergent,commit overage,mismatch,release,expiry,concurrent,crash
 
 ## C (350) Attempt-Store/Leases
 
