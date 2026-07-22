@@ -6,6 +6,8 @@ export type {
   MlDiagnosticResult,
   CreativeExecutionResult,
   CreativeProvider,
+  GenerationAttemptContext,
+  CreativeAttemptEvidence,
   CreativeBudgetPolicy,
 } from "./contracts/creative-requests.js";
 
@@ -45,6 +47,7 @@ export {
   MinimaxRealTransport,
   MinimaxFakeTransport,
   MinimaxFixtureTransport,
+  MinimaxAttemptTransport,
 } from "./infrastructure/providers/minimax/minimaxTransport.js";
 export type {
   MinimaxTransport,

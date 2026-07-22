@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
 import type { CreativeAssetRequest, CreativeExecutionResult } from "@msl/creative-studio";
 import {
@@ -9,7 +10,7 @@ import {
   MlDiagnosticAdapter,
   CortexBridge,
   createMinimaxProviderFromEnv,
-  MinimaxRequestError,
+  MinimaxAttemptTransport,
 } from "@msl/creative-studio";
 import type { CortexSink } from "@msl/creative-studio";
 import type { GraphEngine } from "@msl/memory";
@@ -18,17 +19,13 @@ import {
   parseProductLaunchEnvelope,
   type ProductLaunchEnvelope,
 } from "./productLaunchEnvelope.js";
+import { MinimaxRetryPolicy } from "./minimaxRetryPolicy.js";
 
 type ProductLaunchCreativeRequest = CreativeAssetRequest & {
   productLaunch?: ProductLaunchEnvelope;
 };
 
-const LAST_RETRY_ATTEMPT = 2;
-const NON_RETRYABLE_MINIMAX_FAILURES = new Set([
-  "auth_error",
-  "insufficient_balance",
-  "content_blocked",
-]);
+const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 function finishFailedLaunch(
   claim: Parameters<DaemonHandler>[0]["claim"],
@@ -214,6 +211,12 @@ export const creativeStudioDaemon: DaemonHandler = async ({
     MINIMAX_API_HOST: env("MINIMAX_API_HOST"),
     MINIMAX_BASE_URL: env("MINIMAX_BASE_URL"),
   });
+  const attemptContext = {
+    attemptId: `attempt:${claim.messageId}`,
+    reservationId: `reservation:${claim.messageId}`,
+    idempotencyKey: `creative:${claim.messageId}`,
+  };
+  const attemptTransport = new MinimaxAttemptTransport(transport, attemptContext);
 
   // ── 2. Parse request ─────────────────────────────────────────
   let request: ProductLaunchCreativeRequest;
@@ -271,13 +274,13 @@ export const creativeStudioDaemon: DaemonHandler = async ({
   const ledger = new CostLedger({ maxDailyUsd, maxJobUsd });
 
   // Pick the right provider — inject transport for abstracted API calls
-  const imageProvider = new MinimaxImageProvider(undefined, undefined, transport);
+  const imageProvider = new MinimaxImageProvider(undefined, undefined, attemptTransport);
   const videoProvider = new MinimaxVideoProvider(
     undefined,
     undefined,
+    envNumber("MINIMAX_VIDEO_POLL_INTERVAL_MS", 5000),
     undefined,
-    undefined,
-    transport,
+    attemptTransport,
   );
 
   let provider: MinimaxImageProvider | MinimaxVideoProvider;
@@ -323,13 +326,35 @@ export const creativeStudioDaemon: DaemonHandler = async ({
   acquireConcurrencySlot();
   let result: CreativeExecutionResult;
   try {
-    result = await provider.execute(request);
+    let provenUnsent: CreativeExecutionResult | undefined;
+    try {
+      result = await new MinimaxRetryPolicy({
+        baseDelayMs: envNumber("MINIMAX_RETRY_BASE_DELAY_MS", 1000),
+      }).execute(async () => {
+        const execution = await provider.execute(request);
+        const candidate = {
+          ...execution,
+          attempt: attemptTransport.attempt,
+          ...(attemptTransport.failureReason
+            ? { failureReason: attemptTransport.failureReason }
+            : {}),
+        };
+        if (
+          candidate.attempt?.outcome === "not-submitted" ||
+          (candidate.attempt?.outcome === "rejected" && candidate.failureReason === "rate-limited")
+        ) {
+          provenUnsent = candidate;
+          throw new Error("retryable proven-unsent MiniMax submission");
+        }
+        return candidate;
+      });
+    } catch (error) {
+      if (!provenUnsent) throw error;
+      result = provenUnsent;
+    }
   } catch (err) {
     releaseConcurrencySlot();
     if (launchEnvelope) {
-      const nonRetryable =
-        err instanceof MinimaxRequestError && NON_RETRYABLE_MINIMAX_FAILURES.has(err.category);
-      if (!nonRetryable && claim.attempts < LAST_RETRY_ATTEMPT) throw err;
       return finishFailedLaunch(
         claim,
         bus,
@@ -349,16 +374,41 @@ export const creativeStudioDaemon: DaemonHandler = async ({
     return { findings, proposalEnqueued: false, messageIds };
   }
   releaseConcurrencySlot();
-  if (launchEnvelope && (result.status === "failed" || result.status === "rejected")) {
-    if (result.status === "failed" && claim.attempts < LAST_RETRY_ATTEMPT) {
-      throw new Error(`Creative Studio launch generation failed for ${launchEnvelope.launchId}`);
+  if (!result.attempt) throw new Error("MiniMax paid execution returned without attempt evidence");
+  if (result.attempt.outcome === "ambiguous") {
+    if (
+      launchEnvelope &&
+      productCatalogStore &&
+      (result.status === "failed" || result.status === "rejected")
+    ) {
+      return finishFailedLaunch(
+        claim,
+        bus,
+        productCatalogStore,
+        launchEnvelope,
+        result.failureReason ?? `MiniMax returned ${result.status}`,
+      );
     }
+    return {
+      findings: [
+        {
+          kind: "alert",
+          severity: "warning",
+          summary: "MiniMax submission is ambiguous",
+          evidenceIds: [claim.messageId],
+        },
+      ],
+      proposalEnqueued: false,
+      messageIds,
+    };
+  }
+  if (launchEnvelope && (result.status === "failed" || result.status === "rejected")) {
     return finishFailedLaunch(
       claim,
       bus,
       productCatalogStore,
       launchEnvelope,
-      `MiniMax returned ${result.status}`,
+      result.failureReason ?? `MiniMax returned ${result.status}`,
     );
   }
 
@@ -429,12 +479,21 @@ export const creativeStudioDaemon: DaemonHandler = async ({
             const buffer = Buffer.from(await response.arrayBuffer());
             const localUri = await store.saveAsset(output.assetId, buffer, {
               sourceUri: output.storageUri,
-              jobId: result.jobId,
               requestId: result.requestId,
               kind: output.kind,
+              attemptId: result.attempt.attemptId,
+              reservationId: result.attempt.reservationId,
+              estimatedCostMicros: Math.round(result.estimatedCostUsd * 1_000_000),
+              actualCostMicros: Math.round(
+                (result.actualCostUsd ?? result.estimatedCostUsd) * 1_000_000,
+              ),
               provider: result.provider,
               model: result.model,
-              capturedAt: new Date().toISOString(),
+              promptSha256: sha256(request.productContext?.title ?? request.requestId),
+              referenceSha256s: request.references.map((ref) => ref.sha256 ?? sha256(ref.uri)),
+              requestedByAgent: request.requestedByAgent,
+              channel: request.channel,
+              jobId: result.jobId,
             });
             // Update the output to point to local storage
             (output as { storageUri: string }).storageUri = localUri;

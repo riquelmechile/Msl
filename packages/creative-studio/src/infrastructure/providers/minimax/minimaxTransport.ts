@@ -1,4 +1,8 @@
 import type { AttemptEvidence, NoSubmissionProof } from "../../../domain/generationAttempt.js";
+import type {
+  CreativeAttemptEvidence,
+  GenerationAttemptContext,
+} from "../../../contracts/creative-requests.js";
 import { MinimaxRequestError, type MinimaxClient } from "./minimax-client.js";
 
 // ── Request / response types ──────────────────────────────────────────
@@ -51,6 +55,7 @@ export type MinimaxTransport = {
   createVideoTask(request: MinimaxVideoRequest): Promise<MinimaxVideoResponse>;
   queryVideoTask(taskId: string): Promise<MinimaxVideoQueryResponse>;
   retrieveFile(fileId: string): Promise<MinimaxFileRetrieveResponse>;
+  submit?<T>(input: MinimaxSubmissionInput): Promise<MinimaxSubmissionResult<T>>;
 };
 
 export type MinimaxSubmissionInput = Readonly<{
@@ -189,6 +194,66 @@ export class MinimaxRealTransport implements MinimaxTransport {
   }
 }
 
+export class MinimaxAttemptTransport implements MinimaxTransport {
+  attempt!: CreativeAttemptEvidence;
+  failureReason?:
+    "auth-error" | "rate-limited" | "insufficient-funds" | "content-rejected" | "provider-error";
+  constructor(
+    private readonly delegate: MinimaxTransport,
+    private readonly context: GenerationAttemptContext,
+  ) {}
+  validateTextModel(model?: string) {
+    return this.delegate.validateTextModel(model);
+  }
+  queryVideoTask(taskId: string) {
+    return this.delegate.queryVideoTask(taskId);
+  }
+  retrieveFile(fileId: string) {
+    return this.delegate.retrieveFile(fileId);
+  }
+  createImageTask(body: MinimaxImageRequest) {
+    return this.submitTask<MinimaxImageResponse>("/v1/image_generation", body);
+  }
+  async createVideoTask(body: MinimaxVideoRequest) {
+    const response = await this.submitTask<MinimaxVideoResponse>("/v1/video_generation", body);
+    this.attempt = { ...this.attempt, taskId: response.task_id };
+    return response;
+  }
+  private async submitTask<T>(path: string, body: unknown): Promise<T> {
+    if (!this.delegate.submit) throw new Error("MiniMax durable submission transport is required");
+    const result = await this.delegate.submit<T>({
+      path,
+      body,
+      idempotencyKey: this.context.idempotencyKey,
+      evidenceRef: `${this.context.attemptId}:submission`,
+      recordedAt: new Date().toISOString(),
+    });
+    this.attempt = {
+      ...this.context,
+      taskId: null,
+      providerRequestId: result.providerRequestId,
+      outcome: result.kind === "accepted" ? "submitted" : result.kind,
+      submission: result.evidence,
+      ...(result.kind === "not-submitted" || result.kind === "rejected"
+        ? { noSubmissionProof: result.proof }
+        : {}),
+    };
+    if (result.kind === "accepted") return result.response;
+    const category = result.error.category;
+    this.failureReason =
+      category === "auth_error"
+        ? "auth-error"
+        : category === "rate_limited"
+          ? "rate-limited"
+          : category === "insufficient_balance"
+            ? "insufficient-funds"
+            : category === "content_blocked"
+              ? "content-rejected"
+              : "provider-error";
+    throw result.error;
+  }
+}
+
 function evidence(
   input: MinimaxSubmissionInput,
   kind: AttemptEvidence["kind"],
@@ -209,7 +274,8 @@ function evidence(
 
 function readProviderRequestId(response: unknown): string | null {
   if (!response || typeof response !== "object") return null;
-  const value = (response as Record<string, unknown>)["provider_request_id"];
+  const record = response as Record<string, unknown>;
+  const value = record["provider_request_id"] ?? record["request_id"];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 

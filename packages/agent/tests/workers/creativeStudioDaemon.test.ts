@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   creativeStudioDaemon,
@@ -189,6 +192,8 @@ describe("creativeStudioDaemon", () => {
     process.env.MSL_CREATIVE_STUDIO_MAX_DAILY_USD = "5.00";
     process.env.MSL_CREATIVE_STUDIO_MAX_CONCURRENT_JOBS = "3";
     process.env.MSL_CREATIVE_STUDIO_MIN_COOLDOWN_MS = "0";
+    process.env.MINIMAX_RETRY_BASE_DELAY_MS = "0";
+    process.env.MINIMAX_VIDEO_POLL_INTERVAL_MS = "0";
     resetConcurrencyGate();
     vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(new Response()));
   });
@@ -301,6 +306,93 @@ describe("creativeStudioDaemon", () => {
     expect(payload.nextAction).toBe("approve_creative_asset");
   });
 
+  it("persists video polling evidence and runtime provenance", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "msl-video-"));
+    process.env.MSL_CREATIVE_STUDIO_STORAGE_PATH = directory;
+    const claim = claimFixture();
+    const request = JSON.parse(claim.payloadJson) as Record<string, unknown>;
+    request.kind = "product-clip-6s";
+    claim.payloadJson = JSON.stringify(request);
+    const api = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(api({ base_resp: { status_code: 0 }, task_id: "task-1" }))
+      .mockResolvedValueOnce(
+        api({ base_resp: { status_code: 0 }, status: "success", file_id: "file-1" }),
+      )
+      .mockResolvedValueOnce(
+        api({
+          base_resp: { status_code: 0 },
+          file: { download_url: "https://cdn.test/video.mp4" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("video"));
+    const { ctx, enqueue } = baseContext(claim);
+
+    await creativeStudioDaemon(ctx);
+
+    const proposal = enqueue.mock.calls[0]?.[0] as { payloadJson: string } | undefined;
+    const payload = JSON.parse(proposal?.payloadJson ?? "{}") as {
+      result: { attempt: unknown };
+    };
+    expect(payload.result.attempt).toMatchObject({
+      attemptId: "attempt:claim_001",
+      reservationId: "reservation:claim_001",
+      taskId: "task-1",
+    });
+    const metadata = JSON.parse(
+      readFileSync(
+        join(
+          directory,
+          readdirSync(directory).find((name) => name.endsWith(".meta.json"))!,
+        ),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    expect(metadata).toMatchObject({
+      attemptId: "attempt:claim_001",
+      reservationId: "reservation:claim_001",
+      estimatedCostMicros: 102_000,
+      actualCostMicros: 102_000,
+      provider: "minimax",
+      model: "MiniMax-Hailuo-2.3-Fast",
+      requestedByAgent: "creative-assets-daemon",
+      channel: "mercadolibre",
+    });
+    expect(metadata.promptSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(metadata.referenceSha256s).toEqual([expect.stringMatching(/^[a-f0-9]{64}$/)]);
+    expect(metadata.jobId).toEqual(expect.any(String));
+    rmSync(directory, { recursive: true });
+  });
+
+  it.each([
+    [1004, 401, "auth-error", 1],
+    [1002, 429, "rate-limited", 4],
+    [1008, 200, "insufficient-funds", 1],
+    [1026, 200, "content-rejected", 1],
+  ])("translates MiniMax %i to %s", async (code, httpStatus, reason, calls) => {
+    vi.mocked(fetch).mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            base_resp: { status_code: code, status_message: reason },
+            provider_request_id: `request-${code}`,
+            accepted: false,
+            charged: false,
+          }),
+          { status: httpStatus },
+        ),
+      ),
+    );
+    const { ctx, enqueue } = baseContext(claimFixture());
+    await creativeStudioDaemon(ctx);
+    const proposal = enqueue.mock.calls[0]?.[0] as { payloadJson: string } | undefined;
+    const payload = JSON.parse(proposal?.payloadJson ?? "{}") as {
+      result: { failureReason: string };
+    };
+    expect(payload.result.failureReason).toBe(reason);
+    expect(fetch).toHaveBeenCalledTimes(calls);
+  });
+
   it("handles provider execution failure gracefully", async () => {
     vi.mocked(fetch).mockReset();
     vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
@@ -308,8 +400,9 @@ describe("creativeStudioDaemon", () => {
     const { ctx, enqueue } = baseContext(claimFixture());
     const result = await creativeStudioDaemon(ctx);
 
-    expect(result.proposalEnqueued).toBe(true);
-    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(result.proposalEnqueued).toBe(false);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("routes generated launch assets back to the coordinator", async () => {
@@ -360,7 +453,7 @@ describe("creativeStudioDaemon", () => {
     vi.mocked(fetch).mockReset();
     vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
 
-    await expect(creativeStudioDaemon(ctx)).rejects.toThrow("launch generation failed");
+    await creativeStudioDaemon(ctx);
     expect(bus.getMessagesByCorrelationId("launch-1")).toHaveLength(0);
 
     resetConcurrencyGate();
@@ -376,37 +469,22 @@ describe("creativeStudioDaemon", () => {
     db.close();
   });
 
-  it("retries failed launch generation twice, then rejects and notifies once", async () => {
+  it("does not redispatch and rejects an ambiguous launch", async () => {
     const { db, bus, store, ctx } = launchFailureContext();
     vi.mocked(fetch).mockReset();
     vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
 
-    for (const attempts of [0, 1]) {
-      ctx.claim.attempts = attempts;
-      await expect(creativeStudioDaemon(ctx)).rejects.toThrow("launch generation failed");
-      expect(store.getLaunchForSeller("launch-1", "test-seller")?.status).toBe(
-        "generating_creative",
-      );
-      expect(bus.getMessagesByCorrelationId("launch-1")).toHaveLength(0);
-      resetConcurrencyGate();
-    }
-
-    ctx.claim.attempts = 2;
     const result = await creativeStudioDaemon(ctx);
-    resetConcurrencyGate();
-    await creativeStudioDaemon(ctx);
-
     expect(result.proposalEnqueued).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(store.getLaunchForSeller("launch-1", "test-seller")?.status).toBe("rejected");
-    const messages = bus.getMessagesByCorrelationId("launch-1");
-    const notifications = messages.filter((message) => message.messageType === "progress");
-    expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({
-      receiverAgentId: "ceo",
-      dedupeKey: "launch-failed:launch-1:creative-studio",
-    });
-    expect(messages.some((message) => message.messageType === "launch_stage_complete")).toBe(false);
-    expect(messages.some((message) => message.messageType === "proposal")).toBe(false);
+    expect(bus.getMessagesByCorrelationId("launch-1")).toContainEqual(
+      expect.objectContaining({
+        receiverAgentId: "ceo",
+        messageType: "progress",
+        dedupeKey: "launch-failed:launch-1:creative-studio",
+      }),
+    );
     db.close();
   });
 
@@ -420,6 +498,9 @@ describe("creativeStudioDaemon", () => {
         Promise.resolve(
           JSON.stringify({
             base_resp: { status_code: 1026, status_message: "Content blocked" },
+            provider_request_id: "content-request",
+            accepted: false,
+            charged: false,
           }),
         ),
     } as Response);
@@ -427,6 +508,9 @@ describe("creativeStudioDaemon", () => {
     await creativeStudioDaemon(ctx);
 
     expect(store.getLaunchForSeller("launch-1", "test-seller")?.status).toBe("rejected");
+    expect(bus.getMessagesByCorrelationId("launch-1")[0]?.payloadJson).toContain(
+      "content-rejected",
+    );
     const messages = bus.getMessagesByCorrelationId("launch-1");
     expect(messages.filter((message) => message.messageType === "progress")).toHaveLength(1);
     expect(messages.some((message) => message.messageType === "launch_stage_complete")).toBe(false);

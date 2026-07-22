@@ -24,6 +24,22 @@ export type CreativeJobStatus =
   | "published"
   | "failed";
 
+export type GenerationAttemptContext = Readonly<{
+  attemptId: string;
+  reservationId: string;
+  idempotencyKey: string;
+}>;
+
+export type CreativeAttemptEvidence = Readonly<
+  GenerationAttemptContext & {
+    taskId: string | null;
+    providerRequestId: string | null;
+    outcome: "submitted" | "not-submitted" | "rejected" | "ambiguous";
+    submission: import("../domain/generationAttempt.js").AttemptEvidence;
+    noSubmissionProof?: import("../domain/generationAttempt.js").NoSubmissionProof;
+  }
+>;
+
 export type CreativeAssetRequest = {
   requestId: string;
   requestedByAgent: string;
@@ -83,6 +99,8 @@ export type CreativeExecutionResult = {
   model: string;
   estimatedCostUsd: number;
   actualCostUsd?: number;
+  failureReason?:
+    "auth-error" | "rate-limited" | "insufficient-funds" | "content-rejected" | "provider-error";
   outputs: Array<{
     assetId: string;
     kind: "image" | "video" | "audio" | "music";
@@ -92,6 +110,7 @@ export type CreativeExecutionResult = {
     mlDiagnostic?: MlDiagnosticResult;
     policyFlags: string[];
   }>;
+  attempt?: CreativeAttemptEvidence;
   noMutationExecuted: true;
 };
 

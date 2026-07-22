@@ -56,6 +56,16 @@ export class MinimaxClient {
    * Handles auth headers, timeout, and error classification.
    */
   async post<T>(path: string, body: unknown, idempotencyKey?: string): Promise<T> {
+    if (idempotencyKey !== undefined && idempotencyKey.trim().length === 0) {
+      throw new MinimaxRequestError(
+        "provider_error",
+        "Idempotency-Key must not be blank",
+        undefined,
+        {
+          sendState: "definitely-unsent",
+        },
+      );
+    }
     const url = `${this.apiHost}${path.startsWith("/") ? path : `/${path}`}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
