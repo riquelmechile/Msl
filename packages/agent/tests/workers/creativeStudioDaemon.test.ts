@@ -6,7 +6,9 @@ import {
   creativeStudioDaemon,
   resetConcurrencyGate,
   setLastJobTime,
+  RealBusAdapter,
 } from "../../src/workers/creativeStudioDaemon.js";
+import type { CreativeBusAdapter } from "../../src/workers/daemonTypes.js";
 import type { AgentMessage } from "../../src/conversation/agentMessageBusStore.js";
 import type { DaemonHandler } from "../../src/workers/daemonTypes.js";
 import Database from "better-sqlite3";
@@ -654,6 +656,124 @@ describe("creativeStudioDaemon", () => {
       const result = await creativeStudioDaemon(ctx);
       expect(result.findings.length).toBeGreaterThan(0);
     });
+  });
+});
+
+// ── RealBusAdapter delegation tests ───────────────────────────────────
+
+describe("RealBusAdapter", () => {
+  let db: Database.Database;
+  let bus: ReturnType<typeof createAgentMessageBusStore>;
+  let adapter: CreativeBusAdapter;
+
+  function enqueue(sellerId?: string): AgentMessage {
+    const input: Record<string, unknown> = {
+      senderAgentId: "creative-studio",
+      receiverAgentId: "ceo",
+      messageType: "test",
+      payloadJson: JSON.stringify({ test: true }),
+    };
+    if (sellerId !== undefined) input.sellerId = sellerId;
+    const msg = bus.enqueue(input as Parameters<typeof bus.enqueue>[0]);
+    const [claimed] = bus.claimNext("ceo");
+    if (!claimed) throw new Error("Failed to claim enqueued message");
+    expect(claimed.messageId).toBe(msg.messageId);
+    return msg;
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    bus = createAgentMessageBusStore(db);
+    adapter = new RealBusAdapter(bus);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("defer delegates to bus.defer with SellerScope and generation", () => {
+    const msg = enqueue("seller-1");
+    const deferSpy = vi.spyOn(bus, "defer");
+
+    const result = adapter.defer(msg.messageId, {
+      deferralId: "defer-1",
+      deferralGeneration: 1,
+      reason: "budget exhausted",
+      scope: { kind: "seller", sellerId: "seller-1" },
+    });
+
+    expect(deferSpy).toHaveBeenCalledOnce();
+    expect(deferSpy).toHaveBeenCalledWith(
+      msg.messageId,
+      expect.objectContaining({
+        deferralId: "defer-1",
+        deferralGeneration: 1,
+        reason: "budget exhausted",
+        scope: { kind: "seller", sellerId: "seller-1" },
+      }),
+    );
+    expect(result.messageId).toBe(msg.messageId);
+    expect(result.status).toBe("deferred");
+    expect(result.deferralId).toBe("defer-1");
+    expect(result.deferralGeneration).toBe(1);
+    deferSpy.mockRestore();
+  });
+
+  it("resumeDeferred delegates to bus.resumeDeferred with exact token", () => {
+    const msg = enqueue("seller-1");
+    bus.defer(msg.messageId, {
+      deferralId: "defer-1",
+      deferralGeneration: 1,
+      reason: "test defer",
+      scope: { kind: "seller", sellerId: "seller-1" },
+    });
+
+    const resumeSpy = vi.spyOn(bus, "resumeDeferred");
+    const result = adapter.resumeDeferred(msg.messageId, {
+      deferralId: "defer-1",
+      deferralGeneration: 1,
+      scope: { kind: "seller", sellerId: "seller-1" },
+    });
+
+    expect(resumeSpy).toHaveBeenCalledOnce();
+    expect(resumeSpy).toHaveBeenCalledWith(
+      msg.messageId,
+      expect.objectContaining({
+        deferralId: "defer-1",
+        deferralGeneration: 1,
+        scope: { kind: "seller", sellerId: "seller-1" },
+      }),
+    );
+    expect(result.messageId).toBe(msg.messageId);
+    expect(result.status).toBe("pending");
+    resumeSpy.mockRestore();
+  });
+
+  it("settle delegates to bus.settle with stable settlement ID and evidence", () => {
+    const msg = enqueue("seller-1");
+    const settleSpy = vi.spyOn(bus, "settle");
+
+    const result = adapter.settle(msg.messageId, "resolved", {
+      settlementId: "settle-1",
+      scope: { kind: "seller", sellerId: "seller-1" },
+      evidence: { outcome: "success" },
+      result: { imageUrl: "https://example.com/img.jpg" },
+    });
+
+    expect(settleSpy).toHaveBeenCalledOnce();
+    expect(settleSpy).toHaveBeenCalledWith(
+      msg.messageId,
+      "resolved",
+      expect.objectContaining({
+        settlementId: "settle-1",
+        scope: { kind: "seller", sellerId: "seller-1" },
+        evidence: { outcome: "success" },
+        result: { imageUrl: "https://example.com/img.jpg" },
+      }),
+    );
+    expect(result.messageId).toBe(msg.messageId);
+    expect(result.status).toBe("resolved");
+    settleSpy.mockRestore();
   });
 });
 

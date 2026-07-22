@@ -56,7 +56,7 @@ G `npx vitest run packages/agent/tests/workers/daemonScheduler.test.ts packages/
 
 ## F (350) Daemon Durability
 
-- [ ] F.1 `daemonTypes.ts`,`creativeStudioDaemon.ts`: own mockable bus interface+adapter implementing defer(SellerScope,gen)/resumeDeferred(token)/settle(id,evidence)
+- [x] F.1 `daemonTypes.ts`,`creativeStudioDaemon.ts`: own mockable bus interface+adapter implementing defer(SellerScope,gen)/resumeDeferred(token)/settle(id,evidence)
 - [ ] F.2 `creativeStudioDaemon.ts` — claim→reserve→prepare+lease→dispatch→reconcile→settle; drop CostLedger; renew lease/hold; alert ambiguous; 24h timeout
 - [ ] F.3 30s Creative polling(MSL_CREATIVE_STUDIO_POLL_INTERVAL_MS) independent of 15-min scheduler; readiness gate blocks claims+dispatch
 - [ ] F.4 Test: within-budget,empty poll,defer/resume,timeout,success/fail/ambiguous,dup,readiness gate

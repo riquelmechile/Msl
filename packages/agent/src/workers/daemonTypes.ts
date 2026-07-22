@@ -1,4 +1,11 @@
-import type { AgentMessage, AgentMessageBusStore } from "../conversation/agentMessageBusStore.js";
+import type {
+  AgentMessage,
+  AgentMessageBusStore,
+  DeferOptions,
+  ResumeDeferredOptions,
+  SettlementOutcome,
+  SettlementOptions,
+} from "../conversation/agentMessageBusStore.js";
 import type { GraphEngine, SupplierMirrorStore } from "@msl/memory";
 import type { OperationalReadModelReader, OwnedEcommerceStore } from "@msl/memory";
 import type { EvidenceRequestStore } from "@msl/memory";
@@ -155,3 +162,12 @@ export type DaemonHandler = (input: {
   /** Retry-safe product-launch cost tracker. */
   launchCostTracker?: LaunchCostTracker;
 }) => Promise<DaemonResult>;
+
+// ── Creative Bus Adapter Contract ─────────────────────────────────────
+
+/** Mockable bus-lifecycle interface exposing only the three methods the Creative daemon needs. */
+export type CreativeBusAdapter = {
+  defer(messageId: string, options: DeferOptions): AgentMessage;
+  resumeDeferred(messageId: string, options: ResumeDeferredOptions): AgentMessage;
+  settle(messageId: string, outcome: SettlementOutcome, options: SettlementOptions): AgentMessage;
+};
