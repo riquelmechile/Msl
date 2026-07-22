@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import type { DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import type { CreativeBusAdapter, DaemonHandler, DaemonFinding } from "./daemonTypes.js";
+import type {
+  AgentMessage,
+  AgentMessageBusStore,
+  DeferOptions,
+  ResumeDeferredOptions,
+  SettlementOutcome,
+  SettlementOptions,
+} from "../conversation/agentMessageBusStore.js";
 import type { CreativeAssetRequest, CreativeExecutionResult } from "@msl/creative-studio";
 import {
   PolicyEngine,
@@ -592,3 +600,22 @@ export const creativeStudioDaemon: DaemonHandler = async ({
     messageIds,
   };
 };
+
+// ── Creative Bus Adapter ──────────────────────────────────────────────
+
+/** Real adapter that delegates every call directly to the underlying {@link AgentMessageBusStore}. */
+export class RealBusAdapter implements CreativeBusAdapter {
+  constructor(private readonly bus: AgentMessageBusStore) {}
+
+  defer(messageId: string, options: DeferOptions): AgentMessage {
+    return this.bus.defer(messageId, options);
+  }
+
+  resumeDeferred(messageId: string, options: ResumeDeferredOptions): AgentMessage {
+    return this.bus.resumeDeferred(messageId, options);
+  }
+
+  settle(messageId: string, outcome: SettlementOutcome, options: SettlementOptions): AgentMessage {
+    return this.bus.settle(messageId, outcome, options);
+  }
+}

@@ -1,6 +1,6 @@
 # Apply Progress: Creative Budget Reservations and Generation Attempts
 
-Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: E / PR5, based on merged Slices A-D.
+Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: F / PR6 (F.1 complete, F.2-F.4 pending). Previous slices A-E merged.
 
 ## Completed
 
@@ -73,4 +73,15 @@ Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: E / PR5, b
 
 Focused: `npx vitest run packages/creative-studio/src/__tests__/minimax* packages/agent/tests/workers/minimaxRetryPolicy.test.ts` -> 8 files, 131 tests passed. Cumulative creative/domain: 15 files, 176 tests passed. Runtime: `npx vitest run packages/agent/tests/workers/creativeStudioDaemon.test.ts` -> 26 tests passed; proves mandatory daemon-owned context, proof-only retry, ambiguous non-retry, polling/task evidence, persisted provenance, and exact error translation. Typecheck, lint, format, and diff checks passed. Rollback: revert the MiniMax attempt transport plus daemon wiring/tests while retaining Slices A-D.
 
-F.1-F.4 and G.1-G.6 remain pending (10/33); 23/33 are complete. Daemon/bus polling, startup registration, migration recovery, and rollback remain deferred.
+F.2-F.4 and G.1-G.6 remain pending (9/33); 24/33 are complete (F.1 done). Daemon/bus polling, startup registration, migration recovery, and rollback remain deferred.
+
+### Slice F / PR6 — Bus Lifecycle Boundary (F.1 only)
+
+| Evidence | Exact result |
+|---|---|
+| Focused tests | `npx vitest run packages/agent/tests/workers/creativeStudioDaemon.test.ts -t "RealBusAdapter"` -> 3 tests passed; proves defer delegation with SellerScope+generation, resumeDeferred delegation with exact token, settle delegation with settlement ID+evidence |
+| Cumulative daemon suite | `npx vitest run packages/agent/tests/workers/creativeStudioDaemon.test.ts` -> 29 tests passed (26 existing + 3 new) |
+| Static gates | `npm run typecheck`, `npm run lint`, `npm run format:check`, and `git diff --check` -> exit 0 |
+| Runtime harness | N/A — PR6 introduces an adapter seam only; no runtime boundary changes |
+| Rollback boundary | Revert `packages/agent/src/workers/daemonTypes.ts` (remove CreativeBusAdapter contract and 5 import additions), `packages/agent/src/workers/creativeStudioDaemon.ts` (remove RealBusAdapter class and adapter imports), and revert the RealBusAdapter tests from `packages/agent/tests/workers/creativeStudioDaemon.test.ts`; all existing daemon behavior and remaining F.2-F.4/G tasks are unaffected |
+| Review workload | 179 additions, 5 deletions, 184 changed lines. The Slice F PR6 candidate remains below the 400-line review budget. No `size:exception`. |
