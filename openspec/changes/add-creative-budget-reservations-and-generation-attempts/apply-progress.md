@@ -1,6 +1,6 @@
 # Apply Progress: Creative Budget Reservations and Generation Attempts
 
-Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: D / PR4, based on merged Slices A-C.
+Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: E / PR5, based on merged Slices A-D.
 
 ## Completed
 
@@ -69,4 +69,8 @@ Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: D / PR4, b
 
 ## Remaining
 
-E.1-E.5, F.1-F.4, and G.1-G.6 remain pending (15/33); 18/33 are complete. No provider adapter wiring, daemon/polling, reservation workflow orchestration, bus integration, startup registration/recovery, or later-slice runtime wiring was implemented.
+### Slice E / PR5
+
+Focused: `npx vitest run packages/creative-studio/src/__tests__/minimax* packages/agent/tests/workers/minimaxRetryPolicy.test.ts` -> 8 files, 131 tests passed. Cumulative creative/domain: 15 files, 176 tests passed. Runtime: `npx vitest run packages/agent/tests/workers/creativeStudioDaemon.test.ts` -> 26 tests passed; proves mandatory daemon-owned context, proof-only retry, ambiguous non-retry, polling/task evidence, persisted provenance, and exact error translation. Typecheck, lint, format, and diff checks passed. Rollback: revert the MiniMax attempt transport plus daemon wiring/tests while retaining Slices A-D.
+
+F.1-F.4 and G.1-G.6 remain pending (10/33); 23/33 are complete. Daemon/bus polling, startup registration, migration recovery, and rollback remain deferred.

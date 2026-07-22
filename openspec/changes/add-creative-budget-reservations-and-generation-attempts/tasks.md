@@ -48,11 +48,11 @@ G `npx vitest run packages/agent/tests/workers/daemonScheduler.test.ts packages/
 
 ## E (310) Providers/Provenance
 
-- [ ] E.1 GenerationAttemptContext(attempt_id,reservation_id,idempotency_key); provider never owns
-- [ ] E.2 MiniMax adapters: context→IDs in responses/evidence; poll reuses attempt+reservation
-- [ ] E.3 MinimaxRetryPolicy: retry pre-send/429-proof; 1s×2 cap3; 401/400/content/balance→no; possibly-sent→ambiguous; 5-min bounded(60),local persist
-- [ ] E.4 Asset: attempt_id,reservation_id,micros,provider,model,hashes,requester,channel,jobId
-- [ ] E.5 Test: context,task ID,poll reuse,retry bounds,error map,provenance,poll exhaustion
+- [x] E.1 GenerationAttemptContext(attempt_id,reservation_id,idempotency_key); provider never owns
+- [x] E.2 MiniMax adapters: context→IDs in responses/evidence; poll reuses attempt+reservation
+- [x] E.3 MinimaxRetryPolicy: retry pre-send/429-proof; 1s×2 cap3; 401/400/content/balance→no; possibly-sent→ambiguous; 5-min bounded(60),local persist
+- [x] E.4 Asset: attempt_id,reservation_id,micros,provider,model,hashes,requester,channel,jobId
+- [x] E.5 Test: context,task ID,poll reuse,retry bounds,error map,provenance,poll exhaustion
 
 ## F (350) Daemon Durability
 
