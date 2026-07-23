@@ -1,6 +1,6 @@
 # Apply Progress: Creative Budget Reservations and Generation Attempts
 
-Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: F / PR6 (F.1 complete, F.2-F.4 pending). Previous slices A-E merged.
+Mode: Standard. Delivery: auto-chain, stacked-to-main. Current slice: F / PR7A1A-I (F.1 + SQLite busy store errors complete, F.2-F.4 pending). Previous slices A-E merged.
 
 ## Completed
 
@@ -85,3 +85,17 @@ F.2-F.4 and G.1-G.6 remain pending (9/33); 24/33 are complete (F.1 done). Daemon
 | Runtime harness | N/A — PR6 introduces an adapter seam only; no runtime boundary changes |
 | Rollback boundary | Revert `packages/agent/src/workers/daemonTypes.ts` (remove CreativeBusAdapter contract and 5 import additions), `packages/agent/src/workers/creativeStudioDaemon.ts` (remove RealBusAdapter class and adapter imports), and revert the RealBusAdapter tests from `packages/agent/tests/workers/creativeStudioDaemon.test.ts`; all existing daemon behavior and remaining F.2-F.4/G tasks are unaffected |
 | Review workload | 179 additions, 5 deletions, 184 changed lines. The Slice F PR6 candidate remains below the 400-line review budget. No `size:exception`. |
+
+### Slice F / PR7A1A-Ia — SQLite Busy Store Errors
+
+| Evidence | Exact result |
+|---|---|
+| Focused test | `npx vitest run packages/creative-studio/src/__tests__/reservation-store.test.ts -t "busy conflict"` -> 1 test passed; proves deterministic two-connection SQLite busy contention on a unique on-disk DB: dbLock holds `BEGIN IMMEDIATE`, storeTry connection with 100ms busy_timeout calls `reserve()`, transaction wrapper catches `SQLITE_BUSY` and returns exact `{ ok: false, conflict: { kind: "busy", retryable: true } }` (asserted via `toEqual` deep equality); complete `creative_budget_reservations` snapshot before and after contention matches exactly via `toEqual` |
+| Cumulative store tests | `npx vitest run packages/creative-studio/src/__tests__/reservation-store.test.ts` -> 3 tests passed (2 pre-existing tests + 1 busy contention test introduced by PR7A1A-Ia) |
+| Full domain+creative suite | `npx vitest run packages/domain/src/money.test.ts packages/creative-studio/src/__tests__/` -> 15 files, 177 tests passed |
+| Full daemon suite | `npx vitest run packages/agent/tests/workers/creativeStudioDaemon.test.ts` -> 29 tests passed; complete daemon behavior preserved |
+| Combined verification | `npx vitest run packages/agent/tests/workers/creativeStudioDaemon.test.ts packages/creative-studio/src/__tests__/ packages/domain/src/money.test.ts` -> 16 files, 206 tests passed |
+| Static gates | `npm run typecheck`, `npm run lint`, `npm run format:check`, and `git diff --check` -> exit 0 |
+| Runtime harness | N/A — SQLite busy contention is a storage-layer boundary proved through real two-connection on-disk DB isolation; no runtime daemon wiring change |
+| Rollback boundary | Revert the new test case from `packages/creative-studio/src/__tests__/reservation-store.test.ts` (lines 104-137), then remove the literal `### Slice F / PR7A1A-Ia — SQLite Busy Store Errors` header and its complete evidence table from `openspec/changes/add-creative-budget-reservations-and-generation-attempts/apply-progress.md`; the 205 tests that pre-date PR7A1A-Ia and all daemon behavior remain intact |
+| Review workload | Test: 35 additions, 0 deletions. Apply-progress: 15 additions, 1 deletion. Combined numstat: 50 additions, 1 deletion (51 changed lines). Target <=100 met. No `size:exception`. |
