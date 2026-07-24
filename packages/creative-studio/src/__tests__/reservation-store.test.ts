@@ -101,6 +101,41 @@ describe("reservation store", () => {
     db.close();
   });
 
+  it("returns busy conflict when write-locked by another connection and preserves full persisted state", () => {
+    const path = `/tmp/msl-busy-${randomUUID()}.sqlite`;
+    const dbMain = new Database(path);
+    dbMain.pragma("foreign_keys = ON");
+    applyCreativeDurabilityMigration(dbMain);
+    const storeMain = createReservationStore(dbMain);
+    // Seed and snapshot complete persisted state before contention
+    expect(storeMain.reserve(request(1, 5_000)).ok).toBe(true);
+    const preSnapshot = dbMain
+      .prepare("SELECT * FROM creative_budget_reservations ORDER BY reservation_id")
+      .all();
+    // Lock holder: holds a write transaction on an independent connection
+    const dbLock = new Database(path);
+    dbLock.exec("BEGIN IMMEDIATE");
+    // Busy connection: create store, shorten busy-timeout for deterministic failure
+    const dbTry = new Database(path);
+    dbTry.pragma("foreign_keys = ON");
+    const storeTry = createReservationStore(dbTry);
+    dbTry.pragma("busy_timeout = 100");
+    // Assert exact busy StoreResult with deep equality
+    expect(storeTry.reserve(request(2, 3_000))).toEqual({
+      ok: false,
+      conflict: { kind: "busy", retryable: true },
+    });
+    // Release lock; verify full persisted state unchanged
+    dbLock.exec("COMMIT");
+    expect(
+      dbMain.prepare("SELECT * FROM creative_budget_reservations ORDER BY reservation_id").all(),
+    ).toEqual(preSnapshot);
+    dbMain.close();
+    dbLock.close();
+    dbTry.close();
+    unlinkSync(path);
+  });
+
   it("serializes two workers, fences renewal, protects expiry, and rolls back crashes", async () => {
     const path = `/tmp/msl-reservation-${randomUUID()}.sqlite`;
     const { db, store } = setup(path);
