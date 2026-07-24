@@ -9,6 +9,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   readSync,
   realpathSync,
   readdirSync,
@@ -58,8 +59,8 @@ export type WalCheckpointResult = {
 };
 
 export type EconomicRestoreResult = {
-  /** Unit 2B-1 only proves preparation; promotion is deliberately unavailable. */
-  readonly outcome: "prepared";
+  /** The only successful terminal state for an economic restore. */
+  readonly outcome: "completed";
   readonly stagePath: string;
   readonly priorPath: string;
   readonly manifestPath: string;
@@ -247,12 +248,71 @@ class LiveDatabaseManager implements DatabaseManager {
     const restoreId = input.restoreId ?? randomUUID();
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(restoreId))
       throw new Error("Economic restore ID is not filesystem-safe");
-    const target = bindRegularFile(this.dbPath, "target");
+    const lexicalTargetPath = resolve(this.dbPath);
+    const recoveryDir = realpathSync(dirname(lexicalTargetPath));
+    const recoveryTargetPath = join(recoveryDir, basename(lexicalTargetPath));
+    const recoveryPriorPath = join(
+      recoveryDir,
+      `.${basename(recoveryTargetPath)}.${restoreId}.prior`,
+    );
+    const recoveryManifestPath = join(
+      recoveryDir,
+      `.${basename(recoveryTargetPath)}.${restoreId}.manifest.json`,
+    );
+    let target!: BoundRegularFile;
     let backup!: BoundRegularFile;
     let stage: BoundRegularFile | undefined;
     let handleProtocolFailure: ((error: Error) => Promise<void>) | undefined;
+    let existingJournal: EconomicRestoreJournalRow | undefined;
     try {
       backup = bindRegularFile(input.backupPath, "backup");
+      if (!existsSync(recoveryTargetPath) && existsSync(recoveryPriorPath)) {
+        const prior = bindRegularFile(recoveryPriorPath, "recovery prior");
+        try {
+          const verifiedBackup = verifyBoundBackup(backup);
+          const descriptorPath = `/proc/self/fd/${prior.descriptor}`;
+          const priorDb = new Database(descriptorPath, { readonly: true });
+          try {
+            const live = readEconomicDatabaseFence(priorDb);
+            const journal = readExistingRestoreJournal(descriptorPath, restoreId);
+            const expected: EconomicRestoreJournalBinding = {
+              restoreId,
+              databaseId: live.databaseId,
+              databaseGeneration: live.generation,
+              backupIdentity: `${backup.identity.sha256}:${verifiedBackup.pages}`,
+              backupSha256: backup.identity.sha256,
+              backupPageCount: verifiedBackup.pages,
+              ownerRunId: input.fence.ownerRunId,
+              fenceGeneration: input.fence.generation,
+              fenceTokenDigest: createHash("sha256").update(input.fence.token).digest("hex"),
+              writeEpoch: live.writeEpoch,
+            };
+            const manifest = bindExistingRestoreManifest(recoveryManifestPath, {
+              restoreId,
+              targetPath: recoveryTargetPath,
+              backupPath: backup.path,
+            });
+            if (
+              !verifiedBackup.ok ||
+              !journal ||
+              journal.outcome !== null ||
+              !sameEconomicRestoreJournalBinding(journal, expected) ||
+              manifest?.phase !== "prior-preservation-intent" ||
+              !sameBoundFileIdentity(prior)
+            )
+              throw new Error("Economic restore interrupted prior identity is ambiguous");
+          } finally {
+            priorDb.close();
+          }
+          (input.durability?.rename ?? renameSync)(recoveryPriorPath, recoveryTargetPath);
+          (input.durability?.syncDirectory ?? fsyncDirectory)(recoveryDir);
+          if (!samePathFileIdentity(recoveryTargetPath, prior.identity))
+            throw new Error("Economic restore interrupted prior recovery failed");
+        } finally {
+          prior.close();
+        }
+      }
+      target = bindRegularFile(recoveryTargetPath, "target");
       try {
         if (
           target.identity.device === backup.identity.device &&
@@ -266,6 +326,9 @@ class LiveDatabaseManager implements DatabaseManager {
         // containers and lifecycle hooks run asynchronously.
         const enterDraining = lifecycle.enterDraining.bind(lifecycle);
         const reopen = lifecycle.reopen.bind(lifecycle);
+        const prepareReopen = lifecycle.prepareReopen.bind(lifecycle);
+        const commitReopen = lifecycle.commitReopen.bind(lifecycle);
+        const blockLifecycle = lifecycle.block.bind(lifecycle);
         const recover = lifecycle.recover.bind(lifecycle);
         const lifecycleState = (): EconomicDatabaseLifecycle["state"] => lifecycle.state;
         const applyMigrations = input.migrationRegistry.apply.bind(input.migrationRegistry);
@@ -280,12 +343,20 @@ class LiveDatabaseManager implements DatabaseManager {
           artifactDir,
           `.${basename(targetPath)}.${restoreId}.manifest.json`,
         );
-        rejectExistingArtifacts(stagePath, priorPath, manifestPath);
+        const failedStagePath = `${stagePath}.failed`;
+        existingJournal = readExistingRestoreJournal(targetPath, restoreId);
+        if (!existingJournal)
+          rejectExistingArtifacts(stagePath, priorPath, manifestPath, failedStagePath);
         let journalDb: Database.Database | undefined;
         let journalOwned = false;
         let manifestIdentity: FileIdentity | undefined;
         let stageCreated = false;
         let quiesced = false;
+        let priorPreserved = false;
+        let priorIdentity: FileIdentity | undefined;
+        const journalBinding = {
+          current: undefined as EconomicRestoreJournalBinding | undefined,
+        };
         const checkpoint = input.checkpoint;
         const onCopyChunk = input.onCopyChunk;
         const afterStageMigration = input.afterStageMigration;
@@ -374,19 +445,116 @@ class LiveDatabaseManager implements DatabaseManager {
         };
         const recordPhase = (
           db: Database.Database,
-          phase: "draining" | "staged" | "quiesced" | "failed",
+          phase:
+            | "draining"
+            | "staged"
+            | "quiesced"
+            | "prior-preserved"
+            | "promotion-intent"
+            | "promoted"
+            | "verifying"
+            | "completed"
+            | "rolled-back"
+            | "failed",
+          journalPath = targetPath,
         ): void => {
           if (!journalOwned) throw new Error("Economic restore journal row is not owned");
-          assertTargetBinding();
           db.prepare(
             "UPDATE economic_restore_journal SET phase = ?, updated_at = unixepoch() WHERE restore_id = ?",
           ).run(phase, restoreId);
           const receipt = db.pragma("wal_checkpoint(TRUNCATE)");
           if (!isZeroCheckpointReceipt(receipt))
             throw new Error("Economic restore journal checkpoint did not reach zero frames");
-          syncJournalArtifacts(targetPath, { syncFile, syncDirectory }); // Journal is durable before its matching manifest.
+          syncJournalArtifacts(journalPath, { syncFile, syncDirectory }); // Journal is durable before its matching manifest.
+        };
+        const restorePrior = async (rootError: Error): Promise<Error | undefined> => {
+          const failures: Error[] = [];
+          try {
+            journalDb?.close();
+            journalDb = undefined;
+            assertBackupPathBinding();
+            if (!priorIdentity) throw new Error("Economic restore prior evidence is unavailable");
+            if (!samePathFileIdentity(priorPath, priorIdentity)) {
+              if (!samePathBoundObjectIdentity(priorPath, target))
+                throw new Error("Economic restore prior evidence is no longer bound");
+              // Journal writes legitimately mutate the original descriptor after
+              // rename. Refresh full-byte evidence only while that exact descriptor
+              // still owns the prior pathname.
+              priorIdentity = verifyDatabaseIdentity(priorPath, "mutated prior");
+            }
+            if (existsSync(targetPath)) {
+              const targetOwnedByStage = stage
+                ? samePathBoundObjectIdentity(targetPath, stage)
+                : false;
+              const targetJournal = readExistingRestoreJournal(targetPath, restoreId);
+              if (
+                stage
+                  ? !targetOwnedByStage
+                  : !journalBinding.current ||
+                    !targetJournal ||
+                    !sameEconomicRestoreJournalBinding(targetJournal, journalBinding.current)
+              )
+                throw new Error("Economic restore rollback target is not the promoted stage");
+              if (existsSync(failedStagePath))
+                throw new Error("Economic restore rollback failed-stage artifact already exists");
+              renameArtifact(targetPath, failedStagePath);
+            }
+            if (!existsSync(targetPath)) renameArtifact(priorPath, targetPath);
+            syncDirectory(artifactDir);
+            if (!samePathFileIdentity(targetPath, priorIdentity))
+              throw new Error("Economic restore rollback target identity verification failed");
+            assertDatabaseIntegrity(targetPath, "rollback");
+            assertBoundFence();
+            if (lifecycleState() === "quiesced" || lifecycleState() === "blocked") {
+              // A completion failure may leave an earlier prepareReopen pending.
+              // Reset that attempt, rebuild once, and keep admission closed until
+              // rollback evidence is durable.
+              blockLifecycle();
+              await prepareReopen(fence);
+            }
+            const rollbackJournal = new Database(targetPath);
+            try {
+              rollbackJournal
+                .prepare(
+                  "UPDATE economic_restore_journal SET phase = 'rolled-back', outcome = 'rolled-back', failure_detail = ?, updated_at = unixepoch() WHERE restore_id = ?",
+                )
+                .run(rootError.message, restoreId);
+              if (!isZeroCheckpointReceipt(rollbackJournal.pragma("wal_checkpoint(TRUNCATE)")))
+                throw new Error(
+                  "Economic restore rollback journal checkpoint did not reach zero frames",
+                );
+              syncJournalArtifacts(targetPath, { syncFile, syncDirectory });
+            } finally {
+              rollbackJournal.close();
+            }
+            writeManifest("rolled-back", { failureDetail: rootError.message, failedStagePath });
+            // Admission changes only after all terminal evidence is durable.
+            if (lifecycleState() === "quiesced" || lifecycleState() === "blocked")
+              commitReopen(fence);
+            quiesced = false;
+            return undefined;
+          } catch (error) {
+            failures.push(asError(error));
+            try {
+              blockLifecycle();
+            } catch (blockError) {
+              failures.push(asError(blockError));
+            }
+            try {
+              if (existsSync(targetPath) && journalOwned)
+                recordFailedRollback(targetPath, restoreId, rootError, syncFile, syncDirectory);
+            } catch (journalError) {
+              failures.push(asError(journalError));
+            }
+            return combinedError(rootError, failures);
+          }
         };
         handleProtocolFailure = async (rootError: Error): Promise<void> => {
+          if (priorPreserved) {
+            const rollbackError = await restorePrior(rootError);
+            if (rollbackError) throw rollbackError;
+            return;
+          }
           const detail = rootError.message;
           const targetStillBound = sameBoundPathObjectIdentity(target);
           const backupStillBound = sameBoundPathObjectIdentity(backup);
@@ -458,11 +626,112 @@ class LiveDatabaseManager implements DatabaseManager {
           databaseId: live.databaseId,
           databaseGeneration: live.generation,
         };
+        const backupSha256 = backupIdentity.sha256;
+        const identity = `${backupSha256}:${verifiedBackup.pages}`;
+        journalBinding.current = {
+          restoreId,
+          databaseId: live.databaseId,
+          databaseGeneration: live.generation,
+          backupIdentity: identity,
+          backupSha256,
+          backupPageCount: verifiedBackup.pages,
+          ownerRunId: fence.ownerRunId,
+          fenceGeneration: fence.generation,
+          fenceTokenDigest: live.tokenDigest,
+          writeEpoch: live.writeEpoch,
+        };
+        if (existingJournal) {
+          journalOwned = true;
+          if (!sameEconomicRestoreJournalBinding(existingJournal, journalBinding.current)) {
+            blockLifecycle();
+            throw new Error(
+              `Economic restore ${restoreId} journal identity does not match request`,
+            );
+          }
+          let existingManifest: ReturnType<typeof bindExistingRestoreManifest>;
+          try {
+            existingManifest = bindExistingRestoreManifest(manifestPath, {
+              restoreId,
+              targetPath,
+              backupPath,
+            });
+            manifestIdentity = existingManifest?.identity;
+          } catch (error) {
+            blockLifecycle();
+            throw error;
+          }
+          if (existingJournal.outcome === "completed") {
+            const completedTarget = new Database(targetPath, { readonly: true });
+            try {
+              assertFinalEconomicProof(completedTarget, expectedEconomicIdentity, fence);
+            } catch (error) {
+              blockLifecycle();
+              throw error;
+            } finally {
+              completedTarget.close();
+            }
+            try {
+              priorIdentity = verifyDatabaseIdentity(priorPath, "completed prior");
+              const completedPriorJournal = readExistingRestoreJournal(priorPath, restoreId);
+              if (
+                !completedPriorJournal ||
+                !sameEconomicRestoreJournalBinding(completedPriorJournal, journalBinding.current)
+              )
+                throw new Error("Economic restore completed prior journal identity is ambiguous");
+            } catch (error) {
+              blockLifecycle();
+              throw error;
+            }
+            if (existingManifest?.phase !== "completed")
+              writeManifest("completed", { priorSha256: priorIdentity.sha256 });
+            if (lifecycleState() === "quiesced") await reopen(fence);
+            else if (lifecycleState() === "blocked") await recover(fence);
+            return { outcome: "completed", stagePath, priorPath, manifestPath };
+          }
+          if (existingJournal.outcome === "rolled-back") {
+            if (lifecycleState() === "quiesced") await reopen(fence);
+            else if (lifecycleState() === "blocked") await recover(fence);
+            throw new Error(`Economic restore ${restoreId} already rolled back`);
+          }
+          if (existingJournal.outcome === "failed") {
+            throw new Error(`Economic restore ${restoreId} already failed`);
+          }
+          if (existsSync(priorPath)) {
+            const priorJournal = readExistingRestoreJournal(priorPath, restoreId);
+            if (
+              !priorJournal ||
+              !sameEconomicRestoreJournalBinding(priorJournal, journalBinding.current)
+            ) {
+              blockLifecycle();
+              throw new Error(`Economic restore ${restoreId} prior identity is ambiguous`);
+            }
+            priorIdentity = verifyDatabaseIdentity(priorPath, "recovery prior");
+            priorPreserved = true;
+            if (lifecycleState() === "open") {
+              await enterDraining(fence);
+              quiesced = true;
+            }
+            const recoveryError = new Error(
+              `Economic restore ${restoreId} recovered nonterminal phase ${existingJournal.phase}`,
+            );
+            const rollbackError = await restorePrior(recoveryError);
+            if (rollbackError) throw rollbackError;
+            throw recoveryError;
+          }
+          recordFailedRollback(
+            targetPath,
+            restoreId,
+            new Error(`nonterminal phase ${existingJournal.phase} has no verified prior`),
+            syncFile,
+            syncDirectory,
+          );
+          if (lifecycleState() === "quiesced") await reopen(fence);
+          else if (lifecycleState() === "blocked") await recover(fence);
+          throw new Error(`Economic restore ${restoreId} recovered as failed`);
+        }
         journalDb = this.openDb();
         assertBoundFence(journalDb);
         assertBackupPathBinding();
-        const backupSha256 = backupIdentity.sha256;
-        const identity = `${backupSha256}:${verifiedBackup.pages}`;
         insertJournal(journalDb, {
           restoreId,
           databaseId: live.databaseId,
@@ -577,29 +846,143 @@ class LiveDatabaseManager implements DatabaseManager {
         writeManifest("quiesced", { backupIdentity: identity, backupSha256, stageSha256 });
         journalDb.close();
         journalDb = undefined;
-        // Unit 2B-2 owns every rename, final verification, and completed outcome.
+        // Preserve the original only after every prepared artifact is durable.  The
+        // intent manifest is the crash boundary while the authoritative row remains
+        // in the original target until it is independently proven as `prior`.
         assertTargetBinding();
-        assertBoundFence();
-        await reopen(fence);
-        quiesced = false;
         assertBackupPathBinding();
-        assertStagePathBinding();
-        assertBoundFence();
-        assertBackupPathBinding();
-        assertStagePathBinding();
         if (!sameBoundFileIdentity(backup))
-          throw new Error("Backup changed before economic restore reached prepared boundary");
-        return { outcome: "prepared", stagePath, priorPath, manifestPath };
+          throw new Error("Backup changed before prior preservation");
+        assertStagePathBinding();
+        assertBoundFence();
+        writeManifest("prior-preservation-intent", { backupIdentity: identity, stageSha256 });
+        priorIdentity = fileIdentity(targetPath);
+        if (!samePathFileIdentity(targetPath, priorIdentity))
+          throw new Error("Economic restore target changed before prior preservation");
+        try {
+          renameArtifact(targetPath, priorPath);
+          if (!samePathFileIdentity(priorPath, priorIdentity))
+            throw new Error("Economic restore prior identity verification failed");
+          priorPreserved = true;
+        } catch (error) {
+          if (
+            samePathBoundObjectIdentity(priorPath, target) &&
+            samePathFileIdentity(priorPath, priorIdentity)
+          )
+            priorPreserved = true;
+          throw error;
+        }
+        syncDirectory(artifactDir);
+        const priorDb = new Database(priorPath, { readonly: true });
+        try {
+          const integrity = priorDb.pragma("integrity_check") as Array<{ integrity_check: string }>;
+          if (integrity.length !== 1 || integrity[0]?.integrity_check !== "ok")
+            throw new Error("Economic restore prior integrity verification failed");
+          assertBoundFence(priorDb);
+        } finally {
+          priorDb.close();
+        }
+        const priorJournal = new Database(priorPath);
+        try {
+          recordPhase(priorJournal, "prior-preserved", priorPath);
+        } finally {
+          priorJournal.close();
+        }
+        // The journal update/checkpoint mutates the prior. Re-hash and re-verify
+        // those final bytes before either promotion or any rollback reliance.
+        priorIdentity = verifyDatabaseIdentity(priorPath, "prior final");
+        writeManifest("prior-preserved", { priorSha256: priorIdentity.sha256, stageSha256 });
+
+        // The promoted database must carry the same immutable operation row: the
+        // original row now belongs to prior evidence and cannot survive replacement.
+        const stagedJournal = new Database(stagePath);
+        try {
+          insertJournal(stagedJournal, {
+            restoreId,
+            databaseId: live.databaseId,
+            databaseGeneration: live.generation,
+            backupIdentity: identity,
+            backupSha256,
+            backupPageCount: verifiedBackup.pages,
+            ownerRunId: fence.ownerRunId,
+            fenceGeneration: fence.generation,
+            fenceTokenDigest: live.tokenDigest,
+            writeEpoch: live.writeEpoch,
+            phase: "staged",
+          });
+          recordPhase(stagedJournal, "promotion-intent", stagePath);
+        } finally {
+          stagedJournal.close();
+        }
+        syncArtifacts(stagePath);
+        assertBackupPathBinding();
+        if (!sameBoundFileIdentity(backup)) throw new Error("Backup changed before promotion");
+        assertStagePathBinding();
+        const priorFence = new Database(priorPath, { readonly: true });
+        try {
+          assertBoundFence(priorFence);
+        } finally {
+          priorFence.close();
+        }
+        writeManifest("promotion-intent", { priorSha256: priorIdentity.sha256, stageSha256 });
+        renameArtifact(stagePath, targetPath);
+        stageCreated = false;
+        syncDirectory(artifactDir);
+        if (!samePathBoundObjectIdentity(targetPath, stage))
+          throw new Error("Economic restore promoted target identity verification failed");
+        const promoted = new Database(targetPath);
+        try {
+          recordPhase(promoted, "promoted");
+          recordPhase(promoted, "verifying");
+          assertFinalEconomicProof(promoted, expectedEconomicIdentity, fence);
+        } finally {
+          promoted.close();
+        }
+        const promotedIdentity = verifyDatabaseIdentity(targetPath, "promoted target");
+        assertBoundFence();
+        await prepareReopen(fence);
+        if (
+          !samePathBoundObjectIdentity(targetPath, stage) ||
+          !samePathFileIdentity(targetPath, promotedIdentity)
+        )
+          throw new Error("Economic restore promoted target changed during participant reopen");
+        assertBoundFence();
+        const completed = new Database(targetPath);
+        try {
+          assertFinalEconomicProof(completed, expectedEconomicIdentity, fence);
+          completed
+            .prepare(
+              "UPDATE economic_restore_journal SET phase = 'completed', outcome = 'completed', failure_detail = NULL, updated_at = unixepoch() WHERE restore_id = ?",
+            )
+            .run(restoreId);
+          if (!isZeroCheckpointReceipt(completed.pragma("wal_checkpoint(TRUNCATE)")))
+            throw new Error("Economic restore completion checkpoint did not reach zero frames");
+          syncJournalArtifacts(targetPath, { syncFile, syncDirectory });
+        } finally {
+          completed.close();
+        }
+        writeManifest("completed", { priorSha256: priorIdentity.sha256, stageSha256 });
+        // This is deliberately synchronous: no write permit can be issued between
+        // participant reopening and durable completion evidence.
+        commitReopen(fence);
+        quiesced = false;
+        return { outcome: "completed", stagePath, priorPath, manifestPath };
       } catch (error) {
         const rootError = error instanceof Error ? error : new Error(String(error));
-        await handleProtocolFailure?.(rootError);
+        if (!existingJournal) {
+          try {
+            await handleProtocolFailure?.(rootError);
+          } catch (failureError) {
+            throw asError(failureError);
+          }
+        }
         throw rootError;
       } finally {
         // The inner protocol owns failure evidence. The outer boundary owns the
         // descriptors even when binding, lifecycle validation, or preflight fails.
       }
     } finally {
-      target.close();
+      target?.close();
       backup?.close();
       stage?.close();
     }
@@ -724,6 +1107,24 @@ type BoundRegularFile = {
   readonly descriptor: number;
   readonly identity: FileIdentity;
   close(): void;
+};
+
+type EconomicRestoreJournalBinding = {
+  readonly restoreId: string;
+  readonly databaseId: string;
+  readonly databaseGeneration: number;
+  readonly backupIdentity: string;
+  readonly backupSha256: string;
+  readonly backupPageCount: number;
+  readonly ownerRunId: string;
+  readonly fenceGeneration: number;
+  readonly fenceTokenDigest: string;
+  readonly writeEpoch: number;
+};
+
+type EconomicRestoreJournalRow = EconomicRestoreJournalBinding & {
+  readonly phase: string;
+  readonly outcome: "completed" | "rolled-back" | "failed" | null;
 };
 
 function canonicalRegularFile(path: string, label: string): string {
@@ -853,6 +1254,23 @@ function sameBoundPathObjectIdentity(bound: BoundRegularFile): boolean {
       metadata.dev === bound.identity.device &&
       metadata.ino === bound.identity.inode &&
       metadata.nlink === bound.identity.links
+    );
+  } catch {
+    return false;
+  }
+}
+
+function samePathBoundObjectIdentity(path: string, bound: BoundRegularFile): boolean {
+  try {
+    const pathMetadata = lstatSync(path);
+    const descriptorMetadata = fstatSync(bound.descriptor);
+    return (
+      !pathMetadata.isSymbolicLink() &&
+      pathMetadata.isFile() &&
+      pathMetadata.dev === descriptorMetadata.dev &&
+      pathMetadata.ino === descriptorMetadata.ino &&
+      pathMetadata.nlink === descriptorMetadata.nlink &&
+      descriptorMetadata.nlink === 1
     );
   } catch {
     return false;
@@ -1142,6 +1560,126 @@ function insertJournal(
   );
 }
 
+function readExistingRestoreJournal(
+  targetPath: string,
+  restoreId: string,
+): EconomicRestoreJournalRow | undefined {
+  const db = new Database(targetPath, { readonly: true });
+  try {
+    return db
+      .prepare(
+        `SELECT restore_id AS restoreId, database_id AS databaseId,
+                database_generation AS databaseGeneration, backup_identity AS backupIdentity,
+                backup_sha256 AS backupSha256, backup_page_count AS backupPageCount,
+                owner_run_id AS ownerRunId, fence_generation AS fenceGeneration,
+                fence_token_digest AS fenceTokenDigest, write_epoch AS writeEpoch,
+                phase, outcome
+         FROM economic_restore_journal WHERE restore_id = ?`,
+      )
+      .get(restoreId) as EconomicRestoreJournalRow | undefined;
+  } catch {
+    return undefined;
+  } finally {
+    db.close();
+  }
+}
+
+function sameEconomicRestoreJournalBinding(
+  actual: EconomicRestoreJournalBinding,
+  expected: EconomicRestoreJournalBinding,
+): boolean {
+  return (
+    actual.restoreId === expected.restoreId &&
+    actual.databaseId === expected.databaseId &&
+    actual.databaseGeneration === expected.databaseGeneration &&
+    actual.backupIdentity === expected.backupIdentity &&
+    actual.backupSha256 === expected.backupSha256 &&
+    actual.backupPageCount === expected.backupPageCount &&
+    actual.ownerRunId === expected.ownerRunId &&
+    actual.fenceGeneration === expected.fenceGeneration &&
+    actual.fenceTokenDigest === expected.fenceTokenDigest &&
+    actual.writeEpoch === expected.writeEpoch
+  );
+}
+
+function bindExistingRestoreManifest(
+  manifestPath: string,
+  expected: {
+    readonly restoreId: string;
+    readonly targetPath: string;
+    readonly backupPath: string;
+  },
+): { readonly identity: FileIdentity; readonly phase: string } | undefined {
+  if (!existsSync(manifestPath)) return undefined;
+  const identity = fileIdentity(manifestPath);
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch {
+    throw new Error("Economic restore manifest is not valid JSON");
+  }
+  if (
+    typeof manifest !== "object" ||
+    manifest === null ||
+    (manifest as Record<string, unknown>).restoreId !== expected.restoreId ||
+    (manifest as Record<string, unknown>).targetPath !== expected.targetPath ||
+    (manifest as Record<string, unknown>).backupPath !== expected.backupPath ||
+    !samePathFileIdentity(manifestPath, identity)
+  )
+    throw new Error("Economic restore manifest identity does not match request");
+  const phase = (manifest as Record<string, unknown>).phase;
+  if (typeof phase !== "string") throw new Error("Economic restore manifest phase is invalid");
+  return { identity, phase };
+}
+
+function assertDatabaseIntegrity(path: string, label: string): void {
+  const db = new Database(path, { readonly: true });
+  try {
+    const integrity = db.pragma("integrity_check") as Array<{ integrity_check: string }>;
+    if (integrity.length !== 1 || integrity[0]?.integrity_check !== "ok")
+      throw new Error(`Economic restore ${label} integrity verification failed`);
+  } finally {
+    db.close();
+  }
+}
+
+function verifyDatabaseIdentity(path: string, label: string): FileIdentity {
+  const identity = fileIdentity(path);
+  assertDatabaseIntegrity(path, label);
+  if (!samePathFileIdentity(path, identity))
+    throw new Error(`Economic restore ${label} identity verification failed`);
+  return identity;
+}
+
+function recordFailedRollback(
+  targetPath: string,
+  restoreId: string,
+  rootError: Error,
+  syncFile: (path: string) => void,
+  syncDirectory: (path: string) => void,
+): void {
+  const db = new Database(targetPath);
+  try {
+    db.prepare(
+      "UPDATE economic_restore_journal SET phase = 'failed', outcome = 'failed', failure_detail = ?, updated_at = unixepoch() WHERE restore_id = ?",
+    ).run(`rollback blocked: ${rootError.message}`, restoreId);
+    if (!isZeroCheckpointReceipt(db.pragma("wal_checkpoint(TRUNCATE)")))
+      throw new Error("Economic restore failed journal checkpoint did not reach zero frames");
+    syncJournalArtifacts(targetPath, { syncFile, syncDirectory });
+  } finally {
+    db.close();
+  }
+}
+
+function asError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
+function combinedError(root: Error, failures: readonly Error[]): Error {
+  if (failures.length === 0) return root;
+  return new AggregateError([root, ...failures], `Economic restore failed: ${root.message}`);
+}
+
 function economicRestoreTargetSchemaIsApplied(db: Database.Database): boolean {
   const migration = db
     .prepare("SELECT 1 AS applied FROM schema_version WHERE version = 1013")
@@ -1163,6 +1701,125 @@ function economicRestoreTargetSchemaIsApplied(db: Database.Database): boolean {
     objects.count === 4 &&
     columns.map(({ name }) => name).join(" ") === required
   );
+}
+
+function assertFinalEconomicProof(
+  db: Database.Database,
+  expected: { readonly databaseId: string; readonly databaseGeneration: number },
+  fence: EconomicDatabaseFenceIdentity,
+): void {
+  const integrity = db.pragma("integrity_check") as Array<{ integrity_check: string }>;
+  if (integrity.length !== 1 || integrity[0]?.integrity_check !== "ok")
+    throw new Error("Economic restore final integrity verification failed");
+  if (!economicRestoreTargetSchemaIsApplied(db))
+    throw new Error("Economic restore final migration verification failed");
+  const metadata = readEconomicDatabaseFence(db);
+  if (
+    metadata.databaseId !== expected.databaseId ||
+    metadata.generation !== expected.databaseGeneration ||
+    metadata.ownerRunId !== fence.ownerRunId ||
+    metadata.fenceGeneration !== fence.generation ||
+    metadata.tokenDigest !== createHash("sha256").update(fence.token).digest("hex") ||
+    metadata.lifecycle !== "active"
+  )
+    throw new Error("Economic restore final economic identity or fence verification failed");
+  const versions = db
+    .prepare(
+      "SELECT version FROM schema_version WHERE version BETWEEN 1007 AND 1011 ORDER BY version",
+    )
+    .all() as Array<{ version: number }>;
+  if (versions.map(({ version }) => version).join(",") !== "1007,1008,1009,1010,1011")
+    throw new Error("Economic restore final relational migration verification failed");
+  assertAdmissionReceiptContract(db);
+  const violations = db.pragma("foreign_key_check") as unknown[];
+  if (violations.length !== 0)
+    throw new Error("Economic restore final relational constraint verification failed");
+}
+
+function assertAdmissionReceiptContract(db: Database.Database): void {
+  const columns = db.pragma("table_info(economic_database_write_admission_receipts)") as Array<{
+    name: string;
+    type: string;
+    notnull: number;
+    pk: number;
+  }>;
+  const expectedColumns = [
+    "receipt_id:TEXT:1:1",
+    "receipt_token_digest:TEXT:1:0",
+    "seller_id:TEXT:1:0",
+    "writer_kind:TEXT:1:0",
+    "owner_run_id:TEXT:1:0",
+    "database_generation:INTEGER:1:0",
+    "fence_generation:INTEGER:1:0",
+    "lease_generation:INTEGER:1:0",
+    "status:TEXT:1:0",
+    "issued_at:INTEGER:1:0",
+    "expires_at:INTEGER:1:0",
+    "consumed_at:INTEGER:0:0",
+    "rejected_at:INTEGER:0:0",
+  ];
+  if (
+    columns
+      .map((column) => `${column.name}:${column.type}:${column.notnull}:${column.pk}`)
+      .join("|") !== expectedColumns.join("|")
+  )
+    throw new Error("Economic restore final admission receipt column verification failed");
+  const objects = db
+    .prepare("SELECT type, name, sql FROM sqlite_master WHERE name IN (?, ?, ?) ORDER BY name")
+    .all(
+      "economic_database_write_admission_receipts",
+      "idx_economic_write_admission_receipts_binding",
+      "idx_economic_write_admission_receipts_expiry",
+    ) as Array<{ type: string; name: string; sql: string | null }>;
+  const normalized = new Map(
+    objects.map((object) => [object.name, (object.sql ?? "").toLowerCase().replace(/\s+/g, " ")]),
+  );
+  const tableSql = normalized.get("economic_database_write_admission_receipts") ?? "";
+  const requiredTableSql = [
+    "receipt_id text primary key not null",
+    "receipt_token_digest text not null unique",
+    "seller_id text not null",
+    "writer_kind text not null",
+    "owner_run_id text not null",
+    "database_generation integer not null check(database_generation >= 1)",
+    "fence_generation integer not null check(fence_generation >= 1)",
+    "lease_generation integer not null check(lease_generation >= 1)",
+    "status text not null check(status in ('issued', 'consumed', 'expired', 'rejected'))",
+    "issued_at integer not null",
+    "expires_at integer not null check(expires_at > issued_at)",
+    "check((status = 'consumed') = (consumed_at is not null))",
+    "check((status = 'rejected') = (rejected_at is not null))",
+  ];
+  if (
+    objects.find((object) => object.name === "economic_database_write_admission_receipts")?.type !==
+      "table" ||
+    !requiredTableSql.every((fragment) => tableSql.includes(fragment))
+  )
+    throw new Error("Economic restore final admission receipt constraint verification failed");
+  if (
+    objects.length !== 3 ||
+    objects.some((object) =>
+      object.name === "economic_database_write_admission_receipts"
+        ? object.type !== "table"
+        : object.type !== "index",
+    ) ||
+    !normalized
+      .get("idx_economic_write_admission_receipts_binding")
+      ?.includes(
+        "(seller_id, writer_kind, owner_run_id, database_generation, fence_generation, lease_generation, status, expires_at)",
+      ) ||
+    !normalized
+      .get("idx_economic_write_admission_receipts_expiry")
+      ?.includes("(status, expires_at)")
+  )
+    throw new Error("Economic restore final admission receipt index verification failed");
+  const bindings = db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM economic_database_write_admission_receipts WHERE database_generation < 1 OR fence_generation < 1 OR lease_generation < 1 OR expires_at <= issued_at",
+    )
+    .get() as { count: number };
+  if (bindings.count !== 0)
+    throw new Error("Economic restore final admission receipt binding verification failed");
 }
 
 // ── Factory ────────────────────────────────────────────────────────────

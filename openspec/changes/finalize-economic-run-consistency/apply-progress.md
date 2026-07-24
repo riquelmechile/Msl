@@ -491,7 +491,39 @@ promotion/2B-2 remains out of scope.
 intentionally unchecked; no VCS publication, external operation, prior creation,
 promotion, or completed outcome occurred.
 
-### PR #146 CI Lint Remediation
+## R7 Work Unit 2B-2: Audited Atomic Promotion and Rollback
+
+The local promotion candidate was re-audited from merged prepared-only commit
+`52af286`. The audit corrected stale full-byte ownership after journal mutation,
+identity-bound every same-ID outcome, deterministically terminates pre-prior
+nonterminal rows, restores a verified prior for post-prior reruns, checks the full
+migration 1011 admission table/index contract, and keeps admission closed until
+terminal rollback or completion evidence is durable.
+
+The file-backed fault matrix covers prior rename and journal durability, stage journal
+durability, promotion rename and directory durability, promoted verification,
+participant reopen, completion journal/manifest durability, and exact 1011 corruption.
+Process-restart reconstruction and runtime/daemon wiring remain pending Unit 3 work;
+the complete recovery proof and final verification remain pending Unit 4 work. Both
+units are outside this candidate.
+
+| Evidence | Command / scenario | Exact result |
+|---|---|---|
+| Focused restore gate | `npm test -- packages/memory/src/databaseManager.test.ts packages/memory/src/economicDatabaseLifecycle.test.ts packages/memory/src/migrationRegistry.test.ts packages/memory/tests/economicDurabilityMigration.test.ts` | Exit 0; 4 files and 118 tests passed. |
+| Prior full regression evidence | `npm test` | Exit 0; 200 files passed, 2 skipped; 3658 tests passed, 7 skipped. |
+| Current full regression recheck | `npm test` | Three earlier attempts exited 1 because unrelated tests rotated through the 5-second Vitest timeout despite reporting sub-second bodies; every affected test passed when targeted, and the non-canonical diagnostic `npm test -- --testTimeout=15000` exited 0. The required canonical rerun then exited 0 with 200 files passed, 2 skipped, 3658 tests passed, and 7 skipped. |
+| Repository typecheck | `npm run typecheck` | Exit 0. |
+| Repository lint | `npm run lint` | Exit 0; no diagnostics. |
+| Repository format | `npm run format:check` | Exit 0; all matched files formatted. |
+| Production build | `npm run build` | Exit 0; TypeScript and Next.js build completed without configuration warnings after removing the obsolete `instrumentationHook` flag. |
+| Repository E2E command | `npm run test:e2e` | Exit 0; 1 file and 6 tests passed. |
+| Dependency audit | `npm audit` and `npm audit --omit=dev` | Exit 1; 2 moderate transitive `postcss` findings through Next 15.5.20. npm offers only a forced breaking downgrade to Next 9.3.3, so this work unit does not mutate dependencies. |
+| Rollback boundary | `packages/memory/src/databaseManager.ts`, `packages/memory/src/economicDatabaseLifecycle.ts`, their focused tests, `tasks.md`, and this ledger entry | Revert promotion, same-ID recovery, two-phase admission, and their proof together. Merged Unit 2B-1 and all Unit 3+ wiring remain independent. |
+
+**Delivery**: stacked-to-main Unit 2B-2 with a maintainer-authorized size exception.
+The authored diff exceeds the normal review budget and requires 4R review.
+
+### Historical PR #146 CI Lint Remediation
 
 - Replaced the forbidden async rejection proxy with `Promise.reject`, made the
   immutable fence binding `const`, separated journal failure-detail assertions,
@@ -506,7 +538,7 @@ promotion, or completed outcome occurred.
 | Format / diff safety | `npx prettier --check packages/agent/src/runtime/agentDaemonPersistence.ts packages/memory/src/databaseManager.test.ts packages/memory/src/databaseManager.ts && git diff --check` | Exit 0; all matched files formatted and no whitespace errors. |
 | Rollback boundary | `packages/agent/src/runtime/agentDaemonPersistence.ts`, `packages/memory/src/databaseManager.test.ts`, `packages/memory/src/databaseManager.ts`, and this evidence entry | Revert only the seven CI lint remediations and this record; economic restore behavior remains unchanged. |
 
-### Final Gate Correction: Descriptor Cleanup and Final Manifest Durability
+### Historical Final Gate Correction: Descriptor Cleanup and Final Manifest Durability
 
 - Moved lifecycle-path canonicalization, artifact directory/path derivation, and
   artifact preflight into the descriptor-owned protocol boundary. Any failure after
@@ -518,8 +550,10 @@ promotion, or completed outcome occurred.
   rename, which fsyncs the final manifest file and then its parent directory. A
   final-file fsync failure retains the root error, removes the published manifest
   and temporary artifact, and preserves failed journal evidence where it exists.
-- This remains prepared-only: no target/stage promotion, prior creation, completed
-  outcome, Unit 2B-2 work, or parent task completion was introduced.
+- At that correction boundary, the implementation remained prepared-only: it added no
+  target/stage promotion, prior creation, completed outcome, Unit 2B-2 behavior, or
+  parent task completion. The audited Unit 2B-2 section above subsequently completed
+  the in-process promotion and rollback work.
 
 | Evidence | Command / scenario | Exact result |
 |---|---|---|
@@ -529,6 +563,10 @@ promotion, or completed outcome occurred.
 | Format / diff safety | `npx prettier --check packages/memory/src/databaseManager.ts packages/memory/src/databaseManager.test.ts packages/memory/src/backupScheduler.test.ts packages/agent/src/runtime/agentDaemonPersistence.ts packages/agent/src/runtime/agentDaemonPersistence.test.ts scripts/start-agent-daemons.test.mjs openspec/changes/finalize-economic-run-consistency/tasks.md openspec/changes/finalize-economic-run-consistency/apply-progress.md && git diff --check` | Exit 0; all checked files formatted and no whitespace errors. |
 | Rollback boundary | `packages/memory/src/databaseManager.ts`, `packages/memory/src/databaseManager.test.ts`, and this ledger entry | Revert descriptor-bound early-failure cleanup and final-manifest fsync proof together. It preserves accepted 2B-1b and cannot enable promotion, prior creation, or completion. |
 
-**Delivery**: maintainer-authorized `size:exception`. Parent tasks 2.3–2.4 remain
-intentionally unchecked; no VCS publication, external operation, prior creation,
-promotion, or completed outcome occurred.
+**Historical delivery state**: maintainer-authorized `size:exception`. Parent tasks
+2.3–2.4 were intentionally unchecked at that boundary; no VCS publication, external
+operation, prior creation, promotion, or completed outcome occurred in that correction.
+
+**Current state**: the audited Unit 2B-2 candidate above completes tasks 2.3–2.4 only.
+Unit 3 runtime/daemon wiring and process-restart reconstruction, plus Unit 4 recovery
+proof and final verification, remain unchecked and outside this candidate.

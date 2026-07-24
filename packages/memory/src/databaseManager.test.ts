@@ -421,7 +421,7 @@ describe("DatabaseManager", () => {
 
   // ── restoreEconomicFrom (fenced promotion) ─────────────────────────
 
-  it("durably prepares a canonically bound staged backup without promotion", async () => {
+  it("atomically promotes a canonically bound staged backup after retaining prior", async () => {
     const { db, manager, cleanup } = setupTestDb();
     _cleanup = cleanup;
     const priorPath = join(dirname(TEST_DB), ".msl-test-dm.db.restore-success.prior");
@@ -461,32 +461,32 @@ describe("DatabaseManager", () => {
       },
     });
 
-    expect(result.outcome).toBe("prepared");
+    expect(result.outcome).toBe("completed");
     expect(result.stagePath.startsWith(dirname(TEST_DB))).toBe(true);
     expect(result.priorPath.startsWith(dirname(TEST_DB))).toBe(true);
-    expect(existsSync(result.priorPath)).toBe(false);
+    expect(existsSync(result.priorPath)).toBe(true);
     expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({
       restoreId: "restore-success",
       backupPath: join(BACKUP_DIR, "economic-restore.db"),
-      phase: "quiesced",
+      phase: "completed",
     });
     const restored = new Database(TEST_DB, { readonly: true });
     expect(
       restored.prepare("SELECT value FROM test_data WHERE value = 'prior-marker'").get(),
-    ).toBeFalsy();
+    ).toBeTruthy();
     expect(
       restored
         .prepare("SELECT name FROM sqlite_master WHERE name = 'economic_restore_journal'")
         .get(),
     ).toBeTruthy();
-    expect(existsSync(result.stagePath)).toBe(true);
+    expect(existsSync(result.stagePath)).toBe(false);
     expect(syncedFiles).toContain(TEST_DB);
     expect(syncedDirectories).toContain(dirname(TEST_DB));
     expect(restored.pragma("integrity_check")).toEqual([{ integrity_check: "ok" }]);
     restored.close();
   });
 
-  it("accepts absent WAL/SHM after a zero-frame checkpoint without promotion", async () => {
+  it("accepts absent WAL/SHM after a zero-frame checkpoint during promotion", async () => {
     const { db, manager, cleanup } = setupTestDb();
     _cleanup = cleanup;
     const plan = createEconomicMigrationPlan();
@@ -515,7 +515,7 @@ describe("DatabaseManager", () => {
         migrationRegistry: plan,
         restoreId: "sidecar",
       }),
-    ).resolves.toMatchObject({ outcome: "prepared" });
+    ).resolves.toMatchObject({ outcome: "completed" });
   });
 
   it("rejects a fence changed during lifecycle invalidation before preserving prior", async () => {
@@ -824,7 +824,7 @@ describe("DatabaseManager", () => {
         migrationRegistry: plan,
         restoreId: "prepared-backup",
       }),
-    ).rejects.toThrow(/prepared boundary/i);
+    ).rejects.toThrow(/backup changed/i);
     registration.release();
   });
 
@@ -1107,32 +1107,23 @@ describe("DatabaseManager", () => {
       restoreId: "shared-restore-id",
     };
     const original = await manager.restoreEconomicFrom(input);
-    const heldStage = join(BACKUP_DIR, "owned-stage.db");
-    const heldManifest = join(BACKUP_DIR, "owned-manifest.json");
     const targetBefore = readFileSync(TEST_DB);
-    const stageBefore = readFileSync(original.stagePath);
     const manifestBefore = readFileSync(original.manifestPath);
     const originalDb = new Database(TEST_DB, { readonly: true });
     const journalBefore = originalDb
       .prepare("SELECT * FROM economic_restore_journal WHERE restore_id = ?")
       .get(input.restoreId);
     originalDb.close();
-    renameSync(original.stagePath, heldStage);
-    renameSync(original.manifestPath, heldManifest);
-    let artifactsRepublished = false;
-    const collidingManager = createDatabaseManager(TEST_DB, () => {
-      if (!artifactsRepublished) {
-        renameSync(heldStage, original.stagePath);
-        renameSync(heldManifest, original.manifestPath);
-        artifactsRepublished = true;
-      }
-      return new Database(TEST_DB);
-    });
-
-    await expect(collidingManager.restoreEconomicFrom(input)).rejects.toThrow(/unique constraint/i);
+    await expect(manager.restoreEconomicFrom(input)).resolves.toEqual(original);
+    const changedBackup = new Database(input.backupPath);
+    changedBackup.exec("INSERT INTO test_data (value) VALUES ('changed-same-id-backup')");
+    changedBackup.pragma("wal_checkpoint(TRUNCATE)");
+    changedBackup.close();
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow(
+      /journal identity does not match request/i,
+    );
 
     expect(readFileSync(TEST_DB)).toEqual(targetBefore);
-    expect(readFileSync(original.stagePath)).toEqual(stageBefore);
     expect(readFileSync(original.manifestPath)).toEqual(manifestBefore);
     const intact = new Database(TEST_DB, { readonly: true });
     expect(
@@ -1146,10 +1137,10 @@ describe("DatabaseManager", () => {
           "SELECT COUNT(*) AS count FROM economic_restore_journal WHERE outcome = 'completed'",
         )
         .get(),
-    ).toEqual({ count: 0 });
+    ).toEqual({ count: 1 });
     intact.close();
-    expect(manager.verifyBackup(original.stagePath).ok).toBe(true);
-    expect(existsSync(original.priorPath)).toBe(false);
+    expect(manager.verifyBackup(original.priorPath).ok).toBe(true);
+    expect(existsSync(original.priorPath)).toBe(true);
   });
 
   it("snapshots migration, lifecycle, checkpoint, and durability callables before callbacks mutate their containers", async () => {
@@ -1202,7 +1193,7 @@ describe("DatabaseManager", () => {
     };
 
     await expect(manager.restoreEconomicFrom(mutableInput)).resolves.toMatchObject({
-      outcome: "prepared",
+      outcome: "completed",
     });
   });
 
@@ -1611,7 +1602,7 @@ describe("DatabaseManager", () => {
           },
         },
       }),
-    ).resolves.toMatchObject({ outcome: "prepared" });
+    ).resolves.toMatchObject({ outcome: "completed" });
 
     const rename = events.indexOf("rename");
     expect(events.slice(rename, rename + 3)).toEqual(["rename", "final-file", "directory"]);
@@ -1720,7 +1711,7 @@ describe("DatabaseManager", () => {
         migrationRegistry: plan,
         restoreId: "journal-reopen",
       });
-      expect(result).toMatchObject({ outcome: "prepared" });
+      expect(result).toMatchObject({ outcome: "completed" });
       expect(participantCloseObservedReleasedJournal).toBe(true);
       expect(participantHandle.open).toBe(false);
       expect(participantReopened).toBe(true);
@@ -1729,10 +1720,10 @@ describe("DatabaseManager", () => {
         reopenedByPath
           .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
           .get("journal-reopen"),
-      ).toEqual({ phase: "quiesced", outcome: null });
+      ).toEqual({ phase: "completed", outcome: "completed" });
       reopenedByPath.close();
       expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({
-        phase: "quiesced",
+        phase: "completed",
       });
     } finally {
       registration.release();
@@ -1808,7 +1799,7 @@ describe("DatabaseManager", () => {
     });
     economicLifecycle = lifecycle;
     economicFence = acquired.fence;
-    lifecycle.register({
+    const registration = lifecycle.register({
       invalidate: () => undefined,
       reopen: () => {
         if (failReopen) throw new Error("reopen failure");
@@ -1839,5 +1830,569 @@ describe("DatabaseManager", () => {
     ).toEqual({ failure_detail: "post-drain root failure" });
     evidence.close();
     expect(existsSync(TEST_DB)).toBe(true);
+    registration.release();
   });
+
+  it("restores the verified prior when stage promotion rename fails", async () => {
+    const { db, manager, cleanup } = setupTestDb();
+    _cleanup = cleanup;
+    const plan = createEconomicMigrationPlan();
+    plan.apply(db);
+    const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "promotion-rollback-run" });
+    if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+    const lifecycle = createEconomicDatabaseLifecycle({
+      path: TEST_DB,
+      authority: {},
+      readFence: () => acquired.fence,
+    });
+    economicLifecycle = lifecycle;
+    economicFence = acquired.fence;
+    db.exec("INSERT INTO test_data (value) VALUES ('verified-prior-marker')");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    const backupPath = join(BACKUP_DIR, "promotion-rollback.db");
+    copyFileSync(TEST_DB, backupPath);
+    db.exec("DELETE FROM test_data WHERE value = 'verified-prior-marker'");
+    db.exec("INSERT INTO test_data (value) VALUES ('current-prior-marker')");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+    const restoreId = "promotion-rollback";
+    const stagePath = join(dirname(TEST_DB), `.msl-test-dm.db.${restoreId}.stage`);
+    const input = {
+      backupPath,
+      fence: acquired.fence,
+      lifecycle,
+      migrationRegistry: plan,
+      restoreId,
+      durability: {
+        rename: (from: string, to: string) => {
+          if (from === stagePath && to === TEST_DB) throw new Error("promotion rename fault");
+          renameSync(from, to);
+        },
+      },
+    };
+
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow("promotion rename fault");
+    const restored = new Database(TEST_DB, { readonly: true });
+    expect(
+      restored.prepare("SELECT 1 FROM test_data WHERE value = 'current-prior-marker'").get(),
+    ).toBeTruthy();
+    expect(
+      restored
+        .prepare(
+          "SELECT phase, outcome, failure_detail FROM economic_restore_journal WHERE restore_id = ?",
+        )
+        .get(restoreId),
+    ).toMatchObject({ phase: "rolled-back", outcome: "rolled-back" });
+    restored.close();
+    expect(existsSync(join(dirname(TEST_DB), `.msl-test-dm.db.${restoreId}.prior`))).toBe(false);
+    expect(lifecycle.state).toBe("open");
+    const terminalTarget = readFileSync(TEST_DB);
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow(
+      `Economic restore ${restoreId} already rolled back`,
+    );
+    expect(readFileSync(TEST_DB)).toEqual(terminalTarget);
+  });
+
+  it("rolls back when final 1011 receipt indexes are missing and never admits the promoted stage", async () => {
+    const { db, manager, cleanup } = setupTestDb();
+    _cleanup = cleanup;
+    const plan = createEconomicMigrationPlan();
+    plan.apply(db);
+    const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "final-1011-proof-run" });
+    if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+    db.exec("INSERT INTO test_data (value) VALUES ('original-1011-marker')");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    const backupPath = join(BACKUP_DIR, "final-1011-proof.db");
+    copyFileSync(TEST_DB, backupPath);
+    db.exec("DELETE FROM test_data WHERE value = 'original-1011-marker'");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+    const lifecycle = createEconomicDatabaseLifecycle({
+      path: TEST_DB,
+      authority: {},
+      readFence: () => acquired.fence,
+    });
+    economicLifecycle = lifecycle;
+    economicFence = acquired.fence;
+
+    await expect(
+      manager.restoreEconomicFrom({
+        backupPath,
+        fence: acquired.fence,
+        lifecycle,
+        migrationRegistry: plan,
+        restoreId: "final-1011-proof",
+        afterStageMigration: (stagePath) => {
+          const stage = new Database(stagePath);
+          try {
+            stage.exec("DROP INDEX idx_economic_write_admission_receipts_binding");
+          } finally {
+            stage.close();
+          }
+        },
+      }),
+    ).rejects.toThrow(/admission receipt index/i);
+    const restored = new Database(TEST_DB, { readonly: true });
+    expect(
+      restored.prepare("SELECT 1 FROM test_data WHERE value = 'original-1011-marker'").get(),
+    ).toBeFalsy();
+    const terminal = restored
+      .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
+      .get("final-1011-proof") as { phase: string; outcome: string };
+    expect(terminal).toEqual({ phase: "rolled-back", outcome: "rolled-back" });
+    restored.close();
+    expect(lifecycle.state).toBe("open");
+  });
+
+  it("rolls back after promoted journal mutation when participant reopen fails transiently", async () => {
+    const { db, manager, cleanup } = setupTestDb();
+    _cleanup = cleanup;
+    const plan = createEconomicMigrationPlan();
+    plan.apply(db);
+    const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "post-promotion-run" });
+    if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+    db.exec("INSERT INTO test_data (value) VALUES ('post-promotion-prior')");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    const backupPath = join(BACKUP_DIR, "post-promotion.db");
+    copyFileSync(TEST_DB, backupPath);
+    db.exec("DELETE FROM test_data WHERE value = 'post-promotion-prior'");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+    const lifecycle = createEconomicDatabaseLifecycle({
+      path: TEST_DB,
+      authority: {},
+      readFence: () => acquired.fence,
+    });
+    economicLifecycle = lifecycle;
+    economicFence = acquired.fence;
+    let reopenCalls = 0;
+    let substitute = false;
+    const registration = lifecycle.register({
+      invalidate: () => undefined,
+      reopen: () => {
+        if (substitute) {
+          const displaced = join(dirname(TEST_DB), ".msl-test-dm.db.displaced");
+          renameSync(TEST_DB, displaced);
+          copyFileSync(displaced, TEST_DB);
+          return;
+        }
+        reopenCalls += 1;
+        if (reopenCalls === 1) throw new Error("transient reopen fault");
+      },
+    });
+
+    await expect(
+      manager.restoreEconomicFrom({
+        backupPath,
+        fence: acquired.fence,
+        lifecycle,
+        migrationRegistry: plan,
+        restoreId: "post-promotion",
+      }),
+    ).rejects.toThrow("ECONOMIC_DATABASE_LIFECYCLE_BLOCKED");
+    const restored = new Database(TEST_DB, { readonly: true });
+    expect(
+      restored.prepare("SELECT 1 FROM test_data WHERE value = 'post-promotion-prior'").get(),
+    ).toBeFalsy();
+    expect(
+      restored
+        .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
+        .get("post-promotion"),
+    ).toEqual({ phase: "rolled-back", outcome: "rolled-back" });
+    restored.close();
+    expect(reopenCalls).toBe(2);
+    expect(lifecycle.state).toBe("open");
+    substitute = true;
+    await expect(
+      manager.restoreEconomicFrom({
+        backupPath,
+        fence: acquired.fence,
+        lifecycle,
+        migrationRegistry: plan,
+        restoreId: "post-promotion-substitution",
+      }),
+    ).rejects.toThrow("Economic restore promoted target changed during participant reopen");
+    expect(lifecycle.state).toBe("blocked");
+    expect(existsSync(TEST_DB)).toBe(true);
+    expect(
+      existsSync(join(dirname(TEST_DB), ".msl-test-dm.db.post-promotion-substitution.prior")),
+    ).toBe(true);
+    registration.release();
+  });
+
+  it("deterministically terminates a same-ID pre-prior nonterminal journal", async () => {
+    const { db, manager, cleanup } = setupTestDb();
+    _cleanup = cleanup;
+    const plan = createEconomicMigrationPlan();
+    plan.apply(db);
+    const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "same-id-nonterminal-run" });
+    if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    const backupPath = join(BACKUP_DIR, "same-id-nonterminal.db");
+    copyFileSync(TEST_DB, backupPath);
+    db.close();
+    const lifecycle = createEconomicDatabaseLifecycle({
+      path: TEST_DB,
+      authority: {},
+      readFence: () => acquired.fence,
+    });
+    economicLifecycle = lifecycle;
+    economicFence = acquired.fence;
+    const input = {
+      backupPath,
+      fence: acquired.fence,
+      lifecycle,
+      migrationRegistry: plan,
+      restoreId: "same-id-nonterminal",
+      checkpoint: () => {
+        throw new Error("initial checkpoint fault");
+      },
+    };
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow("initial checkpoint fault");
+    const interrupted = new Database(TEST_DB);
+    interrupted
+      .prepare(
+        "UPDATE economic_restore_journal SET phase = 'quiesced', outcome = NULL, failure_detail = NULL WHERE restore_id = ?",
+      )
+      .run(input.restoreId);
+    interrupted.pragma("wal_checkpoint(TRUNCATE)");
+    interrupted.close();
+
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow(
+      `Economic restore ${input.restoreId} recovered as failed`,
+    );
+    const terminal = new Database(TEST_DB, { readonly: true });
+    expect(
+      terminal
+        .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
+        .get(input.restoreId),
+    ).toEqual({ phase: "failed", outcome: "failed" });
+    terminal.close();
+    expect(lifecycle.state).toBe("open");
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow(
+      `Economic restore ${input.restoreId} already failed`,
+    );
+    expect(lifecycle.state).toBe("open");
+  });
+
+  it("recovers an invocation-owned prior before binding an interrupted missing target", async () => {
+    const { db, manager, cleanup } = setupTestDb();
+    _cleanup = cleanup;
+    const plan = createEconomicMigrationPlan();
+    plan.apply(db);
+    const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "missing-target-run" });
+    if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    const backupPath = join(BACKUP_DIR, "missing-target.db");
+    copyFileSync(TEST_DB, backupPath);
+    db.close();
+    const lifecycle = createEconomicDatabaseLifecycle({
+      path: TEST_DB,
+      authority: {},
+      readFence: () => acquired.fence,
+    });
+    economicLifecycle = lifecycle;
+    economicFence = acquired.fence;
+    const restoreId = "missing-target";
+    const input = {
+      backupPath,
+      fence: acquired.fence,
+      lifecycle,
+      migrationRegistry: plan,
+      restoreId,
+      checkpoint: () => {
+        throw new Error("seed interrupted evidence");
+      },
+    };
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow("seed interrupted evidence");
+    const evidence = new Database(TEST_DB);
+    evidence
+      .prepare(
+        "UPDATE economic_restore_journal SET phase = 'quiesced', outcome = NULL, failure_detail = NULL WHERE restore_id = ?",
+      )
+      .run(restoreId);
+    evidence.pragma("wal_checkpoint(TRUNCATE)");
+    evidence.close();
+    const priorPath = join(dirname(TEST_DB), `.msl-test-dm.db.${restoreId}.prior`);
+    const manifestPath = join(dirname(TEST_DB), `.msl-test-dm.db.${restoreId}.manifest.json`);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({ ...manifest, phase: "prior-preservation-intent" }),
+    );
+    renameSync(TEST_DB, priorPath);
+
+    await expect(
+      manager.restoreEconomicFrom({
+        ...input,
+        fence: { ...acquired.fence, token: "foreign-token" },
+      }),
+    ).rejects.toThrow("Economic restore interrupted prior identity is ambiguous");
+    expect(existsSync(TEST_DB)).toBe(false);
+    expect(existsSync(priorPath)).toBe(true);
+    await expect(manager.restoreEconomicFrom(input)).rejects.toThrow(
+      `Economic restore ${restoreId} recovered as failed`,
+    );
+    expect(existsSync(TEST_DB)).toBe(true);
+    expect(existsSync(priorPath)).toBe(false);
+    expect(lifecycle.state).toBe("open");
+  });
+
+  it("rejects a 1011 table with the right columns but a missing expiry constraint", async () => {
+    const { db, manager, cleanup } = setupTestDb();
+    _cleanup = cleanup;
+    const plan = createEconomicMigrationPlan();
+    plan.apply(db);
+    const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: "exact-1011-run" });
+    if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+    db.exec("INSERT INTO test_data (value) VALUES ('exact-1011-prior')");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    const backupPath = join(BACKUP_DIR, "exact-1011.db");
+    copyFileSync(TEST_DB, backupPath);
+    db.exec("DELETE FROM test_data WHERE value = 'exact-1011-prior'");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+    const lifecycle = createEconomicDatabaseLifecycle({
+      path: TEST_DB,
+      authority: {},
+      readFence: () => acquired.fence,
+    });
+    economicLifecycle = lifecycle;
+    economicFence = acquired.fence;
+
+    await expect(
+      manager.restoreEconomicFrom({
+        backupPath,
+        fence: acquired.fence,
+        lifecycle,
+        migrationRegistry: plan,
+        restoreId: "exact-1011",
+        afterStageMigration: (stagePath) => {
+          const stage = new Database(stagePath);
+          try {
+            stage.exec(`
+              ALTER TABLE economic_database_write_admission_receipts
+                RENAME TO economic_database_write_admission_receipts_original;
+              CREATE TABLE economic_database_write_admission_receipts (
+                receipt_id TEXT PRIMARY KEY NOT NULL,
+                receipt_token_digest TEXT NOT NULL UNIQUE,
+                seller_id TEXT NOT NULL,
+                writer_kind TEXT NOT NULL,
+                owner_run_id TEXT NOT NULL,
+                database_generation INTEGER NOT NULL CHECK(database_generation >= 1),
+                fence_generation INTEGER NOT NULL CHECK(fence_generation >= 1),
+                lease_generation INTEGER NOT NULL CHECK(lease_generation >= 1),
+                status TEXT NOT NULL CHECK(status IN ('issued', 'consumed', 'expired', 'rejected')),
+                issued_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                consumed_at INTEGER,
+                rejected_at INTEGER,
+                CHECK((status = 'consumed') = (consumed_at IS NOT NULL)),
+                CHECK((status = 'rejected') = (rejected_at IS NOT NULL))
+              );
+              INSERT INTO economic_database_write_admission_receipts
+                SELECT * FROM economic_database_write_admission_receipts_original;
+              DROP TABLE economic_database_write_admission_receipts_original;
+              CREATE INDEX idx_economic_write_admission_receipts_binding
+                ON economic_database_write_admission_receipts
+                (seller_id, writer_kind, owner_run_id, database_generation, fence_generation, lease_generation, status, expires_at);
+              CREATE INDEX idx_economic_write_admission_receipts_expiry
+                ON economic_database_write_admission_receipts(status, expires_at);
+            `);
+          } finally {
+            stage.close();
+          }
+        },
+      }),
+    ).rejects.toThrow(/admission receipt constraint/i);
+    const restored = new Database(TEST_DB, { readonly: true });
+    expect(
+      restored.prepare("SELECT 1 FROM test_data WHERE value = 'exact-1011-prior'").get(),
+    ).toBeFalsy();
+    expect(
+      restored
+        .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
+        .get("exact-1011"),
+    ).toEqual({ phase: "rolled-back", outcome: "rolled-back" });
+    restored.close();
+    expect(lifecycle.state).toBe("open");
+  });
+
+  it.each([
+    "prior-rename-effect",
+    "prior-rename-directory",
+    "prior-journal",
+    "stage-journal",
+    "promotion-directory",
+    "completion-journal",
+  ])(
+    "restores the prior after the %s durability fault",
+    async (faultKind) => {
+      const { db, manager, cleanup } = setupTestDb();
+      _cleanup = cleanup;
+      const plan = createEconomicMigrationPlan();
+      plan.apply(db);
+      const restoreId = `durability-${faultKind}`;
+      const acquired = acquireEconomicDatabaseFence({ db, ownerRunId: `${restoreId}-run` });
+      if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+      db.exec(`INSERT INTO test_data (value) VALUES ('${faultKind}-backup')`);
+      db.pragma("wal_checkpoint(TRUNCATE)");
+      const backupPath = join(BACKUP_DIR, `${faultKind}.db`);
+      copyFileSync(TEST_DB, backupPath);
+      db.exec(`DELETE FROM test_data WHERE value = '${faultKind}-backup'`);
+      db.pragma("wal_checkpoint(TRUNCATE)");
+      db.close();
+      const lifecycle = createEconomicDatabaseLifecycle({
+        path: TEST_DB,
+        authority: {},
+        readFence: () => acquired.fence,
+      });
+      economicLifecycle = lifecycle;
+      economicFence = acquired.fence;
+      const stagePath = join(dirname(TEST_DB), `.msl-test-dm.db.${restoreId}.stage`);
+      const priorPath = join(dirname(TEST_DB), `.msl-test-dm.db.${restoreId}.prior`);
+      let faulted = false;
+      const phaseAt = (path: string): { phase: string; outcome: string | null } | undefined => {
+        if (!existsSync(path)) return undefined;
+        const evidence = new Database(path, { readonly: true });
+        try {
+          return evidence
+            .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
+            .get(restoreId) as { phase: string; outcome: string | null } | undefined;
+        } finally {
+          evidence.close();
+        }
+      };
+      const fail = (): never => {
+        faulted = true;
+        throw new Error(`${faultKind} fault`);
+      };
+
+      await expect(
+        manager.restoreEconomicFrom({
+          backupPath,
+          fence: acquired.fence,
+          lifecycle,
+          migrationRegistry: plan,
+          restoreId,
+          durability: {
+            rename: (from, to) => {
+              renameSync(from, to);
+              if (faultKind === "prior-rename-effect" && to === priorPath) fail();
+            },
+            syncFile: (path) => {
+              if (faulted) return;
+              if (
+                (faultKind === "prior-journal" &&
+                  path === priorPath &&
+                  phaseAt(path)?.phase === "prior-preserved") ||
+                (faultKind === "stage-journal" &&
+                  path === stagePath &&
+                  existsSync(priorPath) &&
+                  phaseAt(path)?.phase === "promotion-intent") ||
+                (faultKind === "completion-journal" &&
+                  path === TEST_DB &&
+                  phaseAt(path)?.outcome === "completed")
+              )
+                fail();
+            },
+            syncDirectory: () => {
+              if (faulted) return;
+              if (
+                (faultKind === "prior-rename-directory" &&
+                  existsSync(priorPath) &&
+                  !existsSync(TEST_DB)) ||
+                (faultKind === "promotion-directory" &&
+                  existsSync(priorPath) &&
+                  existsSync(TEST_DB) &&
+                  !existsSync(stagePath) &&
+                  phaseAt(TEST_DB)?.phase === "promotion-intent")
+              )
+                fail();
+            },
+          },
+        }),
+      ).rejects.toThrow(`${faultKind} fault`);
+      const restored = new Database(TEST_DB, { readonly: true });
+      expect(
+        restored.prepare(`SELECT 1 FROM test_data WHERE value = '${faultKind}-backup'`).get(),
+      ).toBeFalsy();
+      expect(
+        restored
+          .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
+          .get(restoreId),
+      ).toEqual({ phase: "rolled-back", outcome: "rolled-back" });
+      restored.close();
+      expect(faulted).toBe(true);
+      expect(lifecycle.state).toBe("open");
+    },
+    15_000,
+  );
+
+  it.each(["prior-preserved", "promotion-intent", "completed"])(
+    "restores the prior when the %s manifest cannot be written",
+    async (faultPhase) => {
+      const { db, manager, cleanup } = setupTestDb();
+      _cleanup = cleanup;
+      const plan = createEconomicMigrationPlan();
+      plan.apply(db);
+      const acquired = acquireEconomicDatabaseFence({
+        db,
+        ownerRunId: `manifest-${faultPhase}-run`,
+      });
+      if (acquired.status !== "acquired") throw new Error("test fence unavailable");
+      db.exec(`INSERT INTO test_data (value) VALUES ('${faultPhase}-prior')`);
+      db.pragma("wal_checkpoint(TRUNCATE)");
+      const backupPath = join(BACKUP_DIR, `${faultPhase}.db`);
+      copyFileSync(TEST_DB, backupPath);
+      db.exec(`DELETE FROM test_data WHERE value = '${faultPhase}-prior'`);
+      db.pragma("wal_checkpoint(TRUNCATE)");
+      db.close();
+      const lifecycle = createEconomicDatabaseLifecycle({
+        path: TEST_DB,
+        authority: {},
+        readFence: () => acquired.fence,
+      });
+      economicLifecycle = lifecycle;
+      economicFence = acquired.fence;
+      let faulted = false;
+
+      await expect(
+        manager.restoreEconomicFrom({
+          backupPath,
+          fence: acquired.fence,
+          lifecycle,
+          migrationRegistry: plan,
+          restoreId: `manifest-${faultPhase}`,
+          durability: {
+            writeTemporaryFile: (descriptor, contents) => {
+              const manifest = JSON.parse(contents) as unknown;
+              const phase =
+                typeof manifest === "object" && manifest !== null
+                  ? (manifest as { phase?: unknown }).phase
+                  : undefined;
+              if (!faulted && phase === faultPhase) {
+                faulted = true;
+                throw new Error(`${faultPhase} manifest fault`);
+              }
+              writeFileSync(descriptor, contents);
+            },
+          },
+        }),
+      ).rejects.toThrow(`${faultPhase} manifest fault`);
+      const restored = new Database(TEST_DB, { readonly: true });
+      expect(
+        restored.prepare(`SELECT 1 FROM test_data WHERE value = '${faultPhase}-prior'`).get(),
+      ).toBeFalsy();
+      expect(
+        restored
+          .prepare("SELECT phase, outcome FROM economic_restore_journal WHERE restore_id = ?")
+          .get(`manifest-${faultPhase}`),
+      ).toEqual({ phase: "rolled-back", outcome: "rolled-back" });
+      restored.close();
+      expect(faulted).toBe(true);
+      expect(lifecycle.state).toBe("open");
+    },
+    15_000,
+  );
 });
